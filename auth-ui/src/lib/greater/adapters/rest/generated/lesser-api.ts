@@ -148,6 +148,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_accounts_by_id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/accounts/{id}/block": {
         parameters: {
             query?: never;
@@ -318,6 +334,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_api_v1_accounts_by_id_unmute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/accounts/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_accounts_lookup"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1044,6 +1076,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/skills/{skillId}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_admin_skills_by_skillId_assignments"];
+        put?: never;
+        post: operations["post_api_v1_admin_skills_by_skillId_assignments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_api_v1_admin_skills_by_skillId_assignments_by_assignmentId_revoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_api_v1_admin_skills_by_skillId_proposals_by_proposalId_promote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_api_v1_admin_skills_by_skillId_revisions_by_revisionNumber_approve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_api_v1_admin_skills_by_skillId_revisions_by_revisionNumber_revoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/skills/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_admin_skills_proposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/skills/proposals/{proposalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_admin_skills_proposals_by_proposalId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/soul/well-known": {
         parameters: {
             query?: never;
@@ -1154,6 +1298,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["patch_api_v1_agents_by_username"];
+        trace?: never;
+    };
+    "/api/v1/agents/{username}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_agents_by_username_access"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/agents/{username}/access-leases": {
@@ -1364,6 +1524,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{username}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_agents_by_username_share"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{username}/share/{grantee}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_api_v1_agents_by_username_share_by_grantee"];
+        post?: never;
+        delete: operations["delete_api_v1_agents_by_username_share_by_grantee"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{username}/suspend": {
         parameters: {
             query?: never;
@@ -1453,6 +1645,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Self-sovereign agent registration. Disabled by default until the operator explicitly enables agents and agent registration. */
         post: operations["post_api_v1_agents_register"];
         delete?: never;
         options?: never;
@@ -1469,7 +1662,24 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Issues a self-sovereign agent registration challenge. Disabled by default until the operator explicitly enables agents and agent registration. */
         post: operations["post_api_v1_agents_register_challenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/shared-with-me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_agents_shared_with_me"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1652,6 +1862,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/webauthn/signup/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_api_v1_auth_webauthn_signup_begin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/webauthn/signup/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_api_v1_auth_webauthn_signup_finish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/blocks": {
         parameters: {
             query?: never;
@@ -1707,7 +1949,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["get_api_v1_conversations_by_id"];
         put?: never;
         post?: never;
         delete: operations["delete_api_v1_conversations_by_id"];
@@ -1726,6 +1968,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_api_v1_conversations_by_id_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_conversations_lookup"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1980,6 +2238,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_api_v1_instance_domain_blocks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instance/metrics/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_instance_metrics_daily"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2532,6 +2806,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_skills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_skills_by_skillId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skillId}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_skills_by_skillId_revisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skillId}/revisions/{revisionNumber}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_skills_by_skillId_revisions_by_revisionNumber"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_skills_by_skillId_revisions_by_revisionNumber_bundle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_skills_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_api_v1_skills_resolve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/souls/{agentId}/incorporate": {
         parameters: {
             query?: never;
@@ -2542,6 +2928,91 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_api_v1_souls_by_agentId_incorporate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/souls/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Create or confirm a Lesser-local hosted soul/body binding for body/Ptah. The endpoint is server-to-server only: it requires the dedicated soul-binding integration bearer, rejects user OAuth tokens, refetches Host source truth, and writes only through Lesser's SOUL_BODY_BINDING repository path. */
+        post: operations["post_api_v1_souls_bindings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/souls/bindings/{agentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the authenticated body/Ptah status projection for a Lesser-local hosted soul/body binding. Lesser fails closed if the local binding exists but Host source truth cannot currently prove the hosted active identity. */
+        get: operations["get_api_v1_souls_bindings_by_agentId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/souls/bound/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the active soul identity bound to the authenticated local runtime-agent principal. The endpoint is fail-closed: unbound, inactive, missing host identity, or wrong-domain identities return 404. */
+        get: operations["get_api_v1_souls_bound_me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/souls/bound/me/mint-conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return compact private mint-conversation metadata for the authenticated local principal's bound soul. Lesser derives the Host agent ID from the existing bound-self authority and calls lesser-host with instance trust only; caller bearer tokens are never forwarded upstream. */
+        get: operations["get_api_v1_souls_bound_me_mint_conversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/souls/bound/me/mint-conversations/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return one bounded private mint-conversation record for the authenticated local principal's bound soul. Lesser validates the opaque conversation ID, derives the Host agent ID from bound self, and calls lesser-host with instance trust only. */
+        get: operations["get_api_v1_souls_bound_me_mint_conversations_by_conversationId"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2573,6 +3044,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Create a status. `in_reply_to_id` accepts local status IDs and canonical remote status URLs. When a canonical remote URL is not yet materialized locally, Lesser performs request-scoped remote parent acquisition on the write path only. Direct replies continue through the conversations service. Self-directed direct posts are intentionally rejected with `DIRECT_SELF_POST_NOT_ALLOWED`. Failure classes distinguish invalid references (400), acquisition timeouts (408), fetched-but-unusable parents (422), and upstream unavailability (503). */
         post: operations["post_api_v1_statuses"];
         delete?: never;
         options?: never;
@@ -3812,6 +4284,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/articles/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_articles_by_slug"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/device": {
         parameters: {
             query?: never;
@@ -3998,6 +4486,22 @@ export interface paths {
         get: operations["get_health_ready"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_inbox"];
+        put?: never;
+        post: operations["post_inbox"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4356,6 +4860,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{username}/statuses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_users_by_username_statuses_by_id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4388,11 +4908,14 @@ export interface components {
             agreement: boolean;
             default_posting_visibility?: string;
             locale?: string;
+            /** @description Single-use proof emitted by `POST /api/v1/auth/webauthn/signup/finish`. Exactly one of `wallet_challenge_id` or `passkey_registration_proof` is required. */
+            passkey_registration_proof?: string;
             password?: string;
             reason?: string;
             username: string;
+            /** @description Single-use wallet registration proof. Exactly one of `wallet_challenge_id` or `passkey_registration_proof` is required. */
             wallet_challenge_id?: string;
-        };
+        } & (unknown | unknown);
         AccountRegistrationResponse: {
             created: boolean;
             id: string;
@@ -4651,6 +5174,12 @@ export interface components {
             display_name: string;
             identity_semantics: components["schemas"]["AgentIdentitySemantics"];
             mcp_access: components["schemas"]["AgentMCPAccess"];
+            quarantine_active: boolean;
+            quarantine_approved_at?: components["schemas"]["RFC3339DateTime"] | null;
+            quarantine_approved_by?: string;
+            quarantine_end?: components["schemas"]["RFC3339DateTime"] | null;
+            quarantine_start?: components["schemas"]["RFC3339DateTime"] | null;
+            quarantine_status?: string;
             username: string;
             verified: boolean;
             verified_at?: components["schemas"]["RFC3339DateTime"] | null;
@@ -4721,6 +5250,12 @@ export interface components {
             lease_id: string;
             token: components["schemas"]["OAuthTokenResponse"];
         };
+        AgentAccessResponse: {
+            acted_by: string;
+            actor: string;
+            authorized: boolean;
+            relationship: string;
+        };
         AgentActivityLogEntry: {
             action: string;
             agent_username: string;
@@ -4743,8 +5278,9 @@ export interface components {
             agent_info?: unknown;
             agent_username: string;
             bio?: string;
+            content_class?: string;
             device_label?: string;
-            display_name: string;
+            display_name?: string;
             expires_in?: number;
             scopes: string[];
         };
@@ -4822,6 +5358,8 @@ export interface components {
             thread?: (components["schemas"]["Status"] | null)[];
         };
         AgentPostAttribution: {
+            acted_by?: string;
+            approved_by?: string;
             constraints?: string[];
             continuity_state?: string;
             continuity_summary?: string;
@@ -4835,6 +5373,11 @@ export interface components {
             schema_version?: string;
             scopes?: string[];
             soul_agent_id?: string;
+            trigger_details?: string;
+            trigger_type?: string;
+        };
+        AgentPostAttributionInput: {
+            memory_citations?: string[];
             trigger_details?: string;
             trigger_type?: string;
         };
@@ -4879,6 +5422,18 @@ export interface components {
         AgentSelfRegistrationResponse: {
             account: components["schemas"]["Account"];
             token: components["schemas"]["OAuthTokenResponse"];
+        };
+        AgentShareGrant: {
+            active: boolean;
+            agent_username: string;
+            granted_at: components["schemas"]["RFC3339DateTime"];
+            granted_by: string;
+            grantee_username: string;
+            revoked_at?: components["schemas"]["RFC3339DateTime"] | null;
+            revoked_by?: string;
+        };
+        AgentShareGrantListResponse: {
+            grants: components["schemas"]["AgentShareGrant"][];
         };
         Announcement: {
             all_day: boolean;
@@ -4934,7 +5489,7 @@ export interface components {
         };
         AppRegistrationResponse: {
             client_id: string;
-            client_secret?: string;
+            client_secret: string;
             grant_types?: string[];
             id: string;
             name: string;
@@ -4956,6 +5511,17 @@ export interface components {
             rotated_at?: string;
             token_endpoint_auth_method?: string;
         };
+        ApproveSkillRevisionRequest: {
+            approval_authority_id?: string;
+            approval_authority_type?: string;
+            approval_digest?: string;
+            approval_id?: string;
+            approval_reason?: string;
+            approval_ref?: string;
+            approval_signature?: string;
+            principal_approval_id?: string;
+            principal_id?: string;
+        };
         AuthAuthResponse: {
             access_token: string;
             created_at: number;
@@ -4975,6 +5541,11 @@ export interface components {
         AuthorizeAgentAccessLeaseSessionKeyRequest: {
             challenge_id: string;
             signature: string;
+        };
+        BoundSoulResponse: {
+            agent: components["schemas"]["SoulAgentIdentity"];
+            binding: components["schemas"]["SoulAgentBinding"];
+            binding_state: string;
         };
         ClearNotificationsRequest: Record<string, never>;
         CommunicationAttachment: {
@@ -5010,6 +5581,7 @@ export interface components {
             reset: string;
         };
         CommunityNoteSource: {
+            /** Format: uri */
             url: string;
         };
         CommunityNoteStats: {
@@ -5063,6 +5635,13 @@ export interface components {
             accounts: components["schemas"]["Account"][];
             id: string;
             last_status?: components["schemas"]["Status"] | null;
+            unread: boolean;
+        };
+        ConversationDetail: {
+            accounts: components["schemas"]["Account"][];
+            id: string;
+            last_status?: components["schemas"]["Status"] | null;
+            messages: components["schemas"]["Status"][];
             unread: boolean;
         };
         ConversationList: components["schemas"]["Conversation"][];
@@ -5134,8 +5713,19 @@ export interface components {
             rule_ids?: number[];
             status_ids?: string[];
         };
+        CreateSkillAssignmentRequest: {
+            approval_id?: string;
+            assignment_id?: string;
+            exposure?: string;
+            principal_approval_id?: string;
+            principal_id?: string;
+            revision_number?: number;
+            subject_id: string;
+            subject_type: string;
+        };
         CreateStatusRequest: {
-            agent_attribution?: components["schemas"]["AgentPostAttribution"] | null;
+            agent_attribution?: components["schemas"]["AgentPostAttributionInput"] | null;
+            /** @description Reply parent reference. Accepts a local status ID or a canonical remote status URL. Canonical remote URLs are resolved locally first and materialized on the create path when needed. Direct replies remain conversations-owned. */
             in_reply_to_id?: string;
             language?: string;
             media_ids?: string[];
@@ -5145,7 +5735,11 @@ export interface components {
             sensitive: boolean;
             spoiler_text?: string;
             status: string;
-            visibility: string;
+            /**
+             * @description Status visibility. `direct` creates are 1:1 only: the content must contain exactly one resolvable local or remote @mention, and Lesser serializes that resolved actor into the ActivityPub addressing fields. Stored DM visibility and repair tooling use the addressing fields as the source of truth; content mentions alone do not authorize or backfill participants.
+             * @enum {string}
+             */
+            visibility: "public" | "unlisted" | "private" | "direct";
         };
         CreateVouchRequest: {
             confidence: number;
@@ -5174,6 +5768,18 @@ export interface components {
             reject_media: boolean;
             reject_reports: boolean;
             severity: string;
+        };
+        EffectiveSkillResource: {
+            assignment: components["schemas"]["SkillAssignmentResource"];
+            revision: components["schemas"]["SkillRevisionResource"];
+            skill: components["schemas"]["SkillResource"];
+        };
+        EffectiveSkillsResponse: {
+            count: number;
+            next_cursor?: string;
+            skills: components["schemas"]["EffectiveSkillResource"][];
+            subject_id: string;
+            subject_type: string;
         };
         EmailDomainBlockRequest: {
             domain: string;
@@ -5753,6 +6359,8 @@ export interface components {
             user_code: string;
         };
         OAuthDynamicClientRegistrationRequest: {
+            /** @description Optional OIDC/SEP-837 client application type accepted for dynamic-registration compatibility. Lesser accepts `native` or `web` and does not persist this as the Lesser client_class. */
+            application_type?: string;
             /** @description Optional Lesser client classification. Public registration accepts `cli` and `web`; `agent` is not accepted on public registration surfaces. */
             client_class?: string;
             client_name?: string;
@@ -5885,6 +6493,24 @@ export interface components {
             width: number;
         };
         PreviewCardList: components["schemas"]["PreviewCard"][];
+        PromoteSkillProposalRequest: {
+            approval_authority_id?: string;
+            approval_authority_type?: string;
+            approval_digest?: string;
+            approval_id?: string;
+            approval_reason?: string;
+            approval_ref?: string;
+            approval_signature?: string;
+            expected_manifest_digest?: string;
+            expected_source_digest?: string;
+            principal_approval_id?: string;
+            principal_id?: string;
+        };
+        PromoteSkillProposalResponse: {
+            created: boolean;
+            proposal: components["schemas"]["SkillProposalResource"];
+            revision: components["schemas"]["SkillRevisionResource"];
+        };
         PushNotification: {
             access_token: string;
             body: string;
@@ -6105,6 +6731,14 @@ export interface components {
         RevokeAgentRuntimeSessionRequest: {
             reason?: string;
         };
+        RevokeSkillAssignmentRequest: {
+            reason?: string;
+            subject_id: string;
+            subject_type: string;
+        };
+        RevokeSkillRevisionRequest: {
+            reason?: string;
+        };
         Role: {
             color?: string;
             highlighted: boolean;
@@ -6221,6 +6855,216 @@ export interface components {
             locked: boolean;
             urls: components["schemas"]["SetupStageURLs"];
         };
+        SkillAssignmentResource: {
+            approval_id?: string;
+            assigned_at: components["schemas"]["RFC3339DateTime"];
+            assigned_by?: string;
+            created_at: components["schemas"]["RFC3339DateTime"];
+            exposure: string;
+            id: string;
+            principal_approval_id?: string;
+            principal_id?: string;
+            provenance?: components["schemas"]["SkillProvenanceRef"][];
+            revision_id?: string;
+            revision_number?: number;
+            revoked_at?: components["schemas"]["RFC3339DateTime"] | null;
+            revoked_by?: string;
+            revoked_reason?: string;
+            skill_id: string;
+            status: string;
+            subject_id: string;
+            subject_type: string;
+            updated_at: components["schemas"]["RFC3339DateTime"];
+            version: number;
+        };
+        SkillAssignmentResponse: {
+            assignment: components["schemas"]["SkillAssignmentResource"];
+        };
+        SkillAssignmentsResponse: {
+            assignments: components["schemas"]["SkillAssignmentResource"][];
+            count: number;
+            next_cursor?: string;
+        };
+        SkillBundleDigestsResource: {
+            approval_digest?: string;
+            bundle_digest: string;
+            content_digest?: string;
+            manifest_digest?: string;
+            publication_digest: string;
+        };
+        SkillBundleFileResource: {
+            content?: string;
+            content_included: boolean;
+            content_type?: string;
+            digest: string;
+            encoding?: string;
+            install_path: string;
+            path: string;
+            role?: string;
+            size_bytes?: number;
+        };
+        SkillBundleResource: {
+            approval_authority_id?: string;
+            approval_authority_type?: string;
+            approval_id?: string;
+            approval_ref?: string;
+            approval_signature?: string;
+            approved_at?: components["schemas"]["RFC3339DateTime"] | null;
+            approved_by?: string;
+            bundle_id: string;
+            default_exposure: string;
+            digests: components["schemas"]["SkillBundleDigestsResource"];
+            files?: components["schemas"]["SkillBundleFileResource"][];
+            install_hints: components["schemas"]["SkillInstallHintsResource"];
+            principal_approval_id?: string;
+            principal_id?: string;
+            provenance?: components["schemas"]["SkillProvenanceRef"][];
+            published: boolean;
+            revision_id: string;
+            revision_number: number;
+            schema_version: string;
+            skill_id: string;
+            source: string;
+        };
+        SkillBundleResponse: {
+            bundle: components["schemas"]["SkillBundleResource"];
+        };
+        SkillCatalogEntryResource: {
+            bundle: components["schemas"]["SkillBundleResource"];
+            revision: components["schemas"]["SkillRevisionResource"];
+            skill: components["schemas"]["SkillResource"];
+        };
+        SkillCatalogResponse: {
+            count: number;
+            entries: components["schemas"]["SkillCatalogEntryResource"][];
+            next_cursor?: string;
+        };
+        SkillInstallHintsResource: {
+            directory_name: string;
+            entrypoint: string;
+            layout: string;
+            required_files?: string[];
+            runtime_targets?: string[];
+        };
+        SkillListResponse: {
+            count: number;
+            next_cursor?: string;
+            skills: components["schemas"]["SkillResource"][];
+        };
+        SkillProposalResource: {
+            conversation_id?: string;
+            conversation_message_id?: string;
+            created_at: components["schemas"]["RFC3339DateTime"];
+            created_by?: string;
+            id: string;
+            principal_approval_id?: string;
+            principal_id?: string;
+            promoted_at?: components["schemas"]["RFC3339DateTime"] | null;
+            promoted_by?: string;
+            promoted_revision_id?: string;
+            promoted_revision_number?: number;
+            promotion_digest?: string;
+            proposed_manifest_digest?: string;
+            proposed_revision_number?: number;
+            provenance?: components["schemas"]["SkillProvenanceRef"][];
+            requested_exposure: string;
+            review_reason?: string;
+            reviewed_at?: components["schemas"]["RFC3339DateTime"] | null;
+            reviewed_by?: string;
+            skill_id: string;
+            source_digest?: string;
+            source_type?: string;
+            source_uri?: string;
+            status: string;
+            summary?: string;
+            title?: string;
+            updated_at: components["schemas"]["RFC3339DateTime"];
+            version: number;
+        };
+        SkillProposalResponse: {
+            proposal: components["schemas"]["SkillProposalResource"];
+        };
+        SkillProposalsResponse: {
+            count: number;
+            next_cursor?: string;
+            proposals: components["schemas"]["SkillProposalResource"][];
+        };
+        SkillProvenanceRef: {
+            digest?: string;
+            notes?: string;
+            ref?: string;
+            source_type: string;
+            source_uri?: string;
+        };
+        SkillResource: {
+            capabilities?: string[];
+            created_at: components["schemas"]["RFC3339DateTime"];
+            created_by?: string;
+            current_revision_id?: string;
+            current_revision_number?: number;
+            default_exposure: string;
+            description?: string;
+            id: string;
+            name: string;
+            provenance?: components["schemas"]["SkillProvenanceRef"][];
+            slug: string;
+            status: string;
+            tags?: string[];
+            updated_at: components["schemas"]["RFC3339DateTime"];
+            updated_by?: string;
+            version: number;
+        };
+        SkillResponse: {
+            skill: components["schemas"]["SkillResource"];
+        };
+        SkillRevisionFile: {
+            content_type?: string;
+            digest: string;
+            path: string;
+            role?: string;
+            size_bytes?: number;
+        };
+        SkillRevisionResource: {
+            approval_authority_id?: string;
+            approval_authority_type?: string;
+            approval_digest?: string;
+            approval_id?: string;
+            approval_reason?: string;
+            approval_ref?: string;
+            approval_signature?: string;
+            approved_at?: components["schemas"]["RFC3339DateTime"] | null;
+            approved_by?: string;
+            bundle_digest?: string;
+            capabilities?: string[];
+            content_digest?: string;
+            created_at: components["schemas"]["RFC3339DateTime"];
+            created_by?: string;
+            default_exposure: string;
+            files?: components["schemas"]["SkillRevisionFile"][];
+            id: string;
+            manifest_digest?: string;
+            principal_approval_id?: string;
+            principal_id?: string;
+            proposal_id?: string;
+            provenance?: components["schemas"]["SkillProvenanceRef"][];
+            revision_number: number;
+            revoked_at?: components["schemas"]["RFC3339DateTime"] | null;
+            revoked_by?: string;
+            revoked_reason?: string;
+            skill_id: string;
+            status: string;
+            updated_at: components["schemas"]["RFC3339DateTime"];
+            updated_by?: string;
+            version: number;
+        };
+        SkillRevisionResponse: {
+            revision: components["schemas"]["SkillRevisionResource"];
+        };
+        SkillRevisionsResponse: {
+            count: number;
+            next_cursor?: string;
+            revisions: components["schemas"]["SkillRevisionResource"][];
+        };
         /** @description Mastodon-compatible snowflake identifier (stringified uint). */
         SnowflakeID: string;
         SoulAgentAvatar: {
@@ -6246,6 +7090,8 @@ export interface components {
         };
         SoulAgentIdentity: {
             agent_id: string;
+            anchor_state?: string;
+            authority_model?: string;
             avatar?: components["schemas"]["SoulAgentAvatar"] | null;
             capabilities?: string[];
             domain: string;
@@ -6256,17 +7102,64 @@ export interface components {
             meta_uri?: string;
             mint_tx_hash?: string;
             minted_at?: components["schemas"]["RFC3339DateTime"] | null;
+            operational_binding?: string;
             predecessor_agent_id?: string;
             principal_address?: string;
             principal_declaration?: string;
             principal_declared_at?: string;
             principal_signature?: string;
+            published_version?: number;
             self_description_version?: number | null;
             status: string;
             successor_agent_id?: string;
             token_id?: string;
             updated_at?: components["schemas"]["RFC3339DateTime"] | null;
             wallet: string;
+        };
+        SoulBindingAgent: {
+            agent_id: string;
+            anchor_state: string;
+            authority_model: string;
+            domain: string;
+            lifecycle_status: string;
+            local_id: string;
+            operational_binding: string;
+            published_version?: number;
+        };
+        SoulBindingEvidence: {
+            declaration_hash?: string;
+            host_request_id?: string;
+            issued_at?: string;
+            source?: string;
+        };
+        SoulBindingIdempotency: {
+            key: string;
+            payload_hash: string;
+            replayed: boolean;
+        };
+        SoulBindingLinks: {
+            status: string;
+        };
+        SoulBindingRequest: {
+            actor_username: string;
+            anchor_state?: string;
+            authority_model?: string;
+            body_actor_id?: string;
+            evidence?: components["schemas"]["SoulBindingEvidence"];
+            host_conversation_id?: string;
+            host_registration_id?: string;
+            operational_binding?: string;
+            principal_address?: string;
+            soul_agent_id: string;
+        };
+        SoulBindingResponse: {
+            agent: components["schemas"]["SoulBindingAgent"];
+            binding: components["schemas"]["SoulAgentBinding"];
+            binding_state: string;
+            idempotency?: components["schemas"]["SoulBindingIdempotency"] | null;
+            links?: components["schemas"]["SoulBindingLinks"] | null;
+            status: string;
+            version: string;
         };
         SoulBodyBinding: {
             bound_at: components["schemas"]["RFC3339DateTime"];
@@ -6285,6 +7178,50 @@ export interface components {
             available_for_incorporation: boolean;
             binding?: components["schemas"]["SoulAgentBinding"] | null;
             binding_state: string;
+        };
+        SoulMintConversation: {
+            agent_id: string;
+            charged_credits?: number | null;
+            /** Format: date-time */
+            completed_at?: string;
+            conversation_id: string;
+            /** Format: date-time */
+            created_at: string;
+            messages?: string;
+            model: string;
+            produced_declarations?: string;
+            /** @enum {string} */
+            status: "in_progress" | "completed" | "failed";
+            usage?: {
+                [key: string]: unknown;
+            };
+        };
+        SoulMintConversationResponse: {
+            conversation: components["schemas"]["SoulMintConversation"];
+            /** @enum {string} */
+            version: "1";
+        };
+        SoulMintConversationSummary: {
+            agent_id: string;
+            charged_credits?: number | null;
+            /** Format: date-time */
+            completed_at?: string;
+            conversation_id: string;
+            /** Format: date-time */
+            created_at: string;
+            model?: string;
+            /** @enum {string} */
+            status: "in_progress" | "completed" | "failed";
+            usage?: {
+                [key: string]: unknown;
+            };
+        };
+        SoulMintConversationsResponse: {
+            conversations: components["schemas"]["SoulMintConversationSummary"][];
+            count: number;
+            limit: number;
+            /** @enum {string} */
+            version: "1";
         };
         SoulsMineResponse: {
             count: number;
@@ -6699,6 +7636,8 @@ export interface components {
                     updated?: components["schemas"]["RFC3339DateTime"] | null;
                 };
                 agentAttribution?: {
+                    acted_by?: string;
+                    approved_by?: string;
                     constraints?: string[];
                     continuity_state?: string;
                     continuity_summary?: string;
@@ -6980,13 +7919,13 @@ export interface components {
             exit_quarantine?: boolean;
         };
         UpdateCredentialsRequest: {
-            avatar: string;
-            bot: boolean;
-            discoverable: boolean;
-            display_name: string;
-            header: string;
-            locked: boolean;
-            note: string;
+            avatar?: string;
+            bot?: boolean;
+            discoverable?: boolean;
+            display_name?: string;
+            header?: string;
+            locked?: boolean;
+            note?: string;
         };
         UpdateCustomEmojiRequest: {
             category?: string | null;
@@ -7090,7 +8029,8 @@ export interface components {
         };
         VoteCommunityNoteRequest: {
             reason?: string;
-            vote_type: string;
+            /** @enum {string} */
+            vote_type: "helpful" | "not_helpful" | "neutral";
         };
         VoteCommunityNoteResponse: {
             note_id: string;
@@ -7178,6 +8118,16 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        WebAuthnSignupFinishRequest: {
+            challenge: string;
+            response: {
+                [key: string]: unknown;
+            };
+            username: string;
+        };
+        WebAuthnSignupFinishResponse: {
+            passkey_registration_proof: string;
+        };
         WebAuthnUpdateCredentialRequest: {
             name: string;
         };
@@ -7221,6 +8171,15 @@ export interface components {
         };
         /** @description Not Found */
         NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Request Timeout */
+        RequestTimeout: {
             headers: {
                 [name: string]: unknown;
             };
@@ -7543,6 +8502,31 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    get_api_v1_accounts_by_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
     post_api_v1_accounts_by_id_block: {
         parameters: {
             query?: never;
@@ -7642,6 +8626,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -7667,6 +8653,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -7759,6 +8747,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -7795,6 +8785,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -7909,6 +8901,28 @@ export interface operations {
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_accounts_lookup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -8051,7 +9065,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StorageAccount"];
+                    "application/json": components["schemas"]["Account"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -8065,7 +9079,10 @@ export interface operations {
     get_api_v1_accounts_verify_credentials: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -9423,6 +10440,249 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    get_api_v1_admin_skills_by_skillId_assignments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillAssignmentsResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_api_v1_admin_skills_by_skillId_assignments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateSkillAssignmentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillAssignmentResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_api_v1_admin_skills_by_skillId_assignments_by_assignmentId_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignmentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RevokeSkillAssignmentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillAssignmentResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_api_v1_admin_skills_by_skillId_proposals_by_proposalId_promote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PromoteSkillProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromoteSkillProposalResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_api_v1_admin_skills_by_skillId_revisions_by_revisionNumber_approve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revisionNumber: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApproveSkillRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillRevisionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_api_v1_admin_skills_by_skillId_revisions_by_revisionNumber_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revisionNumber: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RevokeSkillRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillRevisionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_admin_skills_proposals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillProposalsResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_admin_skills_proposals_by_proposalId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillProposalResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
     put_api_v1_admin_soul_well_known: {
         parameters: {
             query?: never;
@@ -9615,6 +10875,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -9639,6 +10901,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -9702,6 +10966,33 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    get_api_v1_agents_by_username_access: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAccessResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
     get_api_v1_agents_by_username_access_leases: {
         parameters: {
             query?: never;
@@ -9723,6 +11014,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -9752,6 +11045,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
@@ -9779,6 +11074,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
@@ -9810,6 +11107,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
@@ -9841,6 +11140,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
@@ -9872,6 +11173,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
@@ -9903,6 +11206,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
@@ -9933,6 +11238,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
@@ -9963,6 +11270,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
@@ -10076,6 +11385,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -10106,8 +11417,96 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_agents_by_username_share: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentShareGrantListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    put_api_v1_agents_by_username_share_by_grantee: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantee: string;
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentShareGrant"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    delete_api_v1_agents_by_username_share_by_grantee: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantee: string;
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentShareGrant"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -10162,6 +11561,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
         };
@@ -10189,6 +11590,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
         };
@@ -10218,8 +11621,10 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     get_api_v1_agents_memory_search: {
@@ -10298,7 +11703,10 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -10325,7 +11733,34 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_agents_shared_with_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentShareGrantListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -10716,6 +12151,74 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    post_api_v1_auth_webauthn_signup_begin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WebAuthnBeginLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    /** @description Request limit per window. */
+                    "X-RateLimit-Limit"?: number;
+                    /** @description Requests remaining in the current window. */
+                    "X-RateLimit-Remaining"?: number;
+                    /** @description Unix timestamp (seconds) when the current window resets. */
+                    "X-RateLimit-Reset"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebAuthnBeginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_api_v1_auth_webauthn_signup_finish: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WebAuthnSignupFinishRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    /** @description Request limit per window. */
+                    "X-RateLimit-Limit"?: number;
+                    /** @description Requests remaining in the current window. */
+                    "X-RateLimit-Remaining"?: number;
+                    /** @description Unix timestamp (seconds) when the current window resets. */
+                    "X-RateLimit-Reset"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebAuthnSignupFinishResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
     get_api_v1_blocks: {
         parameters: {
             query?: {
@@ -10791,7 +12294,10 @@ export interface operations {
                 /** @description Return results with an ID less than this value. */
                 max_id?: components["parameters"]["MaxID"];
             };
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -10811,6 +12317,43 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_conversations_by_id: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Return results with an ID less than this value. */
+                max_id?: components["parameters"]["MaxID"];
+            };
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    /** @description RFC 8288 pagination links for recent messages. */
+                    Link?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -10866,6 +12409,50 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_conversations_lookup: {
+        parameters: {
+            query: {
+                /** @description Exact 1:1 direct-message counterpart identifier. Accepts local username, acct value, or actor URL where resolvable. */
+                counterpart: string;
+                /** @description Maximum number of items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Return results with an ID less than this value. */
+                max_id?: components["parameters"]["MaxID"];
+            };
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    /** @description RFC 8288 pagination links for recent messages. */
+                    Link?: string;
+                    /** @description Request limit per window. */
+                    "X-RateLimit-Limit"?: number;
+                    /** @description Requests remaining in the current window. */
+                    "X-RateLimit-Remaining"?: number;
+                    /** @description Unix timestamp (seconds) when the current window resets. */
+                    "X-RateLimit-Reset"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -11420,6 +13007,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstanceDomainBlockList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_instance_metrics_daily: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Map7d31df2b"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -12140,6 +13749,19 @@ export interface operations {
         };
         responses: {
             /** @description OK */
+            200: {
+                headers: {
+                    /** @description Request limit per window. */
+                    "X-RateLimit-Limit"?: number;
+                    /** @description Requests remaining in the current window. */
+                    "X-RateLimit-Remaining"?: number;
+                    /** @description Unix timestamp (seconds) when the current window resets. */
+                    "X-RateLimit-Reset"?: number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description OK */
             201: {
                 headers: {
                     /** @description Request limit per window. */
@@ -12245,7 +13867,10 @@ export interface operations {
                 types?: string;
                 "types[]"?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -12271,7 +13896,10 @@ export interface operations {
     get_api_v1_notifications_by_id: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path: {
                 id: string;
             };
@@ -12298,7 +13926,10 @@ export interface operations {
     post_api_v1_notifications_by_id_dismiss: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path: {
                 id: string;
             };
@@ -12324,7 +13955,10 @@ export interface operations {
     post_api_v1_notifications_clear: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -12357,6 +13991,13 @@ export interface operations {
             };
         };
         responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description No Content */
             204: {
                 headers: {
@@ -12365,6 +14006,8 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
         };
@@ -12680,6 +14323,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
         };
@@ -12890,6 +14535,213 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    get_api_v1_skills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    /** @description Request limit per window. */
+                    "X-RateLimit-Limit"?: number;
+                    /** @description Requests remaining in the current window. */
+                    "X-RateLimit-Remaining"?: number;
+                    /** @description Unix timestamp (seconds) when the current window resets. */
+                    "X-RateLimit-Reset"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_skills_by_skillId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_skills_by_skillId_revisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillRevisionsResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_skills_by_skillId_revisions_by_revisionNumber: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revisionNumber: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillRevisionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_skills_by_skillId_revisions_by_revisionNumber_bundle: {
+        parameters: {
+            query?: {
+                /** @description When true, include inline file content that is present in the approved canonical revision manifest. Lesser never writes files into the caller workspace. */
+                include_content?: boolean;
+            };
+            header?: never;
+            path: {
+                revisionNumber: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillBundleResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_skills_catalog: {
+        parameters: {
+            query?: {
+                /** @description Optional approved catalog exposure filter: public, instance, or private. Visibility remains fail-closed for the caller. */
+                exposure?: string;
+                /** @description Maximum catalog entries to return. Defaults to 25 and is capped at 100. */
+                limit?: number;
+                /** @description Opaque pagination cursor returned by a previous catalog response. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    /** @description Request limit per window. */
+                    "X-RateLimit-Limit"?: number;
+                    /** @description Requests remaining in the current window. */
+                    "X-RateLimit-Remaining"?: number;
+                    /** @description Unix timestamp (seconds) when the current window resets. */
+                    "X-RateLimit-Reset"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_skills_resolve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveSkillsResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
     post_api_v1_souls_by_agentId_incorporate: {
         parameters: {
             query?: never;
@@ -12922,6 +14774,178 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    post_api_v1_souls_bindings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Caller-scoped idempotency key for this binding attempt. Reusing the same key with a different canonical payload returns SOUL_BINDING_IDEMPOTENCY_MISMATCH. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulBindingResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    get_api_v1_souls_bindings_by_agentId: {
+        parameters: {
+            query?: {
+                /** @description Optional local actor username assertion. A mismatch with the stored binding returns SOUL_BINDING_ACTOR_MISMATCH. */
+                actor_username?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulBindingResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    get_api_v1_souls_bound_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoundSoulResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_api_v1_souls_bound_me_mint_conversations: {
+        parameters: {
+            query?: {
+                /** @description Maximum compact conversations to return. Defaults to 20 and is capped at 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulMintConversationsResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Private conversation response too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    get_api_v1_souls_bound_me_mint_conversations_by_conversationId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque safe mint-conversation identifier. */
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulMintConversationResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Private conversation response too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalServerError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     get_api_v1_souls_mine: {
         parameters: {
             query?: never;
@@ -12949,7 +14973,10 @@ export interface operations {
     post_api_v1_statuses: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -12977,9 +15004,11 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            408: components["responses"]["RequestTimeout"];
             422: components["responses"]["UnprocessableEntity"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalServerError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     get_api_v1_statuses_by_id: {
@@ -13138,6 +15167,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -13145,7 +15176,10 @@ export interface operations {
     post_api_v1_statuses_by_id_favourite: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path: {
                 id: string;
             };
@@ -13205,6 +15239,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -13378,8 +15414,8 @@ export interface operations {
             query?: {
                 /** @description Maximum number of items to return. */
                 limit?: components["parameters"]["Limit"];
-                /** @description Offset for offset-based pagination. */
-                offset?: components["parameters"]["Offset"];
+                /** @description Visible-quote offset. Must not exceed (4 × the requested limit) - 1; larger offsets return 422 rather than a silently truncated empty page. */
+                offset?: number;
             };
             header?: never;
             path: {
@@ -13399,14 +15435,20 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalServerError"];
         };
     };
     post_api_v1_statuses_by_id_reblog: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path: {
                 id: string;
             };
@@ -13466,6 +15508,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -13568,7 +15612,10 @@ export interface operations {
     post_api_v1_statuses_by_id_unfavourite: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path: {
                 id: string;
             };
@@ -13673,7 +15720,10 @@ export interface operations {
     post_api_v1_statuses_by_id_unreblog: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path: {
                 id: string;
             };
@@ -14087,7 +16137,10 @@ export interface operations {
                 /** @description Return results with an ID less than this value. */
                 max_id?: components["parameters"]["MaxID"];
             };
-            header?: never;
+            header?: {
+                /** @description Optional share-grant act-as indicator: the plain local username of a shared agent. When present and an active (agent, caller) share grant exists, the request acts agent-scoped with the real caller recorded as actedBy attribution (docs/contracts/agent-share-act-as.md). Malformed indicators fail 400, missing/inactive grants fail 403, and grant-check errors fail closed 500. */
+                "X-Lesser-Act-As"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -14385,8 +16438,6 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -14409,8 +16460,6 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
@@ -14432,8 +16481,6 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalServerError"];
         };
     };
@@ -15333,6 +17380,29 @@ export interface operations {
             500: components["responses"]["InternalServerError"];
         };
     };
+    get_articles_by_slug: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
     get_auth_device: {
         parameters: {
             query?: never;
@@ -15596,6 +17666,8 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalServerError"];
             503: components["responses"]["ServiceUnavailable"];
         };
@@ -15640,6 +17712,62 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             500: components["responses"]["InternalServerError"];
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    get_inbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Method Not Allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    post_inbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     get_nodeinfo_2_0: {
@@ -16336,6 +18464,30 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    get_users_by_username_statuses_by_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
             500: components["responses"]["InternalServerError"];
         };
     };
