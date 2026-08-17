@@ -245,12 +245,12 @@ returned early, bypassing subsequent guards (including the stricter featured-col
 
 ## P0 — Account takeover: unauthenticated wallet linking can target arbitrary usernames
 
-**Status:** confirmed  
+**Status:** fixed (status corrected 2026-08-17; the enforcement itself landed earlier, in #474)  
 **Confidence:** 9/10  
 
 `POST /auth/wallet/link` accepts a `username` in the request body when no bearer token is present (“registration flow”).
-Without a registration-only gate, this allows an unauthenticated caller to attempt linking a wallet to **any existing**
-username (including a victim’s account), enabling account takeover if the attacker can complete the wallet signature
+Without a registration-only gate, this allowed an unauthenticated caller to attempt linking a wallet to **any existing**
+username (including a victim’s account), enabling account takeover if the attacker could complete the wallet signature
 steps.
 
 **Primary location:**
@@ -262,10 +262,19 @@ steps.
 **Impact model:** a wallet link is an authentication factor. Allowing unauthenticated linking against arbitrary usernames
 turns “link wallet” into an account-takeover vector.
 
-**Recommendation (implemented as part of remediation):**
-- Require signature-based proof for wallet linking, even for authenticated users (wallet ownership).
-- For unauthenticated linking (“registration flow”), require a registration-only gate (e.g., a challenge ID stored in
-  user metadata during registration) so unauth linking cannot be used against existing accounts.
+**Fix summary (verified against `HandleLinkWalletLift` at this revision):**
+- `challengeId`, `signature` and `message` are now unconditionally required, for authenticated and unauthenticated
+  callers alike, and the signature is verified against the stored challenge (`VerifySignatureOnly`).
+- The challenge must be bound to the same username (explicit replay rejection), must not already be spent, and its
+  message must match the submitted one.
+- Unauthenticated linking additionally requires `challenge.RegistrationCompleted`, which is set **only** by a successful
+  `POST /api/v1/accounts` for that challenge (`pkg/services/accounts/service.go` →
+  `MarkWalletChallengeRegistrationCompleted`). Since registration rejects an existing username, no challenge bound to a
+  pre-existing account can carry that flag, which is what closes the takeover path.
+
+This entry was left at “confirmed” after the code was fixed; the status is corrected here rather than the fix being
+claimed by this change. See `docs/security/multi-credential-accounts.md` and
+`docs/architecture/auth/passkey-first-registration.md` for the current linking rules.
 
 ---
 
