@@ -297,6 +297,9 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *apptheory.Context) (*apptheory
 		return resp, err
 	}
 
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
+	recordPasskeySetupAudit := h.newSetupAdminPasskeyAuditRecorder(ctx, req.Username, req.PasskeyRegistrationProof, userAgent, ipAddress)
+
 	var (
 		linkWallet      bool
 		walletChainID   int
@@ -308,15 +311,14 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *apptheory.Context) (*apptheory
 			return authResp, authErr
 		}
 
-		noOpAudit := func(auth.AuditEventType, bool, error, map[string]interface{}) {}
 		if proofResp := h.validateRegistrationCredentialProofLift(
 			ctx,
 			authService,
 			req.Username,
 			"",
 			req.PasskeyRegistrationProof,
-			noOpAudit,
-			noOpAudit,
+			recordPasskeySetupAudit,
+			recordPasskeySetupAudit,
 		); proofResp != nil {
 			return proofResp, nil
 		}
@@ -339,6 +341,11 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *apptheory.Context) (*apptheory
 	if resp != nil || err != nil {
 		return resp, err
 	}
+	if req.PasskeyRegistrationProof != "" {
+		recordPasskeySetupAudit(auth.AuditWebAuthnRegistrationCompleted, true, nil, map[string]interface{}{
+			"credential_event": "added",
+		})
+	}
 
 	if linkWallet {
 		authService, authResp, authErr := h.requireAuthService(ctx)
@@ -355,6 +362,11 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *apptheory.Context) (*apptheory
 	if err := h.repos.Instance().SetPrimaryAdminUsername(ctx.Context(), req.Username); err != nil {
 		h.logger.Error("failed to record primary admin", zap.String("username", req.Username), zap.Error(err))
 		return h.respondInternalError(ctx, "failed to update setup state")
+	}
+	if req.PasskeyRegistrationProof != "" {
+		recordPasskeySetupAudit(auth.AuditRegistrationCompleted, true, nil, map[string]interface{}{
+			"admin_promotion": true,
+		})
 	}
 
 	return h.respondCreated(ctx, apimodels.SetupCreateAdminResponse{
@@ -406,6 +418,28 @@ func (h *Handler) parseSetupCreateAdminRequest(ctx *apptheory.Context, bootstrap
 		Wallet:                   payload.Wallet,
 		PasskeyRegistrationProof: passkeyProof,
 	}, nil, nil
+}
+
+func (h *Handler) newSetupAdminPasskeyAuditRecorder(
+	ctx *apptheory.Context,
+	username, passkeyProofID, userAgent, ipAddress string,
+) registrationProofAuditRecorder {
+	auditLogger := auth.NewAuditLogger(h.repos, h.logger, auth.DefaultAuditConfig())
+	return func(eventType auth.AuditEventType, success bool, failure error, metadata map[string]interface{}) {
+		if passkeyProofID == "" || auditLogger == nil {
+			return
+		}
+
+		metadataWithDefaults := map[string]interface{}{
+			"authentication_method": "webauthn",
+			"registration_mode":     "setup_admin_bootstrap",
+		}
+		for key, value := range metadata {
+			metadataWithDefaults[key] = value
+		}
+
+		auditLogger.LogAuthEvent(ctx.Context(), username, ipAddress, userAgent, eventType, metadataWithDefaults, success, failure)
+	}
 }
 
 func (h *Handler) verifySetupCreateAdminWallet(
@@ -491,19 +525,20 @@ func (h *Handler) ensureSetupAdminAccount(ctx *apptheory.Context, username, disp
 		PasskeyRegistrationProof: strings.TrimSpace(passkeyRegistrationProof),
 	})
 	if err != nil {
-		if !errors.Is(err, accounts.ErrUsernameAlreadyTaken) {
-			h.logger.Error("failed to create admin account", zap.String("username", username), zap.Error(err))
-			resp, respErr := h.respondUnprocessableEntity(ctx, "failed to create admin account")
+		var stateErr *accounts.SetupAdminBootstrapStateError
+		if errors.As(err, &stateErr) {
+			h.logger.Warn("setup admin bootstrap retry requires operator repair", zap.String("username", username), zap.Error(err))
+			resp, respErr := h.respondUnprocessableEntity(ctx, err.Error())
+			return "", resp, respErr
+		}
+		if errors.Is(err, accounts.ErrUsernameAlreadyTaken) {
+			resp, respErr := h.respondConflict(ctx, "admin username already exists")
 			return "", resp, respErr
 		}
 
-		existingActor, actorErr := h.repos.Actor().GetActor(ctx.Context(), username)
-		if actorErr != nil {
-			h.logger.Error("admin username exists but actor lookup failed", zap.String("username", username), zap.Error(actorErr))
-			resp, respErr := h.respondUnprocessableEntity(ctx, "failed to create admin account")
-			return "", resp, respErr
-		}
-		return existingActor.ID, nil, nil
+		h.logger.Error("failed to create admin account", zap.String("username", username), zap.Error(err))
+		resp, respErr := h.respondUnprocessableEntity(ctx, "failed to create admin account")
+		return "", resp, respErr
 	}
 
 	if result != nil && result.Actor != nil && strings.TrimSpace(result.Actor.ID) != "" {

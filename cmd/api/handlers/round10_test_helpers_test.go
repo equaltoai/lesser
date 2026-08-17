@@ -909,6 +909,26 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				credential.LastUsedAt = lastUsedAt
 			}
 			round10UpsertWebAuthnCredential(state, credential)
+		case *storagemodels.PasskeyRegistrationProof:
+			model, _ := state.model.(*storagemodels.PasskeyRegistrationProof)
+			if model == nil {
+				return
+			}
+
+			proof := *model
+			if existing, ok := state.passkeyRegistrationProofsByID[proof.ID]; ok {
+				proof = existing
+			}
+			if consumed, ok := state.sets["Consumed"].(bool); ok {
+				proof.Consumed = consumed
+			}
+			if consumedAt, ok := state.sets["ConsumedAt"].(time.Time); ok {
+				proof.ConsumedAt = consumedAt
+			}
+			if state.passkeyRegistrationProofsByID == nil {
+				state.passkeyRegistrationProofsByID = map[string]storagemodels.PasskeyRegistrationProof{}
+			}
+			state.passkeyRegistrationProofsByID[proof.ID] = proof
 		}
 	}).Maybe()
 

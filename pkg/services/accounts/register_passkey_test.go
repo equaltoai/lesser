@@ -2,6 +2,7 @@ package accounts
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -173,6 +174,225 @@ func TestService_RegisterAccount_WithPasskeyRegistrationProof_SucceedsInSetupAdm
 	proof, err := accountRepo.GetPasskeyRegistrationProof(ctx, "proof-setup-1")
 	require.NoError(t, err)
 	require.True(t, proof.Consumed)
+}
+
+func TestService_RegisterAccount_WithPasskeyRegistrationProof_RetriesSetupAdminBootstrapAfterPartialFailure(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	baseTime := time.Now().UTC()
+
+	db := newRegistrationPasskeyDB(0)
+	db.failCreateOnce("*models.WebAuthnCredential", errors.New("credential create failed"))
+	db.failDeleteOnce("*models.Actor", errors.New("actor rollback failed"))
+	db.failDeleteOnce("*models.User", errors.New("user rollback failed"))
+
+	accountRepo, storageImpl := newRegistrationPasskeyTestStorage(t, db, logger)
+
+	require.NoError(t, accountRepo.StorePasskeyRegistrationProof(ctx, &models.PasskeyRegistrationProof{
+		ID:              "proof-retry-1",
+		Username:        "admin",
+		CeremonyID:      "ceremony-retry-1",
+		CredentialID:    "cred-retry-1",
+		PublicKey:       []byte("public-key"),
+		AttestationType: "packed",
+		AAGUID:          []byte("aaguid"),
+		SignCount:       7,
+		BackupEligible:  true,
+		BackupState:     true,
+		CreatedAt:       baseTime,
+		ExpiresAt:       baseTime.Add(time.Hour),
+	}))
+
+	svc := newRegistrationPasskeyTestService(storageImpl, logger, "PUBLIC KEY", "PRIVATE KEY")
+	cmd := &RegisterAccountCommand{
+		Username:                 "Admin",
+		DisplayName:              "Primary Admin",
+		Agreement:                true,
+		Locale:                   "en",
+		RegistrationMode:         RegisterAccountModeSetupAdminBootstrap,
+		PasskeyRegistrationProof: "proof-retry-1",
+	}
+
+	got, err := svc.RegisterAccount(ctx, cmd)
+	require.Nil(t, got)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to store initial passkey credential")
+
+	existingAccount, err := accountRepo.GetAccount(ctx, "admin")
+	require.NoError(t, err)
+	require.NotNil(t, existingAccount)
+	require.NotNil(t, existingAccount.User)
+	require.NotNil(t, existingAccount.Actor)
+
+	credentials, err := accountRepo.GetUserWebAuthnCredentials(ctx, "admin")
+	require.NoError(t, err)
+	require.Empty(t, credentials)
+
+	proof, err := accountRepo.GetPasskeyRegistrationProof(ctx, "proof-retry-1")
+	require.NoError(t, err)
+	require.False(t, proof.Consumed)
+
+	got, err = svc.RegisterAccount(ctx, cmd)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "admin", got.Account.User.Username)
+	require.Equal(t, "Primary Admin", got.Account.User.DisplayName)
+
+	credentials, err = accountRepo.GetUserWebAuthnCredentials(ctx, "admin")
+	require.NoError(t, err)
+	require.Len(t, credentials, 1)
+	require.Equal(t, "cred-retry-1", credentials[0].ID)
+
+	proof, err = accountRepo.GetPasskeyRegistrationProof(ctx, "proof-retry-1")
+	require.NoError(t, err)
+	require.True(t, proof.Consumed)
+}
+
+func TestService_RegisterAccount_WithPasskeyRegistrationProof_HardErrorsWhenRetryProofConsumedWithoutCredential(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	baseTime := time.Now().UTC()
+
+	db := newRegistrationPasskeyDB(0)
+	db.failCreateOnce("*models.WebAuthnCredential", errors.New("credential create failed"))
+	db.failDeleteOnce("*models.Actor", errors.New("actor rollback failed"))
+	db.failDeleteOnce("*models.User", errors.New("user rollback failed"))
+
+	accountRepo, storageImpl := newRegistrationPasskeyTestStorage(t, db, logger)
+
+	require.NoError(t, accountRepo.StorePasskeyRegistrationProof(ctx, &models.PasskeyRegistrationProof{
+		ID:              "proof-retry-hard-error-1",
+		Username:        "admin",
+		CeremonyID:      "ceremony-retry-hard-error-1",
+		CredentialID:    "cred-retry-hard-error-1",
+		PublicKey:       []byte("public-key"),
+		AttestationType: "packed",
+		AAGUID:          []byte("aaguid"),
+		SignCount:       7,
+		BackupEligible:  true,
+		BackupState:     true,
+		CreatedAt:       baseTime,
+		ExpiresAt:       baseTime.Add(time.Hour),
+	}))
+
+	svc := newRegistrationPasskeyTestService(storageImpl, logger, "PUBLIC KEY", "PRIVATE KEY")
+	cmd := &RegisterAccountCommand{
+		Username:                 "Admin",
+		DisplayName:              "Primary Admin",
+		Agreement:                true,
+		Locale:                   "en",
+		RegistrationMode:         RegisterAccountModeSetupAdminBootstrap,
+		PasskeyRegistrationProof: "proof-retry-hard-error-1",
+	}
+
+	got, err := svc.RegisterAccount(ctx, cmd)
+	require.Nil(t, got)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to store initial passkey credential")
+
+	proof, err := accountRepo.ConsumePasskeyRegistrationProof(ctx, "proof-retry-hard-error-1", "admin", "ceremony-retry-hard-error-1")
+	require.NoError(t, err)
+	require.True(t, proof.Consumed)
+
+	got, err = svc.RegisterAccount(ctx, cmd)
+	require.Nil(t, got)
+	require.Error(t, err)
+
+	var stateErr *SetupAdminBootstrapStateError
+	require.ErrorAs(t, err, &stateErr)
+	assert.Equal(t, "admin", stateErr.Username)
+	assert.Equal(t, accountRoleAdmin, stateErr.Role)
+	assert.True(t, stateErr.ActorPresent)
+	assert.Equal(t, "cred-retry-hard-error-1", stateErr.CredentialID)
+	assert.False(t, stateErr.CredentialBound)
+	assert.True(t, stateErr.ProofConsumed)
+	assert.Contains(t, err.Error(), "passkey credential \"cred-retry-hard-error-1\"=missing")
+
+	credentials, err := accountRepo.GetUserWebAuthnCredentials(ctx, "admin")
+	require.NoError(t, err)
+	require.Empty(t, credentials)
+}
+
+func TestService_EnsureSetupAdminBootstrapPasskeyCredential_ConsumesUnspentProofForBoundCredential(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	baseTime := time.Now().UTC()
+	accountRepo, _ := newRegistrationPasskeyTestStorage(t, newRegistrationPasskeyDB(0), logger)
+
+	require.NoError(t, accountRepo.StorePasskeyRegistrationProof(ctx, &models.PasskeyRegistrationProof{
+		ID:              "proof-bound-1",
+		Username:        "admin",
+		CeremonyID:      "ceremony-bound-1",
+		CredentialID:    "cred-bound-1",
+		PublicKey:       []byte("public-key"),
+		AttestationType: "packed",
+		AAGUID:          []byte("aaguid"),
+		SignCount:       9,
+		BackupEligible:  true,
+		BackupState:     true,
+		CreatedAt:       baseTime,
+		ExpiresAt:       baseTime.Add(time.Hour),
+	}))
+	require.NoError(t, accountRepo.StoreWebAuthnCredential(ctx, &storage.WebAuthnCredential{
+		ID:              "cred-bound-1",
+		UserID:          "admin",
+		PublicKey:       []byte("public-key"),
+		AttestationType: "packed",
+		AAGUID:          []byte("aaguid"),
+		SignCount:       9,
+		BackupEligible:  true,
+		BackupState:     true,
+		CreatedAt:       baseTime,
+		LastUsedAt:      baseTime,
+		Name:            "Primary Admin Passkey",
+	}))
+
+	proof, err := accountRepo.GetPasskeyRegistrationProof(ctx, "proof-bound-1")
+	require.NoError(t, err)
+
+	svc := &Service{}
+	require.NoError(t, svc.ensureSetupAdminBootstrapPasskeyCredential(ctx, accountRepo, "admin", accountRoleAdmin, proof))
+
+	bound, err := setupAdminBootstrapCredentialBound(ctx, accountRepo, "admin", "cred-bound-1")
+	require.NoError(t, err)
+	require.True(t, bound)
+	require.Equal(t, "cred-bound-1", setupAdminBootstrapCredentialID(proof))
+	require.Empty(t, setupAdminBootstrapCredentialID(nil))
+
+	proof, err = accountRepo.GetPasskeyRegistrationProof(ctx, "proof-bound-1")
+	require.NoError(t, err)
+	require.True(t, proof.Consumed)
+	require.False(t, proof.ConsumedAt.IsZero())
+}
+
+func TestService_PromoteSetupAdminBootstrapUser_UpdatesRoleAndDisplayName(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	tableName := "test-table"
+
+	db := newPermissiveDynamormDB(t, permissiveDBOptions{})
+	accountRepo := repositories.NewAccountRepository(db, tableName, "example.com", logger)
+	accountRepo.SetEncryptor(noopEncryptor{})
+	accountRepo.SetPermissionService(nil)
+	accountRepo.SetEventService(nil)
+	accountRepo.SetCachingService(nil)
+
+	userRepo := repositories.NewUserRepository(db, tableName, logger)
+	require.NoError(t, userRepo.CreateUser(ctx, &storage.User{
+		Username:    "admin",
+		DisplayName: "Before",
+		Role:        "user",
+		Approved:    true,
+	}))
+
+	user, err := accountRepo.GetUser(ctx, "admin")
+	require.NoError(t, err)
+	require.NotNil(t, user)
+
+	svc := &Service{}
+	require.NoError(t, svc.promoteSetupAdminBootstrapUser(ctx, accountRepo, user, "After"))
+	assert.Equal(t, accountRoleAdmin, user.Role)
+	assert.Equal(t, "After", user.DisplayName)
 }
 
 func TestService_RegisterAccount_WithConsumedPasskeyRegistrationProof_DeletesCredential(t *testing.T) {

@@ -307,6 +307,8 @@ type registrationPasskeyState struct {
 
 	consumeSuccesses  int
 	userCreateBarrier *registrationPasskeyBarrier
+	createFailures    map[string]error
+	deleteFailures    map[string]error
 }
 
 func newRegistrationPasskeyDB(concurrentUserCreates int) *registrationPasskeyDB {
@@ -320,8 +322,22 @@ func newRegistrationPasskeyDB(concurrentUserCreates int) *registrationPasskeyDB 
 			quotePermissions:  make(map[string]*models.QuotePermissions),
 			users:             make(map[string]*models.User),
 			userCreateBarrier: newRegistrationPasskeyBarrier(concurrentUserCreates),
+			createFailures:    make(map[string]error),
+			deleteFailures:    make(map[string]error),
 		},
 	}
+}
+
+func (db *registrationPasskeyDB) failCreateOnce(typeName string, err error) {
+	db.state.mu.Lock()
+	defer db.state.mu.Unlock()
+	db.state.createFailures[typeName] = err
+}
+
+func (db *registrationPasskeyDB) failDeleteOnce(typeName string, err error) {
+	db.state.mu.Lock()
+	defer db.state.mu.Unlock()
+	db.state.deleteFailures[typeName] = err
 }
 
 func (db *registrationPasskeyDB) Model(model any) dynamormcore.Query {
@@ -479,6 +495,10 @@ func (q *registrationPasskeyQuery) Create() error {
 	q.state.mu.Lock()
 	defer q.state.mu.Unlock()
 
+	if err := consumeRegistrationPasskeyFailure(q.state.createFailures, q.model); err != nil {
+		return err
+	}
+
 	switch model := q.model.(type) {
 	case *models.User:
 		if model == nil {
@@ -582,6 +602,10 @@ func (q *registrationPasskeyQuery) Delete() error {
 	q.state.mu.Lock()
 	defer q.state.mu.Unlock()
 
+	if err := consumeRegistrationPasskeyFailure(q.state.deleteFailures, q.model); err != nil {
+		return err
+	}
+
 	switch q.model.(type) {
 	case *models.User:
 		pk := q.whereString("PK")
@@ -638,6 +662,21 @@ func (q *registrationPasskeyQuery) Delete() error {
 	default:
 		return fmt.Errorf("unsupported delete model %T", q.model)
 	}
+}
+
+func consumeRegistrationPasskeyFailure(failures map[string]error, model any) error {
+	if len(failures) == 0 || model == nil {
+		return nil
+	}
+
+	typeName := reflect.TypeOf(model).String()
+	err, ok := failures[typeName]
+	if !ok {
+		return nil
+	}
+
+	delete(failures, typeName)
+	return err
 }
 
 func (q *registrationPasskeyQuery) UpdateBuilder() dynamormcore.UpdateBuilder {

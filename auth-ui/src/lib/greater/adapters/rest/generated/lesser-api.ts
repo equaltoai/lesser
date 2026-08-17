@@ -6823,9 +6823,11 @@ export interface components {
         };
         SetupCreateAdminRequest: {
             displayName?: string;
+            /** @description Single-use proof emitted by `POST /api/v1/auth/webauthn/signup/finish`. Exactly one of `wallet` or `passkey_registration_proof` is required. */
+            passkey_registration_proof?: string;
             username: string;
-            wallet: components["schemas"]["AuthWalletVerifyRequest"];
-        };
+            wallet?: components["schemas"]["AuthWalletVerifyRequest"];
+        } & (unknown | unknown);
         SetupCreateAdminResponse: {
             actor: string;
             username: string;

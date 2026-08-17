@@ -5481,8 +5481,16 @@ components:
             type: object
         SetupCreateAdminRequest:
             additionalProperties: false
+            oneOf:
+                - required:
+                    - wallet
+                - required:
+                    - passkey_registration_proof
             properties:
                 displayName:
+                    type: string
+                passkey_registration_proof:
+                    description: Single-use proof emitted by `POST /api/v1/auth/webauthn/signup/finish`. Exactly one of `wallet` or `passkey_registration_proof` is required.
                     type: string
                 username:
                     type: string
@@ -5490,7 +5498,6 @@ components:
                     $ref: '#/components/schemas/AuthWalletVerifyRequest'
             required:
                 - username
-                - wallet
             type: object
         SetupCreateAdminResponse:
             additionalProperties: false
