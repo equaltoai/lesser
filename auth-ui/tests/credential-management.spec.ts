@@ -239,6 +239,153 @@ test.describe('credential management', () => {
     await expect(errorRegion).not.toContainText('already been removed');
   });
 
+  /*
+   * The arms above are driven by the stub's real bodies. The four below are
+   * driven by HOSTILE BUT LEGAL ones: the human-readable `error` string is
+   * replaced with something generic while the machine-readable contract —
+   * status and `error_code` — is left intact, which is exactly what a server-
+   * side copy-edit, a localisation, or a move of the sentence into
+   * `error_description` looks like from here. None of that is a breaking change
+   * to the contract, so none of it may change what the person is told.
+   */
+
+  test('the invariant survives the human message being reworded away', async ({
+    page,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    await signUpAndOpenCredentials(page, baseURL, 'shannon');
+
+    // The exact contract-shape probe from the PR #1425 review: the invariant
+    // sentence relocated out of `error` and into `error_description`.
+    await routeDeleteCredential(page, 400, {
+      error: 'bad request',
+      error_code: 'BAD_REQUEST',
+      error_description: 'cannot delete last authentication method'
+    });
+
+    await page.getByTestId('remove-passkey-button').first().click();
+
+    const errorRegion = page.getByTestId('credential-error');
+    await expect(errorRegion).toContainText('last way to sign in');
+    await expect(errorRegion).toContainText('Add another passkey or link a wallet first');
+    // Not collapsed into the server's generic prose.
+    await expect(errorRegion).not.toContainText('bad request');
+    await expect(errorRegion).not.toContainText('try again in a moment');
+  });
+
+  test('the invariant is recognised from the contract alone, with no phrase anywhere', async ({
+    page,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    await signUpAndOpenCredentials(page, baseURL, 'hamilton');
+
+    // Nothing but status and code. The invariant sentence appears in neither
+    // text field, so only the contract can carry this — which is the point.
+    await routeDeleteCredential(page, 400, { error: 'bad request', error_code: 'BAD_REQUEST' });
+
+    await page.getByTestId('remove-passkey-button').first().click();
+
+    const errorRegion = page.getByTestId('credential-error');
+    await expect(errorRegion).toContainText('last way to sign in');
+    await expect(errorRegion).not.toContainText('bad request');
+  });
+
+  test('the invariant survives a legal body that omits the optional error_code', async ({
+    page,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    await signUpAndOpenCredentials(page, baseURL, 'johnson');
+
+    // `error_code` is optional in the schema. With no code to read, the phrase
+    // fallback is the only thing holding the invariant up.
+    await routeDeleteCredential(page, 400, { error: 'cannot delete last authentication method' });
+
+    await page.getByTestId('remove-passkey-button').first().click();
+
+    await expect(page.getByTestId('credential-error')).toContainText('last way to sign in');
+  });
+
+  test('already-removed survives the human message being reworded away', async ({
+    page,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    await signUpAndOpenCredentials(page, baseURL, 'wu');
+
+    await routeDeleteCredential(page, 404, { error: 'resource missing', error_code: 'NOT_FOUND' });
+
+    await page.getByTestId('remove-passkey-button').first().click();
+
+    const errorRegion = page.getByTestId('credential-error');
+    await expect(errorRegion).toContainText('already been removed');
+    await expect(errorRegion).toContainText('up to date');
+    await expect(errorRegion).not.toContainText('resource missing');
+    await expect(errorRegion).not.toContainText('last way to sign in');
+  });
+
+  test('a server failure survives the human message being reworded away', async ({
+    page,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    await signUpAndOpenCredentials(page, baseURL, 'goldberg');
+
+    await routeDeleteCredential(page, 500, { error: 'kaboom', error_code: 'INTERNAL_ERROR' });
+
+    await page.getByTestId('remove-passkey-button').first().click();
+
+    const errorRegion = page.getByTestId('credential-error');
+    await expect(errorRegion).toContainText('probably still there');
+    await expect(errorRegion).toContainText('try again in a moment');
+    await expect(errorRegion).not.toContainText('kaboom');
+    await expect(errorRegion).not.toContainText('last way to sign in');
+  });
+
+  test('the wallet invariant survives the human message being reworded away', async ({
+    page,
+    stub,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    await signUpAndOpenCredentials(page, baseURL, 'clarke');
+    stub.seedWallet('clarke', WALLET_ADDRESS);
+    await page.reload();
+    await expect(page.getByTestId('wallet-row')).toHaveCount(1);
+
+    await page.route('**/auth/wallet/unlink/*', async (route) => {
+      if (route.request().method() !== 'DELETE') {
+        return route.continue();
+      }
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'bad request', error_code: 'BAD_REQUEST' })
+      });
+    });
+
+    await page.getByTestId('unlink-wallet-button').click();
+
+    const errorRegion = page.getByTestId('credential-error');
+    await expect(errorRegion).toContainText('last way to sign in');
+    await expect(errorRegion).not.toContainText('bad request');
+    await expect(page.getByTestId('wallet-row')).toHaveCount(1);
+  });
+
   test('a transport failure is reported as a transport failure', async ({
     page,
     baseURL,
@@ -361,6 +508,29 @@ test.describe('credential management', () => {
     await expect(page.getByRole('heading', { name: 'Wallets' })).toBeVisible();
   });
 });
+
+/**
+ * Answer the next DELETE of a passkey with a specific `Error`-contract body,
+ * leaving every other call on that path alone. The list endpoint has no path
+ * segment after `credentials`, so it is not matched here and still reaches the
+ * stub.
+ */
+async function routeDeleteCredential(
+  page: Page,
+  status: number,
+  body: { error: string; error_code?: string; error_description?: string }
+): Promise<void> {
+  await page.route('**/api/v1/auth/webauthn/credentials/*', async (route) => {
+    if (route.request().method() !== 'DELETE') {
+      return route.continue();
+    }
+    await route.fulfill({
+      status,
+      contentType: 'application/json',
+      body: JSON.stringify(body)
+    });
+  });
+}
 
 /**
  * Delete an account's passkeys server-side, bypassing the page, so the rendered

@@ -27,16 +27,20 @@
    * 2. REMOVAL FAILURES ARE REPORTED HONESTLY AND DISTINCTLY. The server's
    *    last-authenticator invariant has a specific error contract, and the three
    *    outcomes mean completely different things to the person in front of it:
-   *      400 "cannot delete last authentication method" -> the invariant refused
-   *          it; the account would have been left unreachable.
-   *      404 "credential not found" / "wallet not found" -> it was already gone;
-   *          the list was stale, and re-reading it is the whole remedy.
+   *      400 -> the invariant refused it; the account would have been left
+   *          unreachable.
+   *      404 -> it was already gone; the list was stale, and re-reading it is
+   *          the whole remedy.
    *      500 (or a transport failure) -> the server could not complete it; the
    *          authenticator is probably still there and it is worth retrying.
    *    Collapsing these into one "removal failed" string would tell someone who
    *    just locked themselves out of a retry that they had lost a passkey, and
    *    tell someone whose network blipped that their account is down to its last
    *    authenticator. The mapping is pinned by tests.
+   *
+   *    Which outcome a person is told about is decided by the CONTRACT — the
+   *    HTTP status and the `error_code` field — and never by the wording of the
+   *    server's human-readable `error` string. See "error contracts" below.
    */
 
   import { onMount, tick } from 'svelte';
@@ -95,19 +99,39 @@
     lastUsed: string;
   }
 
-  /** Error carrying the server's `Error` contract fields so callers can map status+code to advice. */
+  /**
+   * Error carrying the server's `Error` contract fields so callers can map
+   * status+code to advice.
+   *
+   * The three fields are kept apart on purpose. `status` and `errorCode` are the
+   * machine-readable contract and are what classification is allowed to read;
+   * `serverMessage` / `serverDescription` are prose for a human and are only
+   * ever used as display text.
+   */
   class ApiRequestError extends Error {
     readonly status: number;
     readonly errorCode: string;
     readonly serverMessage: string;
+    readonly serverDescription: string;
 
     constructor(status: number, body: Partial<ApiErrorBody> | null) {
       const serverMessage = (body?.error ?? '').trim();
-      super(serverMessage || `Request failed (${status})`);
+      const serverDescription = (body?.error_description ?? '').trim();
+      super(serverMessage || serverDescription || `Request failed (${status})`);
       this.name = 'ApiRequestError';
       this.status = status;
-      this.errorCode = (body?.error_code ?? '').trim();
+      // Codes are compared case-insensitively; the contract spells them upper.
+      this.errorCode = (body?.error_code ?? '').trim().toUpperCase();
       this.serverMessage = serverMessage;
+      this.serverDescription = serverDescription;
+    }
+
+    /**
+     * Whatever human text the server offered, in contract order. Display only —
+     * nothing branches on this.
+     */
+    get detail(): string {
+      return this.serverMessage || this.serverDescription;
     }
   }
 
@@ -349,85 +373,232 @@
   // -------------------------------------------------------- error contracts
 
   /**
-   * The last-authenticator error contract, mapped to what the person should do.
+   * HOW ERRORS ARE CLASSIFIED HERE.
    *
-   * `kind` distinguishes the two removal surfaces only for wording; the status
-   * mapping is identical because the server's contract is identical:
-   *   400 invariant / 404 already gone / 500 (or transport) genuine failure.
+   * Which advice a person is given is decided by the CONTRACT — the HTTP status
+   * and the `error_code` field of the server's `Error` body. It is never decided
+   * by the wording of the human-readable `error` string.
+   *
+   * Wording is not a contract. The server may reword it, move it into
+   * `error_description`, or localise it, and none of that is a breaking change.
+   * A classifier that reads it is one copy-edit away from telling somebody who
+   * just protected their own account that "something went wrong" — losing the
+   * one message on this page whose whole job is to keep a person from locking
+   * themselves out.
+   *
+   * The contract, read off the server at this commit:
+   *
+   *   DELETE /api/v1/auth/webauthn/credentials/{id}  (cmd/api/handlers/webauthn.go)
+   *   DELETE /auth/wallet/unlink/{address}           (cmd/api/handlers/wallet.go)
+   *     400 -> the last-authenticator invariant refused the removal. It is the
+   *            only semantic 400 either handler emits: the other 400 arm
+   *            ("credential ID required" / "address is required") fires only on
+   *            an empty path parameter, which this component never sends.
+   *     404 -> the target was already gone.
+   *     401 / 403 -> the bearer token is no longer good.
+   *     500 -> the server could not complete it.
+   *
+   * A caveat worth stating plainly, because it shapes everything below:
+   * `error_code` is currently DERIVED FROM THE STATUS
+   * (pkg/common/responses.go, errorCodeForHTTPStatus) — 400 -> BAD_REQUEST,
+   * 404 -> NOT_FOUND, 500 -> INTERNAL_ERROR — so it corroborates the status
+   * rather than subdividing it, and the schema marks it optional. That is why
+   * status and code are read together rather than code alone.
+   *
+   * The domain layer already gives the invariant a richer code
+   * (OPERATION_NOT_ALLOWED, pkg/errors/auth.go LastAuthMethodDelete), and the
+   * error middleware puts AppError codes on the wire verbatim
+   * (pkg/common/error_middleware.go, handleAppError). So a handler that stops
+   * swallowing that sentinel would begin sending the semantic code. Recognising
+   * it now means that server-side change needs no change here.
    */
-  function describeRemovalError(err: unknown, kind: 'passkey' | 'wallet'): string {
+
+  /**
+   * Semantic codes that mean "refused in order to keep the account reachable",
+   * whichever 4xx they arrive with.
+   */
+  const INVARIANT_ERROR_CODES = new Set(['OPERATION_NOT_ALLOWED']);
+
+  /** The status-derived codes, used to confirm a body really is contract-shaped. */
+  const BAD_REQUEST_ERROR_CODES = new Set(['BAD_REQUEST']);
+  const NOT_FOUND_ERROR_CODES = new Set(['NOT_FOUND']);
+  const SERVER_ERROR_CODES = new Set(['INTERNAL_ERROR']);
+
+  /**
+   * LAST RESORT, and the only string match left in the removal path.
+   *
+   * `error_code` is optional in the `Error` schema, so a perfectly legal body
+   * can arrive carrying nothing machine-readable at all. When that happens this
+   * phrase is the only signal left, and losing the invariant message is worse
+   * than matching on prose. It can never move an error between status classes —
+   * it only recognises the invariant inside the 400 the status already put it
+   * in — and both contract text fields are searched so that relocating the
+   * sentence from `error` to `error_description` does not defeat it.
+   */
+  const LAST_AUTHENTICATOR_PHRASE = 'last authentication method';
+
+  function mentionsLastAuthenticator(err: ApiRequestError): boolean {
+    return `${err.serverMessage} ${err.serverDescription}`
+      .toLowerCase()
+      .includes(LAST_AUTHENTICATOR_PHRASE);
+  }
+
+  type RemovalOutcome =
+    | 'offline'
+    | 'invariant'
+    | 'already-gone'
+    | 'session-expired'
+    | 'server-failure'
+    | 'unclassified';
+
+  /**
+   * Both removal surfaces share one classifier because they share one contract.
+   * Anything it cannot place against that contract is 'unclassified' and is
+   * reported with the server's own words rather than guessed at.
+   */
+  function classifyRemovalError(err: unknown): RemovalOutcome {
     if (err instanceof NetworkError) {
-      return `We could not reach the server, so your ${kind} was not removed. Check your connection and try again.`;
+      return 'offline';
+    }
+    if (!(err instanceof ApiRequestError)) {
+      return 'unclassified';
     }
 
-    if (err instanceof ApiRequestError) {
-      const message = err.serverMessage.toLowerCase();
+    if (INVARIANT_ERROR_CODES.has(err.errorCode)) {
+      return 'invariant';
+    }
+    if (err.status === 404 || NOT_FOUND_ERROR_CODES.has(err.errorCode)) {
+      return 'already-gone';
+    }
+    if (err.status === 401 || err.status === 403) {
+      return 'session-expired';
+    }
+    if (err.status >= 500 || SERVER_ERROR_CODES.has(err.errorCode)) {
+      return 'server-failure';
+    }
+    if (
+      err.status === 400 &&
+      (BAD_REQUEST_ERROR_CODES.has(err.errorCode) || mentionsLastAuthenticator(err))
+    ) {
+      return 'invariant';
+    }
+    return 'unclassified';
+  }
 
-      // The invariant. This is a refusal, not a failure: the account still has
-      // exactly the authenticators it had a moment ago.
-      if (err.status === 400 && message.includes('last authentication method')) {
+  /**
+   * The last-authenticator error contract, mapped to what the person should do.
+   *
+   * `kind` distinguishes the two removal surfaces only for wording; the
+   * classification is identical because the server's contract is identical.
+   */
+  function describeRemovalError(err: unknown, kind: 'passkey' | 'wallet'): string {
+    switch (classifyRemovalError(err)) {
+      case 'offline':
+        return `We could not reach the server, so your ${kind} was not removed. Check your connection and try again.`;
+      // A refusal, not a failure: the account still has exactly the
+      // authenticators it had a moment ago.
+      case 'invariant':
         return 'This is your last way to sign in, so it cannot be removed. Add another passkey or link a wallet first, then remove this one.';
-      }
       // Already gone. The list was stale; it has just been re-read.
-      if (err.status === 404) {
+      case 'already-gone':
         return kind === 'passkey'
           ? 'That passkey had already been removed. Your list is now up to date.'
           : 'That wallet had already been unlinked. Your list is now up to date.';
-      }
-      if (err.status === 401 || err.status === 403) {
+      case 'session-expired':
         return 'Your session is no longer valid. Sign in again to manage your authenticators.';
-      }
-      if (err.status >= 500) {
+      case 'server-failure':
         return `The server could not remove that ${kind}. It is probably still there — please try again in a moment.`;
-      }
-      return err.serverMessage || `That ${kind} could not be removed.`;
+      default:
+        if (err instanceof ApiRequestError) {
+          return err.detail || `That ${kind} could not be removed.`;
+        }
+        return err instanceof Error ? err.message : `That ${kind} could not be removed.`;
+    }
+  }
+
+  type AddPasskeyOutcome =
+    | 'cancelled'
+    | 'offline'
+    | 'session-expired'
+    | 'passkeys-unavailable'
+    | 'ceremony-expired'
+    | 'server-failure'
+    | 'unclassified';
+
+  /**
+   * Add-passkey has two sub-cases the server does NOT give distinct codes:
+   * "WebAuthn not configured" and a generic failure are both 500/INTERNAL_ERROR,
+   * and an expired challenge and a malformed body are both 400/BAD_REQUEST
+   * (cmd/api/handlers/helpers.go, handleAuthServiceError). The message is the
+   * only thing that tells them apart, so it is consulted — but only to REFINE
+   * within a class the status has already chosen, never to choose the class.
+   * If the wording drifts, the refinement quietly stops firing and the class
+   * default still gives sound advice; that is what makes prose acceptable here
+   * and unacceptable on the removal invariant, where drifting off the phrase
+   * would lose the only message that matters.
+   */
+  function classifyAddPasskeyError(err: unknown): AddPasskeyOutcome {
+    if (isCeremonyCancellation(err)) {
+      return 'cancelled';
+    }
+    if (err instanceof NetworkError) {
+      return 'offline';
+    }
+    if (!(err instanceof ApiRequestError)) {
+      return 'unclassified';
     }
 
-    return err instanceof Error ? err.message : `That ${kind} could not be removed.`;
+    if (err.status === 401 || err.status === 403) {
+      return 'session-expired';
+    }
+
+    const prose = `${err.serverMessage} ${err.serverDescription}`.toLowerCase();
+
+    if (err.status >= 500 || SERVER_ERROR_CODES.has(err.errorCode)) {
+      return prose.includes('webauthn not configured') ? 'passkeys-unavailable' : 'server-failure';
+    }
+    if (err.status === 400 || BAD_REQUEST_ERROR_CODES.has(err.errorCode)) {
+      return prose.includes('challenge') ? 'ceremony-expired' : 'unclassified';
+    }
+    return 'unclassified';
   }
 
   /** Map add-passkey failures onto advice the person can act on. */
   function describeAddPasskeyError(err: unknown): string {
-    if (isCeremonyCancellation(err)) {
-      return 'Adding a passkey was cancelled. Nothing changed — you can try again.';
-    }
-    if (err instanceof NetworkError) {
-      return 'We could not reach the server, so no passkey was added. Check your connection and try again.';
-    }
-
-    if (err instanceof ApiRequestError) {
-      const message = err.serverMessage.toLowerCase();
-
-      if (err.status === 401 || err.status === 403) {
+    switch (classifyAddPasskeyError(err)) {
+      case 'cancelled':
+        return 'Adding a passkey was cancelled. Nothing changed — you can try again.';
+      case 'offline':
+        return 'We could not reach the server, so no passkey was added. Check your connection and try again.';
+      case 'session-expired':
         return 'Your session is no longer valid. Sign in again to add a passkey.';
-      }
-      if (message.includes('webauthn not configured')) {
+      case 'passkeys-unavailable':
         return 'Passkeys are unavailable on this server. You can link a wallet instead.';
-      }
-      if (message.includes('challenge')) {
+      case 'ceremony-expired':
         return 'That took too long and the registration expired. Please try again.';
-      }
-      if (err.status >= 500) {
+      case 'server-failure':
         return 'The server could not add that passkey. Please try again in a moment.';
-      }
-      return err.serverMessage || 'That passkey could not be added.';
+      default:
+        if (err instanceof ApiRequestError) {
+          return err.detail || 'That passkey could not be added.';
+        }
+        return err instanceof Error ? err.message : 'That passkey could not be added.';
     }
-
-    return err instanceof Error ? err.message : 'That passkey could not be added.';
   }
 
+  /** Status + code only; the server's prose is quoted, never branched on. */
   function describeWalletLinkError(err: unknown): string {
     if (err instanceof NetworkError) {
       return 'We could not reach the server, so no wallet was linked. Check your connection and try again.';
     }
     if (err instanceof ApiRequestError) {
       if (err.status === 401 || err.status === 403) {
-        return `That wallet was not accepted: ${err.serverMessage || 'signature verification failed'}.`;
+        return `That wallet was not accepted: ${err.detail || 'signature verification failed'}.`;
       }
-      if (err.status >= 500) {
+      if (err.status >= 500 || SERVER_ERROR_CODES.has(err.errorCode)) {
         return 'The server could not link that wallet. Please try again in a moment.';
       }
-      return err.serverMessage || 'That wallet could not be linked.';
+      return err.detail || 'That wallet could not be linked.';
     }
     return err instanceof Error ? err.message : 'That wallet could not be linked.';
   }
@@ -546,21 +717,22 @@
     }
   }
 
+  /** Status + code only; rename has no sub-case the server does not code for. */
   function describeRenameError(err: unknown): string {
     if (err instanceof NetworkError) {
       return 'We could not reach the server, so the name was not changed. Check your connection and try again.';
     }
     if (err instanceof ApiRequestError) {
-      if (err.status === 404) {
+      if (err.status === 404 || NOT_FOUND_ERROR_CODES.has(err.errorCode)) {
         return 'That passkey no longer exists, so it could not be renamed.';
       }
       if (err.status === 401 || err.status === 403) {
         return 'Your session is no longer valid. Sign in again to rename this passkey.';
       }
-      if (err.status >= 500) {
+      if (err.status >= 500 || SERVER_ERROR_CODES.has(err.errorCode)) {
         return 'The server could not save that name. Please try again in a moment.';
       }
-      return err.serverMessage || 'That passkey could not be renamed.';
+      return err.detail || 'That passkey could not be renamed.';
     }
     return err instanceof Error ? err.message : 'That passkey could not be renamed.';
   }
@@ -579,9 +751,10 @@
       succeedWith(`Removed “${credential.name}”.`);
     } catch (err) {
       console.error('Remove passkey error:', err);
-      // A 404 means the list we rendered was stale. Re-read before reporting so
-      // the message and the list agree with each other.
-      if (err instanceof ApiRequestError && err.status === 404) {
+      // "Already gone" means the list we rendered was stale. Re-read before
+      // reporting so the message and the list agree with each other. Same
+      // classifier as the message, so the two can never disagree.
+      if (classifyRemovalError(err) === 'already-gone') {
         await refreshQuietly();
       }
       await failWith(describeRemovalError(err, 'passkey'));
@@ -676,7 +849,7 @@
       succeedWith('Wallet unlinked.');
     } catch (err) {
       console.error('Unlink wallet error:', err);
-      if (err instanceof ApiRequestError && err.status === 404) {
+      if (classifyRemovalError(err) === 'already-gone') {
         await refreshQuietly();
       }
       await failWith(describeRemovalError(err, 'wallet'));
