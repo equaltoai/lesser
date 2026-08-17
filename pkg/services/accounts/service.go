@@ -249,8 +249,9 @@ type RegisterAccountMode string
 
 const (
 	// RegisterAccountModeSetupAdminBootstrap is the setup-only bootstrap lane.
-	// It is allowed to create the first admin account without a public registration proof because
-	// /setup/admin already runs behind the bootstrap setup-session + wallet-verification gate.
+	// It is allowed to create the first admin account behind the bootstrap setup-session gate.
+	// Wallet challenges remain handler-validated on /setup/admin, while passkey setup may carry
+	// a previously issued passkey registration proof from the WebAuthn signup ceremony.
 	RegisterAccountModeSetupAdminBootstrap RegisterAccountMode = "setup_admin_bootstrap"
 )
 
@@ -352,6 +353,7 @@ func normalizeDomain(domain string) string {
 // RegisterAccountCommand contains all data needed to register a new account
 type RegisterAccountCommand struct {
 	Username                 string `json:"username" validate:"required,min=3,max=30"`
+	DisplayName              string `json:"display_name,omitempty"`
 	Email                    string `json:"email" validate:"required,email"`
 	Password                 string `json:"password"` // Optional for WebAuthn registration
 	Locale                   string `json:"locale"`
@@ -1978,13 +1980,24 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	privateKeyPEM := string(privateKeyPEMBytes)
 
 	// Create user object
+	role := "user"
+	if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
+		role = "admin"
+	}
+
+	displayName := strings.TrimSpace(cmd.DisplayName)
+	if displayName == "" {
+		displayName = username
+	}
+
 	user := &storage.User{
 		Username:     username,
 		Email:        cmd.Email,
-		PasswordHash: "",   // Will be set if password provided
+		PasswordHash: "", // Will be set if password provided
+		DisplayName:  displayName,
 		Approved:     true, // Auto-approve for now
 		Suspended:    false,
-		Role:         "user",
+		Role:         role,
 		Locale:       cmd.Locale,
 		CreatedAt:    time.Now(),
 	}
@@ -2001,7 +2014,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	// Create corresponding actor
 	actorID := fmt.Sprintf("https://%s/users/%s", s.domainName, username)
 	actor := activitypub.NewActor(activitypub.PersonType, actorID, username)
-	actor.Name = username
+	actor.Name = displayName
 	actor.URL = fmt.Sprintf("https://%s/@%s", s.domainName, username)
 	actor.CreatedAt = &user.CreatedAt
 	actor.PublicKey = &activitypub.PublicKey{
@@ -2100,8 +2113,8 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 		return fmt.Errorf("unsupported register account mode %q", cmd.RegistrationMode)
 	}
 	if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
-		if hasWalletChallenge || hasPasskeyProof {
-			return errors.New("setup admin bootstrap registration must not include public registration proofs")
+		if hasWalletChallenge {
+			return errors.New("setup admin bootstrap registration must not include wallet registration proofs")
 		}
 		return nil
 	}

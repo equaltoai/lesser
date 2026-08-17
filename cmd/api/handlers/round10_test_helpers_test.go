@@ -918,6 +918,22 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Create").Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
+		case *storagemodels.User:
+			if m == nil {
+				return
+			}
+			if state.usersByUsername == nil {
+				state.usersByUsername = map[string]storagemodels.User{}
+			}
+			state.usersByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
+		case *storagemodels.Actor:
+			if m == nil {
+				return
+			}
+			if state.actorsByUser == nil {
+				state.actorsByUser = map[string]storagemodels.Actor{}
+			}
+			state.actorsByUser[strings.ToLower(strings.TrimSpace(m.Username))] = *m
 		case *storagemodels.AgentGovernanceState:
 			if m == nil {
 				return
@@ -1113,6 +1129,22 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Update", mock.Anything).Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
+		case *storagemodels.User:
+			if m == nil {
+				return
+			}
+			if state.usersByUsername == nil {
+				state.usersByUsername = map[string]storagemodels.User{}
+			}
+			state.usersByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
+		case *storagemodels.Actor:
+			if m == nil {
+				return
+			}
+			if state.actorsByUser == nil {
+				state.actorsByUser = map[string]storagemodels.Actor{}
+			}
+			state.actorsByUser[strings.ToLower(strings.TrimSpace(m.Username))] = *m
 		case *storagemodels.AgentGovernanceState:
 			if m == nil {
 				return

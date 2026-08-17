@@ -95,6 +95,86 @@ func TestService_RegisterAccount_WithPasskeyRegistrationProof_Succeeds(t *testin
 	require.False(t, proof.ConsumedAt.IsZero())
 }
 
+func TestService_RegisterAccount_WithPasskeyRegistrationProof_SucceedsInSetupAdminBootstrapMode(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	baseTime := time.Now().UTC()
+	tableName := "test-table"
+
+	db := newPermissiveDynamormDB(t, permissiveDBOptions{forceUserNotFound: true})
+	accountRepo := repositories.NewAccountRepository(db, tableName, "example.com", logger)
+	accountRepo.SetEncryptor(noopEncryptor{})
+	accountRepo.SetPermissionService(nil)
+	accountRepo.SetEventService(nil)
+	accountRepo.SetCachingService(nil)
+
+	storageImpl := &permissiveAccountsStorage{
+		MockRepositoryStorage: NewMockRepositoryStorage(),
+		db:                    db,
+		tableName:             tableName,
+		logger:                logger,
+		account:               accountRepo,
+		actor:                 repositories.NewActorRepository(db, tableName, logger),
+		relationship:          repositories.NewRelationshipRepository(db, tableName, logger),
+		social:                repositories.NewSocialRepository(db, tableName, logger, nil),
+		user:                  repositories.NewUserRepository(db, tableName, logger),
+		marker:                repositories.NewMarkerRepository(db, tableName, logger, nil),
+		analytics:             repositories.NewTrendingRepository(db, logger, nil),
+		instance:              repositories.NewInstanceRepository(db, tableName, logger),
+		domainBlock:           repositories.NewDomainBlockRepository(db, tableName, logger),
+		quote:                 repositories.NewQuoteRepository(db, tableName, logger, nil),
+		activity:              repositories.NewActivityRepository(db, tableName, logger, nil),
+	}
+
+	require.NoError(t, accountRepo.StorePasskeyRegistrationProof(ctx, &models.PasskeyRegistrationProof{
+		ID:              "proof-setup-1",
+		Username:        "admin",
+		CeremonyID:      "ceremony-setup-1",
+		CredentialID:    "cred-setup-1",
+		PublicKey:       []byte("public-key"),
+		AttestationType: "packed",
+		AAGUID:          []byte("aaguid"),
+		SignCount:       7,
+		BackupEligible:  true,
+		BackupState:     true,
+		CreatedAt:       baseTime,
+		ExpiresAt:       baseTime.Add(time.Hour),
+	}))
+
+	cryptoSvc := staticCryptoService{
+		publicKeyPEM:  []byte("PUBLIC KEY"),
+		privateKeyPEM: []byte("PRIVATE KEY"),
+		key:           struct{}{},
+	}
+
+	svc := NewService(storageImpl, streaming.NewMockPublisher(), nil, cryptoSvc, staticAuthService{hash: "hash"}, logger, "example.com")
+
+	got, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
+		Username:                 "Admin",
+		DisplayName:              "Primary Admin",
+		Agreement:                true,
+		Locale:                   "en",
+		RegistrationMode:         RegisterAccountModeSetupAdminBootstrap,
+		PasskeyRegistrationProof: "proof-setup-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "admin", got.Account.User.Username)
+	require.Equal(t, "admin", got.Account.User.Role)
+	require.Equal(t, "Primary Admin", got.Account.User.DisplayName)
+	require.NotNil(t, got.Account.Actor)
+	require.Equal(t, "Primary Admin", got.Account.Actor.Name)
+
+	credentials, err := accountRepo.GetUserWebAuthnCredentials(ctx, "admin")
+	require.NoError(t, err)
+	require.Len(t, credentials, 1)
+	require.Equal(t, "cred-setup-1", credentials[0].ID)
+
+	proof, err := accountRepo.GetPasskeyRegistrationProof(ctx, "proof-setup-1")
+	require.NoError(t, err)
+	require.True(t, proof.Consumed)
+}
+
 func TestService_RegisterAccount_WithConsumedPasskeyRegistrationProof_DeletesCredential(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -194,6 +274,18 @@ func TestService_validateRegisterAccountCommand_AllowsSetupAdminBootstrapWithout
 	require.NoError(t, err)
 }
 
+func TestService_validateRegisterAccountCommand_AllowsSetupAdminBootstrapWithPasskeyProof(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	err := svc.validateRegisterAccountCommand(context.Background(), &RegisterAccountCommand{
+		Username:                 "alice",
+		Agreement:                true,
+		RegistrationMode:         RegisterAccountModeSetupAdminBootstrap,
+		PasskeyRegistrationProof: "passkey-proof",
+	})
+	require.NoError(t, err)
+}
+
 func TestService_validateRegisterAccountCommand_RejectsPublicProofsInSetupAdminBootstrapMode(t *testing.T) {
 	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
 
@@ -204,7 +296,7 @@ func TestService_validateRegisterAccountCommand_RejectsPublicProofsInSetupAdminB
 		RegistrationMode:        RegisterAccountModeSetupAdminBootstrap,
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "setup admin bootstrap")
+	assert.Contains(t, err.Error(), "wallet registration proofs")
 }
 
 func TestPasskeyRegistrationProofToCredential(t *testing.T) {
