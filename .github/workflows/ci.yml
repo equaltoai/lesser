@@ -31,6 +31,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: pnpm
+          cache-dependency-path: auth-ui/pnpm-lock.yaml
 
       - name: Enable Corepack
         run: corepack enable
@@ -84,6 +86,22 @@ jobs:
 
       - name: Verify (CI gate)
         run: ./lesser verify ci
+
+      - name: Install auth-ui dependencies
+        working-directory: auth-ui
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        working-directory: auth-ui
+        run: corepack pnpm exec playwright install --with-deps chromium
+
+      - name: Type-check auth-ui tests
+        working-directory: auth-ui
+        run: corepack pnpm exec tsc --noEmit -p tsconfig.json
+
+      - name: Run auth-ui browser suite
+        working-directory: auth-ui
+        run: corepack pnpm test:e2e
 
       - name: Verify artifact-driven deploy certification
         run: bash scripts/verify_artifact_deploy.sh
