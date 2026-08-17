@@ -580,6 +580,30 @@ func (q *registrationPasskeyQuery) Update(fields ...string) error {
 	defer q.state.mu.Unlock()
 
 	switch model := q.model.(type) {
+	case *models.User:
+		if model == nil {
+			return fmt.Errorf("nil user model")
+		}
+		pk := strings.TrimSpace(model.PK)
+		if pk == "" {
+			pk = "USER#" + strings.TrimSpace(model.Username)
+		}
+		existing, exists := q.state.users[pk]
+		if !exists {
+			return dynamormerrors.ErrItemNotFound
+		}
+		if existing.Version != model.Version {
+			return dynamormerrors.ErrConditionFailed
+		}
+		updated := cloneRegistrationPasskeyUser(model)
+		updated.PK = pk
+		if strings.TrimSpace(updated.SK) == "" {
+			updated.SK = models.SKMetadata
+		}
+		updated.UpdatedAt = time.Now()
+		updated.Version = existing.Version + 1
+		q.state.users[pk] = updated
+		return nil
 	case *models.UserPreference:
 		if model == nil {
 			return fmt.Errorf("nil user preference model")
