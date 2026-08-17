@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -311,6 +312,148 @@ func TestService_RegisterAccount_WithPasskeyRegistrationProof_HardErrorsWhenRetr
 	credentials, err := accountRepo.GetUserWebAuthnCredentials(ctx, "admin")
 	require.NoError(t, err)
 	require.Empty(t, credentials)
+}
+
+func TestService_RegisterAccount_SetupAdminBootstrapRejectsHealthyUserAccountEvenWithFreshPasskeyProof(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	baseTime := time.Now().UTC()
+
+	db := newRegistrationPasskeyDB(0)
+	accountRepo, storageImpl := newRegistrationPasskeyTestStorage(t, db, logger)
+
+	require.NoError(t, accountRepo.CreateAccountIfNotExists(ctx, &storage.Account{
+		User: &storage.User{
+			Username:    "alice",
+			DisplayName: "Alice",
+			Approved:    true,
+			Role:        "user",
+			CreatedAt:   baseTime,
+		},
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice",
+				Type: "Person",
+			},
+			PreferredUsername: "alice",
+			Name:              "Alice",
+			URL:               "https://example.com/@alice",
+		},
+		PrivateKey: "PRIVATE KEY",
+	}))
+	require.NoError(t, accountRepo.StoreWebAuthnCredential(ctx, &storage.WebAuthnCredential{
+		ID:              "cred-victim-own",
+		UserID:          "alice",
+		PublicKey:       []byte("victim-public-key"),
+		AttestationType: "packed",
+		AAGUID:          []byte("victim-aaguid"),
+		SignCount:       3,
+		CreatedAt:       baseTime,
+		LastUsedAt:      baseTime,
+		Name:            "Victim Passkey",
+	}))
+	require.NoError(t, accountRepo.StorePasskeyRegistrationProof(ctx, &models.PasskeyRegistrationProof{
+		ID:              "proof-escalation-1",
+		Username:        "alice",
+		CeremonyID:      "ceremony-escalation-1",
+		CredentialID:    "cred-attacker",
+		PublicKey:       []byte("attacker-public-key"),
+		AttestationType: "packed",
+		AAGUID:          []byte("attacker-aaguid"),
+		SignCount:       5,
+		BackupEligible:  true,
+		BackupState:     true,
+		CreatedAt:       baseTime,
+		ExpiresAt:       baseTime.Add(time.Hour),
+	}))
+
+	svc := newRegistrationPasskeyTestService(storageImpl, logger, "PUBLIC KEY", "PRIVATE KEY")
+	got, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
+		Username:                 "Alice",
+		DisplayName:              "Escalation Attempt",
+		Agreement:                true,
+		Locale:                   "en",
+		RegistrationMode:         RegisterAccountModeSetupAdminBootstrap,
+		PasskeyRegistrationProof: "proof-escalation-1",
+	})
+	require.Nil(t, got)
+	require.ErrorIs(t, err, ErrUsernameAlreadyTaken)
+
+	account, err := accountRepo.GetAccount(ctx, "alice")
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.NotNil(t, account.User)
+	require.Equal(t, "user", account.User.Role)
+
+	credentials, err := accountRepo.GetUserWebAuthnCredentials(ctx, "alice")
+	require.NoError(t, err)
+	require.Len(t, credentials, 1)
+	require.Equal(t, "cred-victim-own", credentials[0].ID)
+
+	proof, err := accountRepo.GetPasskeyRegistrationProof(ctx, "proof-escalation-1")
+	require.NoError(t, err)
+	require.False(t, proof.Consumed)
+}
+
+func TestService_RegisterAccount_SetupAdminBootstrapActorMissingFailsBeforeProofConsumption(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	baseTime := time.Now().UTC()
+
+	db := newRegistrationPasskeyDB(0)
+	accountRepo, storageImpl := newRegistrationPasskeyTestStorage(t, db, logger)
+	userRepo := repositories.NewUserRepository(db, "test-table", logger)
+
+	require.NoError(t, userRepo.CreateUser(ctx, &storage.User{
+		Username:    "admin",
+		DisplayName: "Primary Admin",
+		Approved:    true,
+		Role:        accountRoleAdmin,
+		CreatedAt:   baseTime,
+	}))
+	require.NoError(t, accountRepo.StorePasskeyRegistrationProof(ctx, &models.PasskeyRegistrationProof{
+		ID:              "proof-actor-missing-1",
+		Username:        "admin",
+		CeremonyID:      "ceremony-actor-missing-1",
+		CredentialID:    "cred-actor-missing-1",
+		PublicKey:       []byte("public-key"),
+		AttestationType: "packed",
+		AAGUID:          []byte("aaguid"),
+		SignCount:       7,
+		BackupEligible:  true,
+		BackupState:     true,
+		CreatedAt:       baseTime,
+		ExpiresAt:       baseTime.Add(time.Hour),
+	}))
+
+	svc := newRegistrationPasskeyTestService(storageImpl, logger, "PUBLIC KEY", "PRIVATE KEY")
+	got, err := svc.RegisterAccount(ctx, &RegisterAccountCommand{
+		Username:                 "Admin",
+		DisplayName:              "Primary Admin",
+		Agreement:                true,
+		Locale:                   "en",
+		RegistrationMode:         RegisterAccountModeSetupAdminBootstrap,
+		PasskeyRegistrationProof: "proof-actor-missing-1",
+	})
+	require.Nil(t, got)
+	require.Error(t, err)
+
+	var stateErr *SetupAdminBootstrapStateError
+	require.ErrorAs(t, err, &stateErr)
+	assert.Equal(t, "admin", stateErr.Username)
+	assert.Equal(t, accountRoleAdmin, stateErr.Role)
+	assert.False(t, stateErr.ActorPresent)
+	assert.Equal(t, "cred-actor-missing-1", stateErr.CredentialID)
+	assert.False(t, stateErr.CredentialBound)
+	assert.False(t, stateErr.ProofConsumed)
+
+	credentials, err := accountRepo.GetUserWebAuthnCredentials(ctx, "admin")
+	require.NoError(t, err)
+	require.Empty(t, credentials)
+
+	proof, err := accountRepo.GetPasskeyRegistrationProof(ctx, "proof-actor-missing-1")
+	require.NoError(t, err)
+	require.False(t, proof.Consumed)
 }
 
 func TestService_EnsureSetupAdminBootstrapPasskeyCredential_ConsumesUnspentProofForBoundCredential(t *testing.T) {

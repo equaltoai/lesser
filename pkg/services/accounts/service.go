@@ -1996,6 +1996,9 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	existingAccount, _ := accountRepo.GetAccount(ctx, cmd.Username)
 	if existingAccount != nil {
 		if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
+			if existingAccount.User == nil || !strings.EqualFold(strings.TrimSpace(existingAccount.User.Role), accountRoleAdmin) {
+				return nil, ErrUsernameAlreadyTaken
+			}
 			passkeyProof, err := s.loadRegistrationPasskeyProof(ctx, accountRepo, username, passkeyRegistrationProofID)
 			if err != nil {
 				return nil, err

@@ -1389,7 +1389,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
-	t.Run("success creates passkey-only admin without linking bootstrap wallet", func(t *testing.T) {
+	t.Run("success repairs genuine passkey-only partial without linking bootstrap wallet", func(t *testing.T) {
 		sess := storagemodels.SetupSession{
 			ID:           "token",
 			Purpose:      setupSessionPurposeBootstrap,
@@ -1409,6 +1409,32 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 			},
 			setupSessionsByID: map[string]storagemodels.SetupSession{
 				sess.ID: sess,
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"alice": {
+					Username:    "alice",
+					DisplayName: "Before",
+					Approved:    true,
+					Role:        "admin",
+					CreatedAt:   time.Now().Add(-2 * time.Minute),
+					UpdatedAt:   time.Now().Add(-2 * time.Minute),
+				},
+			},
+			actorsByUser: map[string]storagemodels.Actor{
+				"alice": {
+					Username: "alice",
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   cfg.ActorURL("alice"),
+							Type: "Person",
+						},
+						PreferredUsername: "alice",
+						Name:              "Before",
+						URL:               cfg.BaseURL() + "/@alice",
+					},
+					CreatedAt: time.Now().Add(-2 * time.Minute),
+					UpdatedAt: time.Now().Add(-2 * time.Minute),
+				},
 			},
 			passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
 				"proof-1": {
@@ -1492,7 +1518,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		require.NotContains(t, promotionEntry.Metadata, "proof-1")
 	})
 
-	t.Run("success creates admin", func(t *testing.T) {
+	t.Run("success repairs genuine admin partial", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 
 		sess := storagemodels.SetupSession{
@@ -1514,6 +1540,32 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 			},
 			setupSessionsByID: map[string]storagemodels.SetupSession{
 				sess.ID: sess,
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"admin": {
+					Username:    "admin",
+					DisplayName: "Before",
+					Approved:    true,
+					Role:        "admin",
+					CreatedAt:   time.Now().Add(-2 * time.Minute),
+					UpdatedAt:   time.Now().Add(-2 * time.Minute),
+				},
+			},
+			actorsByUser: map[string]storagemodels.Actor{
+				"admin": {
+					Username: "admin",
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   cfg.ActorURL("admin"),
+							Type: "Person",
+						},
+						PreferredUsername: "admin",
+						Name:              "Before",
+						URL:               cfg.BaseURL() + "/@admin",
+					},
+					CreatedAt: time.Now().Add(-2 * time.Minute),
+					UpdatedAt: time.Now().Add(-2 * time.Minute),
+				},
 			},
 		}
 
