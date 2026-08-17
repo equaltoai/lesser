@@ -160,6 +160,60 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		require.True(t, regResp.Created)
 	})
 
+	t.Run("wallet_challenge_mixed_case_stored_username_is_canonicalized_at_handler_boundary", func(t *testing.T) {
+		cfg := round10TestConfig()
+		now := time.Now()
+
+		var gotCmd *accounts.RegisterAccountCommand
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			walletChallengesByID: map[string]storagemodels.WalletChallenge{
+				"challenge-noncanonical": {
+					ID:        "challenge-noncanonical",
+					Username:  "Alice",
+					Address:   "0xabc",
+					ChainID:   1,
+					Nonce:     "nonce",
+					Message:   "msg",
+					IssuedAt:  now.Add(-time.Minute),
+					ExpiresAt: now.Add(10 * time.Minute),
+					Used:      true,
+				},
+			},
+		}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				RegisterAccountFunc: func(_ context.Context, cmd *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+					gotCmd = cmd
+					return &accounts.RegisterAccountResult{
+						Account: &storage.Account{User: &storage.User{Username: cmd.Username}},
+						Actor: &activitypub.Actor{
+							BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/" + cmd.Username},
+							PreferredUsername: cmd.Username,
+						},
+					}, nil
+				},
+			},
+		})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
+			Username:          "Alice",
+			Agreement:         true,
+			WalletChallengeID: "challenge-noncanonical",
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(h.HandleRegistrationLift(ctx))
+
+		require.NotNil(t, gotCmd)
+		require.Equal(t, "alice", gotCmd.Username)
+		require.Equal(t, "challenge-noncanonical", gotCmd.RegistrationChallengeID)
+
+		var regResp apimodels.AccountRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &regResp))
+		require.Equal(t, cfg.BaseURL()+"/users/alice", regResp.ID)
+		require.Equal(t, "alice", regResp.Username)
+		require.True(t, regResp.Created)
+	})
+
 	t.Run("validateRegistrationRequestLift_allows_empty_visibility", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, round10TestConfig(), &round10QueryState{}, &RegistryStub{})
 		require.NoError(t, h.validateRegistrationRequestLift(apimodels.AccountRegistrationRequest{
@@ -296,16 +350,16 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		require.True(t, regResp.Created)
 	})
 
-	t.Run("passkey_registration_proof_mixed_case_username_is_canonicalized_at_handler_boundary", func(t *testing.T) {
+	t.Run("passkey_registration_proof_mixed_case_stored_username_is_canonicalized_at_handler_boundary", func(t *testing.T) {
 		cfg := round10TestConfig()
 
 		var gotCmd *accounts.RegisterAccountCommand
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
 			passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
-				"proof-1": {
-					ID:         "proof-1",
-					Username:   "alice",
-					CeremonyID: "signup-1",
+				"proof-noncanonical": {
+					ID:         "proof-noncanonical",
+					Username:   "Alice",
+					CeremonyID: "signup-noncanonical",
 					PublicKey:  []byte{0x01},
 					CreatedAt:  time.Now().Add(-time.Minute),
 					ExpiresAt:  time.Now().Add(5 * time.Minute),
@@ -329,7 +383,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
 			Username:                 "Alice",
 			Agreement:                true,
-			PasskeyRegistrationProof: "proof-1",
+			PasskeyRegistrationProof: "proof-noncanonical",
 		})
 		require.NoError(t, err)
 
@@ -337,7 +391,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 
 		require.NotNil(t, gotCmd)
 		require.Equal(t, "alice", gotCmd.Username)
-		require.Equal(t, "proof-1", gotCmd.PasskeyRegistrationProof)
+		require.Equal(t, "proof-noncanonical", gotCmd.PasskeyRegistrationProof)
 
 		var regResp apimodels.AccountRegistrationResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &regResp))
