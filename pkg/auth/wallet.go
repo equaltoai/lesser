@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	"github.com/spruceid/siwe-go"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -327,11 +326,13 @@ func (s *WalletService) UnlinkWallet(ctx context.Context, username, address stri
 		plan.survivingPasskeyID,
 		plan.survivingWalletAddress,
 	); err != nil {
-		if dynamormerrors.IsConditionFailed(err) {
-			return ErrLastAuthMethodDelete
+		if classifiedErr := classifyGuardedAuthenticatorRemovalFailure(err); classifiedErr != nil {
+			if errors.Is(classifiedErr, ErrLastAuthMethodDelete) {
+				return classifiedErr
+			}
+			s.logger.Error("failed to delete wallet credential", zap.Error(classifiedErr), zap.String("username", username), zap.String("address", address))
+			return errors.Join(ErrWalletDeletion, classifiedErr)
 		}
-		s.logger.Error("failed to delete wallet credential", zap.Error(err), zap.String("username", username), zap.String("address", address))
-		return errors.Join(ErrWalletDeletion, err)
 	}
 	if s.auditLogger != nil {
 		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWalletDisconnected, map[string]interface{}{

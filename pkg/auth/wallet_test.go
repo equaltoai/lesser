@@ -21,6 +21,7 @@ type inMemoryWalletRepo struct {
 	walletsByUserAddr map[string]*storage.WalletCredential
 	walletsByAddr     map[string]*storage.WalletCredential
 	passkeysByUser    map[string][]*storage.WebAuthnCredential
+	deleteConditioned func(context.Context, string, string, string, string, string) error
 
 	errGetUserWallets error
 	errStoreWallet    error
@@ -134,6 +135,9 @@ func (r *inMemoryWalletRepo) DeleteWalletCredentialConditionedOnSurvivor(
 	survivingPasskeyID string,
 	survivingWalletAddress string,
 ) error {
+	if r.deleteConditioned != nil {
+		return r.deleteConditioned(context.Background(), username, address, "", survivingPasskeyID, survivingWalletAddress)
+	}
 	if survivingPasskeyID != "" {
 		found := false
 		for _, passkey := range r.passkeysByUser[username] {

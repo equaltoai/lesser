@@ -13,7 +13,6 @@ import (
 	accountservice "github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -547,10 +546,7 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 		plan.survivingPasskeyID,
 		plan.survivingWalletAddress,
 	); err != nil {
-		if dynamormerrors.IsConditionFailed(err) {
-			return ErrLastAuthMethodDelete
-		}
-		return err
+		return classifyGuardedWebAuthnRemovalFailure(ctx, s.repo, username, credentialID, err)
 	}
 	if s.auditLogger != nil {
 		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWebAuthnCredentialRemoved, map[string]interface{}{

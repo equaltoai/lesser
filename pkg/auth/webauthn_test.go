@@ -23,6 +23,7 @@ type inMemoryWebAuthnRepo struct {
 	challengesByChallenge map[string]*storage.WebAuthnChallenge
 	proofsByID            map[string]*storagemodels.PasskeyRegistrationProof
 	walletsByUsername     map[string][]*storage.WalletCredential
+	deleteConditionedFunc func(context.Context, string, string, string, string) error
 
 	updateCalls int
 	renameCalls int
@@ -111,6 +112,9 @@ func (r *inMemoryWebAuthnRepo) DeleteWebAuthnCredentialConditionedOnSurvivor(
 	survivingPasskeyID string,
 	survivingWalletAddress string,
 ) error {
+	if r.deleteConditionedFunc != nil {
+		return r.deleteConditionedFunc(context.Background(), username, credentialID, survivingPasskeyID, survivingWalletAddress)
+	}
 	if survivingPasskeyID != "" {
 		survivor, ok := r.credentialsByID[survivingPasskeyID]
 		if !ok || survivor.UserID != username {

@@ -2,9 +2,12 @@ package auth
 
 import (
 	"context"
+	stdErrors "errors"
 	"strings"
 
+	lessererrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 type authenticatorInventoryRepository interface {
@@ -74,4 +77,55 @@ func planAuthenticatorRemoval(
 	}
 
 	return authenticatorRemovalPlan{}, ErrLastAuthMethodDelete
+}
+
+func classifyGuardedAuthenticatorRemovalFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	if dynamormerrors.IsConditionFailed(err) || stdErrors.Is(err, dynamormerrors.ErrTransactionConflict) {
+		return ErrLastAuthMethodDelete
+	}
+	return err
+}
+
+func classifyGuardedWebAuthnRemovalFailure(
+	ctx context.Context,
+	repo webAuthnRepository,
+	username string,
+	credentialID string,
+	err error,
+) error {
+	if err == nil {
+		return nil
+	}
+	if stdErrors.Is(err, dynamormerrors.ErrTransactionConflict) {
+		return ErrLastAuthMethodDelete
+	}
+	if !dynamormerrors.IsConditionFailed(err) {
+		return err
+	}
+
+	credential, lookupErr := repo.GetWebAuthnCredential(ctx, credentialID)
+	if lookupErr != nil {
+		if isAuthenticatorRemovalTargetNotFound(lookupErr) {
+			return ErrCredentialNotFound
+		}
+		return lookupErr
+	}
+	if credential == nil || credential.UserID != username {
+		return ErrCredentialNotFound
+	}
+
+	return ErrLastAuthMethodDelete
+}
+
+func isAuthenticatorRemovalTargetNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if lessererrors.HasCode(err, lessererrors.CodeNotFound) || dynamormerrors.IsNotFound(err) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
