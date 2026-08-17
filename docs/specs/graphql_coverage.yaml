@@ -12,6 +12,7 @@ exemptions:
       reason: Wallet auth, WebAuthn, and setup bootstrap flows are REST-only.
       match:
         exact:
+            - /api/v1/accounts
             - /auth/device
         prefixes:
             - /auth/wallet
@@ -122,22 +123,20 @@ routes:
       exemptedBy: embeds
     - method: POST
       path: /api/v1/accounts
-      policy: graphql_required
-      status: covered
-      graphql:
-        - Mutation.registerAccount
-    - method: PUT
-      path: /api/v1/accounts/quote_permissions
-      policy: graphql_required
-      status: covered
-      graphql:
-        - Mutation.updateAccountQuotePermissions
+      policy: rest_only
+      exemptedBy: auth_setup
     - method: GET
       path: /api/v1/accounts/lookup
       policy: graphql_required
       status: covered
       graphql:
         - Query.actor
+    - method: PUT
+      path: /api/v1/accounts/quote_permissions
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.updateAccountQuotePermissions
     - method: GET
       path: /api/v1/accounts/relationships
       policy: graphql_required
@@ -806,6 +805,14 @@ routes:
       path: /api/v1/auth/webauthn/register/finish
       policy: rest_only
       exemptedBy: auth_setup
+    - method: POST
+      path: /api/v1/auth/webauthn/signup/begin
+      policy: rest_only
+      exemptedBy: auth_setup
+    - method: POST
+      path: /api/v1/auth/webauthn/signup/finish
+      policy: rest_only
+      exemptedBy: auth_setup
     - method: GET
       path: /api/v1/blocks
       policy: graphql_required
@@ -828,6 +835,12 @@ routes:
       path: /api/v1/conversations/lookup
       policy: rest_only
       exemptedBy: agent_usable_dm_lookup
+    - method: DELETE
+      path: /api/v1/conversations/{id}
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.deleteConversation
     - method: GET
       path: /api/v1/conversations/{id}
       policy: graphql_required
@@ -835,12 +848,6 @@ routes:
       graphql:
         - Query.conversation
         - Query.conversationMessages
-    - method: DELETE
-      path: /api/v1/conversations/{id}
-      policy: graphql_required
-      status: covered
-      graphql:
-        - Mutation.deleteConversation
     - method: POST
       path: /api/v1/conversations/{id}/read
       policy: graphql_required
@@ -1297,12 +1304,12 @@ routes:
       path: /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle
       policy: rest_only
       exemptedBy: canonical_skill_authority
-    - method: GET
-      path: /api/v1/souls/bindings/{agentId}
-      policy: rest_only
-      exemptedBy: lesser_body_mcp
     - method: POST
       path: /api/v1/souls/bindings
+      policy: rest_only
+      exemptedBy: lesser_body_mcp
+    - method: GET
+      path: /api/v1/souls/bindings/{agentId}
       policy: rest_only
       exemptedBy: lesser_body_mcp
     - method: GET
@@ -1847,3 +1854,4 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
+

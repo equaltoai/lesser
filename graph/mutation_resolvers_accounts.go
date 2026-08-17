@@ -5,12 +5,16 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
+
+const registerAccountGraphQLUnsupportedMessage = "registration is not supported over GraphQL; use POST /api/v1/accounts"
 
 // RegisterAccount creates a new local user account.
 func (r *mutationResolver) RegisterAccount(ctx context.Context, input model.RegisterAccountInput) (*model.RegisterAccountPayload, error) {
@@ -23,44 +27,10 @@ func (r *mutationResolver) RegisterAccount(ctx context.Context, input model.Regi
 		return nil, errors.New("accounts service is not available")
 	}
 
-	locale := ""
-	if input.Locale != nil {
-		locale = strings.TrimSpace(*input.Locale)
-	}
-
-	reason := ""
-	if input.Reason != nil {
-		reason = strings.TrimSpace(*input.Reason)
-	}
-
-	defaultVisibility := ""
-	if input.DefaultPostingVisibility != nil {
-		defaultVisibility = postingVisibilityFromGraphQL(*input.DefaultPostingVisibility)
-	}
-
-	result, err := accountService.RegisterAccount(ctx, &accounts.RegisterAccountCommand{
-		Username:                 strings.TrimSpace(input.Username),
-		Email:                    "", // Email is not supported for wallet-first auth.
-		Password:                 "",
-		Locale:                   locale,
-		Agreement:                input.Agreement,
-		Reason:                   reason,
-		DefaultPostingVisibility: defaultVisibility,
-	})
-	if err != nil {
-		r.Logger.Error("Failed to register account",
-			zap.String("username", input.Username),
-			zap.Error(err))
-		return nil, err
-	}
-	if result == nil || result.Actor == nil {
-		return nil, errors.New("registration succeeded but no actor was returned")
-	}
-
-	return &model.RegisterAccountPayload{
-		Actor:   result.Actor,
-		Created: true,
-	}, nil
+	r.Logger.Warn("registerAccount GraphQL mutation is deprecated and disabled",
+		zap.Any("path", graphql.GetPath(ctx)),
+		zap.String("username", input.Username))
+	return nil, apperrors.NewValidationError("registerAccount", registerAccountGraphQLUnsupportedMessage)
 }
 
 // UpdateAccountQuotePermissions updates quote permissions for the current viewer.

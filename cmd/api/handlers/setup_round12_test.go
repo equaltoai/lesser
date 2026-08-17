@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -681,6 +682,36 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, resp)
 		require.Equal(t, cfg.ActorURL("alice"), actorID)
+	})
+
+	t.Run("real accounts service bootstrap mode creates admin without public proofs", func(t *testing.T) {
+		handler, repos, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		repos.Account().SetEncryptor(noopEncryptor{})
+
+		registry, err := services.NewRegistry(
+			services.WithStorage(repos),
+			services.WithLogger(round10TestLogger(t)),
+			services.WithConfig(&services.ServiceConfig{
+				BaseURL:   cfg.BaseURL(),
+				JWTSecret: cfg.JWTSecret,
+				Config:    cfg,
+			}),
+		)
+		require.NoError(t, err)
+		handler.registry = newServiceRegistry(registry)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
+		require.NoError(t, err)
+
+		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "Alice")
+		require.NoError(t, err)
+		require.Nil(t, resp)
+		require.Equal(t, cfg.ActorURL("alice"), actorID)
+
+		account, err := repos.Account().GetAccount(ctx.Context(), "alice")
+		require.NoError(t, err)
+		require.NotNil(t, account)
+		require.Equal(t, "alice", account.User.Username)
 	})
 }
 

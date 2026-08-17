@@ -239,6 +239,8 @@ POST /api/v1/auth/webauthn/login/begin
 POST /api/v1/auth/webauthn/login/finish
 POST /api/v1/auth/webauthn/register/begin
 POST /api/v1/auth/webauthn/register/finish
+POST /api/v1/auth/webauthn/signup/begin
+POST /api/v1/auth/webauthn/signup/finish
 POST /api/v1/conversations/{id}/read
 POST /api/v1/domain_blocks
 POST /api/v1/exports

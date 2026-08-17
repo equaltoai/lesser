@@ -422,6 +422,7 @@ func (h *Handler) ensureSetupAdminAccount(ctx *apptheory.Context, username strin
 		Reason:                   "",
 		InviteCode:               "",
 		DefaultPostingVisibility: "",
+		RegistrationMode:         accounts.RegisterAccountModeSetupAdminBootstrap,
 	})
 	if err != nil {
 		if !errors.Is(err, accounts.ErrUsernameAlreadyTaken) {

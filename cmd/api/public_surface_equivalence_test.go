@@ -97,6 +97,8 @@ func TestPublicSurfacePackageMatchesLegacyGateDecision(t *testing.T) {
 		{"post setup finalize", http.MethodPost, "/setup/finalize", true},
 		{"post webauthn login begin", http.MethodPost, "/api/v1/auth/webauthn/login/begin", true},
 		{"post webauthn login finish", http.MethodPost, "/api/v1/auth/webauthn/login/finish", true},
+		{"post webauthn signup begin", http.MethodPost, "/api/v1/auth/webauthn/signup/begin", true},
+		{"post webauthn signup finish", http.MethodPost, "/api/v1/auth/webauthn/signup/finish", true},
 		{"post wallet challenge", http.MethodPost, "/auth/wallet/challenge", true},
 		{"post wallet verify", http.MethodPost, "/auth/wallet/verify", true},
 		{"post wallet login", http.MethodPost, "/auth/wallet/login", true},
