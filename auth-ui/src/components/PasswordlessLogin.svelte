@@ -676,12 +676,16 @@
 
     try {
       // Step 1: Request wallet connection
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      // EIP-1193 `request` is typed as returning unknown (src/env.d.ts), so each
+      // call names the shape that method returns rather than trusting `any`.
+      const accounts = (await window.ethereum.request({
+        method: 'eth_requestAccounts'
+      })) as string[];
       const address = accounts[0];
       connectedAddress = address;
-      
+
       // Step 2: Get chain ID
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const chainId = (await window.ethereum.request({ method: 'eth_chainId' })) as string;
       const chainIdDecimal = parseInt(chainId, 16);
       
       // Step 3: Create challenge (includes username for security)
@@ -708,10 +712,10 @@
       }
       
       // Step 4: Sign message
-      const signature = await window.ethereum.request({
+      const signature = (await window.ethereum.request({
         method: 'personal_sign',
         params: [challengeData.message, address]
-      });
+      })) as string;
       
       // Step 5: Login or verify based on context
       // For registration: verify signature only
