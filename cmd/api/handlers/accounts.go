@@ -67,6 +67,7 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 	if err := h.validateRegistrationRequestLift(req); err != nil {
 		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
+	req.Username = accounts.NormalizeUsernameForDomain(req.Username, h.cfg.Domain)
 
 	// Require wallet verification as the registration proof (passwordless signup).
 	// The auth-ui flow calls POST /auth/wallet/verify first, which marks the challenge as used.
@@ -82,7 +83,7 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 		if err != nil || challenge == nil {
 			return common.RespondUnprocessableEntity(ctx, "wallet_challenge_id is invalid or expired")
 		}
-		if strings.TrimSpace(challenge.Username) != strings.TrimSpace(req.Username) {
+		if accounts.NormalizeUsernameForDomain(challenge.Username, h.cfg.Domain) != req.Username {
 			return common.RespondUnprocessableEntity(ctx, "wallet challenge was created for a different username")
 		}
 		if !challenge.Used {
@@ -96,7 +97,7 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 		if err != nil || proof == nil || proof.Consumed {
 			return common.RespondUnprocessableEntity(ctx, "passkey_registration_proof is invalid or expired")
 		}
-		if strings.TrimSpace(proof.Username) != strings.TrimSpace(req.Username) {
+		if accounts.NormalizeUsernameForDomain(proof.Username, h.cfg.Domain) != req.Username {
 			return common.RespondUnprocessableEntity(ctx, "passkey registration proof was created for a different username")
 		}
 	}
