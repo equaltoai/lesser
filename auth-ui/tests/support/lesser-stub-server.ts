@@ -10,8 +10,14 @@
  *    endpoints fails the tests rather than passing silently.
  *  - signup/finish binds the attestation to the ceremony: it decodes
  *    clientDataJSON and rejects unless type is "webauthn.create" and the
- *    challenge and origin match the ones it issued.
- *  - login/finish does the same for "webauthn.get" assertions.
+ *    challenge and origin match the ones it issued. It then verifies the
+ *    attestation object itself — RP ID hash, user presence/verification, the
+ *    credential id, and the COSE public key — and remembers that key.
+ *  - login/finish does the same for "webauthn.get" assertions AND verifies the
+ *    assertion signature over authenticatorData || SHA-256(clientDataJSON)
+ *    with the public key the authenticator attested at registration. Checking
+ *    that a signature is merely non-empty is not enough: it would accept a
+ *    constant, so a broken assertion serializer would pass silently.
  *  - /api/v1/accounts enforces the exactly-one-of proof rule, single-use proof
  *    consumption, proof/username binding, and username uniqueness.
  *
@@ -25,6 +31,19 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import type { AddressInfo } from 'node:net';
 
+import {
+  base64UrlDecode,
+  base64UrlEncode,
+  coseToPublicKey,
+  decodeAttestationObject,
+  normalizeCredentialId,
+  parseAuthenticatorData,
+  sha256,
+  signedBytes,
+  verifySignature,
+  type CredentialPublicKey
+} from './webauthn-crypto.js';
+
 export interface StubAccount {
   id: string;
   username: string;
@@ -36,11 +55,23 @@ interface SignupChallenge {
   challenge: string;
 }
 
+/**
+ * A credential the stub has verified an attestation for. `signCount` is the
+ * last counter value observed in an assertion, for the server's clone check.
+ */
+interface RegisteredCredential {
+  id: string;
+  username: string;
+  publicKey: CredentialPublicKey;
+  signCount: number | null;
+}
+
 interface PasskeyProof {
   id: string;
   username: string;
   ceremonyId: string;
   credentialId: string;
+  credential: RegisteredCredential;
   consumed: boolean;
 }
 
@@ -70,14 +101,8 @@ const MIME_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon'
 };
 
-function base64UrlEncode(input: Buffer): string {
-  return input.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function base64UrlDecode(input: string): Buffer {
-  const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
-  return Buffer.from(normalized, 'base64');
-}
+/** The RP ID this stub serves under; it must match the authenticator's view. */
+const RP_ID = 'localhost';
 
 export class LesserStubServer {
   private readonly server: Server;
@@ -88,6 +113,9 @@ export class LesserStubServer {
   private readonly loginChallenges = new Map<string, SignupChallenge>();
   private readonly passkeyProofs = new Map<string, PasskeyProof>();
   private readonly walletChallenges = new Map<string, WalletChallenge>();
+  /** Public keys attested at registration, keyed by credential id. */
+  private readonly credentialsById = new Map<string, RegisteredCredential>();
+  private readonly rpIdHash = sha256(Buffer.from(RP_ID, 'utf8'));
 
   readonly requestLog: RequestLogEntry[] = [];
 
@@ -191,7 +219,7 @@ export class LesserStubServer {
       challenge,
       publicKey: {
         challenge,
-        rp: { name: 'Lesser', id: 'localhost' },
+        rp: { name: 'Lesser', id: RP_ID },
         user: {
           id: base64UrlEncode(Buffer.from(username, 'utf8')),
           name: username,
@@ -233,13 +261,29 @@ export class LesserStubServer {
       });
     }
 
+    let credential: RegisteredCredential;
+    try {
+      credential = this.verifyAttestation(
+        username,
+        String(response?.rawId ?? response?.id ?? ''),
+        attestation.attestationObject,
+        String(attestation.clientDataJSON)
+      );
+    } catch (err) {
+      return this.sendJson(res, 400, {
+        error: err instanceof Error ? err.message : 'attestation rejected',
+        error_code: 'BAD_REQUEST'
+      });
+    }
+
     this.signupChallenges.delete(challenge);
 
     const proof: PasskeyProof = {
       id: randomUUID(),
       username,
       ceremonyId: challenge,
-      credentialId: String(response?.id ?? ''),
+      credentialId: credential.id,
+      credential,
       consumed: false
     };
     this.passkeyProofs.set(proof.id, proof);
@@ -266,7 +310,7 @@ export class LesserStubServer {
       challenge,
       publicKey: {
         challenge,
-        rpId: 'localhost',
+        rpId: RP_ID,
         allowCredentials: account.credentialIds.map((id) => ({ type: 'public-key', id })),
         userVerification: 'required',
         timeout: 60000
@@ -292,7 +336,11 @@ export class LesserStubServer {
     if (clientDataError) {
       return this.sendJson(res, 401, { error: clientDataError, error_code: 'UNAUTHORIZED' });
     }
-    if (typeof assertion?.signature !== 'string' || assertion.signature.length === 0) {
+
+    // The assertion has to verify under the key this credential attested at
+    // registration. Anything short of that — including "the signature field is
+    // a non-empty string" — accepts a constant and proves nothing.
+    if (!this.verifyAssertion(username, String(response?.id ?? ''), assertion)) {
       return this.sendJson(res, 401, { error: 'Unauthorized', error_code: 'UNAUTHORIZED' });
     }
 
@@ -351,6 +399,9 @@ export class LesserStubServer {
         });
       }
       proof.consumed = true;
+      // The credential row only becomes live once the account exists, which is
+      // also when the server writes it.
+      this.credentialsById.set(proof.credential.id, proof.credential);
       credentialIds.push(proof.credentialId);
     } else {
       const challenge = this.walletChallenges.get(walletChallengeId);
@@ -433,6 +484,137 @@ export class LesserStubServer {
   }
 
   // ----------------------------------------------------------------- helpers
+
+  /**
+   * Verify the attestation the authenticator produced for a new credential,
+   * and return the credential to remember.
+   *
+   * The ceremony asks for attestation "none", so — exactly as on the real
+   * server — there is no attestation signature to check; what is checked is
+   * that the authenticator data is bound to this RP, that the user was present
+   * and verified, that the credential id matches, and that the attested COSE
+   * key is one of the algorithms offered. The key's authenticity is then
+   * settled by the login assertion, which must verify under it.
+   *
+   * Throws with the reason; callers map that onto the server's error contract.
+   */
+  private verifyAttestation(
+    username: string,
+    rawId: string,
+    attestationObjectB64: string,
+    clientDataJSONB64: string
+  ): RegisteredCredential {
+    const attestationObject = decodeAttestationObject(base64UrlDecode(attestationObjectB64));
+    const authData = parseAuthenticatorData(attestationObject.authData);
+
+    if (!authData.rpIdHash.equals(this.rpIdHash)) {
+      throw new Error('attestation rejected: authenticator data is bound to a different RP ID');
+    }
+    if (!authData.userPresent) {
+      throw new Error('attestation rejected: user presence flag is not set');
+    }
+    // The ceremony asks for userVerification "required".
+    if (!authData.userVerified) {
+      throw new Error('attestation rejected: user verification flag is not set');
+    }
+    if (!authData.credentialId || !authData.credentialPublicKey) {
+      throw new Error('attestation rejected: no attested credential data');
+    }
+
+    const credentialId = base64UrlDecode(rawId);
+    if (credentialId.length === 0 || !credentialId.equals(authData.credentialId)) {
+      throw new Error('attestation rejected: credential id does not match the attested credential');
+    }
+
+    const publicKey = coseToPublicKey(authData.credentialPublicKey);
+
+    if (attestationObject.fmt === 'none') {
+      if (attestationObject.attStmt.size !== 0) {
+        throw new Error('attestation rejected: format "none" must carry an empty statement');
+      }
+    } else if (attestationObject.fmt === 'packed' && !attestationObject.attStmt.has('x5c')) {
+      // Self attestation: the statement is signed with the credential key
+      // itself, over the same bytes an assertion covers.
+      const signature = attestationObject.attStmt.get('sig');
+      if (!Buffer.isBuffer(signature)) {
+        throw new Error('attestation rejected: packed statement carries no signature');
+      }
+      const covered = signedBytes(attestationObject.authData, base64UrlDecode(clientDataJSONB64));
+      if (!verifySignature(publicKey, covered, signature)) {
+        throw new Error('attestation rejected: self-attestation signature does not verify');
+      }
+    } else {
+      throw new Error(`attestation rejected: format "${attestationObject.fmt}" is not supported`);
+    }
+
+    return {
+      id: normalizeCredentialId(rawId),
+      username,
+      publicKey,
+      signCount: null
+    };
+  }
+
+  /**
+   * Verify an assertion against the credential the account actually owns:
+   * the signature must cover authenticatorData || SHA-256(clientDataJSON) and
+   * validate under the attested public key (WebAuthn §7.2).
+   */
+  private verifyAssertion(
+    username: string,
+    credentialIdB64: string,
+    assertion: Record<string, unknown> | undefined
+  ): boolean {
+    if (typeof assertion?.authenticatorData !== 'string' || typeof assertion.signature !== 'string') {
+      return false;
+    }
+    if (typeof assertion.clientDataJSON !== 'string') {
+      return false;
+    }
+    if (credentialIdB64.length === 0) {
+      return false;
+    }
+
+    const credentialId = normalizeCredentialId(credentialIdB64);
+    const account = this.accountsByUsername.get(username);
+    const credential = this.credentialsById.get(credentialId);
+    if (!account || !credential || credential.username !== username) {
+      return false;
+    }
+    if (!account.credentialIds.includes(credentialId)) {
+      return false;
+    }
+
+    const authenticatorData = base64UrlDecode(assertion.authenticatorData);
+    let authData;
+    try {
+      authData = parseAuthenticatorData(authenticatorData);
+    } catch {
+      return false;
+    }
+
+    if (!authData.rpIdHash.equals(this.rpIdHash)) {
+      return false;
+    }
+    if (!authData.userPresent || !authData.userVerified) {
+      return false;
+    }
+
+    const covered = signedBytes(authenticatorData, base64UrlDecode(assertion.clientDataJSON));
+    if (!verifySignature(credential.publicKey, covered, base64UrlDecode(assertion.signature))) {
+      return false;
+    }
+
+    // Clone detection, as the server does it: a counter that fails to advance
+    // between assertions is only meaningful when the authenticator keeps one.
+    if (credential.signCount !== null && authData.signCount !== 0) {
+      if (authData.signCount <= credential.signCount) {
+        return false;
+      }
+    }
+    credential.signCount = authData.signCount;
+    return true;
+  }
 
   /**
    * Verify the ceremony binding the browser actually produced. This is what

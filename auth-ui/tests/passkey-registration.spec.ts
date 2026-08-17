@@ -8,13 +8,54 @@
  * validates the ceremony binding) and the wallet extension (no virtual
  * equivalent exists). The WebAuthn ceremony itself is real.
  */
+import { createHash } from 'node:crypto';
+
 import { test, expect, addVirtualAuthenticator, installStubWallet } from './support/fixtures.js';
+import type { Page } from '@playwright/test';
 
 const OAUTH_QUERY =
   'client_id=test-client&redirect_uri=https%3A%2F%2Fclient.example%2Fcb&state=xyz789&response_type=code&scope=read+write';
 
 function registerUrl(baseURL: string): string {
   return `${baseURL}/auth/register?${OAUTH_QUERY}`;
+}
+
+function decodeBase64Url(value: string): Buffer {
+  return Buffer.from(value.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+}
+
+function encodeBase64Url(value: Buffer): string {
+  return value.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Flip one byte of a base64url payload, leaving its length and framing intact. */
+function tamperByte(value: string, index: number): string {
+  const bytes = decodeBase64Url(value);
+  const at = index < 0 ? bytes.length + index : index;
+  bytes[at] ^= 0xff;
+  return encodeBase64Url(bytes);
+}
+
+/**
+ * Rewrite one field of a ceremony-finish request on the wire, so a serializer
+ * defect can be simulated without touching the component.
+ */
+async function tamperFinishRequest(
+  page: Page,
+  urlGlob: string,
+  mutate: (response: Record<string, string>) => void
+): Promise<void> {
+  await page.route(urlGlob, async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as {
+      response?: { response?: Record<string, string> };
+    };
+    const inner = body.response?.response;
+    if (!inner) {
+      throw new Error('ceremony request had no response payload to tamper with');
+    }
+    mutate(inner);
+    await route.continue({ postData: JSON.stringify(body) });
+  });
 }
 
 test.describe('passkey-first registration', () => {
@@ -212,6 +253,130 @@ test.describe('passkey-first registration', () => {
     expect(loginCalls).toContain('POST /api/v1/auth/webauthn/login/finish');
     // Signing in must never run the signup ceremony.
     expect(loginCalls.some((call) => call.includes('/signup/'))).toBe(false);
+  });
+});
+
+/**
+ * These pin the stub's cryptographic verification. Without it, the suite could
+ * not tell a working assertion serializer from a broken one: the happy path
+ * would pass with a constant signature on the wire.
+ *
+ * Each mutation is applied to the request the component actually sends, so the
+ * component stays untouched and the check being exercised is the server-side
+ * one.
+ */
+test.describe('the suite rejects a forged ceremony', () => {
+  const CONSTANT_SIGNATURE = 'not-a-real-signature';
+
+  test('a constant assertion signature fails the registration happy path', async ({
+    page,
+    stub,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    // Exactly the mutation the review proposed: replace whatever the
+    // authenticator signed with a constant, non-empty string.
+    await tamperFinishRequest(page, '**/api/v1/auth/webauthn/login/finish', (response) => {
+      response.signature = CONSTANT_SIGNATURE;
+    });
+
+    await page.goto(registerUrl(baseURL));
+    await page.getByLabel('Username').fill('curie');
+    await page.getByTestId('passkey-button').click();
+
+    const errorRegion = page.getByTestId('auth-error');
+    await expect(errorRegion).toBeVisible();
+    await expect(errorRegion).not.toHaveText('');
+    await expect(errorRegion).toBeFocused();
+
+    // The forged assertion is what stopped it: everything up to the sign-in
+    // step succeeded, so the account exists and owns the credential...
+    const account = stub.getAccount('curie');
+    expect(account).toBeDefined();
+    expect(account?.credentialIds.length).toBe(1);
+    expect(stub.pathsCalled()).toContain('POST /api/v1/auth/webauthn/login/finish');
+
+    // ...but no token was issued and the OAuth continuation never ran.
+    await expect(page).toHaveURL(/\/auth\/register/);
+    expect(await page.evaluate(() => sessionStorage.getItem('lesser_auth_jwt'))).toBeNull();
+    expect(stub.pathsCalled()).not.toContain('GET /oauth/authorize');
+  });
+
+  test('a single flipped byte in a real assertion signature is rejected at sign-in', async ({
+    page,
+    stub,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    // Register cleanly first, so the rejection below can only be the signature.
+    await page.goto(registerUrl(baseURL));
+    await page.getByLabel('Username').fill('noether');
+    await page.getByTestId('passkey-button').click();
+    await page.waitForURL(/\/auth\/consent/);
+
+    // sessionStorage survives the navigation, so drop the token registration
+    // just issued: whatever is there after the next ceremony came from it.
+    await page.evaluate(() => sessionStorage.removeItem('lesser_auth_jwt'));
+    const afterSignup = stub.requestLog.length;
+
+    // A well-formed signature of the right length over the right structure,
+    // differing from the authenticator's by one byte. Only a real signature
+    // check can tell this apart from the genuine article.
+    await tamperFinishRequest(page, '**/api/v1/auth/webauthn/login/finish', (response) => {
+      response.signature = tamperByte(response.signature, -1);
+    });
+
+    await page.goto(`${baseURL}/auth/login?${OAUTH_QUERY}`);
+    await page.getByLabel('Username').fill('noether');
+    await page.getByTestId('passkey-button').click();
+
+    const errorRegion = page.getByTestId('auth-error');
+    await expect(errorRegion).toContainText('That passkey was not accepted');
+    await expect(page).toHaveURL(/\/auth\/login/);
+    expect(await page.evaluate(() => sessionStorage.getItem('lesser_auth_jwt'))).toBeNull();
+
+    // The tampered assertion did reach the server and was refused there.
+    const loginCalls = stub.requestLog.slice(afterSignup).map((e) => `${e.method} ${e.path}`);
+    expect(loginCalls).toContain('POST /api/v1/auth/webauthn/login/finish');
+  });
+
+  test('an attestation bound to a different RP ID is rejected at signup', async ({
+    page,
+    stub,
+    baseURL,
+    authenticator
+  }) => {
+    expect(authenticator.authenticatorId).toBeTruthy();
+
+    // The RP ID hash is the first 32 bytes of the authenticator data, which
+    // sits verbatim inside the attestation object. Flipping a byte of it in
+    // place keeps the CBOR framing valid, so only the RP binding changes.
+    const rpIdHash = createHash('sha256').update('localhost').digest();
+    await tamperFinishRequest(page, '**/api/v1/auth/webauthn/signup/finish', (response) => {
+      const attestation = decodeBase64Url(response.attestationObject);
+      const at = attestation.indexOf(rpIdHash);
+      if (at < 0) {
+        throw new Error('attestation object did not contain the expected RP ID hash');
+      }
+      attestation[at] ^= 0xff;
+      response.attestationObject = encodeBase64Url(attestation);
+    });
+
+    await page.goto(registerUrl(baseURL));
+    await page.getByLabel('Username').fill('franklin');
+    await page.getByTestId('passkey-button').click();
+
+    const errorRegion = page.getByTestId('auth-error');
+    await expect(errorRegion).toContainText('attestation rejected');
+
+    // Rejected before any account write, so nothing was created.
+    expect(stub.getAccount('franklin')).toBeUndefined();
+    expect(stub.pathsCalled()).not.toContain('POST /api/v1/accounts');
+    expect(await page.evaluate(() => sessionStorage.getItem('lesser_auth_jwt'))).toBeNull();
   });
 });
 
