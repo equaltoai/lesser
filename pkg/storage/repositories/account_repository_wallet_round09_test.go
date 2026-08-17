@@ -106,6 +106,23 @@ func TestRound09_AccountRepository_WalletCredentialOps(t *testing.T) {
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+		repo.SetValidationService(nil)
+		repo.SetPermissionService(nil)
+		repo.SetEventService(nil)
+		repo.SetCachingService(nil)
+
+		wallet, err := repo.GetWalletByAddress(ctx, "ethereum", "0xabc")
+		require.NoError(t, err)
+		require.NotNil(t, wallet)
+		require.Equal(t, "ethereum", wallet.Type)
+	}
+
+	{
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Maybe()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
@@ -170,6 +187,10 @@ func TestRound09_AccountRepository_WalletCredentialOps(t *testing.T) {
 		wallets, err := repo.GetUserWalletCredentials(ctx, "user-1")
 		require.NoError(t, err)
 		require.NotEmpty(t, wallets)
+
+		walletsViaAlias, err := repo.GetUserWallets(ctx, "user-1")
+		require.NoError(t, err)
+		require.NotEmpty(t, walletsViaAlias)
 
 		users, err := repo.GetAllUsersForWallet(ctx, "ethereum", "0xabc")
 		require.NoError(t, err)
