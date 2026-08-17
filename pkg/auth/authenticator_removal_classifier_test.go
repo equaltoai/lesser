@@ -2,8 +2,10 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	lessererrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
@@ -92,6 +94,44 @@ func TestWebAuthnService_DeleteCredential_ClassifiesConditionFailuresByRereading
 		require.ErrorIs(t, err, ErrLastAuthMethodDelete)
 		require.NotErrorIs(t, err, ErrCredentialNotFound)
 	})
+}
+
+func TestClassifyGuardedAuthenticatorRemovalFailure(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, classifyGuardedAuthenticatorRemovalFailure(nil))
+
+	plainErr := errors.New("boom")
+	require.Same(t, plainErr, classifyGuardedAuthenticatorRemovalFailure(plainErr))
+}
+
+func TestClassifyGuardedWebAuthnRemovalFailure_Passthroughs(t *testing.T) {
+	t.Parallel()
+
+	repo := newInMemoryWebAuthnRepo()
+	require.NoError(t, classifyGuardedWebAuthnRemovalFailure(context.Background(), repo, "alice", "cred-1", nil))
+
+	plainErr := errors.New("boom")
+	require.Same(t, plainErr, classifyGuardedWebAuthnRemovalFailure(context.Background(), repo, "alice", "cred-1", plainErr))
+
+	lookupErr := errors.New("lookup failed")
+	repo.deleteConditionedFunc = nil
+	repo.credentialsByID = map[string]*storage.WebAuthnCredential{}
+	require.Same(t, lookupErr, classifyGuardedWebAuthnRemovalFailure(
+		context.Background(),
+		&webAuthnRepoGetCredentialErr{inMemoryWebAuthnRepo: repo, err: lookupErr},
+		"alice",
+		"cred-1",
+		guardedRemovalTransactionError(dynamormerrors.ErrConditionFailed, "condition_check", 1, "ConditionalCheckFailed"),
+	))
+}
+
+func TestIsAuthenticatorRemovalTargetNotFound(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, isAuthenticatorRemovalTargetNotFound(lessererrors.ItemNotFoundWithID("credential", "cred-1")))
+	require.True(t, isAuthenticatorRemovalTargetNotFound(dynamormerrors.ErrItemNotFound))
+	require.False(t, isAuthenticatorRemovalTargetNotFound(errors.New("boom")))
 }
 
 func guardedRemovalTransactionError(err error, operation string, operationIndex int, reason string) error {
