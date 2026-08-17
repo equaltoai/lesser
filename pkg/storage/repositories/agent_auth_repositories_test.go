@@ -579,6 +579,28 @@ func TestAgentAuthRepositoryHelpers(t *testing.T) {
 		mockDB.AssertExpectations(t)
 		mockQuery.AssertExpectations(t)
 	})
+
+	t.Run("keyed update builder rejects nil db", func(t *testing.T) {
+		var nilCoreDB dynamormcore.DB
+		lease := &models.AgentAccessLease{
+			ID:       "lease-1",
+			Username: "agent-1",
+		}
+
+		update, err := keyedUpdateBuilder(context.Background(), nilCoreDB, lease)
+		require.Nil(t, update)
+		require.ErrorIs(t, err, storage.ErrDatabaseConnectionFailed)
+	})
+
+	t.Run("keyed update builder rejects nil model", func(t *testing.T) {
+		mockDB := new(dynamormmocks.MockDB)
+		var nilLease *models.AgentAccessLease
+
+		update, err := keyedUpdateBuilder(context.Background(), mockDB, nilLease)
+		require.Nil(t, update)
+		require.ErrorIs(t, err, storage.ErrInvalidInput)
+		mockDB.AssertNotCalled(t, "WithContext", mock.Anything)
+	})
 }
 
 func TestAgentAuthRepositories_InvalidInputAndStorage(t *testing.T) {
