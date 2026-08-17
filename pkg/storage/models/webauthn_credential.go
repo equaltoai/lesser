@@ -8,14 +8,14 @@ import (
 type WebAuthnCredential struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
-	// DynamoDB keys - MUST match legacy exactly
+	// Canonical DynamoDB keys for the account-scoped WebAuthn credential row.
 	PK string `theorydb:"pk,attr:PK" json:"-"` // USER#username
 	SK string `theorydb:"sk,attr:SK" json:"-"` // WEBAUTHN_CRED#credentialID
 	// GSI for credential lookup by ID
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`
 
-	// Core fields from legacy storage.WebAuthnCredential
+	// Persisted WebAuthn credential fields.
 	ID              string    `theorydb:"attr:id" json:"id"`
 	UserID          string    `theorydb:"attr:userID" json:"user_id"`
 	PublicKey       []byte    `theorydb:"attr:publicKey" json:"public_key"`

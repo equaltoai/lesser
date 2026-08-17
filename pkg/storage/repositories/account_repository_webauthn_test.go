@@ -202,8 +202,6 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateLastUsedByCreden
 	updateQuery.On("Where", "SK", "=", "WEBAUTHN_CRED#cred-123").Return(updateQuery).Once()
 	updateQuery.On("UpdateBuilder").Return(updateBuilder).Once()
 	updateBuilder.On("Set", "SignCount", uint32(9)).Return(updateBuilder).Once()
-	updateBuilder.On("Set", "CloneWarning", true).Return(updateBuilder).Once()
-	updateBuilder.On("Set", "BackupState", true).Return(updateBuilder).Once()
 	updateBuilder.On("Set", "LastUsedAt", mock.AnythingOfType("time.Time")).Return(updateBuilder).Once()
 	updateBuilder.On("Execute").Return(nil).Once()
 
