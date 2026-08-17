@@ -156,15 +156,15 @@ func updateWebAuthnCredentialLastUsedRecord(ctx context.Context, db core.DB, cre
 		return err
 	}
 
-	return persistWebAuthnCredentialAuthenticationState(
-		ctx,
-		db,
-		credential,
-		signCount,
-		credential.CloneWarning,
-		credential.BackupState,
-		time.Now().UTC(),
-	)
+	update, err := keyedUpdateBuilder(ctx, db, credential)
+	if err != nil {
+		return err
+	}
+
+	return update.
+		Set("SignCount", signCount).
+		Set("LastUsedAt", time.Now().UTC()).
+		Execute()
 }
 
 func updateWebAuthnCredentialNameRecord(ctx context.Context, db core.DB, credentialID string, name string) error {

@@ -105,9 +105,55 @@ var (
 	ErrQuoteRepositoryNotAvailable = errors.New("quote repository not available")
 )
 
+// SetupAdminBootstrapStateError describes an unrecoverable partial setup-admin bootstrap state.
+type SetupAdminBootstrapStateError struct {
+	Username        string
+	Role            string
+	ActorPresent    bool
+	CredentialID    string
+	CredentialBound bool
+	ProofConsumed   bool
+}
+
+func (e *SetupAdminBootstrapStateError) Error() string {
+	if e == nil {
+		return "setup admin bootstrap retry requires operator repair"
+	}
+
+	role := strings.TrimSpace(e.Role)
+	if role == "" {
+		role = "<missing>"
+	}
+
+	actorState := "missing"
+	if e.ActorPresent {
+		actorState = "present"
+	}
+
+	credentialState := "n/a"
+	if strings.TrimSpace(e.CredentialID) != "" {
+		if e.CredentialBound {
+			credentialState = "present"
+		} else {
+			credentialState = "missing"
+		}
+	}
+
+	return fmt.Sprintf(
+		"setup admin bootstrap retry requires operator repair for username %q: existing user row present, actor=%s, role=%q, passkey credential %q=%s, proof_consumed=%t",
+		strings.TrimSpace(e.Username),
+		actorState,
+		role,
+		strings.TrimSpace(e.CredentialID),
+		credentialState,
+		e.ProofConsumed,
+	)
+}
+
 // Collection type constants
 const (
 	collectionFollowers = "followers"
+	accountRoleAdmin    = "admin"
 )
 
 // Service provides account operations
@@ -249,8 +295,9 @@ type RegisterAccountMode string
 
 const (
 	// RegisterAccountModeSetupAdminBootstrap is the setup-only bootstrap lane.
-	// It is allowed to create the first admin account without a public registration proof because
-	// /setup/admin already runs behind the bootstrap setup-session + wallet-verification gate.
+	// It is allowed to create the first admin account behind the bootstrap setup-session gate.
+	// Wallet challenges remain handler-validated on /setup/admin, while passkey setup may carry
+	// a previously issued passkey registration proof from the WebAuthn signup ceremony.
 	RegisterAccountModeSetupAdminBootstrap RegisterAccountMode = "setup_admin_bootstrap"
 )
 
@@ -352,6 +399,7 @@ func normalizeDomain(domain string) string {
 // RegisterAccountCommand contains all data needed to register a new account
 type RegisterAccountCommand struct {
 	Username                 string `json:"username" validate:"required,min=3,max=30"`
+	DisplayName              string `json:"display_name,omitempty"`
 	Email                    string `json:"email" validate:"required,email"`
 	Password                 string `json:"password"` // Optional for WebAuthn registration
 	Locale                   string `json:"locale"`
@@ -1940,15 +1988,25 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, ErrAccountRepositoryNotAvailable
 	}
 
-	// Check if username is already taken
-	existingAccount, _ := accountRepo.GetAccount(ctx, cmd.Username)
-	if existingAccount != nil {
-		return nil, ErrUsernameAlreadyTaken
-	}
-
 	username := cmd.Username
 	registrationChallengeID := strings.TrimSpace(cmd.RegistrationChallengeID)
 	passkeyRegistrationProofID := strings.TrimSpace(cmd.PasskeyRegistrationProof)
+
+	// Check if username is already taken
+	existingAccount, _ := accountRepo.GetAccount(ctx, cmd.Username)
+	if existingAccount != nil {
+		if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
+			if existingAccount.User == nil || !strings.EqualFold(strings.TrimSpace(existingAccount.User.Role), accountRoleAdmin) {
+				return nil, ErrUsernameAlreadyTaken
+			}
+			passkeyProof, err := s.loadRegistrationPasskeyProof(ctx, accountRepo, username, passkeyRegistrationProofID)
+			if err != nil {
+				return nil, err
+			}
+			return s.resumeSetupAdminBootstrapRegistration(ctx, accountRepo, existingAccount, cmd, passkeyProof)
+		}
+		return nil, ErrUsernameAlreadyTaken
+	}
 
 	passkeyProof, err := s.loadRegistrationPasskeyProof(ctx, accountRepo, username, passkeyRegistrationProofID)
 	if err != nil {
@@ -1978,13 +2036,24 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	privateKeyPEM := string(privateKeyPEMBytes)
 
 	// Create user object
+	role := "user"
+	if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
+		role = accountRoleAdmin
+	}
+
+	displayName := strings.TrimSpace(cmd.DisplayName)
+	if displayName == "" {
+		displayName = username
+	}
+
 	user := &storage.User{
 		Username:     username,
 		Email:        cmd.Email,
-		PasswordHash: "",   // Will be set if password provided
+		PasswordHash: "", // Will be set if password provided
+		DisplayName:  displayName,
 		Approved:     true, // Auto-approve for now
 		Suspended:    false,
-		Role:         "user",
+		Role:         role,
 		Locale:       cmd.Locale,
 		CreatedAt:    time.Now(),
 	}
@@ -2001,7 +2070,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	// Create corresponding actor
 	actorID := fmt.Sprintf("https://%s/users/%s", s.domainName, username)
 	actor := activitypub.NewActor(activitypub.PersonType, actorID, username)
-	actor.Name = username
+	actor.Name = displayName
 	actor.URL = fmt.Sprintf("https://%s/@%s", s.domainName, username)
 	actor.CreatedAt = &user.CreatedAt
 	actor.PublicKey = &activitypub.PublicKey{
@@ -2100,8 +2169,8 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 		return fmt.Errorf("unsupported register account mode %q", cmd.RegistrationMode)
 	}
 	if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
-		if hasWalletChallenge || hasPasskeyProof {
-			return errors.New("setup admin bootstrap registration must not include public registration proofs")
+		if hasWalletChallenge {
+			return errors.New("setup admin bootstrap registration must not include wallet registration proofs")
 		}
 		return nil
 	}
@@ -2180,6 +2249,191 @@ func (s *Service) finalizePasskeyRegistrationProof(ctx context.Context, repo *re
 	}
 
 	return nil
+}
+
+func (s *Service) resumeSetupAdminBootstrapRegistration(
+	ctx context.Context,
+	repo *repositories.AccountRepository,
+	existingAccount *storage.Account,
+	cmd *RegisterAccountCommand,
+	passkeyProof *models.PasskeyRegistrationProof,
+) (*RegisterAccountResult, error) {
+	if existingAccount == nil || existingAccount.User == nil {
+		return nil, ErrUsernameAlreadyTaken
+	}
+
+	username := strings.TrimSpace(existingAccount.User.Username)
+	if username == "" {
+		username = strings.TrimSpace(cmd.Username)
+	}
+
+	if existingAccount.Actor == nil {
+		return nil, &SetupAdminBootstrapStateError{
+			Username:        username,
+			Role:            existingAccount.User.Role,
+			ActorPresent:    false,
+			CredentialID:    setupAdminBootstrapCredentialID(passkeyProof),
+			CredentialBound: false,
+			ProofConsumed:   passkeyProof != nil && passkeyProof.Consumed,
+		}
+	}
+
+	if err := s.promoteSetupAdminBootstrapUser(ctx, repo, existingAccount.User, strings.TrimSpace(cmd.DisplayName)); err != nil {
+		return nil, fmt.Errorf("failed to repair setup admin account role: %w", err)
+	}
+
+	initialVisibility := s.initialPostingVisibility(cmd.DefaultPostingVisibility)
+	if err := s.ensureQuotePermissionsForNewUser(ctx, s.storage.Quote(), username, initialVisibility); err != nil {
+		return nil, fmt.Errorf("failed to repair default quote permissions: %w", err)
+	}
+	if err := s.persistDefaultPostingVisibility(ctx, repo, username, initialVisibility); err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureSetupAdminBootstrapPasskeyCredential(ctx, repo, username, existingAccount.User.Role, passkeyProof); err != nil {
+		return nil, err
+	}
+
+	repairedAccount, err := repo.GetAccount(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load repaired setup admin account: %w", err)
+	}
+	if repairedAccount == nil || repairedAccount.User == nil || repairedAccount.Actor == nil {
+		role := ""
+		actorPresent := false
+		if repairedAccount != nil && repairedAccount.User != nil {
+			role = repairedAccount.User.Role
+		}
+		if repairedAccount != nil && repairedAccount.Actor != nil {
+			actorPresent = true
+		}
+		return nil, &SetupAdminBootstrapStateError{
+			Username:        username,
+			Role:            role,
+			ActorPresent:    actorPresent,
+			CredentialID:    setupAdminBootstrapCredentialID(passkeyProof),
+			CredentialBound: false,
+			ProofConsumed:   passkeyProof != nil && passkeyProof.Consumed,
+		}
+	}
+
+	return &RegisterAccountResult{
+		Account: repairedAccount,
+		Actor:   repairedAccount.Actor,
+	}, nil
+}
+
+func (s *Service) promoteSetupAdminBootstrapUser(ctx context.Context, repo *repositories.AccountRepository, user *storage.User, displayName string) error {
+	if user == nil {
+		return ErrGetUser
+	}
+
+	updates := make(map[string]any)
+	if strings.TrimSpace(user.Role) != accountRoleAdmin {
+		updates["role"] = accountRoleAdmin
+	}
+	if displayName != "" && strings.TrimSpace(user.DisplayName) != displayName {
+		updates["display_name"] = displayName
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	if err := repo.UpdateUser(ctx, user.Username, updates); err != nil {
+		return err
+	}
+
+	if role, ok := updates["role"].(string); ok {
+		user.Role = role
+	}
+	if name, ok := updates["display_name"].(string); ok {
+		user.DisplayName = name
+	}
+
+	return nil
+}
+
+func (s *Service) ensureSetupAdminBootstrapPasskeyCredential(
+	ctx context.Context,
+	repo *repositories.AccountRepository,
+	username string,
+	role string,
+	passkeyProof *models.PasskeyRegistrationProof,
+) error {
+	if passkeyProof == nil {
+		return nil
+	}
+
+	credentialID := strings.TrimSpace(passkeyProof.CredentialID)
+	credentialBound, err := setupAdminBootstrapCredentialBound(ctx, repo, username, credentialID)
+	if err != nil {
+		return fmt.Errorf("failed to inspect setup admin passkey credential: %w", err)
+	}
+
+	if !credentialBound {
+		if passkeyProof.Consumed {
+			return &SetupAdminBootstrapStateError{
+				Username:        username,
+				Role:            role,
+				ActorPresent:    true,
+				CredentialID:    credentialID,
+				CredentialBound: false,
+				ProofConsumed:   true,
+			}
+		}
+
+		credential := passkeyRegistrationProofToCredential(passkeyProof)
+		credential.UserID = username
+		if err := repo.StoreWebAuthnCredential(ctx, credential); err != nil {
+			existingCredential, getErr := repo.GetWebAuthnCredential(ctx, credentialID)
+			if getErr != nil || existingCredential == nil || !strings.EqualFold(strings.TrimSpace(existingCredential.UserID), username) {
+				return fmt.Errorf("failed to restore setup admin passkey credential: %w", err)
+			}
+		}
+	}
+
+	if !passkeyProof.Consumed {
+		consumedProof, err := repo.ConsumePasskeyRegistrationProof(ctx, passkeyProof.ID, passkeyProof.Username, passkeyProof.CeremonyID)
+		if err != nil {
+			refreshedProof, getErr := repo.GetPasskeyRegistrationProof(ctx, passkeyProof.ID)
+			if getErr != nil || refreshedProof == nil || !refreshedProof.Consumed {
+				return fmt.Errorf("failed to finalize passkey registration proof: %w", err)
+			}
+			passkeyProof.Consumed = true
+			passkeyProof.ConsumedAt = refreshedProof.ConsumedAt
+		} else {
+			passkeyProof.Consumed = consumedProof.Consumed
+			passkeyProof.ConsumedAt = consumedProof.ConsumedAt
+		}
+	}
+
+	return nil
+}
+
+func setupAdminBootstrapCredentialBound(ctx context.Context, repo *repositories.AccountRepository, username, credentialID string) (bool, error) {
+	if strings.TrimSpace(credentialID) == "" {
+		return false, nil
+	}
+
+	credentials, err := repo.GetUserWebAuthnCredentials(ctx, username)
+	if err != nil {
+		return false, err
+	}
+
+	for _, credential := range credentials {
+		if credential != nil && strings.EqualFold(strings.TrimSpace(credential.ID), credentialID) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func setupAdminBootstrapCredentialID(passkeyProof *models.PasskeyRegistrationProof) string {
+	if passkeyProof == nil {
+		return ""
+	}
+	return strings.TrimSpace(passkeyProof.CredentialID)
 }
 
 func isNilInterface(value any) bool {

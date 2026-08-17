@@ -93,9 +93,10 @@ type SetupBootstrapVerifyResponse struct {
 
 // SetupCreateAdminRequest represents POST /setup/admin.
 type SetupCreateAdminRequest struct {
-	Username    string                   `json:"username"`
-	DisplayName string                   `json:"displayName,omitempty"`
-	Wallet      auth.WalletVerifyRequest `json:"wallet"`
+	Username                 string                   `json:"username"`
+	DisplayName              string                   `json:"displayName,omitempty"`
+	Wallet                   auth.WalletVerifyRequest `json:"wallet,omitempty"`
+	PasskeyRegistrationProof string                   `json:"passkey_registration_proof,omitempty"`
 }
 
 // SetupCreateAdminResponse represents POST /setup/admin.

@@ -583,7 +583,7 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice", "", "")
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusInternalServerError, resp.Status)
@@ -602,31 +602,49 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "new")
+		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "new", "", "")
 		require.NoError(t, err)
 		require.Nil(t, resp)
 		require.Equal(t, "https://example.com/users/new", actorID)
 	})
 
-	t.Run("username already taken falls back to actor repo", func(t *testing.T) {
-		state := &round10QueryState{
-			actorsByUser: map[string]storagemodels.Actor{
-				"alice": {Username: "alice", Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice", Type: "Person"}}},
-			},
-		}
+	t.Run("register account forwards passkey proof in setup bootstrap mode", func(t *testing.T) {
+		state := &round10QueryState{}
 		accountSvc := &AccountsServiceStub{
-			RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
-				return nil, accounts.ErrUsernameAlreadyTaken
+			RegisterAccountFunc: func(_ context.Context, cmd *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+				require.Equal(t, accounts.RegisterAccountModeSetupAdminBootstrap, cmd.RegistrationMode)
+				require.Equal(t, "proof-1", cmd.PasskeyRegistrationProof)
+				require.Equal(t, "Admin", cmd.DisplayName)
+				require.Equal(t, "new", cmd.Username)
+				return &accounts.RegisterAccountResult{
+					Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/new", Type: "Person"}},
+				}, nil
 			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: accountSvc})
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "new", "Admin", "proof-1")
 		require.NoError(t, err)
 		require.Nil(t, resp)
-		require.Equal(t, "https://example.com/users/alice", actorID)
+		require.Equal(t, "https://example.com/users/new", actorID)
+	})
+
+	t.Run("username already taken returns conflict", func(t *testing.T) {
+		accountSvc := &AccountsServiceStub{
+			RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+				return nil, accounts.ErrUsernameAlreadyTaken
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{AccountsSvc: accountSvc})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
+		require.NoError(t, err)
+		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice", "", "")
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusConflict, resp.Status)
 	})
 
 	t.Run("register error returns 422", func(t *testing.T) {
@@ -640,31 +658,35 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice", "", "")
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
 	})
 
-	t.Run("username taken but actor lookup fails returns 422", func(t *testing.T) {
-		state := &round10QueryState{
-			firstErrorPK: map[string]error{
-				"ACTOR#alice": errors.New("actor lookup failed"),
-			},
-		}
+	t.Run("setup admin bootstrap state errors surface exact repair state", func(t *testing.T) {
 		accountSvc := &AccountsServiceStub{
 			RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
-				return nil, accounts.ErrUsernameAlreadyTaken
+				return nil, &accounts.SetupAdminBootstrapStateError{
+					Username:        "alice",
+					Role:            "user",
+					ActorPresent:    true,
+					CredentialID:    "cred-1",
+					CredentialBound: false,
+					ProofConsumed:   true,
+				}
 			},
 		}
-		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: accountSvc})
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{AccountsSvc: accountSvc})
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice", "", "")
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
+		require.Contains(t, string(resp.Body), `role=\"user\"`)
+		require.Contains(t, string(resp.Body), `passkey credential \"cred-1\"=missing`)
 	})
 
 	t.Run("register returns no actor falls back to config URL", func(t *testing.T) {
@@ -678,14 +700,42 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "alice", "", "")
 		require.NoError(t, err)
 		require.Nil(t, resp)
 		require.Equal(t, cfg.ActorURL("alice"), actorID)
 	})
 
-	t.Run("real accounts service bootstrap mode creates admin without public proofs", func(t *testing.T) {
-		handler, repos, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	t.Run("real accounts service bootstrap mode repairs genuine admin partial without public proofs", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"alice": {
+					Username:    "alice",
+					DisplayName: "Before",
+					Approved:    true,
+					Role:        "admin",
+					CreatedAt:   time.Now().Add(-2 * time.Minute),
+					UpdatedAt:   time.Now().Add(-2 * time.Minute),
+				},
+			},
+			actorsByUser: map[string]storagemodels.Actor{
+				"alice": {
+					Username: "alice",
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   cfg.ActorURL("alice"),
+							Type: "Person",
+						},
+						PreferredUsername: "alice",
+						Name:              "Before",
+						URL:               cfg.BaseURL() + "/@alice",
+					},
+					CreatedAt: time.Now().Add(-2 * time.Minute),
+					UpdatedAt: time.Now().Add(-2 * time.Minute),
+				},
+			},
+		}
+		handler, repos, _ := round11NewHandler(t, cfg, state)
 		repos.Account().SetEncryptor(noopEncryptor{})
 
 		registry, err := services.NewRegistry(
@@ -703,7 +753,7 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
 
-		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "Alice")
+		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "Alice", "Admin", "")
 		require.NoError(t, err)
 		require.Nil(t, resp)
 		require.Equal(t, cfg.ActorURL("alice"), actorID)
@@ -711,7 +761,12 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 		account, err := repos.Account().GetAccount(ctx.Context(), "alice")
 		require.NoError(t, err)
 		require.NotNil(t, account)
+		require.NotNil(t, account.User)
 		require.Equal(t, "alice", account.User.Username)
+		require.Equal(t, "admin", account.User.Role)
+		require.Equal(t, "Admin", account.User.DisplayName)
+		require.NotNil(t, account.Actor)
+
 	})
 }
 
@@ -995,6 +1050,139 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		requireStatus(t, http.StatusUnauthorized)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
+	t.Run("requires setup session token for passkey proof path", func(t *testing.T) {
+		state := &round10QueryState{
+			instanceState: &storagemodels.InstanceState{Locked: true, BootstrapUsername: "bootstrap"},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, map[string]any{
+			"username":                   "alice",
+			"passkey_registration_proof": "proof-1",
+		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleSetupCreateAdminLift(ctx))
+	})
+
+	t.Run("passkey proof bound to different username is rejected before service call and audited", func(t *testing.T) {
+		sess := storagemodels.SetupSession{
+			ID:           "token",
+			Purpose:      setupSessionPurposeBootstrap,
+			WalletType:   "ethereum",
+			WalletAddr:   "0xabc",
+			IssuedAt:     time.Now().Add(-1 * time.Minute),
+			ExpiresAt:    time.Now().Add(30 * time.Minute),
+			InstanceLock: true,
+		}
+		require.NoError(t, sess.UpdateKeys())
+
+		state := &round10QueryState{
+			instanceState: &storagemodels.InstanceState{Locked: true, BootstrapUsername: "bootstrap", BootstrapWalletAddress: "0xabc"},
+			setupSessionsByID: map[string]storagemodels.SetupSession{
+				sess.ID: sess,
+			},
+			passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
+				"proof-1": {
+					ID:         "proof-1",
+					Username:   "bob",
+					CeremonyID: "signup-1",
+					PublicKey:  []byte{0x01},
+					CreatedAt:  time.Now().Add(-time.Minute),
+					ExpiresAt:  time.Now().Add(5 * time.Minute),
+				},
+			},
+		}
+
+		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+					return nil, errors.New("unexpected service call")
+				},
+			},
+		})
+
+		headers := map[string]string{"Authorization": "Bearer " + sess.ID}
+		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, map[string]any{
+			"username":                   "alice",
+			"passkey_registration_proof": "proof-1",
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusUnprocessableEntity)(handler.HandleSetupCreateAdminLift(ctx))
+		require.Contains(t, string(resp.Body), "different username")
+
+		entry := requireSingleAuditLog(t, state, "alice")
+		metadata := mustParseAuditMetadata(t, entry)
+		require.Equal(t, string(auth.AuditWebAuthnRegistrationFailed), entry.EventType)
+		require.False(t, entry.Success)
+		require.Equal(t, "webauthn", metadata["authentication_method"])
+		require.Equal(t, "setup_admin_bootstrap", metadata["registration_mode"])
+		require.Equal(t, "rejected", metadata["credential_event"])
+		require.Equal(t, "proof_cross_user_rejected", metadata["rejection_reason"])
+		require.NotContains(t, entry.Metadata, "proof-1")
+		require.NotContains(t, entry.FailureReason, "proof-1")
+	})
+
+	t.Run("consumed passkey proof replay is rejected and audited", func(t *testing.T) {
+		sess := storagemodels.SetupSession{
+			ID:           "token",
+			Purpose:      setupSessionPurposeBootstrap,
+			WalletType:   "ethereum",
+			WalletAddr:   "0xabc",
+			IssuedAt:     time.Now().Add(-1 * time.Minute),
+			ExpiresAt:    time.Now().Add(30 * time.Minute),
+			InstanceLock: true,
+		}
+		require.NoError(t, sess.UpdateKeys())
+
+		state := &round10QueryState{
+			instanceState: &storagemodels.InstanceState{Locked: true, BootstrapUsername: "bootstrap", BootstrapWalletAddress: "0xabc"},
+			setupSessionsByID: map[string]storagemodels.SetupSession{
+				sess.ID: sess,
+			},
+			passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
+				"proof-1": {
+					ID:         "proof-1",
+					Username:   "alice",
+					CeremonyID: "signup-1",
+					PublicKey:  []byte{0x01},
+					CreatedAt:  time.Now().Add(-time.Minute),
+					ExpiresAt:  time.Now().Add(5 * time.Minute),
+					Consumed:   true,
+					ConsumedAt: time.Now().Add(-time.Second),
+				},
+			},
+		}
+
+		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
+					return nil, errors.New("unexpected service call")
+				},
+			},
+		})
+
+		headers := map[string]string{"Authorization": "Bearer " + sess.ID}
+		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, map[string]any{
+			"username":                   "alice",
+			"passkey_registration_proof": "proof-1",
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusUnprocessableEntity)(handler.HandleSetupCreateAdminLift(ctx))
+		require.Contains(t, string(resp.Body), "invalid or expired")
+
+		entry := requireSingleAuditLog(t, state, "alice")
+		metadata := mustParseAuditMetadata(t, entry)
+		require.Equal(t, string(auth.AuditWebAuthnRegistrationFailed), entry.EventType)
+		require.False(t, entry.Success)
+		require.Equal(t, "webauthn", metadata["authentication_method"])
+		require.Equal(t, "setup_admin_bootstrap", metadata["registration_mode"])
+		require.Equal(t, "rejected", metadata["credential_event"])
+		require.Equal(t, "proof_replayed", metadata["rejection_reason"])
+		require.NotContains(t, entry.Metadata, "proof-1")
+		require.NotContains(t, entry.FailureReason, "proof-1")
+	})
+
 	t.Run("bad request when username missing", func(t *testing.T) {
 		state := &round10QueryState{
 			instanceState: &storagemodels.InstanceState{Locked: true, BootstrapUsername: "bootstrap", BootstrapWalletAddress: "0xabc"},
@@ -1102,71 +1290,6 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
 		require.NoError(t, err)
 		requireStatus(t, http.StatusConflict)(handler.HandleSetupCreateAdminLift(ctx))
-	})
-
-	t.Run("update user failure returns 500", func(t *testing.T) {
-		key, address := round11GenerateWalletKey(t)
-		tmpHandler, tmpRepos, _ := round11NewHandler(t, cfg, &round10QueryState{})
-		tmpAuthSvc, err := auth.NewAuthService(cfg, tmpRepos)
-		require.NoError(t, err)
-
-		challenge, err := tmpAuthSvc.CreateWalletChallenge(context.Background(), address, 1, "admin")
-		require.NoError(t, err)
-		sig := round11SignWalletMessage(t, key, challenge.Message)
-
-		sess := storagemodels.SetupSession{
-			ID:           "token",
-			Purpose:      setupSessionPurposeBootstrap,
-			WalletType:   "ethereum",
-			WalletAddr:   "0xabc",
-			IssuedAt:     time.Now().Add(-1 * time.Minute),
-			ExpiresAt:    time.Now().Add(30 * time.Minute),
-			InstanceLock: true,
-		}
-		require.NoError(t, sess.UpdateKeys())
-
-		state := &round10QueryState{
-			instanceState: &storagemodels.InstanceState{Locked: true, BootstrapUsername: "bootstrap", BootstrapWalletAddress: "0xabc"},
-			setupSessionsByID: map[string]storagemodels.SetupSession{
-				sess.ID: sess,
-			},
-			firstErrorPK: map[string]error{
-				"USER#admin": errors.New("user lookup failed"),
-			},
-			walletChallengesByID: map[string]storagemodels.WalletChallenge{
-				challenge.ID: {
-					ID:        challenge.ID,
-					Username:  challenge.Username,
-					Address:   challenge.Address,
-					ChainID:   challenge.ChainID,
-					Nonce:     challenge.Nonce,
-					Message:   challenge.Message,
-					IssuedAt:  challenge.IssuedAt,
-					ExpiresAt: challenge.ExpiresAt,
-				},
-			},
-		}
-		accountSvc := &AccountsServiceStub{
-			RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
-				return &accounts.RegisterAccountResult{Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.ActorURL("admin"), Type: "Person"}}}, nil
-			},
-		}
-		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: accountSvc})
-
-		headers := map[string]string{"Authorization": "Bearer " + sess.ID}
-		req := apimodels.SetupCreateAdminRequest{
-			Username: "admin",
-			Wallet: auth.WalletVerifyRequest{
-				ChallengeID: challenge.ID,
-				Address:     address,
-				Signature:   sig,
-				Message:     challenge.Message,
-			},
-		}
-		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
-		require.NoError(t, err)
-		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupCreateAdminLift(ctx))
-		_ = tmpHandler
 	})
 
 	t.Run("link wallet failure returns 500", func(t *testing.T) {
@@ -1291,6 +1414,135 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
 		require.NoError(t, err)
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupCreateAdminLift(ctx))
+	})
+
+	t.Run("success repairs genuine passkey-only partial without linking bootstrap wallet", func(t *testing.T) {
+		sess := storagemodels.SetupSession{
+			ID:           "token",
+			Purpose:      setupSessionPurposeBootstrap,
+			WalletType:   "ethereum",
+			WalletAddr:   "0xabc",
+			IssuedAt:     time.Now().Add(-1 * time.Minute),
+			ExpiresAt:    time.Now().Add(30 * time.Minute),
+			InstanceLock: true,
+		}
+		require.NoError(t, sess.UpdateKeys())
+
+		state := &round10QueryState{
+			instanceState: &storagemodels.InstanceState{
+				Locked:                 true,
+				BootstrapUsername:      "bootstrap",
+				BootstrapWalletAddress: "0xabc",
+			},
+			setupSessionsByID: map[string]storagemodels.SetupSession{
+				sess.ID: sess,
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"alice": {
+					Username:    "alice",
+					DisplayName: "Before",
+					Approved:    true,
+					Role:        "admin",
+					CreatedAt:   time.Now().Add(-2 * time.Minute),
+					UpdatedAt:   time.Now().Add(-2 * time.Minute),
+				},
+			},
+			actorsByUser: map[string]storagemodels.Actor{
+				"alice": {
+					Username: "alice",
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   cfg.ActorURL("alice"),
+							Type: "Person",
+						},
+						PreferredUsername: "alice",
+						Name:              "Before",
+						URL:               cfg.BaseURL() + "/@alice",
+					},
+					CreatedAt: time.Now().Add(-2 * time.Minute),
+					UpdatedAt: time.Now().Add(-2 * time.Minute),
+				},
+			},
+			passkeyRegistrationProofsByID: map[string]storagemodels.PasskeyRegistrationProof{
+				"proof-1": {
+					ID:              "proof-1",
+					Username:        "alice",
+					CeremonyID:      "ceremony-1",
+					CredentialID:    "cred-1",
+					PublicKey:       []byte("public-key"),
+					AttestationType: "packed",
+					AAGUID:          []byte("aaguid"),
+					SignCount:       9,
+					BackupEligible:  true,
+					BackupState:     true,
+					CreatedAt:       time.Now().Add(-1 * time.Minute),
+					ExpiresAt:       time.Now().Add(5 * time.Minute),
+				},
+			},
+		}
+
+		handler, repos, _ := round11NewHandler(t, cfg, state)
+		repos.Account().SetEncryptor(noopEncryptor{})
+
+		registry, err := services.NewRegistry(
+			services.WithStorage(repos),
+			services.WithLogger(round10TestLogger(t)),
+			services.WithConfig(&services.ServiceConfig{
+				BaseURL:   cfg.BaseURL(),
+				JWTSecret: cfg.JWTSecret,
+				Config:    cfg,
+			}),
+		)
+		require.NoError(t, err)
+		handler.registry = newServiceRegistry(registry)
+
+		headers := map[string]string{"Authorization": "Bearer " + sess.ID}
+		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, map[string]any{
+			"username":                   "Alice",
+			"displayName":                "Admin",
+			"passkey_registration_proof": "proof-1",
+		})
+		require.NoError(t, err)
+		resp := requireStatus(t, http.StatusCreated)(handler.HandleSetupCreateAdminLift(ctx))
+
+		var body apimodels.SetupCreateAdminResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "alice", body.Username)
+		require.Equal(t, cfg.ActorURL("alice"), body.Actor)
+
+		passkeys, err := repos.Account().GetUserWebAuthnCredentials(context.Background(), "alice")
+		require.NoError(t, err)
+		require.Len(t, passkeys, 1)
+		require.Equal(t, "cred-1", passkeys[0].ID)
+
+		proof, err := repos.Account().GetPasskeyRegistrationProof(context.Background(), "proof-1")
+		require.NoError(t, err)
+		require.True(t, proof.Consumed)
+
+		wallets, err := repos.Account().GetUserWalletCredentials(context.Background(), "alice")
+		require.NoError(t, err)
+		require.Empty(t, wallets)
+
+		require.Contains(t, state.auditLogsByUser, "alice")
+		require.Len(t, state.auditLogsByUser["alice"], 2)
+
+		credentialEntry := state.auditLogsByUser["alice"][0]
+		credentialMeta := mustParseAuditMetadata(t, credentialEntry)
+		require.Equal(t, string(auth.AuditWebAuthnRegistrationCompleted), credentialEntry.EventType)
+		require.True(t, credentialEntry.Success)
+		require.Equal(t, "webauthn", credentialMeta["authentication_method"])
+		require.Equal(t, "setup_admin_bootstrap", credentialMeta["registration_mode"])
+		require.Equal(t, "added", credentialMeta["credential_event"])
+		require.NotContains(t, credentialEntry.Metadata, "proof-1")
+
+		promotionEntry := state.auditLogsByUser["alice"][1]
+		promotionMeta := mustParseAuditMetadata(t, promotionEntry)
+		require.Equal(t, string(auth.AuditRegistrationCompleted), promotionEntry.EventType)
+		require.True(t, promotionEntry.Success)
+		require.Equal(t, "webauthn", promotionMeta["authentication_method"])
+		require.Equal(t, "setup_admin_bootstrap", promotionMeta["registration_mode"])
+		require.Equal(t, true, promotionMeta["admin_promotion"])
+		require.NotContains(t, promotionEntry.Metadata, "proof-1")
 	})
 
 	t.Run("success creates admin", func(t *testing.T) {

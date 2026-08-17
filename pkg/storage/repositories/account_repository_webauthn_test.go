@@ -202,8 +202,6 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateLastUsedByCreden
 	updateQuery.On("Where", "SK", "=", "WEBAUTHN_CRED#cred-123").Return(updateQuery).Once()
 	updateQuery.On("UpdateBuilder").Return(updateBuilder).Once()
 	updateBuilder.On("Set", "SignCount", uint32(9)).Return(updateBuilder).Once()
-	updateBuilder.On("Set", "CloneWarning", true).Return(updateBuilder).Once()
-	updateBuilder.On("Set", "BackupState", true).Return(updateBuilder).Once()
 	updateBuilder.On("Set", "LastUsedAt", mock.AnythingOfType("time.Time")).Return(updateBuilder).Once()
 	updateBuilder.On("Execute").Return(nil).Once()
 
@@ -219,6 +217,94 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateLastUsedByCreden
 	lookupQuery.AssertExpectations(t)
 	updateQuery.AssertExpectations(t)
 	updateBuilder.AssertExpectations(t)
+}
+
+func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateLastUsedByCredentialID_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("lookup not found", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		lookupQuery := new(mocks.MockQuery)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.WebAuthnCredential")).Return(lookupQuery).Once()
+
+		lookupQuery.On("Index", "gsi1").Return(lookupQuery).Once()
+		lookupQuery.On("Where", "gsi1PK", "=", "WEBAUTHN_CREDENTIAL#missing").Return(lookupQuery).Once()
+		lookupQuery.On("Limit", 1).Return(lookupQuery).Once()
+		lookupQuery.On("First", mock.AnythingOfType("*models.WebAuthnCredential")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+		repo.SetValidationService(nil)
+		repo.SetPermissionService(nil)
+		repo.SetEventService(nil)
+		repo.SetCachingService(nil)
+
+		err := repo.UpdateWebAuthnLastUsed(ctx, "missing", 9)
+		require.Error(t, err)
+		require.True(t, dynamormerrors.IsNotFound(err))
+
+		mockDB.AssertExpectations(t)
+		lookupQuery.AssertExpectations(t)
+	})
+
+	t.Run("update execute error", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		lookupQuery := new(mocks.MockQuery)
+		updateQuery := new(mocks.MockQuery)
+		updateBuilder := new(mocks.MockUpdateBuilder)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+		mockDB.On("Model", mock.AnythingOfType("*models.WebAuthnCredential")).Return(lookupQuery).Once()
+		mockDB.On("Model", mock.MatchedBy(func(v any) bool {
+			model, ok := v.(*models.WebAuthnCredential)
+			if !ok {
+				return false
+			}
+			return model.PK == "USER#alice" &&
+				model.SK == "WEBAUTHN_CRED#cred-123" &&
+				model.GSI1PK == "WEBAUTHN_CREDENTIAL#cred-123" &&
+				model.GSI1SK == "USER#alice" &&
+				model.ID == "cred-123"
+		})).Return(updateQuery).Once()
+
+		lookupQuery.On("Index", "gsi1").Return(lookupQuery).Once()
+		lookupQuery.On("Where", "gsi1PK", "=", "WEBAUTHN_CREDENTIAL#cred-123").Return(lookupQuery).Once()
+		lookupQuery.On("Limit", 1).Return(lookupQuery).Once()
+		lookupQuery.On("First", mock.AnythingOfType("*models.WebAuthnCredential")).Run(func(args mock.Arguments) {
+			model := args.Get(0).(*models.WebAuthnCredential)
+			model.ID = "cred-123"
+			model.UserID = "alice"
+		}).Return(nil).Once()
+
+		updateQuery.On("Where", "PK", "=", "USER#alice").Return(updateQuery).Once()
+		updateQuery.On("Where", "SK", "=", "WEBAUTHN_CRED#cred-123").Return(updateQuery).Once()
+		updateQuery.On("UpdateBuilder").Return(updateBuilder).Once()
+		updateBuilder.On("Set", "SignCount", uint32(9)).Return(updateBuilder).Once()
+		updateBuilder.On("Set", "LastUsedAt", mock.AnythingOfType("time.Time")).Return(updateBuilder).Once()
+		updateBuilder.On("Execute").Return(stdErrors.New("boom")).Once()
+
+		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+		repo.SetValidationService(nil)
+		repo.SetPermissionService(nil)
+		repo.SetEventService(nil)
+		repo.SetCachingService(nil)
+
+		err := repo.UpdateWebAuthnLastUsed(ctx, "cred-123", 9)
+		require.Error(t, err)
+		require.False(t, dynamormerrors.IsNotFound(err))
+
+		mockDB.AssertExpectations(t)
+		lookupQuery.AssertExpectations(t)
+		updateQuery.AssertExpectations(t)
+		updateBuilder.AssertExpectations(t)
+	})
 }
 
 func TestAccountRepository_WebAuthnCanonicalKeyPredicates_UpdateNameByCredentialID(t *testing.T) {
