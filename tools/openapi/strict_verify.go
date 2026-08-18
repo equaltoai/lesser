@@ -178,54 +178,76 @@ func validateStrictOperationSecurity(op *operation, route routeDef) error {
 		return errors.New("operation is nil")
 	}
 
+	security := operationSecurity(op)
+
 	switch route.Auth {
 	case authModePublic:
-		if len(op.Security) != 0 {
-			return errors.New("expected public operation (no security requirements)")
+		if err := validatePublicOperationSecurity(op, route, security); err != nil {
+			return err
 		}
 	case authModeBearerRequired:
-		if !isBearerRequiredSecurity(op.Security) {
-			return errors.New("expected bearerAuth required security")
-		}
-		if _, ok := op.Responses["401"]; !ok {
-			return errors.New("missing 401 response for authenticated operation")
-		}
-		if _, ok := op.Responses["403"]; !ok {
-			return errors.New("missing 403 response for authenticated operation")
+		if err := validateAuthenticatedOperationSecurity(op, security, isBearerRequiredSecurity, "expected bearerAuth required security"); err != nil {
+			return err
 		}
 	case authModeBearerOptional:
-		if !isBearerOptionalSecurity(op.Security) {
+		if !isBearerOptionalSecurity(security) {
 			return errors.New("expected bearerAuth optional security")
 		}
 	case authModeSetupBearer:
-		if !isSetupBearerSecurity(op.Security) {
-			return errors.New("expected setupBearer required security")
-		}
-		if _, ok := op.Responses["401"]; !ok {
-			return errors.New("missing 401 response for authenticated operation")
-		}
-		if _, ok := op.Responses["403"]; !ok {
-			return errors.New("missing 403 response for authenticated operation")
+		if err := validateAuthenticatedOperationSecurity(op, security, isSetupBearerSecurity, "expected setupBearer required security"); err != nil {
+			return err
 		}
 	case authModeSoulBinding:
-		if !isSoulBindingBearerSecurity(op.Security) {
-			return errors.New("expected soulBindingBearer required security")
-		}
-		if _, ok := op.Responses["401"]; !ok {
-			return errors.New("missing 401 response for authenticated operation")
-		}
-		if _, ok := op.Responses["403"]; !ok {
-			return errors.New("missing 403 response for authenticated operation")
+		if err := validateAuthenticatedOperationSecurity(op, security, isSoulBindingBearerSecurity, "expected soulBindingBearer required security"); err != nil {
+			return err
 		}
 	default:
 		return fmt.Errorf("unknown auth mode %q", route.Auth)
 	}
 
-	if strings.HasPrefix(route.Path, "/api/v1/admin/") && !isBearerRequiredSecurity(op.Security) {
+	if strings.HasPrefix(route.Path, "/api/v1/admin/") && !isBearerRequiredSecurity(security) {
 		return errors.New("/api/v1/admin/* must require bearerAuth")
 	}
 
 	return nil
+}
+
+func validatePublicOperationSecurity(op *operation, route routeDef, security []map[string][]string) error {
+	if route.Lambda == lambdaAPI {
+		if op.Security == nil || len(security) != 0 {
+			return errors.New("expected explicit public security []")
+		}
+		return nil
+	}
+	if len(security) != 0 {
+		return errors.New("expected public operation (no security requirements)")
+	}
+	return nil
+}
+
+func validateAuthenticatedOperationSecurity(
+	op *operation,
+	security []map[string][]string,
+	validate func([]map[string][]string) bool,
+	message string,
+) error {
+	if !validate(security) {
+		return errors.New(message)
+	}
+	if _, ok := op.Responses["401"]; !ok {
+		return errors.New("missing 401 response for authenticated operation")
+	}
+	if _, ok := op.Responses["403"]; !ok {
+		return errors.New("missing 403 response for authenticated operation")
+	}
+	return nil
+}
+
+func operationSecurity(op *operation) []map[string][]string {
+	if op == nil || op.Security == nil {
+		return nil
+	}
+	return []map[string][]string(*op.Security)
 }
 
 func validateStrictOperationScopes(op *operation, route routeDef) error {
