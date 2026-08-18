@@ -22243,8 +22243,10 @@ paths:
                                 format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "409":
+                    $ref: '#/components/responses/Conflict'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
                 "500":
@@ -22289,8 +22291,12 @@ paths:
                                 format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "409":
+                    $ref: '#/components/responses/Conflict'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
                 "500":
