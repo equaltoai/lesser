@@ -9262,6 +9262,7 @@ paths:
             operationId: get_root
             tags:
                 - root
+            security: []
             responses:
                 "200":
                     description: OK
@@ -9278,6 +9279,7 @@ paths:
             operationId: get_well_known_lesser_soul_agent
             tags:
                 - well-known
+            security: []
             responses:
                 "200":
                     description: OK
@@ -9298,6 +9300,7 @@ paths:
             operationId: get_well_known_nodeinfo
             tags:
                 - well-known
+            security: []
             responses:
                 "200":
                     description: OK
@@ -9319,6 +9322,7 @@ paths:
             operationId: get_well_known_oauth_authorization_server
             tags:
                 - well-known
+            security: []
             responses:
                 "200":
                     description: OK
@@ -9339,6 +9343,7 @@ paths:
             operationId: get_well_known_reputation_keys
             tags:
                 - well-known
+            security: []
             responses:
                 "200":
                     description: OK
@@ -9450,6 +9455,7 @@ paths:
             operationId: get_api_oembed
             tags:
                 - api
+            security: []
             parameters:
                 - name: format
                   in: query
@@ -9483,6 +9489,7 @@ paths:
             operationId: post_api_v1_accounts
             tags:
                 - accounts
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -9528,6 +9535,7 @@ paths:
             operationId: get_api_v1_accounts_by_id
             tags:
                 - accounts
+            security: []
             parameters:
                 - name: id
                   in: path
@@ -9811,6 +9819,7 @@ paths:
             operationId: get_api_v1_accounts_by_id_notes
             tags:
                 - accounts
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - name: id
@@ -10114,6 +10123,7 @@ paths:
             operationId: get_api_v1_accounts_lookup
             tags:
                 - accounts
+            security: []
             responses:
                 "200":
                     description: OK
@@ -10251,6 +10261,7 @@ paths:
             operationId: get_api_v1_accounts_search_suggestions
             tags:
                 - accounts
+            security: []
             parameters:
                 - name: q
                   in: query
@@ -12651,6 +12662,7 @@ paths:
             operationId: get_api_v1_agents
             tags:
                 - agents
+            security: []
             responses:
                 "200":
                     description: OK
@@ -12675,6 +12687,7 @@ paths:
             operationId: get_api_v1_agents_by_username
             tags:
                 - agents
+            security: []
             parameters:
                 - name: username
                   in: path
@@ -12911,6 +12924,7 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_renew_challenge
             tags:
                 - agents
+            security: []
             parameters:
                 - name: leaseID
                   in: path
@@ -13002,6 +13016,7 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key
             tags:
                 - agents
+            security: []
             parameters:
                 - name: leaseID
                   in: path
@@ -13046,6 +13061,7 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key_challenge
             tags:
                 - agents
+            security: []
             parameters:
                 - name: leaseID
                   in: path
@@ -13090,6 +13106,7 @@ paths:
             operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_token
             tags:
                 - agents
+            security: []
             parameters:
                 - name: leaseID
                   in: path
@@ -13598,6 +13615,7 @@ paths:
             operationId: post_api_v1_agents_auth_challenge
             tags:
                 - agents
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -13629,6 +13647,7 @@ paths:
             operationId: post_api_v1_agents_auth_token
             tags:
                 - agents
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -13767,6 +13786,7 @@ paths:
             description: Self-sovereign agent registration. Disabled by default until the operator explicitly enables agents and agent registration.
             tags:
                 - agents
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -13800,6 +13820,7 @@ paths:
             description: Issues a self-sovereign agent registration challenge. Disabled by default until the operator explicitly enables agents and agent registration.
             tags:
                 - agents
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -14010,6 +14031,7 @@ paths:
             operationId: post_api_v1_apps
             tags:
                 - apps
+            security: []
             requestBody:
                 required: true
                 content:
@@ -14192,6 +14214,7 @@ paths:
             operationId: post_api_v1_auth_webauthn_login_begin
             tags:
                 - auth
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -14237,6 +14260,7 @@ paths:
             operationId: post_api_v1_auth_webauthn_login_finish
             tags:
                 - auth
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -14383,6 +14407,7 @@ paths:
             operationId: post_api_v1_auth_webauthn_signup_begin
             tags:
                 - auth
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -14428,6 +14453,7 @@ paths:
             operationId: post_api_v1_auth_webauthn_signup_finish
             tags:
                 - auth
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -14790,6 +14816,7 @@ paths:
             operationId: get_api_v1_custom_emojis
             tags:
                 - custom_emojis
+            security: []
             responses:
                 "200":
                     description: OK
@@ -14810,6 +14837,7 @@ paths:
             operationId: get_api_v1_directory
             tags:
                 - directory
+            security: []
             parameters:
                 - name: order
                   in: query
@@ -15420,6 +15448,7 @@ paths:
             operationId: get_api_v1_instance
             tags:
                 - instance
+            security: []
             responses:
                 "200":
                     description: OK
@@ -15440,6 +15469,7 @@ paths:
             operationId: get_api_v1_instance_activity
             tags:
                 - instance
+            security: []
             responses:
                 "200":
                     description: OK
@@ -15460,6 +15490,7 @@ paths:
             operationId: get_api_v1_instance_domain_blocks
             tags:
                 - instance
+            security: []
             responses:
                 "200":
                     description: OK
@@ -15480,6 +15511,7 @@ paths:
             operationId: get_api_v1_instance_metrics_daily
             tags:
                 - instance
+            security: []
             responses:
                 "200":
                     description: OK
@@ -15500,6 +15532,7 @@ paths:
             operationId: get_api_v1_instance_peers
             tags:
                 - instance
+            security: []
             responses:
                 "200":
                     description: OK
@@ -15520,6 +15553,7 @@ paths:
             operationId: get_api_v1_instance_translation_languages
             tags:
                 - instance
+            security: []
             responses:
                 "200":
                     description: OK
@@ -19743,6 +19777,7 @@ paths:
             operationId: get_api_v1_timelines_link
             tags:
                 - timelines
+            security: []
             parameters:
                 - name: url
                   in: query
@@ -19882,6 +19917,7 @@ paths:
             operationId: get_api_v1_trends
             tags:
                 - trends
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -19904,6 +19940,7 @@ paths:
             operationId: get_api_v1_trends_links
             tags:
                 - trends
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -19926,6 +19963,7 @@ paths:
             operationId: get_api_v1_trends_statuses
             tags:
                 - trends
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -19948,6 +19986,7 @@ paths:
             operationId: get_api_v1_trends_tags
             tags:
                 - trends
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -20028,6 +20067,7 @@ paths:
             operationId: get_api_v1_trust_attestations
             tags:
                 - trust
+            security: []
             responses:
                 "200":
                     description: OK
@@ -20044,6 +20084,7 @@ paths:
             operationId: get_api_v1_trust_attestations_by_id
             tags:
                 - trust
+            security: []
             parameters:
                 - name: id
                   in: path
@@ -20068,6 +20109,7 @@ paths:
             operationId: get_api_v1_trust_jwks_json
             tags:
                 - trust
+            security: []
             responses:
                 "200":
                     description: OK
@@ -20905,6 +20947,7 @@ paths:
             operationId: get_api_v2_instance
             tags:
                 - instance
+            security: []
             responses:
                 "200":
                     description: OK
@@ -21122,6 +21165,7 @@ paths:
             operationId: get_api_v2_trends
             tags:
                 - trends
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -21144,6 +21188,7 @@ paths:
             operationId: get_api_v2_trends_links
             tags:
                 - trends
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -21166,6 +21211,7 @@ paths:
             operationId: get_api_v2_trends_statuses
             tags:
                 - trends
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -21188,6 +21234,7 @@ paths:
             operationId: get_api_v2_trends_tags
             tags:
                 - trends
+            security: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
             responses:
@@ -21233,6 +21280,7 @@ paths:
             operationId: get_auth_device
             tags:
                 - auth
+            security: []
             responses:
                 "200":
                     description: OK
@@ -21249,6 +21297,7 @@ paths:
             operationId: post_auth_wallet_challenge
             tags:
                 - auth
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -21358,6 +21407,7 @@ paths:
             operationId: post_auth_wallet_login
             tags:
                 - auth
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -21439,6 +21489,7 @@ paths:
             operationId: post_auth_wallet_verify
             tags:
                 - auth
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -21484,6 +21535,7 @@ paths:
             operationId: get_embed_by_id
             tags:
                 - embed
+            security: []
             parameters:
                 - name: id
                   in: path
@@ -21508,6 +21560,7 @@ paths:
             operationId: get_health
             tags:
                 - health
+            security: []
             responses:
                 "200":
                     description: OK
@@ -21550,6 +21603,7 @@ paths:
             operationId: get_health_live
             tags:
                 - health
+            security: []
             responses:
                 "200":
                     description: OK
@@ -21567,6 +21621,7 @@ paths:
             operationId: get_health_ready
             tags:
                 - health
+            security: []
             responses:
                 "200":
                     description: OK
@@ -21621,6 +21676,7 @@ paths:
             operationId: get_nodeinfo_2_0
             tags:
                 - nodeinfo
+            security: []
             responses:
                 "200":
                     description: OK
@@ -21744,6 +21800,7 @@ paths:
             operationId: post_oauth_consent
             tags:
                 - oauth
+            security: []
             requestBody:
                 required: true
                 content:
@@ -21790,6 +21847,7 @@ paths:
             operationId: post_oauth_device_code
             tags:
                 - oauth
+            security: []
             requestBody:
                 required: true
                 content:
@@ -21890,6 +21948,7 @@ paths:
             operationId: post_oauth_device_verify
             tags:
                 - oauth
+            security: []
             requestBody:
                 required: true
                 content:
@@ -21992,6 +22051,7 @@ paths:
             operationId: post_oauth_revoke
             tags:
                 - oauth
+            security: []
             responses:
                 "200":
                     description: OK
@@ -22032,6 +22092,7 @@ paths:
             operationId: post_oauth_token
             tags:
                 - oauth
+            security: []
             requestBody:
                 required: true
                 content:
@@ -22100,6 +22161,7 @@ paths:
             operationId: get_robots_txt
             tags:
                 - robots.txt
+            security: []
             responses:
                 "200":
                     description: OK
@@ -22150,6 +22212,7 @@ paths:
             operationId: post_setup_bootstrap_challenge
             tags:
                 - setup
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -22180,8 +22243,10 @@ paths:
                                 format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "409":
+                    $ref: '#/components/responses/Conflict'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
                 "500":
@@ -22195,6 +22260,7 @@ paths:
             operationId: post_setup_bootstrap_verify
             tags:
                 - setup
+            security: []
             requestBody:
                 content:
                     application/json:
@@ -22225,8 +22291,12 @@ paths:
                                 format: int64
                 "400":
                     $ref: '#/components/responses/BadRequest'
-                "422":
-                    $ref: '#/components/responses/UnprocessableEntity'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "409":
+                    $ref: '#/components/responses/Conflict'
                 "429":
                     $ref: '#/components/responses/TooManyRequests'
                 "500":
@@ -22270,6 +22340,7 @@ paths:
             operationId: get_setup_status
             tags:
                 - setup
+            security: []
             responses:
                 "200":
                     description: OK
