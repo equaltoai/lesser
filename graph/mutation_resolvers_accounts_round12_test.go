@@ -2,14 +2,18 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/equaltoai/lesser/graph/model"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestRound12MutationResolvers_Accounts_RegisterAccount_AndVisibility(t *testing.T) {
+	const expectedGraphQLError = "registration is not supported over GraphQL; use POST /api/v1/accounts"
+
 	resolver, _ := newRound12GraphResolver(t)
 	mut := &mutationResolver{resolver}
 
@@ -23,6 +27,10 @@ func TestRound12MutationResolvers_Accounts_RegisterAccount_AndVisibility(t *test
 		Agreement: true,
 	})
 	require.Error(t, err)
+	require.ErrorContains(t, err, expectedGraphQLError)
+	var appErr *apperrors.AppError
+	require.True(t, errors.As(err, &appErr))
+	require.Equal(t, 400, appErr.HTTPStatusCode)
 
 	require.Equal(t, "public", postingVisibilityFromGraphQL(model.VisibilityPublic))
 	require.Equal(t, "unlisted", postingVisibilityFromGraphQL(model.VisibilityUnlisted))

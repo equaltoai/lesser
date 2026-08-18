@@ -7,9 +7,77 @@ func applySchemaOverrides(spec *openAPISpec) {
 	}
 
 	overrideCreateStatusRequest(spec.Components.Schemas)
+	overrideAccountRegistrationRequest(spec.Components.Schemas)
+	overrideSetupCreateAdminRequest(spec.Components.Schemas)
 	overrideOAuthClientSchemas(spec.Components.Schemas)
 	overrideCommunityNoteSchemas(spec.Components.Schemas)
 	overrideSoulMintConversationSchemas(spec.Components.Schemas)
+}
+
+func overrideAccountRegistrationRequest(schemas map[string]any) {
+	overrideSchemaProperty(
+		schemas,
+		"AccountRegistrationRequest",
+		"wallet_challenge_id",
+		"Single-use wallet registration proof. Exactly one of `wallet_challenge_id` or `passkey_registration_proof` is required.",
+		false,
+	)
+	overrideSchemaProperty(
+		schemas,
+		"AccountRegistrationRequest",
+		"passkey_registration_proof",
+		"Single-use proof emitted by `POST /api/v1/auth/webauthn/signup/finish`. Exactly one of `wallet_challenge_id` or `passkey_registration_proof` is required.",
+		false,
+	)
+
+	raw, ok := schemas["AccountRegistrationRequest"]
+	if !ok {
+		return
+	}
+
+	schemaMap, ok := raw.(map[string]any)
+	if !ok {
+		return
+	}
+
+	schemaMap["oneOf"] = []any{
+		map[string]any{
+			"required": []string{"wallet_challenge_id"},
+		},
+		map[string]any{
+			"required": []string{"passkey_registration_proof"},
+		},
+	}
+}
+
+func overrideSetupCreateAdminRequest(schemas map[string]any) {
+	overrideSchemaProperty(
+		schemas,
+		"SetupCreateAdminRequest",
+		"passkey_registration_proof",
+		"Single-use proof emitted by `POST /api/v1/auth/webauthn/signup/finish`. Exactly one of `wallet` or `passkey_registration_proof` is required.",
+		false,
+	)
+
+	raw, ok := schemas["SetupCreateAdminRequest"]
+	if !ok {
+		return
+	}
+
+	schemaMap, ok := raw.(map[string]any)
+	if !ok {
+		return
+	}
+
+	schemaMap["required"] = []string{"username"}
+	schemaMap["oneOf"] = []any{
+		map[string]any{
+			"required": []string{"wallet"},
+		},
+		map[string]any{
+			"required": []string{"passkey_registration_proof"},
+		},
+	}
 }
 
 func overrideCreateStatusRequest(schemas map[string]any) {

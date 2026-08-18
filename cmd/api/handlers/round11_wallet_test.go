@@ -40,6 +40,9 @@ func TestWalletHandlers_FullFlow(t *testing.T) {
 		usersByUsername: map[string]storagemodels.User{
 			"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Role: "user", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour)},
 		},
+		webAuthnCredentialsByUser: map[string][]storagemodels.WebAuthnCredential{
+			"alice": {{ID: "cred-1", UserID: "alice"}},
+		},
 		walletCredentialsByUser: map[string][]storagemodels.WalletCredential{
 			"alice": {{Username: "alice", Address: address, ChainID: 1, Type: "ethereum", LinkedAt: now.Add(-2 * time.Hour)}},
 		},

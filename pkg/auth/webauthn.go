@@ -6,13 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	accountservice "github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -28,13 +32,18 @@ var (
 const (
 	ChallengeDuration     = 5 * time.Minute // WebAuthn challenges expire after 5 minutes
 	MaxCredentialsPerUser = 10              // Maximum passkeys per user
+
+	webAuthnChallengeTypeRegistration   = "registration"
+	webAuthnChallengeTypeAuthentication = "authentication"
+	webAuthnChallengeTypeSignup         = "signup"
 )
 
 // WebAuthnService handles WebAuthn operations
 type WebAuthnService struct {
-	webAuthn webAuthnEngine
-	repo     webAuthnRepository
-	domain   string
+	webAuthn    webAuthnEngine
+	repo        webAuthnRepository
+	domain      string
+	auditLogger *AuditLogger
 
 	parseCreationResponse  func([]byte) (*protocol.ParsedCredentialCreationData, error)
 	parseAssertionResponse func([]byte) (*protocol.ParsedCredentialAssertionData, error)
@@ -57,7 +66,11 @@ type webAuthnRepository interface {
 	StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error
 	GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error)
 	DeleteWebAuthnCredential(ctx context.Context, credentialID string) error
-	UpdateWebAuthnLastUsed(ctx context.Context, credentialID string, signCount uint32) error
+	DeleteWebAuthnCredentialConditionedOnSurvivor(ctx context.Context, username string, credentialID string, survivingPasskeyID string, survivingWalletAddress string) error
+	UpdateWebAuthnCredentialName(ctx context.Context, credentialID string, name string) error
+	UpdateWebAuthnAuthenticationState(ctx context.Context, credentialID string, signCount uint32, cloneWarning bool, backupState bool, lastUsedAt time.Time) error
+	StorePasskeyRegistrationProof(ctx context.Context, proof *storagemodels.PasskeyRegistrationProof) error
+	GetPasskeyRegistrationProof(ctx context.Context, proofID string) (*storagemodels.PasskeyRegistrationProof, error)
 }
 
 // NewWebAuthnService creates a new WebAuthn service
@@ -79,9 +92,10 @@ func NewWebAuthnService(repos StorageProvider, domain string, displayName string
 	}
 
 	return &WebAuthnService{
-		webAuthn: webAuthn,
-		repo:     repos.Account(),
-		domain:   domain,
+		webAuthn:    webAuthn,
+		repo:        repos.Account(),
+		domain:      domain,
+		auditLogger: NewAuditLogger(repos, common.Logger(), DefaultAuditConfig()),
 		parseCreationResponse: func(data []byte) (*protocol.ParsedCredentialCreationData, error) {
 			return protocol.ParseCredentialCreationResponseBytes(data)
 		},
@@ -135,7 +149,46 @@ func (s *WebAuthnService) BeginRegistration(ctx context.Context, username string
 		UserID:      username,
 		SessionData: sessionDataBytes,
 		ExpiresAt:   time.Now().Add(ChallengeDuration),
-		Type:        "registration",
+		Type:        webAuthnChallengeTypeRegistration,
+	}
+
+	if err := s.repo.StoreWebAuthnChallenge(ctx, challengeData); err != nil {
+		return nil, "", errors.Join(ErrWebAuthnChallengeStorage, err)
+	}
+
+	return options, challengeData.Challenge, nil
+}
+
+// BeginSignup starts the public WebAuthn signup process for a not-yet-created account.
+func (s *WebAuthnService) BeginSignup(ctx context.Context, username string) (any, string, error) {
+	username = accountservice.NormalizeUsernameForDomain(username, s.domain)
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, "", err
+	}
+
+	webAuthnUser := &webAuthnUser{
+		id:          username,
+		name:        username,
+		displayName: username,
+		credentials: []webauthn.Credential{},
+	}
+
+	options, sessionData, err := s.webAuthn.BeginRegistration(webAuthnUser, signupRegistrationOptions()...)
+	if err != nil {
+		return nil, "", errors.Join(ErrRegistrationBegin, err)
+	}
+
+	sessionDataBytes, err := json.Marshal(sessionData)
+	if err != nil {
+		return nil, "", errors.Join(ErrSessionDataSerialization, err)
+	}
+
+	challengeData := &storage.WebAuthnChallenge{
+		Challenge:   sessionData.Challenge,
+		UserID:      username,
+		SessionData: sessionDataBytes,
+		ExpiresAt:   time.Now().Add(ChallengeDuration),
+		Type:        webAuthnChallengeTypeSignup,
 	}
 
 	if err := s.repo.StoreWebAuthnChallenge(ctx, challengeData); err != nil {
@@ -154,7 +207,7 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 	}
 
 	// Verify challenge belongs to user and hasn't expired
-	if challengeData.UserID != username || challengeData.Type != "registration" {
+	if challengeData.UserID != username || challengeData.Type != webAuthnChallengeTypeRegistration {
 		return ErrChallengeNotFound
 	}
 	if time.Now().After(challengeData.ExpiresAt) {
@@ -232,11 +285,90 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 	if err := s.repo.StoreWebAuthnCredential(ctx, storedCredential); err != nil {
 		return errors.Join(ErrCredentialStorage, err)
 	}
+	if s.auditLogger != nil {
+		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWebAuthnRegistrationCompleted, map[string]interface{}{
+			"authentication_method": "webauthn",
+			"credential_event":      "added",
+			"registration_mode":     "authenticated",
+		}, true, nil)
+	}
 
 	// Delete the used challenge
 	_ = s.repo.DeleteWebAuthnChallenge(ctx, challenge)
 
 	return nil
+}
+
+// FinishSignup completes the public WebAuthn signup process and produces a single-use registration proof.
+func (s *WebAuthnService) FinishSignup(ctx context.Context, username string, challenge string, response []byte) (string, error) {
+	username = accountservice.NormalizeUsernameForDomain(username, s.domain)
+	challenge = strings.TrimSpace(challenge)
+
+	challengeData, err := s.repo.GetWebAuthnChallenge(ctx, challenge)
+	if err != nil {
+		return "", ErrChallengeNotFound
+	}
+
+	if challengeData.UserID != username || challengeData.Type != webAuthnChallengeTypeSignup {
+		return "", ErrChallengeNotFound
+	}
+	if time.Now().After(challengeData.ExpiresAt) {
+		return "", ErrChallengeNotFound
+	}
+
+	// Deserialize session data
+	var sessionData webauthn.SessionData
+	sessionBytes, ok := challengeData.SessionData.([]byte)
+	if !ok {
+		// Try to handle it as a string (base64 encoded)
+		if sessionStr, ok := challengeData.SessionData.(string); ok {
+			sessionBytes = []byte(sessionStr)
+		} else {
+			return "", ErrInvalidSessionDataType
+		}
+	}
+	if err := json.Unmarshal(sessionBytes, &sessionData); err != nil {
+		return "", errors.Join(ErrSessionDataDeserialization, err)
+	}
+
+	webAuthnUser := &webAuthnUser{
+		id:          username,
+		name:        username,
+		displayName: username,
+		credentials: []webauthn.Credential{},
+	}
+
+	parsedResponse, err := s.parseCreationResponse(response)
+	if err != nil {
+		return "", errors.Join(ErrCredentialResponse, err)
+	}
+
+	credential, err := s.webAuthn.CreateCredential(webAuthnUser, sessionData, parsedResponse)
+	if err != nil {
+		return "", errors.Join(ErrCredentialCreation, err)
+	}
+
+	proof := &storagemodels.PasskeyRegistrationProof{
+		ID:              uuid.NewString(),
+		Username:        username,
+		CeremonyID:      challenge,
+		CredentialID:    base64.StdEncoding.EncodeToString(credential.ID),
+		PublicKey:       append([]byte(nil), credential.PublicKey...),
+		AttestationType: credential.AttestationType,
+		AAGUID:          append([]byte(nil), credential.Authenticator.AAGUID...),
+		SignCount:       credential.Authenticator.SignCount,
+		CloneWarning:    credential.Authenticator.CloneWarning,
+		BackupEligible:  credential.Flags.BackupEligible,
+		BackupState:     credential.Flags.BackupState,
+	}
+
+	if err := s.repo.StorePasskeyRegistrationProof(ctx, proof); err != nil {
+		return "", errors.Join(ErrCredentialStorage, err)
+	}
+
+	_ = s.repo.DeleteWebAuthnChallenge(ctx, challenge)
+
+	return proof.ID, nil
 }
 
 // BeginLogin starts the WebAuthn login process
@@ -281,7 +413,7 @@ func (s *WebAuthnService) BeginLogin(ctx context.Context, username string) (any,
 		UserID:      username,
 		SessionData: sessionDataBytes,
 		ExpiresAt:   time.Now().Add(ChallengeDuration),
-		Type:        "authentication",
+		Type:        webAuthnChallengeTypeAuthentication,
 	}
 
 	if err := s.repo.StoreWebAuthnChallenge(ctx, challengeData); err != nil {
@@ -300,7 +432,7 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 	}
 
 	// Verify challenge belongs to user and hasn't expired
-	if challengeData.UserID != username || challengeData.Type != "authentication" {
+	if challengeData.UserID != username || challengeData.Type != webAuthnChallengeTypeAuthentication {
 		return nil, ErrChallengeNotFound
 	}
 	if time.Now().After(challengeData.ExpiresAt) {
@@ -368,7 +500,14 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, username string, chal
 	usedCredential.BackupState = credential.Flags.BackupState
 	usedCredential.LastUsedAt = time.Now()
 
-	if err := s.repo.UpdateWebAuthnLastUsed(ctx, usedCredential.ID, usedCredential.SignCount); err != nil {
+	if err := s.repo.UpdateWebAuthnAuthenticationState(
+		ctx,
+		usedCredential.ID,
+		usedCredential.SignCount,
+		usedCredential.CloneWarning,
+		usedCredential.BackupState,
+		usedCredential.LastUsedAt,
+	); err != nil {
 		common.Logger().Error("failed to update credential", zap.Error(err))
 	}
 
@@ -395,24 +534,28 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 		return ErrCredentialNotFound
 	}
 
-	// Make sure user has at least one other auth method
-	credentials, err := s.repo.GetUserWebAuthnCredentials(ctx, username)
+	plan, err := planAuthenticatorRemoval(ctx, s.repo, username, authenticatorRemovalPasskey, credential.ID, "")
 	if err != nil {
 		return err
 	}
 
-	if len(credentials) <= 1 {
-		// Ensure the user has at least one other auth method (wallet).
-		wallets, err := s.repo.GetUserWalletCredentials(ctx, username)
-		if err != nil {
-			return err
-		}
-		if len(wallets) == 0 {
-			return ErrLastAuthMethodDelete
-		}
+	if err := s.repo.DeleteWebAuthnCredentialConditionedOnSurvivor(
+		ctx,
+		username,
+		credentialID,
+		plan.survivingPasskeyID,
+		plan.survivingWalletAddress,
+	); err != nil {
+		return classifyGuardedWebAuthnRemovalFailure(ctx, s.repo, username, credentialID, err)
+	}
+	if s.auditLogger != nil {
+		s.auditLogger.LogAuthEvent(ctx, username, "", "", AuditWebAuthnCredentialRemoved, map[string]interface{}{
+			"authentication_method": "webauthn",
+			"credential_event":      "removed",
+		}, true, nil)
 	}
 
-	return s.repo.DeleteWebAuthnCredential(ctx, credentialID)
+	return nil
 }
 
 // UpdateCredentialName updates the display name of a credential
@@ -427,8 +570,20 @@ func (s *WebAuthnService) UpdateCredentialName(ctx context.Context, username str
 		return ErrCredentialNotFound
 	}
 
-	credential.Name = newName
-	return s.repo.UpdateWebAuthnLastUsed(ctx, credential.ID, credential.SignCount)
+	return s.repo.UpdateWebAuthnCredentialName(ctx, credential.ID, newName)
+}
+
+// GetPasskeyRegistrationProof retrieves a stored single-use signup proof by ID.
+func (s *WebAuthnService) GetPasskeyRegistrationProof(ctx context.Context, proofID string) (*storagemodels.PasskeyRegistrationProof, error) {
+	return s.repo.GetPasskeyRegistrationProof(ctx, strings.TrimSpace(proofID))
+}
+
+func signupRegistrationOptions() []webauthn.RegistrationOption {
+	return []webauthn.RegistrationOption{
+		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
+			UserVerification: protocol.VerificationRequired,
+		}),
+	}
 }
 
 // webAuthnUser implements the webauthn.User interface

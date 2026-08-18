@@ -105,9 +105,55 @@ var (
 	ErrQuoteRepositoryNotAvailable = errors.New("quote repository not available")
 )
 
+// SetupAdminBootstrapStateError describes an unrecoverable partial setup-admin bootstrap state.
+type SetupAdminBootstrapStateError struct {
+	Username        string
+	Role            string
+	ActorPresent    bool
+	CredentialID    string
+	CredentialBound bool
+	ProofConsumed   bool
+}
+
+func (e *SetupAdminBootstrapStateError) Error() string {
+	if e == nil {
+		return "setup admin bootstrap retry requires operator repair"
+	}
+
+	role := strings.TrimSpace(e.Role)
+	if role == "" {
+		role = "<missing>"
+	}
+
+	actorState := "missing"
+	if e.ActorPresent {
+		actorState = "present"
+	}
+
+	credentialState := "n/a"
+	if strings.TrimSpace(e.CredentialID) != "" {
+		if e.CredentialBound {
+			credentialState = "present"
+		} else {
+			credentialState = "missing"
+		}
+	}
+
+	return fmt.Sprintf(
+		"setup admin bootstrap retry requires operator repair for username %q: existing user row present, actor=%s, role=%q, passkey credential %q=%s, proof_consumed=%t",
+		strings.TrimSpace(e.Username),
+		actorState,
+		role,
+		strings.TrimSpace(e.CredentialID),
+		credentialState,
+		e.ProofConsumed,
+	)
+}
+
 // Collection type constants
 const (
 	collectionFollowers = "followers"
+	accountRoleAdmin    = "admin"
 )
 
 // Service provides account operations
@@ -244,7 +290,26 @@ func NewService(
 	return svc
 }
 
-func (s *Service) normalizeUsername(username string) string {
+// RegisterAccountMode names the registration caller context for explicit service-level exceptions.
+type RegisterAccountMode string
+
+const (
+	// RegisterAccountModeSetupAdminBootstrap is the setup-only bootstrap lane.
+	// It is allowed to create the first admin account behind the bootstrap setup-session gate.
+	// Wallet challenges remain handler-validated on /setup/admin, while passkey setup may carry
+	// a previously issued passkey registration proof from the WebAuthn signup ceremony.
+	RegisterAccountModeSetupAdminBootstrap RegisterAccountMode = "setup_admin_bootstrap"
+)
+
+// NormalizeUsernameForDomain applies the account-service canonical username normalization
+// rules against the supplied local domain.
+func NormalizeUsernameForDomain(username, localDomain string) string {
+	return normalizeUsernameWithLocalDomainMatcher(username, func(domain string) bool {
+		return isLocalDomainForUsername(domain, localDomain)
+	})
+}
+
+func normalizeUsernameWithLocalDomainMatcher(username string, isLocalDomain func(string) bool) string {
 	trimmed := strings.TrimSpace(username)
 	if trimmed == "" {
 		return trimmed
@@ -263,7 +328,7 @@ func (s *Service) normalizeUsername(username string) string {
 		// https://remote.example/users/admin would normalize to "admin" and
 		// collide with a same-named local account. (CSR-052)
 		parsed, parseErr := neturl.Parse(urlWithoutScheme)
-		if parseErr == nil && parsed != nil && strings.TrimSpace(parsed.Hostname()) != "" && !s.isLocalDomain(parsed.Hostname()) {
+		if parseErr == nil && parsed != nil && strings.TrimSpace(parsed.Hostname()) != "" && !isLocalDomain(parsed.Hostname()) {
 			remoteDomain = strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 		}
 
@@ -288,12 +353,20 @@ func (s *Service) normalizeUsername(username string) string {
 	if at := strings.LastIndex(trimmed, "@"); at != -1 {
 		localPart := trimmed[:at]
 		domainPart := trimmed[at+1:]
-		if s.isLocalDomain(domainPart) {
+		if isLocalDomain(domainPart) {
 			trimmed = localPart
 		}
 	}
 
 	return strings.ToLower(strings.TrimSpace(trimmed))
+}
+
+func (s *Service) normalizeUsername(username string) string {
+	return normalizeUsernameWithLocalDomainMatcher(username, s.isLocalDomain)
+}
+
+func (s *Service) isLocalDomain(domain string) bool {
+	return isLocalDomainForUsername(domain, s.domainName)
 }
 
 func storedUsernameMatches(storedUsername, candidate string) bool {
@@ -306,11 +379,11 @@ func storedUsernameMatches(storedUsername, candidate string) bool {
 	return strings.EqualFold(storedUsername, candidate)
 }
 
-func (s *Service) isLocalDomain(domain string) bool {
+func isLocalDomainForUsername(domain, localDomain string) bool {
 	if domain == "" {
 		return false
 	}
-	return normalizeDomain(domain) == normalizeDomain(s.domainName)
+	return normalizeDomain(domain) == normalizeDomain(localDomain)
 }
 
 func normalizeDomain(domain string) string {
@@ -326,6 +399,7 @@ func normalizeDomain(domain string) string {
 // RegisterAccountCommand contains all data needed to register a new account
 type RegisterAccountCommand struct {
 	Username                 string `json:"username" validate:"required,min=3,max=30"`
+	DisplayName              string `json:"display_name,omitempty"`
 	Email                    string `json:"email" validate:"required,email"`
 	Password                 string `json:"password"` // Optional for WebAuthn registration
 	Locale                   string `json:"locale"`
@@ -337,6 +411,13 @@ type RegisterAccountCommand struct {
 	// RegistrationChallengeID is a registration-time proof reference (e.g. wallet challenge ID).
 	// Successful registration binds that proof to the typed wallet challenge row.
 	RegistrationChallengeID string `json:"registration_challenge_id,omitempty"`
+
+	// PasskeyRegistrationProof is the single-use proof emitted by the public WebAuthn signup finish ceremony.
+	PasskeyRegistrationProof string `json:"passkey_registration_proof,omitempty"`
+
+	// RegistrationMode is an explicit service-path selector for non-public registration lanes.
+	// Zero-value callers remain on the public exactly-one-proof path.
+	RegistrationMode RegisterAccountMode
 }
 
 // UpdateProfileCommand contains all data needed to update a user's profile
@@ -1895,6 +1976,8 @@ func (s *Service) buildNextPageID(collectionID, nextCursor string) string {
 
 // RegisterAccount creates a new user account with actor
 func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountCommand) (*RegisterAccountResult, error) {
+	cmd.Username = s.normalizeUsername(cmd.Username)
+
 	// Validate command
 	if err := s.validateRegisterAccountCommand(ctx, cmd); err != nil {
 		return nil, ErrValidationFailed
@@ -1905,10 +1988,29 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		return nil, ErrAccountRepositoryNotAvailable
 	}
 
+	username := cmd.Username
+	registrationChallengeID := strings.TrimSpace(cmd.RegistrationChallengeID)
+	passkeyRegistrationProofID := strings.TrimSpace(cmd.PasskeyRegistrationProof)
+
 	// Check if username is already taken
 	existingAccount, _ := accountRepo.GetAccount(ctx, cmd.Username)
 	if existingAccount != nil {
+		if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
+			if existingAccount.User == nil || !strings.EqualFold(strings.TrimSpace(existingAccount.User.Role), accountRoleAdmin) {
+				return nil, ErrUsernameAlreadyTaken
+			}
+			passkeyProof, err := s.loadRegistrationPasskeyProof(ctx, accountRepo, username, passkeyRegistrationProofID)
+			if err != nil {
+				return nil, err
+			}
+			return s.resumeSetupAdminBootstrapRegistration(ctx, accountRepo, existingAccount, cmd, passkeyProof)
+		}
 		return nil, ErrUsernameAlreadyTaken
+	}
+
+	passkeyProof, err := s.loadRegistrationPasskeyProof(ctx, accountRepo, username, passkeyRegistrationProofID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Generate RSA keypair for the actor
@@ -1934,13 +2036,24 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	privateKeyPEM := string(privateKeyPEMBytes)
 
 	// Create user object
+	role := "user"
+	if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
+		role = accountRoleAdmin
+	}
+
+	displayName := strings.TrimSpace(cmd.DisplayName)
+	if displayName == "" {
+		displayName = username
+	}
+
 	user := &storage.User{
-		Username:     cmd.Username,
+		Username:     username,
 		Email:        cmd.Email,
-		PasswordHash: "",   // Will be set if password provided
+		PasswordHash: "", // Will be set if password provided
+		DisplayName:  displayName,
 		Approved:     true, // Auto-approve for now
 		Suspended:    false,
-		Role:         "user",
+		Role:         role,
 		Locale:       cmd.Locale,
 		CreatedAt:    time.Now(),
 	}
@@ -1955,10 +2068,10 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	// Create corresponding actor
-	actorID := fmt.Sprintf("https://%s/users/%s", s.domainName, cmd.Username)
-	actor := activitypub.NewActor(activitypub.PersonType, actorID, cmd.Username)
-	actor.Name = cmd.Username
-	actor.URL = fmt.Sprintf("https://%s/@%s", s.domainName, cmd.Username)
+	actorID := fmt.Sprintf("https://%s/users/%s", s.domainName, username)
+	actor := activitypub.NewActor(activitypub.PersonType, actorID, username)
+	actor.Name = displayName
+	actor.URL = fmt.Sprintf("https://%s/@%s", s.domainName, username)
 	actor.CreatedAt = &user.CreatedAt
 	actor.PublicKey = &activitypub.PublicKey{
 		ID:           fmt.Sprintf("%s#main-key", actorID),
@@ -1967,7 +2080,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	// Set manifest-driven local actor identifiers.
-	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", s.domainName), cmd.Username)
+	activitypubutil.ApplyLocalActorIdentifiers(actor, fmt.Sprintf("https://%s", s.domainName), username)
 
 	// Create account with actor
 	account := &storage.Account{
@@ -1977,38 +2090,34 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	// Save to storage
-	if err := accountRepo.CreateAccount(ctx, account); err != nil {
+	if err := accountRepo.CreateAccountIfNotExists(ctx, account); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			return nil, ErrUsernameAlreadyTaken
 		}
 		s.logger.Error("failed to create account",
-			zap.String("username", cmd.Username),
+			zap.String("username", username),
 			zap.Error(err))
 		// Return the actual error instead of wrapping it
 		return nil, fmt.Errorf("failed to create account: %w", err)
 	}
 
 	initialVisibility := s.initialPostingVisibility(cmd.DefaultPostingVisibility)
-	if err := s.ensureQuotePermissionsForNewUser(ctx, s.storage.Quote(), cmd.Username, initialVisibility); err != nil {
-		s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
+	if err := s.ensureQuotePermissionsForNewUser(ctx, s.storage.Quote(), username, initialVisibility); err != nil {
+		s.rollbackAccountCreation(ctx, accountRepo, username, err)
 		return nil, fmt.Errorf("failed to create default quote permissions: %w", err)
 	}
 
-	if err := s.persistDefaultPostingVisibility(ctx, accountRepo, cmd.Username, initialVisibility); err != nil {
-		s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
+	if err := s.persistDefaultPostingVisibility(ctx, accountRepo, username, initialVisibility); err != nil {
+		s.rollbackAccountCreation(ctx, accountRepo, username, err)
 		return nil, err
 	}
 
-	registrationChallengeID := strings.TrimSpace(cmd.RegistrationChallengeID)
-	if registrationChallengeID != "" {
-		if err := accountRepo.MarkWalletChallengeRegistrationCompleted(ctx, registrationChallengeID); err != nil {
-			s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
-			return nil, fmt.Errorf("failed to finalize wallet registration challenge: %w", err)
-		}
+	if err := s.finalizeRegistrationProof(ctx, accountRepo, username, registrationChallengeID, passkeyProof); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("account created successfully, recording activity",
-		zap.String("username", cmd.Username))
+		zap.String("username", username))
 
 	// Record registration activity for metrics
 	if err := s.storage.Activity().RecordActivity(ctx, "registration", actor.ID, time.Now()); err != nil {
@@ -2017,13 +2126,13 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	}
 
 	s.logger.Info("emitting account created events",
-		zap.String("username", cmd.Username))
+		zap.String("username", username))
 
 	// Create events for streaming
 	events := s.emitAccountCreatedEvents(ctx, account)
 
 	s.logger.Info("returning registration result",
-		zap.String("username", cmd.Username),
+		zap.String("username", username),
 		zap.String("actor_id", actor.ID))
 
 	return &RegisterAccountResult{
@@ -2052,6 +2161,22 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 	if cmd.DefaultPostingVisibility != "" && !isValidPostingVisibility(cmd.DefaultPostingVisibility) {
 		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility '%s' is not valid", cmd.DefaultPostingVisibility)).InternalError
 	}
+	hasWalletChallenge := strings.TrimSpace(cmd.RegistrationChallengeID) != ""
+	hasPasskeyProof := strings.TrimSpace(cmd.PasskeyRegistrationProof) != ""
+	switch cmd.RegistrationMode {
+	case "", RegisterAccountModeSetupAdminBootstrap:
+	default:
+		return fmt.Errorf("unsupported register account mode %q", cmd.RegistrationMode)
+	}
+	if cmd.RegistrationMode == RegisterAccountModeSetupAdminBootstrap {
+		if hasWalletChallenge {
+			return errors.New("setup admin bootstrap registration must not include wallet registration proofs")
+		}
+		return nil
+	}
+	if hasWalletChallenge == hasPasskeyProof {
+		return errors.New("exactly one of wallet challenge and passkey registration proof must be provided")
+	}
 	// Additional validation can be added here
 	return nil
 }
@@ -2076,6 +2201,239 @@ func (s *Service) initialPostingVisibility(requested string) string {
 	}
 
 	return models.VisibilityPublic
+}
+
+func (s *Service) loadRegistrationPasskeyProof(ctx context.Context, repo *repositories.AccountRepository, username, proofID string) (*models.PasskeyRegistrationProof, error) {
+	if strings.TrimSpace(proofID) == "" {
+		return nil, nil
+	}
+
+	proof, err := repo.GetPasskeyRegistrationProof(ctx, proofID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get passkey registration proof: %w", err)
+	}
+	if strings.TrimSpace(proof.Username) != username {
+		return nil, fmt.Errorf("passkey registration proof was created for a different username")
+	}
+
+	return proof, nil
+}
+
+func (s *Service) finalizeRegistrationProof(ctx context.Context, repo *repositories.AccountRepository, username, walletChallengeID string, passkeyProof *models.PasskeyRegistrationProof) error {
+	if passkeyProof != nil {
+		return s.finalizePasskeyRegistrationProof(ctx, repo, username, passkeyProof)
+	}
+	if strings.TrimSpace(walletChallengeID) == "" {
+		return nil
+	}
+
+	if err := repo.MarkWalletChallengeRegistrationCompleted(ctx, walletChallengeID); err != nil {
+		s.rollbackAccountCreation(ctx, repo, username, err)
+		return fmt.Errorf("failed to finalize wallet registration challenge: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) finalizePasskeyRegistrationProof(ctx context.Context, repo *repositories.AccountRepository, username string, passkeyProof *models.PasskeyRegistrationProof) error {
+	credential := passkeyRegistrationProofToCredential(passkeyProof)
+	if err := repo.StoreWebAuthnCredential(ctx, credential); err != nil {
+		s.rollbackAccountCreation(ctx, repo, username, err)
+		return fmt.Errorf("failed to store initial passkey credential: %w", err)
+	}
+
+	if _, err := repo.ConsumePasskeyRegistrationProof(ctx, passkeyProof.ID, passkeyProof.Username, passkeyProof.CeremonyID); err != nil {
+		s.rollbackPasskeyCredentialCreation(ctx, repo, username, credential.ID, err)
+		s.rollbackAccountCreation(ctx, repo, username, err)
+		return fmt.Errorf("failed to finalize passkey registration proof: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) resumeSetupAdminBootstrapRegistration(
+	ctx context.Context,
+	repo *repositories.AccountRepository,
+	existingAccount *storage.Account,
+	cmd *RegisterAccountCommand,
+	passkeyProof *models.PasskeyRegistrationProof,
+) (*RegisterAccountResult, error) {
+	if existingAccount == nil || existingAccount.User == nil {
+		return nil, ErrUsernameAlreadyTaken
+	}
+
+	username := strings.TrimSpace(existingAccount.User.Username)
+	if username == "" {
+		username = strings.TrimSpace(cmd.Username)
+	}
+
+	if existingAccount.Actor == nil {
+		return nil, &SetupAdminBootstrapStateError{
+			Username:        username,
+			Role:            existingAccount.User.Role,
+			ActorPresent:    false,
+			CredentialID:    setupAdminBootstrapCredentialID(passkeyProof),
+			CredentialBound: false,
+			ProofConsumed:   passkeyProof != nil && passkeyProof.Consumed,
+		}
+	}
+
+	if err := s.promoteSetupAdminBootstrapUser(ctx, repo, existingAccount.User, strings.TrimSpace(cmd.DisplayName)); err != nil {
+		return nil, fmt.Errorf("failed to repair setup admin account role: %w", err)
+	}
+
+	initialVisibility := s.initialPostingVisibility(cmd.DefaultPostingVisibility)
+	if err := s.ensureQuotePermissionsForNewUser(ctx, s.storage.Quote(), username, initialVisibility); err != nil {
+		return nil, fmt.Errorf("failed to repair default quote permissions: %w", err)
+	}
+	if err := s.persistDefaultPostingVisibility(ctx, repo, username, initialVisibility); err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureSetupAdminBootstrapPasskeyCredential(ctx, repo, username, existingAccount.User.Role, passkeyProof); err != nil {
+		return nil, err
+	}
+
+	repairedAccount, err := repo.GetAccount(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load repaired setup admin account: %w", err)
+	}
+	if repairedAccount == nil || repairedAccount.User == nil || repairedAccount.Actor == nil {
+		role := ""
+		actorPresent := false
+		if repairedAccount != nil && repairedAccount.User != nil {
+			role = repairedAccount.User.Role
+		}
+		if repairedAccount != nil && repairedAccount.Actor != nil {
+			actorPresent = true
+		}
+		return nil, &SetupAdminBootstrapStateError{
+			Username:        username,
+			Role:            role,
+			ActorPresent:    actorPresent,
+			CredentialID:    setupAdminBootstrapCredentialID(passkeyProof),
+			CredentialBound: false,
+			ProofConsumed:   passkeyProof != nil && passkeyProof.Consumed,
+		}
+	}
+
+	return &RegisterAccountResult{
+		Account: repairedAccount,
+		Actor:   repairedAccount.Actor,
+	}, nil
+}
+
+func (s *Service) promoteSetupAdminBootstrapUser(ctx context.Context, repo *repositories.AccountRepository, user *storage.User, displayName string) error {
+	if user == nil {
+		return ErrGetUser
+	}
+
+	updates := make(map[string]any)
+	if strings.TrimSpace(user.Role) != accountRoleAdmin {
+		updates["role"] = accountRoleAdmin
+	}
+	if displayName != "" && strings.TrimSpace(user.DisplayName) != displayName {
+		updates["display_name"] = displayName
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	if err := repo.UpdateUser(ctx, user.Username, updates); err != nil {
+		return err
+	}
+
+	if role, ok := updates["role"].(string); ok {
+		user.Role = role
+	}
+	if name, ok := updates["display_name"].(string); ok {
+		user.DisplayName = name
+	}
+
+	return nil
+}
+
+func (s *Service) ensureSetupAdminBootstrapPasskeyCredential(
+	ctx context.Context,
+	repo *repositories.AccountRepository,
+	username string,
+	role string,
+	passkeyProof *models.PasskeyRegistrationProof,
+) error {
+	if passkeyProof == nil {
+		return nil
+	}
+
+	credentialID := strings.TrimSpace(passkeyProof.CredentialID)
+	credentialBound, err := setupAdminBootstrapCredentialBound(ctx, repo, username, credentialID)
+	if err != nil {
+		return fmt.Errorf("failed to inspect setup admin passkey credential: %w", err)
+	}
+
+	if !credentialBound {
+		if passkeyProof.Consumed {
+			return &SetupAdminBootstrapStateError{
+				Username:        username,
+				Role:            role,
+				ActorPresent:    true,
+				CredentialID:    credentialID,
+				CredentialBound: false,
+				ProofConsumed:   true,
+			}
+		}
+
+		credential := passkeyRegistrationProofToCredential(passkeyProof)
+		credential.UserID = username
+		if err := repo.StoreWebAuthnCredential(ctx, credential); err != nil {
+			existingCredential, getErr := repo.GetWebAuthnCredential(ctx, credentialID)
+			if getErr != nil || existingCredential == nil || !strings.EqualFold(strings.TrimSpace(existingCredential.UserID), username) {
+				return fmt.Errorf("failed to restore setup admin passkey credential: %w", err)
+			}
+		}
+	}
+
+	if !passkeyProof.Consumed {
+		consumedProof, err := repo.ConsumePasskeyRegistrationProof(ctx, passkeyProof.ID, passkeyProof.Username, passkeyProof.CeremonyID)
+		if err != nil {
+			refreshedProof, getErr := repo.GetPasskeyRegistrationProof(ctx, passkeyProof.ID)
+			if getErr != nil || refreshedProof == nil || !refreshedProof.Consumed {
+				return fmt.Errorf("failed to finalize passkey registration proof: %w", err)
+			}
+			passkeyProof.Consumed = true
+			passkeyProof.ConsumedAt = refreshedProof.ConsumedAt
+		} else {
+			passkeyProof.Consumed = consumedProof.Consumed
+			passkeyProof.ConsumedAt = consumedProof.ConsumedAt
+		}
+	}
+
+	return nil
+}
+
+func setupAdminBootstrapCredentialBound(ctx context.Context, repo *repositories.AccountRepository, username, credentialID string) (bool, error) {
+	if strings.TrimSpace(credentialID) == "" {
+		return false, nil
+	}
+
+	credentials, err := repo.GetUserWebAuthnCredentials(ctx, username)
+	if err != nil {
+		return false, err
+	}
+
+	for _, credential := range credentials {
+		if credential != nil && strings.EqualFold(strings.TrimSpace(credential.ID), credentialID) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func setupAdminBootstrapCredentialID(passkeyProof *models.PasskeyRegistrationProof) string {
+	if passkeyProof == nil {
+		return ""
+	}
+	return strings.TrimSpace(passkeyProof.CredentialID)
 }
 
 func isNilInterface(value any) bool {
@@ -2143,6 +2501,36 @@ func (s *Service) rollbackAccountCreation(ctx context.Context, repo accountRegis
 	s.logger.Warn("rolled back account after registration failure",
 		zap.String("username", username),
 		zap.NamedError("cause", cause))
+}
+
+func (s *Service) rollbackPasskeyCredentialCreation(ctx context.Context, repo *repositories.AccountRepository, username string, credentialID string, cause error) {
+	if strings.TrimSpace(credentialID) != "" {
+		if err := repo.DeleteWebAuthnCredential(ctx, credentialID); err != nil {
+			s.logger.Error("failed to rollback passkey credential after registration failure",
+				zap.String("username", username),
+				zap.String("credential_id", credentialID),
+				zap.NamedError("rollback_error", err),
+				zap.NamedError("cause", cause))
+		}
+	}
+}
+
+func passkeyRegistrationProofToCredential(proof *models.PasskeyRegistrationProof) *storage.WebAuthnCredential {
+	now := time.Now().UTC()
+	return &storage.WebAuthnCredential{
+		ID:              proof.CredentialID,
+		UserID:          strings.TrimSpace(proof.Username),
+		PublicKey:       append([]byte(nil), proof.PublicKey...),
+		AttestationType: proof.AttestationType,
+		AAGUID:          append([]byte(nil), proof.AAGUID...),
+		SignCount:       proof.SignCount,
+		CloneWarning:    proof.CloneWarning,
+		BackupEligible:  proof.BackupEligible,
+		BackupState:     proof.BackupState,
+		CreatedAt:       now,
+		LastUsedAt:      now,
+		Name:            "Passkey 1",
+	}
 }
 
 // Helper methods for account registration

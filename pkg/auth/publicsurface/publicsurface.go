@@ -493,6 +493,18 @@ var publicRules = []PublicRule{
 	},
 	{
 		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/auth/webauthn/signup/begin",
+		Match:       RuleMatchExact,
+		Description: "WebAuthn signup begin",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/api/v1/auth/webauthn/signup/finish",
+		Match:       RuleMatchExact,
+		Description: "WebAuthn signup finish",
+	},
+	{
+		Methods:     []string{http.MethodPost},
 		Path:        "/auth/wallet/challenge",
 		Match:       RuleMatchExact,
 		Description: "wallet challenge",

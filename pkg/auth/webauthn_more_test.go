@@ -72,7 +72,14 @@ func TestWebAuthnService_DeleteCredential_AndUpdateCredentialName_SuccessPaths(t
 	repo := newInMemoryWebAuthnRepo()
 	repo.usersByUsername["alice"] = &storage.User{Username: "alice", PasswordHash: "hash"}
 
-	cred1 := &storage.WebAuthnCredential{ID: "AQ==", UserID: "alice", PublicKey: []byte("pub"), Name: "old"}
+	cred1LastUsedAt := time.Unix(100, 0).UTC()
+	cred1 := &storage.WebAuthnCredential{
+		ID:         "AQ==",
+		UserID:     "alice",
+		PublicKey:  []byte("pub"),
+		Name:       "old",
+		LastUsedAt: cred1LastUsedAt,
+	}
 	cred2 := &storage.WebAuthnCredential{ID: "Ag==", UserID: "alice", PublicKey: []byte("pub2"), Name: "old2"}
 	repo.credentialsByUsername["alice"] = []*storage.WebAuthnCredential{cred1, cred2}
 	repo.credentialsByID[cred1.ID] = cred1
@@ -95,6 +102,9 @@ func TestWebAuthnService_DeleteCredential_AndUpdateCredentialName_SuccessPaths(t
 
 	require.NoError(t, svc.UpdateCredentialName(context.Background(), "alice", cred1.ID, "new"))
 	require.Equal(t, "new", repo.credentialsByID[cred1.ID].Name)
+	require.Equal(t, cred1LastUsedAt, repo.credentialsByID[cred1.ID].LastUsedAt)
+	require.Equal(t, 1, repo.renameCalls)
+	require.Zero(t, repo.updateCalls)
 
 	// Multiple credentials -> delete allowed without checking password presence.
 	repo.usersByUsername["alice"].PasswordHash = ""
@@ -122,7 +132,12 @@ func TestWebAuthnService_DeleteCredential_AndUpdateCredentialName_SuccessPaths(t
 
 	require.NoError(t, svc2.DeleteCredential(context.Background(), "alice", only.ID))
 
-	// Ensure last-used update path is exercised.
-	repo2.credentialsByID[only.ID] = &storage.WebAuthnCredential{ID: only.ID, UserID: "alice", SignCount: 1, LastUsedAt: time.Now().Add(-time.Hour)}
+	// Renames persist the requested name without moving LastUsedAt.
+	lastUsedAt := time.Unix(200, 0).UTC()
+	repo2.credentialsByID[only.ID] = &storage.WebAuthnCredential{ID: only.ID, UserID: "alice", SignCount: 1, LastUsedAt: lastUsedAt}
 	require.NoError(t, svc2.UpdateCredentialName(context.Background(), "alice", only.ID, "renamed"))
+	require.Equal(t, "renamed", repo2.credentialsByID[only.ID].Name)
+	require.Equal(t, lastUsedAt, repo2.credentialsByID[only.ID].LastUsedAt)
+	require.Equal(t, 1, repo2.renameCalls)
+	require.Zero(t, repo2.updateCalls)
 }

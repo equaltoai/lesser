@@ -80,8 +80,9 @@ func TestRound09_AccountRepository_WebAuthnCredentials(t *testing.T) {
 
 	mockDBUpdateErr := new(mocks.MockDB)
 	mockQueryUpdateErr := new(mocks.MockQuery)
-	mockQueryUpdateErr.On("Update", mock.Anything).Return(errors.New("boom")).Once()
-	setupPermissiveRound08Mocks(mockDBUpdateErr, mockQueryUpdateErr, nil, baseTime)
+	mockUpdateBuilderErr := new(mocks.MockUpdateBuilder)
+	mockUpdateBuilderErr.On("Execute").Return(errors.New("boom")).Once()
+	setupPermissiveRound08Mocks(mockDBUpdateErr, mockQueryUpdateErr, mockUpdateBuilderErr, baseTime)
 
 	repoUpdateErr := NewAccountRepository(mockDBUpdateErr, "test-table", "example.com", zap.NewNop())
 	repoUpdateErr.SetValidationService(nil)

@@ -108,6 +108,15 @@ func TestAgentRegistrationAndAuthProofRoutesArePublic(t *testing.T) {
 	}
 }
 
+func TestWebAuthnSignupRoutesArePublic(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, IsPublic(http.MethodPost, "/api/v1/auth/webauthn/signup/begin"))
+	require.True(t, IsPublic(http.MethodPost, "/api/v1/auth/webauthn/signup/finish"))
+	require.Equal(t, ClassificationAnonymous, Classify(http.MethodPost, "/api/v1/auth/webauthn/signup/begin").Kind)
+	require.Equal(t, ClassificationAnonymous, Classify(http.MethodPost, "/api/v1/auth/webauthn/signup/finish").Kind)
+}
+
 func TestPublicProfileRoutesDoNotOpenPrivateSiblings(t *testing.T) {
 	t.Parallel()
 

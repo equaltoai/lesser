@@ -25,7 +25,6 @@ func TestRound10_Utils_KeyAndValidationAndTimeUtils(t *testing.T) {
 	require.Equal(t, "OAUTH_STATE#state-1", keys.OAuthStateKey("state-1"))
 	require.Equal(t, "AUTH_CODE#code-1", keys.AuthCodeKey("code-1"))
 	require.Equal(t, "REFRESH_TOKEN#rt-1", keys.RefreshTokenKey("rt-1"))
-	require.Equal(t, "WEBAUTHN_CREDENTIAL#cred-1", keys.WebAuthnCredentialKey("cred-1"))
 	require.Equal(t, "WALLET#0xabc", keys.WalletKey("0xabc"))
 
 	gsi := NewGSIKeyUtils()

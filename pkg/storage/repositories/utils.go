@@ -92,11 +92,6 @@ func (k *KeyUtils) RefreshTokenKey(token string) string {
 	return fmt.Sprintf("REFRESH_TOKEN#%s", token)
 }
 
-// WebAuthnCredentialKey generates a WebAuthn credential primary key: WEBAUTHN_CREDENTIAL#{id}
-func (k *KeyUtils) WebAuthnCredentialKey(credentialID string) string {
-	return fmt.Sprintf("WEBAUTHN_CREDENTIAL#%s", credentialID)
-}
-
 // WalletKey generates a wallet primary key: WALLET#{address}
 func (k *KeyUtils) WalletKey(address string) string {
 	return fmt.Sprintf("WALLET#%s", address)
@@ -105,14 +100,13 @@ func (k *KeyUtils) WalletKey(address string) string {
 // Common Sort Keys
 const (
 	// Core sort keys
-	SKMetadata   = "METADATA"
-	SKProfile    = "PROFILE"
-	SKState      = "STATE"
-	SKCode       = "CODE"
-	SKToken      = "TOKEN"
-	SKCredential = "CREDENTIAL"
-	SKChallenge  = "CHALLENGE"
-	SKWebAuthn   = "WEBAUTHN"
+	SKMetadata  = "METADATA"
+	SKProfile   = "PROFILE"
+	SKState     = "STATE"
+	SKCode      = "CODE"
+	SKToken     = "TOKEN"
+	SKChallenge = "CHALLENGE"
+	SKWebAuthn  = "WEBAUTHN"
 
 	// Prefixes for range queries
 	SKPrefixFilter    = "FILTER#"

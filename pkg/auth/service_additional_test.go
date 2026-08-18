@@ -184,6 +184,9 @@ func TestAuthService_WalletFlows(t *testing.T) {
 	wallets, err := as.GetUserWallets(context.Background(), "alice")
 	require.NoError(t, err)
 	require.Len(t, wallets, 1)
+	walletRepo.passkeysByUser["alice"] = []*storage.WebAuthnCredential{
+		{ID: "cred-1", UserID: "alice", PublicKey: []byte("pk")},
+	}
 	require.NoError(t, as.UnlinkWallet(context.Background(), "alice", address))
 
 	// Challenge helpers.

@@ -106,6 +106,11 @@ func TestWalletService_LinkAndUnlink_ErrorBranches(t *testing.T) {
 	require.ErrorIs(t, err, ErrWalletCheck)
 
 	repo.errGetUserWallets = nil
+	repo.passkeysByUser["alice"] = []*storage.WebAuthnCredential{
+		{ID: "cred-1", UserID: "alice", PublicKey: []byte("pk")},
+	}
+	repo.walletsByAddr["0xabc"] = &storage.WalletCredential{Username: "alice", Address: "0xabc", Type: "ethereum", ChainID: 1}
+	repo.walletsByUserAddr[walletKey("alice", "0xabc")] = repo.walletsByAddr["0xabc"]
 	repo.errDeleteWallet = errors.New("delete failed")
 	require.ErrorIs(t, svc.UnlinkWallet(context.Background(), "alice", "0xabc"), ErrWalletDeletion)
 }

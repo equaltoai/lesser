@@ -931,6 +931,20 @@
     "verdict": "agree"
   },
   {
+    "method": "POST",
+    "path": "/api/v1/auth/webauthn/signup/begin",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/webauthn/signup/finish",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
     "method": "GET",
     "path": "/api/v1/blocks",
     "runtimePosture": "auth-required",

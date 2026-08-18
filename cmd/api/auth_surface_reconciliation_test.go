@@ -566,6 +566,8 @@ var authSurfaceExpectedPublicMutations = map[string]bool{
 	"POST /api/v1/agents/register/challenge":                                       true,
 	"POST /api/v1/auth/webauthn/login/begin":                                       true,
 	"POST /api/v1/auth/webauthn/login/finish":                                      true,
+	"POST /api/v1/auth/webauthn/signup/begin":                                      true,
+	"POST /api/v1/auth/webauthn/signup/finish":                                     true,
 	"POST /api/v1/search/statuses":                                                 true,
 	"POST /api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge":       true,
 	"POST /api/v1/agents/{username}/access-leases/{leaseID}/session-key":           true,

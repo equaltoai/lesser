@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -19,6 +20,8 @@ type inMemoryWalletRepo struct {
 	challenges        map[string]*storage.WalletChallenge
 	walletsByUserAddr map[string]*storage.WalletCredential
 	walletsByAddr     map[string]*storage.WalletCredential
+	passkeysByUser    map[string][]*storage.WebAuthnCredential
+	deleteConditioned func(context.Context, string, string, string, string, string) error
 
 	errGetUserWallets error
 	errStoreWallet    error
@@ -32,6 +35,7 @@ func newInMemoryWalletRepo() *inMemoryWalletRepo {
 		challenges:        make(map[string]*storage.WalletChallenge),
 		walletsByUserAddr: make(map[string]*storage.WalletCredential),
 		walletsByAddr:     make(map[string]*storage.WalletCredential),
+		passkeysByUser:    make(map[string][]*storage.WebAuthnCredential),
 	}
 }
 
@@ -48,6 +52,10 @@ func (r *inMemoryWalletRepo) GetWalletChallenge(_ context.Context, challengeID s
 		return nil, lessererrors.ItemNotFoundWithID("wallet_challenge", challengeID)
 	}
 	return challenge, nil
+}
+
+func (r *inMemoryWalletRepo) GetUserWebAuthnCredentials(_ context.Context, username string) ([]*storage.WebAuthnCredential, error) {
+	return append([]*storage.WebAuthnCredential(nil), r.passkeysByUser[username]...), nil
 }
 
 func (r *inMemoryWalletRepo) DeleteWalletChallenge(_ context.Context, challengeID string) error {
@@ -121,6 +129,34 @@ func (r *inMemoryWalletRepo) DeleteWalletCredential(_ context.Context, username,
 	return nil
 }
 
+func (r *inMemoryWalletRepo) DeleteWalletCredentialConditionedOnSurvivor(
+	_ context.Context,
+	username, address, _ string,
+	survivingPasskeyID string,
+	survivingWalletAddress string,
+) error {
+	if r.deleteConditioned != nil {
+		return r.deleteConditioned(context.Background(), username, address, "", survivingPasskeyID, survivingWalletAddress)
+	}
+	if survivingPasskeyID != "" {
+		found := false
+		for _, passkey := range r.passkeysByUser[username] {
+			if passkey != nil && passkey.ID == survivingPasskeyID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return dynamormerrors.ErrConditionFailed
+		}
+	} else if survivingWalletAddress != "" {
+		if _, ok := r.walletsByUserAddr[walletKey(username, survivingWalletAddress)]; !ok {
+			return dynamormerrors.ErrConditionFailed
+		}
+	}
+	return r.DeleteWalletCredential(context.Background(), username, address)
+}
+
 func TestWalletService_CreateChallenge_VerifySignatureAndLinkFlow(t *testing.T) {
 	t.Parallel()
 
@@ -172,6 +208,9 @@ func TestWalletService_CreateChallenge_VerifySignatureAndLinkFlow(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, wallets, 1)
 
+	repo.passkeysByUser["alice"] = []*storage.WebAuthnCredential{
+		{ID: "cred-1", UserID: "alice", PublicKey: []byte("pk")},
+	}
 	require.NoError(t, svc.UnlinkWallet(context.Background(), "alice", address))
 }
 

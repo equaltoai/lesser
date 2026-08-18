@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -59,6 +61,7 @@ type round10QueryState struct {
 	webAuthnCredentialsByUser     map[string][]storagemodels.WebAuthnCredential
 	webAuthnCredentialByID        map[string]storagemodels.WebAuthnCredential
 	webAuthnChallengesByID        map[string]storagemodels.WebAuthnChallenge
+	passkeyRegistrationProofsByID map[string]storagemodels.PasskeyRegistrationProof
 	oauthClientsByID              map[string]storagemodels.OAuthClient
 	authorizationCodesByCode      map[string]storagemodels.AuthorizationCode
 	refreshTokensByToken          map[string]storagemodels.RefreshToken
@@ -173,6 +176,99 @@ func (s *round10QueryState) whereString(field string) (string, bool) {
 	}
 	str, ok := v.(string)
 	return str, ok
+}
+
+func round10CanonicalizeWebAuthnCredential(cred storagemodels.WebAuthnCredential) storagemodels.WebAuthnCredential {
+	if strings.TrimSpace(cred.PK) == "" && strings.TrimSpace(cred.UserID) != "" {
+		cred.PK = "USER#" + cred.UserID
+	}
+	if strings.TrimSpace(cred.SK) == "" && strings.TrimSpace(cred.ID) != "" {
+		cred.SK = "WEBAUTHN_CRED#" + cred.ID
+	}
+	if strings.TrimSpace(cred.GSI1PK) == "" && strings.TrimSpace(cred.ID) != "" {
+		cred.GSI1PK = "WEBAUTHN_CREDENTIAL#" + cred.ID
+	}
+	if strings.TrimSpace(cred.GSI1SK) == "" && strings.TrimSpace(cred.UserID) != "" {
+		cred.GSI1SK = "USER#" + cred.UserID
+	}
+	return cred
+}
+
+func round10UpsertWebAuthnCredential(state *round10QueryState, cred storagemodels.WebAuthnCredential) {
+	if state == nil {
+		return
+	}
+
+	cred = round10CanonicalizeWebAuthnCredential(cred)
+
+	if state.webAuthnCredentialByID == nil {
+		state.webAuthnCredentialByID = map[string]storagemodels.WebAuthnCredential{}
+	}
+	state.webAuthnCredentialByID[cred.ID] = cred
+
+	if strings.TrimSpace(cred.UserID) == "" {
+		return
+	}
+
+	if state.webAuthnCredentialsByUser == nil {
+		state.webAuthnCredentialsByUser = map[string][]storagemodels.WebAuthnCredential{}
+	}
+
+	creds := state.webAuthnCredentialsByUser[cred.UserID]
+	for i := range creds {
+		if creds[i].ID == cred.ID {
+			creds[i] = cred
+			state.webAuthnCredentialsByUser[cred.UserID] = creds
+			return
+		}
+	}
+	state.webAuthnCredentialsByUser[cred.UserID] = append(creds, cred)
+}
+
+func round10DeleteWebAuthnCredential(state *round10QueryState, credentialID string) {
+	if state == nil || strings.TrimSpace(credentialID) == "" {
+		return
+	}
+
+	cred, ok := state.webAuthnCredentialByID[credentialID]
+	if ok {
+		delete(state.webAuthnCredentialByID, credentialID)
+		creds := state.webAuthnCredentialsByUser[cred.UserID]
+		filtered := creds[:0]
+		for _, candidate := range creds {
+			if candidate.ID == credentialID {
+				continue
+			}
+			filtered = append(filtered, candidate)
+		}
+		if len(filtered) == 0 {
+			delete(state.webAuthnCredentialsByUser, cred.UserID)
+			return
+		}
+		state.webAuthnCredentialsByUser[cred.UserID] = filtered
+		return
+	}
+
+	for username, creds := range state.webAuthnCredentialsByUser {
+		filtered := creds[:0]
+		removed := false
+		for _, candidate := range creds {
+			if candidate.ID == credentialID {
+				removed = true
+				continue
+			}
+			filtered = append(filtered, candidate)
+		}
+		if !removed {
+			continue
+		}
+		if len(filtered) == 0 {
+			delete(state.webAuthnCredentialsByUser, username)
+		} else {
+			state.webAuthnCredentialsByUser[username] = filtered
+		}
+		return
+	}
 }
 
 func round10CommunityNoteGSI3SK(note storagemodels.CommunityNote) string {
@@ -428,10 +524,229 @@ func round10NewLiftContextWithBodyBytes(method, path string, headers, query map[
 }
 
 type round10DynamoHarness struct {
-	db     *mocks.MockDB
+	db     *round10TransactionalDB
 	query  *mocks.MockQuery
 	update *mocks.MockUpdateBuilder
 	state  *round10QueryState
+}
+
+type round10TransactionalDB struct {
+	inner *mocks.MockDB
+	state *round10QueryState
+}
+
+func (db *round10TransactionalDB) Model(model any) dynamormcore.Query {
+	return db.inner.Model(model)
+}
+
+func (db *round10TransactionalDB) Migrate() error {
+	return db.inner.Migrate()
+}
+
+func (db *round10TransactionalDB) AutoMigrate(models ...any) error {
+	return db.inner.AutoMigrate(models...)
+}
+
+func (db *round10TransactionalDB) Close() error {
+	return db.inner.Close()
+}
+
+func (db *round10TransactionalDB) WithContext(context.Context) dynamormcore.DB {
+	return db
+}
+
+func (db *round10TransactionalDB) Transact() dynamormcore.TransactionBuilder {
+	return &round10TransactionBuilder{state: db.state}
+}
+
+func (db *round10TransactionalDB) TransactWrite(_ context.Context, fn func(dynamormcore.TransactionBuilder) error) error {
+	builder := &round10TransactionBuilder{state: db.state}
+	if err := fn(builder); err != nil {
+		return err
+	}
+	return builder.Execute()
+}
+
+type round10TransactionBuilder struct {
+	state      *round10QueryState
+	operations []round10TransactionOperation
+}
+
+type round10TransactionOperation struct {
+	kind       string
+	model      any
+	conditions []dynamormcore.TransactCondition
+}
+
+func (b *round10TransactionBuilder) Put(any, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) Create(any, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) Update(any, []string, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) UpdateWithBuilder(any, func(dynamormcore.UpdateBuilder) error, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) Delete(model any, conditions ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	b.operations = append(b.operations, round10TransactionOperation{
+		kind:       "delete",
+		model:      model,
+		conditions: append([]dynamormcore.TransactCondition(nil), conditions...),
+	})
+	return b
+}
+
+func (b *round10TransactionBuilder) ConditionCheck(model any, conditions ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	b.operations = append(b.operations, round10TransactionOperation{
+		kind:       "condition_check",
+		model:      model,
+		conditions: append([]dynamormcore.TransactCondition(nil), conditions...),
+	})
+	return b
+}
+
+func (b *round10TransactionBuilder) WithContext(context.Context) dynamormcore.TransactionBuilder {
+	return b
+}
+
+func (b *round10TransactionBuilder) Execute() error {
+	for idx, operation := range b.operations {
+		if !round10TransactionConditionsMet(b.state, operation.model, operation.conditions) {
+			return &dynamormerrors.TransactionError{
+				Err:            dynamormerrors.ErrConditionFailed,
+				Operation:      operation.kind,
+				OperationIndex: idx,
+				Reason:         "ConditionalCheckFailed",
+			}
+		}
+	}
+
+	for idx, operation := range b.operations {
+		if operation.kind != "delete" {
+			continue
+		}
+		if b.state.deleteErrorOnce != nil {
+			err := b.state.deleteErrorOnce
+			b.state.deleteErrorOnce = nil
+			return err
+		}
+		if !round10TransactionDeleteModel(b.state, operation.model) {
+			return &dynamormerrors.TransactionError{
+				Err:            dynamormerrors.ErrConditionFailed,
+				Operation:      operation.kind,
+				OperationIndex: idx,
+				Reason:         "ConditionalCheckFailed",
+			}
+		}
+	}
+
+	return nil
+}
+
+func (b *round10TransactionBuilder) ExecuteWithContext(context.Context) error {
+	return b.Execute()
+}
+
+func round10TransactionConditionsMet(state *round10QueryState, model any, conditions []dynamormcore.TransactCondition) bool {
+	for _, condition := range conditions {
+		switch condition.Kind {
+		case dynamormcore.TransactConditionKindPrimaryKeyExists:
+			if !round10TransactionModelExists(state, model) {
+				return false
+			}
+		case dynamormcore.TransactConditionKindPrimaryKeyNotExists:
+			if round10TransactionModelExists(state, model) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func round10TransactionModelExists(state *round10QueryState, model any) bool {
+	switch typed := model.(type) {
+	case *storagemodels.WebAuthnCredential:
+		if typed == nil {
+			return false
+		}
+		credential := round10CanonicalizeWebAuthnCredential(*typed)
+		if _, ok := state.webAuthnCredentialByID[credential.ID]; ok {
+			return true
+		}
+		for _, creds := range state.webAuthnCredentialsByUser {
+			for _, candidate := range creds {
+				if candidate.ID == credential.ID {
+					return true
+				}
+			}
+		}
+		return false
+	case *storagemodels.WalletCredential:
+		if typed == nil {
+			return false
+		}
+		username := strings.TrimSpace(typed.Username)
+		address := strings.ToLower(strings.TrimSpace(typed.Address))
+		if _, ok := state.walletCredentialsByAddress[address]; ok {
+			return true
+		}
+		for _, wallet := range state.walletCredentialsByUser[username] {
+			if strings.EqualFold(wallet.Address, address) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+func round10TransactionDeleteModel(state *round10QueryState, model any) bool {
+	switch typed := model.(type) {
+	case *storagemodels.WebAuthnCredential:
+		if typed == nil {
+			return false
+		}
+		credential := round10CanonicalizeWebAuthnCredential(*typed)
+		if !round10TransactionModelExists(state, typed) {
+			return false
+		}
+		round10DeleteWebAuthnCredential(state, credential.ID)
+		return true
+	case *storagemodels.WalletCredential:
+		if typed == nil {
+			return false
+		}
+		username := strings.TrimSpace(typed.Username)
+		address := strings.ToLower(strings.TrimSpace(typed.Address))
+		if !round10TransactionModelExists(state, typed) {
+			return false
+		}
+		delete(state.walletCredentialsByAddress, address)
+		wallets := state.walletCredentialsByUser[username]
+		filtered := wallets[:0]
+		for _, wallet := range wallets {
+			if strings.EqualFold(wallet.Address, address) {
+				continue
+			}
+			filtered = append(filtered, wallet)
+		}
+		if len(filtered) == 0 {
+			delete(state.walletCredentialsByUser, username)
+		} else {
+			state.walletCredentialsByUser[username] = filtered
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10DynamoHarness {
@@ -525,6 +840,8 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
 	if state.executeErrorOnce != nil {
 		mockUpdate.On("Execute").Return(state.executeErrorOnce).Once()
+	} else if state.updateErrorOnce != nil {
+		mockUpdate.On("Execute").Return(state.updateErrorOnce).Once()
 	}
 	mockUpdate.On("Execute").Return(nil).Run(func(_ mock.Arguments) {
 		switch state.model.(type) {
@@ -566,6 +883,52 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				client.UpdatedAt = updatedAt
 			}
 			state.oauthClientsByID[clientID] = client
+		case *storagemodels.WebAuthnCredential:
+			model, _ := state.model.(*storagemodels.WebAuthnCredential)
+			if model == nil {
+				return
+			}
+
+			credential := round10CanonicalizeWebAuthnCredential(*model)
+			if existing, ok := state.webAuthnCredentialByID[credential.ID]; ok {
+				credential = round10CanonicalizeWebAuthnCredential(existing)
+			}
+			if name, ok := state.sets["Name"].(string); ok {
+				credential.Name = name
+			}
+			if signCount, ok := state.sets["SignCount"].(uint32); ok {
+				credential.SignCount = signCount
+			}
+			if cloneWarning, ok := state.sets["CloneWarning"].(bool); ok {
+				credential.CloneWarning = cloneWarning
+			}
+			if backupState, ok := state.sets["BackupState"].(bool); ok {
+				credential.BackupState = backupState
+			}
+			if lastUsedAt, ok := state.sets["LastUsedAt"].(time.Time); ok {
+				credential.LastUsedAt = lastUsedAt
+			}
+			round10UpsertWebAuthnCredential(state, credential)
+		case *storagemodels.PasskeyRegistrationProof:
+			model, _ := state.model.(*storagemodels.PasskeyRegistrationProof)
+			if model == nil {
+				return
+			}
+
+			proof := *model
+			if existing, ok := state.passkeyRegistrationProofsByID[proof.ID]; ok {
+				proof = existing
+			}
+			if consumed, ok := state.sets["Consumed"].(bool); ok {
+				proof.Consumed = consumed
+			}
+			if consumedAt, ok := state.sets["ConsumedAt"].(time.Time); ok {
+				proof.ConsumedAt = consumedAt
+			}
+			if state.passkeyRegistrationProofsByID == nil {
+				state.passkeyRegistrationProofsByID = map[string]storagemodels.PasskeyRegistrationProof{}
+			}
+			state.passkeyRegistrationProofsByID[proof.ID] = proof
 		}
 	}).Maybe()
 
@@ -575,6 +938,22 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Create").Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
+		case *storagemodels.User:
+			if m == nil {
+				return
+			}
+			if state.usersByUsername == nil {
+				state.usersByUsername = map[string]storagemodels.User{}
+			}
+			state.usersByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
+		case *storagemodels.Actor:
+			if m == nil {
+				return
+			}
+			if state.actorsByUser == nil {
+				state.actorsByUser = map[string]storagemodels.Actor{}
+			}
+			state.actorsByUser[strings.ToLower(strings.TrimSpace(m.Username))] = *m
 		case *storagemodels.AgentGovernanceState:
 			if m == nil {
 				return
@@ -635,6 +1014,11 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			state.oauthDeviceSessionsByHash[m.DeviceCodeHash] = *m
 			state.oauthDeviceSessionsByUserCode[m.UserCode] = *m
+		case *storagemodels.WebAuthnCredential:
+			if m == nil {
+				return
+			}
+			round10UpsertWebAuthnCredential(state, *m)
 		case *storagemodels.AuthAuditLog:
 			if m == nil {
 				return
@@ -717,6 +1101,17 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Delete").Return(nil).Run(func(_ mock.Arguments) {
 		switch state.model.(type) {
+		case *storagemodels.WebAuthnCredential:
+			credentialID := ""
+			if model, ok := state.model.(*storagemodels.WebAuthnCredential); ok && model != nil && strings.TrimSpace(model.ID) != "" {
+				credentialID = strings.TrimSpace(model.ID)
+			}
+			if credentialID == "" {
+				if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, "WEBAUTHN_CRED#") {
+					credentialID = strings.TrimPrefix(sk, "WEBAUTHN_CRED#")
+				}
+			}
+			round10DeleteWebAuthnCredential(state, credentialID)
 		case *storagemodels.WalletCredential:
 			pk, okPK := state.whereString("PK")
 			sk, okSK := state.whereString("SK")
@@ -754,6 +1149,22 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Update", mock.Anything).Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
+		case *storagemodels.User:
+			if m == nil {
+				return
+			}
+			if state.usersByUsername == nil {
+				state.usersByUsername = map[string]storagemodels.User{}
+			}
+			state.usersByUsername[strings.ToLower(strings.TrimSpace(m.Username))] = *m
+		case *storagemodels.Actor:
+			if m == nil {
+				return
+			}
+			if state.actorsByUser == nil {
+				state.actorsByUser = map[string]storagemodels.Actor{}
+			}
+			state.actorsByUser[strings.ToLower(strings.TrimSpace(m.Username))] = *m
 		case *storagemodels.AgentGovernanceState:
 			if m == nil {
 				return
@@ -798,6 +1209,27 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.walletChallengesByID = map[string]storagemodels.WalletChallenge{}
 			}
 			state.walletChallengesByID[m.ID] = *m
+		case *storagemodels.WebAuthnChallenge:
+			if m == nil {
+				return
+			}
+			if state.webAuthnChallengesByID == nil {
+				state.webAuthnChallengesByID = map[string]storagemodels.WebAuthnChallenge{}
+			}
+			state.webAuthnChallengesByID[m.Challenge] = *m
+		case *storagemodels.WebAuthnCredential:
+			if m == nil {
+				return
+			}
+			round10UpsertWebAuthnCredential(state, *m)
+		case *storagemodels.PasskeyRegistrationProof:
+			if m == nil {
+				return
+			}
+			if state.passkeyRegistrationProofsByID == nil {
+				state.passkeyRegistrationProofsByID = map[string]storagemodels.PasskeyRegistrationProof{}
+			}
+			state.passkeyRegistrationProofsByID[m.ID] = *m
 		}
 	}).Maybe()
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()
@@ -1822,23 +2254,43 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				Type:      "registration",
 				ExpiresAt: time.Now().Add(5 * time.Minute),
 			}
-		case *storagemodels.WebAuthnCredential:
-			credentialID := ""
-			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "WEBAUTHN_CREDENTIAL#") {
-				credentialID = strings.TrimPrefix(pk, "WEBAUTHN_CREDENTIAL#")
+		case *storagemodels.PasskeyRegistrationProof:
+			proofID := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "PASSKEY_REGISTRATION_PROOF#") {
+				proofID = strings.TrimPrefix(pk, "PASSKEY_REGISTRATION_PROOF#")
 			}
-			if cred, ok := state.webAuthnCredentialByID[credentialID]; ok {
-				*d = cred
+			if proof, ok := state.passkeyRegistrationProofsByID[proofID]; ok {
+				*d = proof
 				return
 			}
-			*d = storagemodels.WebAuthnCredential{
+			*d = storagemodels.PasskeyRegistrationProof{
+				ID:           proofID,
+				Username:     "alice",
+				CeremonyID:   "signup-1",
+				CredentialID: "cred-1",
+				PublicKey:    []byte{0x01},
+				CreatedAt:    time.Now().Add(-1 * time.Minute),
+				ExpiresAt:    time.Now().Add(5 * time.Minute),
+			}
+		case *storagemodels.WebAuthnCredential:
+			credentialID := ""
+			if gsi1PK, ok := state.whereString("gsi1PK"); ok && strings.HasPrefix(gsi1PK, "WEBAUTHN_CREDENTIAL#") {
+				credentialID = strings.TrimPrefix(gsi1PK, "WEBAUTHN_CREDENTIAL#")
+			} else if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, "WEBAUTHN_CRED#") {
+				credentialID = strings.TrimPrefix(sk, "WEBAUTHN_CRED#")
+			}
+			if cred, ok := state.webAuthnCredentialByID[credentialID]; ok {
+				*d = round10CanonicalizeWebAuthnCredential(cred)
+				return
+			}
+			*d = round10CanonicalizeWebAuthnCredential(storagemodels.WebAuthnCredential{
 				ID:         "Y3JlZA==",
 				UserID:     "alice",
 				PublicKey:  []byte{0x01, 0x02},
 				Name:       "Test Key",
 				CreatedAt:  time.Now().Add(-2 * time.Hour),
 				LastUsedAt: time.Now().Add(-1 * time.Hour),
-			}
+			})
 		case *storagemodels.OAuthClient:
 			clientID := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "OAUTH_CLIENT#") {
@@ -2255,10 +2707,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			*d = []*storagemodels.Import{}
 		case *[]storagemodels.WebAuthnCredential:
-			username, _ := state.whereString("gsi1PK")
+			username, _ := state.whereString("PK")
 			username = strings.TrimPrefix(username, "USER#")
 			if creds, ok := state.webAuthnCredentialsByUser[username]; ok {
-				*d = creds
+				items := make([]storagemodels.WebAuthnCredential, len(creds))
+				for i := range creds {
+					items[i] = round10CanonicalizeWebAuthnCredential(creds[i])
+				}
+				*d = items
 				return
 			}
 			*d = []storagemodels.WebAuthnCredential{
@@ -2270,6 +2726,9 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 					CreatedAt:  time.Now().Add(-2 * time.Hour),
 					LastUsedAt: time.Now().Add(-1 * time.Hour),
 				},
+			}
+			for i := range *d {
+				(*d)[i] = round10CanonicalizeWebAuthnCredential((*d)[i])
 			}
 		case *[]storagemodels.PushSubscription:
 			username, _ := state.whereString("PK")
@@ -2794,7 +3253,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}).Maybe()
 
 	return &round10DynamoHarness{
-		db:     mockDB,
+		db:     &round10TransactionalDB{inner: mockDB, state: state},
 		query:  mockQuery,
 		update: mockUpdate,
 		state:  state,

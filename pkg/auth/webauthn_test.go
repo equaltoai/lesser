@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 type inMemoryWebAuthnRepo struct {
@@ -19,9 +21,12 @@ type inMemoryWebAuthnRepo struct {
 	credentialsByUsername map[string][]*storage.WebAuthnCredential
 	credentialsByID       map[string]*storage.WebAuthnCredential
 	challengesByChallenge map[string]*storage.WebAuthnChallenge
+	proofsByID            map[string]*storagemodels.PasskeyRegistrationProof
 	walletsByUsername     map[string][]*storage.WalletCredential
+	deleteConditionedFunc func(context.Context, string, string, string, string) error
 
 	updateCalls int
+	renameCalls int
 }
 
 func newInMemoryWebAuthnRepo() *inMemoryWebAuthnRepo {
@@ -30,6 +35,7 @@ func newInMemoryWebAuthnRepo() *inMemoryWebAuthnRepo {
 		credentialsByUsername: make(map[string][]*storage.WebAuthnCredential),
 		credentialsByID:       make(map[string]*storage.WebAuthnCredential),
 		challengesByChallenge: make(map[string]*storage.WebAuthnChallenge),
+		proofsByID:            make(map[string]*storagemodels.PasskeyRegistrationProof),
 		walletsByUsername:     make(map[string][]*storage.WalletCredential),
 	}
 }
@@ -83,18 +89,97 @@ func (r *inMemoryWebAuthnRepo) GetWebAuthnCredential(_ context.Context, credenti
 }
 
 func (r *inMemoryWebAuthnRepo) DeleteWebAuthnCredential(_ context.Context, credentialID string) error {
+	credential, ok := r.credentialsByID[credentialID]
 	delete(r.credentialsByID, credentialID)
+	if ok {
+		credentials := r.credentialsByUsername[credential.UserID]
+		filtered := credentials[:0]
+		for _, existing := range credentials {
+			if existing == nil || existing.ID == credentialID {
+				continue
+			}
+			filtered = append(filtered, existing)
+		}
+		r.credentialsByUsername[credential.UserID] = append([]*storage.WebAuthnCredential(nil), filtered...)
+	}
 	return nil
 }
 
-func (r *inMemoryWebAuthnRepo) UpdateWebAuthnLastUsed(_ context.Context, credentialID string, signCount uint32) error {
+func (r *inMemoryWebAuthnRepo) DeleteWebAuthnCredentialConditionedOnSurvivor(
+	_ context.Context,
+	username string,
+	credentialID string,
+	survivingPasskeyID string,
+	survivingWalletAddress string,
+) error {
+	if r.deleteConditionedFunc != nil {
+		return r.deleteConditionedFunc(context.Background(), username, credentialID, survivingPasskeyID, survivingWalletAddress)
+	}
+	if survivingPasskeyID != "" {
+		survivor, ok := r.credentialsByID[survivingPasskeyID]
+		if !ok || survivor.UserID != username {
+			return dynamormerrors.ErrConditionFailed
+		}
+	} else if survivingWalletAddress != "" {
+		found := false
+		for _, wallet := range r.walletsByUsername[username] {
+			if wallet != nil && wallet.Address == survivingWalletAddress {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return dynamormerrors.ErrConditionFailed
+		}
+	}
+	return r.DeleteWebAuthnCredential(context.Background(), credentialID)
+}
+
+func (r *inMemoryWebAuthnRepo) UpdateWebAuthnCredentialName(_ context.Context, credentialID string, name string) error {
+	r.renameCalls++
+	cred, ok := r.credentialsByID[credentialID]
+	if ok {
+		cred.Name = name
+	}
+	return nil
+}
+
+func (r *inMemoryWebAuthnRepo) UpdateWebAuthnAuthenticationState(
+	_ context.Context,
+	credentialID string,
+	signCount uint32,
+	cloneWarning bool,
+	backupState bool,
+	lastUsedAt time.Time,
+) error {
 	r.updateCalls++
 	cred, ok := r.credentialsByID[credentialID]
 	if ok {
 		cred.SignCount = signCount
-		cred.LastUsedAt = time.Now()
+		cred.CloneWarning = cloneWarning
+		cred.BackupState = backupState
+		cred.LastUsedAt = lastUsedAt
 	}
 	return nil
+}
+
+func (r *inMemoryWebAuthnRepo) StorePasskeyRegistrationProof(_ context.Context, proof *storagemodels.PasskeyRegistrationProof) error {
+	clone := *proof
+	clone.PublicKey = append([]byte(nil), proof.PublicKey...)
+	clone.AAGUID = append([]byte(nil), proof.AAGUID...)
+	r.proofsByID[proof.ID] = &clone
+	return nil
+}
+
+func (r *inMemoryWebAuthnRepo) GetPasskeyRegistrationProof(_ context.Context, proofID string) (*storagemodels.PasskeyRegistrationProof, error) {
+	proof, ok := r.proofsByID[proofID]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	clone := *proof
+	clone.PublicKey = append([]byte(nil), proof.PublicKey...)
+	clone.AAGUID = append([]byte(nil), proof.AAGUID...)
+	return &clone, nil
 }
 
 type fakeWebAuthnEngine struct {
@@ -195,16 +280,20 @@ func TestWebAuthnService_BeginLoginAndFinishLogin_SuccessAndCredentialNotFound(t
 	repo.usersByUsername["alice"] = &storage.User{Username: "alice", PasswordHash: "hashed"}
 
 	credID := base64.StdEncoding.EncodeToString([]byte{7, 7})
+	previousLastUsedAt := time.Unix(123, 0).UTC()
+	credentialRecord := &storage.WebAuthnCredential{ID: credID, UserID: "alice", PublicKey: []byte("pub"), SignCount: 1, LastUsedAt: previousLastUsedAt}
 	repo.credentialsByUsername["alice"] = []*storage.WebAuthnCredential{
-		{ID: credID, UserID: "alice", PublicKey: []byte("pub"), SignCount: 1},
+		credentialRecord,
 	}
+	repo.credentialsByID[credID] = credentialRecord
 
 	engine := &fakeWebAuthnEngine{
 		beginLoginChallenge: "chal-login",
 		loginCredential: &webauthn.Credential{
 			ID: []byte{7, 7},
 			Authenticator: webauthn.Authenticator{
-				SignCount: 2,
+				SignCount:    2,
+				CloneWarning: true,
 			},
 			Flags: webauthn.CredentialFlags{BackupState: true},
 		},
@@ -243,7 +332,14 @@ func TestWebAuthnService_BeginLoginAndFinishLogin_SuccessAndCredentialNotFound(t
 	require.NoError(t, err)
 	require.Equal(t, credID, used.ID)
 	require.Equal(t, uint32(2), used.SignCount)
+	require.True(t, used.CloneWarning)
+	require.True(t, used.BackupState)
+	require.True(t, used.LastUsedAt.After(previousLastUsedAt))
 	require.GreaterOrEqual(t, repo.updateCalls, 1)
+	require.Equal(t, used.LastUsedAt, repo.credentialsByID[credID].LastUsedAt)
+	require.Equal(t, uint32(2), repo.credentialsByID[credID].SignCount)
+	require.True(t, repo.credentialsByID[credID].CloneWarning)
+	require.True(t, repo.credentialsByID[credID].BackupState)
 
 	// Credential not found in map.
 	engine.loginCredential = &webauthn.Credential{ID: []byte{8, 8}}

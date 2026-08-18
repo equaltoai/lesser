@@ -27,6 +27,8 @@ func TestConfigureRoutes_AuthOptions(t *testing.T) {
 	routes := configuredRouteAuthStates(t, app)
 
 	require.Equal(t, routeAuthState{optionalAuth: true}, routes["POST /api/v1/apps"])
+	require.Equal(t, routeAuthState{}, routes["POST /api/v1/auth/webauthn/signup/begin"])
+	require.Equal(t, routeAuthState{}, routes["POST /api/v1/auth/webauthn/signup/finish"])
 	require.Equal(t, routeAuthState{
 		authRequired:   true,
 		requiredScopes: []string{"read"},

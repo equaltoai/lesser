@@ -374,7 +374,7 @@ func TestRound08_AccountRepositoryAuth_RecoveryAndWebAuthn(t *testing.T) {
 			UserID:       "user-1",
 			PublicKey:    []byte("pk"),
 			CreatedAt:    time.Time{},
-			LastUsed:     time.Now(),
+			LastUsedAt:   time.Now(),
 			CloneWarning: false,
 		}))
 
