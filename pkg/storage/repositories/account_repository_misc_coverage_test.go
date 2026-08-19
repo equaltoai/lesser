@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -29,4 +30,20 @@ func TestAccountRepository_IsAccountNotFound(t *testing.T) {
 	require.False(t, isAccountNotFound(errors.New("ResourceNotFoundException: Requested resource not found")))
 	require.False(t, isAccountNotFound(errors.New("record not found")))
 	require.False(t, isAccountNotFound(errors.New("boom")))
+}
+
+func TestAccountRepository_StrictAbsenceHelpersWithoutDatabase(t *testing.T) {
+	repo := NewAccountRepository(nil, "test-table", "example.com", zaptest.NewLogger(t))
+	ctx := context.Background()
+
+	require.Nil(t, repo.usernameLookupCandidates("  "))
+
+	_, err := repo.lookupUserModelByCanonicalHandle(ctx, "alice")
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	_, err = repo.loadUserCoreProjectionByUsername(ctx, "alice")
+	require.ErrorIs(t, err, storage.ErrNotFound)
+
+	_, err = repo.lookupUserCoreProjectionByCanonicalHandle(ctx, "alice")
+	require.ErrorIs(t, err, storage.ErrNotFound)
 }

@@ -11,6 +11,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -60,6 +61,14 @@ func requireOAuthTokenError(t *testing.T, responseStatus int, expectedError stri
 	require.Equal(t, expectedError, body["error"])
 	require.NotEmpty(t, body["error_description"])
 	require.NotZero(t, responseStatus)
+}
+
+func TestOAuthAuthorityResourceHelpersRejectMalformedConfiguration(t *testing.T) {
+	require.False(t, oauthResourceTargetsActorMCP("%"))
+
+	h := &Handler{cfg: &config.Config{}}
+	_, err := h.canonicalOAuthInstanceResource(oauthInstanceSurfacePtah)
+	require.Error(t, err)
 }
 
 func TestOAuthRefreshTransientStorageFaultReturnsRetryable503(t *testing.T) {
