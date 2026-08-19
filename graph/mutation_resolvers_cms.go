@@ -392,6 +392,7 @@ func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input m
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
@@ -470,6 +471,7 @@ func (r *mutationResolver) DeleteArticle(ctx context.Context, id string) (bool, 
 	if err != nil {
 		return false, err
 	}
+	article = cmsCloneArticleForWrite(article)
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return false, err
@@ -715,6 +717,7 @@ func (r *mutationResolver) AddArticleToSeries(ctx context.Context, seriesID stri
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
 	}
@@ -770,6 +773,7 @@ func (r *mutationResolver) RemoveArticleFromSeries(ctx context.Context, seriesID
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
 	}
@@ -833,6 +837,7 @@ func (r *mutationResolver) ReorderSeriesArticles(ctx context.Context, seriesID s
 		if err != nil {
 			return nil, err
 		}
+		article = cmsCloneArticleForWrite(article)
 		if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 			return nil, err
 		}
@@ -1059,6 +1064,7 @@ func (r *mutationResolver) AddArticleToCategory(ctx context.Context, categoryID 
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
@@ -1115,6 +1121,7 @@ func (r *mutationResolver) RemoveArticleFromCategory(ctx context.Context, catego
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
@@ -1369,6 +1376,43 @@ func cmsApplyArticleFeaturedImage(ctx context.Context, mediaRepo cmsMediaGetter,
 	}
 	article.FeaturedImage = media
 	return nil
+}
+
+// cmsCloneArticleForWrite gives each mutation ownership of the article value it
+// changes. Repository test doubles and caches may return a shared pointer, while
+// the CMS service retains its submitted snapshot for best-effort federation.
+// Mutating that shared value would let a later resolver race the prior handoff.
+func cmsCloneArticleForWrite(article *models.Article) *models.Article {
+	if article == nil {
+		return nil
+	}
+
+	clone := *article
+	clone.To = append([]string(nil), article.To...)
+	clone.CC = append([]string(nil), article.CC...)
+	clone.BTo = append([]string(nil), article.BTo...)
+	clone.BCC = append([]string(nil), article.BCC...)
+	clone.TableOfContents = append([]models.TOCEntry(nil), article.TableOfContents...)
+	clone.CategoryIDs = append([]string(nil), article.CategoryIDs...)
+
+	if article.InReplyTo != nil {
+		inReplyTo := *article.InReplyTo
+		clone.InReplyTo = &inReplyTo
+	}
+	if article.SeriesID != nil {
+		seriesID := *article.SeriesID
+		clone.SeriesID = &seriesID
+	}
+	if article.SeriesOrder != nil {
+		seriesOrder := *article.SeriesOrder
+		clone.SeriesOrder = &seriesOrder
+	}
+	if article.FeaturedImage != nil {
+		featuredImage := *article.FeaturedImage
+		clone.FeaturedImage = &featuredImage
+	}
+
+	return &clone
 }
 
 func cmsSetStringField(dest *string, value *string) {
