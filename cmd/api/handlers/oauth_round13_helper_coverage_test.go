@@ -18,6 +18,9 @@ import (
 
 func TestOAuthAuthorizationCodeExchangeErrorResponsePinsExistingMapperArms(t *testing.T) {
 	t.Parallel()
+	typedInvalidRequest := &oauthAuthorizationCodeRequestValidationError{
+		validationErr: common.ValidateMultipleRequiredParams(map[string]string{"code": ""}),
+	}
 
 	tests := []struct {
 		name            string
@@ -25,6 +28,7 @@ func TestOAuthAuthorizationCodeExchangeErrorResponsePinsExistingMapperArms(t *te
 		wantStatus      int
 		wantCode        string
 		wantDescription string
+		wantRetryAfter  bool
 	}{
 		{
 			name:            "temporarily unavailable",
@@ -32,6 +36,7 @@ func TestOAuthAuthorizationCodeExchangeErrorResponsePinsExistingMapperArms(t *te
 			wantStatus:      http.StatusServiceUnavailable,
 			wantCode:        "temporarily_unavailable",
 			wantDescription: "Authorization code exchange is temporarily unavailable",
+			wantRetryAfter:  true,
 		},
 		{
 			name:            "invalid target",
@@ -39,6 +44,27 @@ func TestOAuthAuthorizationCodeExchangeErrorResponsePinsExistingMapperArms(t *te
 			wantStatus:      http.StatusBadRequest,
 			wantCode:        "invalid_target",
 			wantDescription: "resource must match the original authorization request",
+		},
+		{
+			name:            "typed invalid request",
+			err:             typedInvalidRequest,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_request",
+			wantDescription: "validation failed for parameters: missing required parameters: code",
+		},
+		{
+			name:            "unregistered redirect invalid request",
+			err:             auth.ErrInvalidRequest,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_request",
+			wantDescription: "Invalid redirect_uri",
+		},
+		{
+			name:            "invalid scope",
+			err:             auth.ErrInvalidScope,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_scope",
+			wantDescription: "Authorization code scope is invalid or no longer permitted",
 		},
 		{
 			name:            "invalid grant",
@@ -86,6 +112,11 @@ func TestOAuthAuthorizationCodeExchangeErrorResponsePinsExistingMapperArms(t *te
 			require.NoError(t, json.Unmarshal(resp.Body, &body))
 			require.Equal(t, tt.wantCode, body["error"])
 			require.Equal(t, tt.wantDescription, body["error_description"])
+			if tt.wantRetryAfter {
+				require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+			} else {
+				require.Empty(t, resp.Headers["retry-after"])
+			}
 		})
 	}
 }

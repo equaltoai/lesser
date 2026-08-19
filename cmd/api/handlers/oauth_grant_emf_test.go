@@ -367,6 +367,101 @@ func TestOAuthAuthorizationCodeRedirectFailuresKeepWireAndTelemetryTruthful(t *t
 	}
 }
 
+func TestOAuthAuthorizationCodeScopeNarrowingEmitsInvalidScopeOnce(t *testing.T) {
+	const (
+		clientID    = "client-1"
+		code        = "scope-narrowed-code"
+		redirectURI = "https://client.example/callback"
+	)
+	state := &round10QueryState{
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			clientID: {
+				ClientID:     clientID,
+				RedirectURIs: []string{redirectURI},
+				Scopes:       []string{auth.ScopeRead},
+			},
+		},
+		authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+			code: {
+				Code:        code,
+				ClientID:    clientID,
+				RedirectURI: redirectURI,
+				Username:    "alice",
+				ExpiresAt:   time.Now().Add(5 * time.Minute),
+				Scopes:      []string{auth.ScopeRead, auth.ScopeWrite},
+			},
+		},
+	}
+	h, _, _ := round11NewHandler(t, state)
+	var output bytes.Buffer
+	h.oauthGrantEMFWriter = &output
+	h.oauthGrantEMFEnabled = true
+
+	params := url.Values{
+		"grant_type":   {oauthGrantTypeAuthorizationCode},
+		"code":         {code},
+		"client_id":    {clientID},
+		"redirect_uri": {redirectURI},
+	}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+	requireOAuthTokenError(t, resp.Status, "invalid_scope", resp.Body)
+	var wire apimodels.OAuthErrorResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &wire))
+	require.Equal(t, "Authorization code scope is invalid or no longer permitted", wire.ErrorDescription)
+	require.Contains(t, state.authorizationCodesByCode, code)
+	require.Empty(t, state.refreshTokensByToken)
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 1)
+	require.Equal(t, oauthGrantTypeAuthorizationCode, lines[0].GrantType)
+	require.Equal(t, oauthGrantOutcomeFailure, lines[0].Outcome)
+	require.Equal(t, oauthGrantReasonAuthorizationCodeScopeInvalid, lines[0].ReasonCode)
+	require.Equal(t, oauthGrantReasonAuthorizationCodeScopeInvalid, lines[0].DetailReason)
+	require.Equal(t, oauthGrantRetryPathNone, lines[0].RetryPath)
+	require.Equal(t, "400", lines[0].HTTPStatus)
+	require.Equal(t, 1, lines[0].Outcomes)
+	require.Zero(t, lines[0].Exceptions)
+}
+
+func TestOAuthRefreshPreservesStoredGrantWhenRegistrationNarrows(t *testing.T) {
+	// A refresh consumes the server-issued refresh grant rather than a pending
+	// authorization request. The stored scopes remain authoritative, so this
+	// path has no ErrInvalidScope producer for the refresh error mapper.
+	now := time.Now().UTC()
+	client := oauthRefreshReliabilityClient("client-1")
+	client.Scopes = []string{auth.ScopeRead}
+	token := oauthRefreshReliabilityToken("scope-narrowed-refresh", client.ClientID, now)
+	token.Scopes = []string{auth.ScopeRead, auth.ScopeWrite}
+	state := &round10QueryState{
+		oauthClientsByID:     map[string]storagemodels.OAuthClient{client.ClientID: client},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{token.Token: token},
+		disableAuditRepo:     true,
+	}
+	h, _, _ := round11NewHandler(t, state)
+	var output bytes.Buffer
+	h.oauthGrantEMFWriter = &output
+	h.oauthGrantEMFEnabled = true
+
+	params := url.Values{
+		"grant_type":    {oauthGrantTypeRefreshToken},
+		"refresh_token": {token.Token},
+		"client_id":     {client.ClientID},
+	}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))
+	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+	var wire apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &wire))
+	require.Equal(t, "read write", wire.Scope)
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 1)
+	require.Equal(t, oauthGrantTypeRefreshToken, lines[0].GrantType)
+	require.Equal(t, oauthGrantOutcomeSuccess, lines[0].Outcome)
+	require.Equal(t, oauthGrantReasonSuccess, lines[0].ReasonCode)
+	require.Equal(t, "200", lines[0].HTTPStatus)
+}
+
 func TestOAuthTokenParseFailuresEmitWireExactReason(t *testing.T) {
 	tests := []struct {
 		name       string
