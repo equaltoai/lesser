@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
 func oauthRefreshReliabilityClient(clientID string) storagemodels.OAuthClient {
@@ -116,11 +117,9 @@ func TestOAuthInstancePlaneRefreshAuthorityDistinguishesStorageFault(t *testing.
 		state := &round10QueryState{
 			oauthClientsByID:     map[string]storagemodels.OAuthClient{client.ClientID: client},
 			refreshTokensByToken: map[string]storagemodels.RefreshToken{token.Token: token},
-			usersByUsername: map[string]storagemodels.User{
-				"admin": {Username: "admin", Approved: true, Role: "admin"},
-			},
-			firstErrorByType: map[string]error{"*repositories.userCoreProjection": errors.New("account store throttled")},
-			disableAuditRepo: true,
+			usersByUsername:      map[string]storagemodels.User{},
+			firstErrorByType:     map[string]error{"*repositories.userCoreProjection": dynamormerrors.ErrTableNotFound},
+			disableAuditRepo:     true,
 		}
 		h, _, _ := round11NewHandler(t, state)
 
@@ -292,11 +291,9 @@ func TestOAuthInstancePlaneAuthorizationCodeAuthorityDistinguishesStorageFault(t
 		state := &round10QueryState{
 			oauthClientsByID:         map[string]storagemodels.OAuthClient{client.ClientID: client},
 			authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{authCode.Code: authCode},
-			usersByUsername: map[string]storagemodels.User{
-				"admin": {Username: "admin", Approved: true, Role: "admin"},
-			},
-			firstErrorByType: map[string]error{"*repositories.userCoreProjection": errors.New("account store unavailable")},
-			disableAuditRepo: true,
+			usersByUsername:          map[string]storagemodels.User{},
+			firstErrorByType:         map[string]error{"*repositories.userCoreProjection": dynamormerrors.ErrIndexNotFound},
+			disableAuditRepo:         true,
 		}
 		h, _, _ := round11NewHandler(t, state)
 
