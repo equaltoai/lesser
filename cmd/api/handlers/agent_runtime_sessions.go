@@ -103,20 +103,15 @@ func (h *Handler) noteAgentRuntimeRefreshFailure(ctx context.Context, refreshTok
 	}
 }
 
-func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, ipAddress, userAgent string) (string, string, []string, error) {
-	storedToken, err := h.repos.Account().GetRefreshToken(ctx, refreshToken)
+func (h *Handler) exchangeAgentRuntimeRefreshTokenWithTelemetry(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, ipAddress, userAgent string, telemetry *oauthGrantTelemetry) (string, string, []string, error) {
+	storedToken, err := h.loadAgentRuntimeRefreshTokenForExchange(ctx, refreshToken, clientID, telemetry)
 	if err != nil {
-		return "", "", nil, auth.ErrInvalidToken
-	}
-	if storedToken.ClientID != clientID {
-		return "", "", nil, auth.ErrInvalidToken
-	}
-	if !auth.IsAgentRuntimeRefreshToken(storedToken) {
-		return "", "", nil, auth.ErrInvalidToken
+		return "", "", nil, err
 	}
 
 	now := time.Now().UTC()
 	if storedToken.Revoked {
+		telemetry.setReason(oauthGrantReasonRefreshRuntimeReuse)
 		if err := auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "refresh_token_reuse_detected", ipAddress, userAgent); err != nil {
 			h.logger.Warn("failed to revoke runtime session family after refresh reuse", zap.Error(err))
 		}
@@ -126,6 +121,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		return "", "", nil, auth.ErrInvalidToken
 	}
 	if runtimeExpiryExceeded(now, storedToken.IdleExpiresAt) || runtimeExpiryExceeded(now, storedToken.AbsoluteExpiresAt) {
+		telemetry.setReason(oauthGrantReasonRefreshTokenExpired)
 		_ = auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "runtime_session_expired", ipAddress, userAgent)
 		if err := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, "invalid_grant", "Runtime session expired", now); err != nil {
 			h.logger.Warn("failed to persist runtime expiry diagnostic", zap.Error(err))
@@ -133,6 +129,39 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
+	return h.rotateAgentRuntimeRefreshToken(ctx, oauthSvc, storedToken, clientID, ipAddress, userAgent, now, telemetry)
+}
+
+func (h *Handler) loadAgentRuntimeRefreshTokenForExchange(ctx context.Context, refreshToken, clientID string, telemetry *oauthGrantTelemetry) (*storage.RefreshToken, error) {
+	storedToken, err := h.repos.Account().GetRefreshToken(ctx, refreshToken)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			telemetry.setReason(oauthGrantReasonRefreshTokenAbsent)
+		} else {
+			telemetry.setReason(oauthGrantReasonRefreshRuntimeInvalid)
+		}
+		return nil, auth.ErrInvalidToken
+	}
+	if storedToken == nil {
+		telemetry.setReason(oauthGrantReasonRefreshTokenAbsent)
+		return nil, auth.ErrInvalidToken
+	}
+	if telemetry != nil {
+		telemetry.FamilyID = strings.TrimSpace(storedToken.FamilyID)
+		telemetry.setResourceIfEmpty(storedToken.Resource)
+	}
+	if storedToken.ClientID != clientID {
+		telemetry.setReason(oauthGrantReasonRefreshRuntimeInvalid)
+		return nil, auth.ErrInvalidToken
+	}
+	if !auth.IsAgentRuntimeRefreshToken(storedToken) {
+		telemetry.setReason(oauthGrantReasonRefreshRuntimeInvalid)
+		return nil, auth.ErrInvalidToken
+	}
+	return storedToken, nil
+}
+
+func (h *Handler) rotateAgentRuntimeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, storedToken *storage.RefreshToken, clientID, ipAddress, userAgent string, now time.Time, telemetry *oauthGrantTelemetry) (string, string, []string, error) {
 	accessTTL := runtimeRefreshAccessTTL(h.cfg, storedToken)
 	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(
 		ctx,
@@ -146,16 +175,18 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		storedToken.Resource,
 	)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonTokenGenerationFailed)
 		return "", "", nil, err
 	}
 
 	storedToken.Current = false
 	storedToken.Revoked = true
 	storedToken.RevokedAt = now
-	storedToken.RevokedReason = "rotated"
+	storedToken.RevokedReason = standardRefreshRevokedReasonRotated
 	storedToken.LastUsedAt = now
 	if err := h.repos.Account().UpdateRefreshToken(ctx, storedToken); err != nil {
 		if storagerepos.ErrorHandler.IsConditionalCheckFailed(err) || strings.Contains(strings.ToLower(err.Error()), "condition") {
+			telemetry.setReason(oauthGrantReasonRefreshRuntimeReuse)
 			if revokeErr := auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "refresh_token_reuse_detected", ipAddress, userAgent); revokeErr != nil {
 				h.logger.Warn("failed to revoke runtime session family after concurrent refresh", zap.Error(revokeErr))
 			}
@@ -164,6 +195,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 			}
 			return "", "", nil, auth.ErrInvalidToken
 		}
+		telemetry.setReason(oauthGrantReasonRefreshRotationInfrastructure)
 		return "", "", nil, err
 	}
 
@@ -192,6 +224,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		LastAuthSuccessAt:   now,
 	}
 	if err := h.repos.Account().CreateRefreshToken(ctx, newToken); err != nil {
+		telemetry.setReason(oauthGrantReasonRefreshRotationInfrastructure)
 		_ = auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "runtime_session_rotation_failed", ipAddress, userAgent)
 		if diagErr := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, "server_error", "Runtime session rotation failed", now); diagErr != nil {
 			h.logger.Warn("failed to persist runtime rotation diagnostic", zap.Error(diagErr))

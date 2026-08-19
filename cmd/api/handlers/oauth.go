@@ -60,6 +60,9 @@ const (
 	oauthResourceSegmentInstance = "instance"
 
 	standardRefreshRetryGrace = 30 * time.Second
+
+	standardRefreshRevokedReasonRotated      = "rotated"
+	standardRefreshRevokedReasonRetryRescued = "retry_rescued"
 )
 
 var errOAuthInvalidTarget = errors.New("invalid_target")
@@ -1003,15 +1006,39 @@ func parseOAuthTokenBasicClientCredentials(ctx *apptheory.Context) (clientID, cl
 
 // HandleOAuthTokenLift handles the OAuth token endpoint using native Lift patterns
 // POST /oauth/token
-func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (response *apptheory.Response, responseErr error) {
+	telemetry := oauthGrantTelemetryFromRequest(ctx)
+	if telemetry != nil {
+		defer func() {
+			h.emitOAuthGrantOutcome(ctx, response, responseErr, telemetry)
+		}()
+	}
+
 	req, resp, err := parseOAuthTokenRequest(ctx)
 	if resp != nil || err != nil {
+		telemetry.setReason(oauthGrantReasonInvalidRequest)
 		return resp, err
+	}
+
+	if req.grantType == oauthGrantTypeAuthorizationCode || req.grantType == oauthGrantTypeRefreshToken {
+		if telemetry == nil {
+			telemetry = newOAuthGrantTelemetry(req)
+			defer func() {
+				h.emitOAuthGrantOutcome(ctx, response, responseErr, telemetry)
+			}()
+		} else {
+			telemetry.GrantType = strings.TrimSpace(req.grantType)
+			telemetry.ClientID = strings.TrimSpace(req.clientID)
+			telemetry.Resource = strings.TrimSpace(req.resource)
+		}
 	}
 
 	// Initialize OAuth service
 	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	if err != nil {
+		if telemetry != nil {
+			telemetry.setReason(oauthGrantReasonServerError)
+		}
 		h.logger.Error("failed to initialize OAuth service", zap.Error(err))
 		return apptheory.JSON(http.StatusInternalServerError, apimodels.OAuthErrorResponse{
 			Error:            "server_error",
@@ -1021,9 +1048,9 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 
 	switch req.grantType {
 	case oauthGrantTypeAuthorizationCode:
-		return h.handleOAuthAuthorizationCodeGrant(ctx.Context(), oauthSvc, req)
+		return h.handleOAuthAuthorizationCodeGrant(ctx.Context(), oauthSvc, req, telemetry)
 	case oauthGrantTypeRefreshToken:
-		return h.handleOAuthRefreshTokenGrant(ctx, oauthSvc, req)
+		return h.handleOAuthRefreshTokenGrant(ctx, oauthSvc, req, telemetry)
 	case oauthDeviceCodeGrantType:
 		return h.handleOAuthDeviceCodeGrant(ctx.Context(), oauthSvc, req)
 	default:
@@ -1038,20 +1065,22 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 }
 
-func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest, telemetry *oauthGrantTelemetry) (*apptheory.Response, error) {
 	if err := common.ValidateMultipleRequiredParams(map[string]string{
 		"code":         req.code,
 		"client_id":    req.clientID,
 		"redirect_uri": req.redirectURI,
 	}); err != nil {
+		telemetry.setReason(oauthGrantReasonInvalidRequest)
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": err.Error(),
 		})
 	}
 
-	accessToken, refreshTokenOut, grantedScopes, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret, req.resource)
+	accessToken, refreshTokenOut, grantedScopes, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret, req.resource, telemetry)
 	if err != nil {
+		setOAuthGrantReasonFromError(telemetry, err)
 		h.logger.Error("failed to exchange authorization code", zap.Error(err))
 		switch {
 		case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
@@ -1099,11 +1128,12 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 	})
 }
 
-func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest, telemetry *oauthGrantTelemetry) (*apptheory.Response, error) {
 	if err := common.ValidateMultipleRequiredParams(map[string]string{
 		"refresh_token": req.refreshToken,
 		"client_id":     req.clientID,
 	}); err != nil {
+		telemetry.setReason(oauthGrantReasonInvalidRequest)
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": err.Error(),
@@ -1111,8 +1141,9 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc 
 	}
 
 	userAgent, ipAddress := h.getDeviceInfo(ctx)
-	accessToken, newRefreshToken, grantedScopes, err := h.exchangeRefreshToken(ctx.Context(), oauthSvc, req.refreshToken, req.clientID, req.clientSecret, req.resource, ipAddress, userAgent)
+	accessToken, newRefreshToken, grantedScopes, err := h.exchangeRefreshToken(ctx.Context(), oauthSvc, req.refreshToken, req.clientID, req.clientSecret, req.resource, ipAddress, userAgent, telemetry)
 	if err != nil {
+		setOAuthGrantReasonFromError(telemetry, err)
 		h.logger.Error("failed to refresh tokens", zap.Error(err))
 		switch {
 		case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
@@ -1490,23 +1521,40 @@ func (h *Handler) oauthDeviceApprovedTokenContextErrorResponse(err error) (*appt
 }
 
 // exchangeAuthorizationCode exchanges an authorization code for access and refresh tokens
-func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret, requestedResource string) (string, string, []string, error) {
+func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret, requestedResource string, telemetry *oauthGrantTelemetry) (string, string, []string, error) {
+	if telemetry == nil {
+		telemetry = &oauthGrantTelemetry{}
+	}
 	code = strings.TrimSpace(code)
 	clientID = strings.TrimSpace(clientID)
 	redirectURI = strings.TrimSpace(redirectURI)
 	clientSecret = strings.TrimSpace(clientSecret)
 	requestedResource = strings.TrimSpace(requestedResource)
+	telemetry.ClientID = clientID
+	telemetry.Resource = requestedResource
 
 	client, err := h.validateAuthorizationCodeExchangeClient(ctx, oauthSvc, clientID, redirectURI, clientSecret, code)
 	if err != nil {
+		switch {
+		case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
+			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+		case errors.Is(err, auth.ErrInvalidClient):
+			telemetry.setReason(oauthGrantReasonInvalidClient)
+		case errors.Is(err, auth.ErrUnauthorizedClient):
+			telemetry.setReason(oauthGrantReasonUnauthorizedClient)
+		default:
+			telemetry.setReason(oauthGrantReasonAuthorizationCodeRedirectMismatch)
+		}
 		return "", "", nil, err
 	}
 
-	authCode, err := h.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code, clientID, redirectURI, codeVerifier)
+	authCode, err := h.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code, clientID, redirectURI, codeVerifier, telemetry)
 	if err != nil {
 		return "", "", nil, err
 	}
+	telemetry.setResourceIfEmpty(authCode.Resource)
 	if err := validateOAuthAuthorizationCodeScopes(client, authCode); err != nil {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeScopeInvalid)
 		return "", "", nil, err
 	}
 	storedResource := strings.TrimSpace(authCode.Resource)
@@ -1517,26 +1565,39 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		requestedResource = storedResource
 	}
 	if storedResource != requestedResource {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeResourceMismatch)
 		return "", "", nil, errOAuthInvalidTarget
 	}
 	if oauthResourceTargetsInstancePlane(storedResource) {
 		if err := h.validateOAuthInstanceAuthorizationCodeTarget(ctx, client, authCode); err != nil {
+			if errors.Is(err, errOAuthInvalidTarget) {
+				telemetry.setReason(oauthGrantReasonAuthorizationCodeAuthorityRevoked)
+			} else {
+				telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+			}
 			return "", "", nil, oauthInstanceAuthorizationCodeExchangeError(err)
 		}
 	}
 
 	_, sessionID, accessTTL, err := authorizationCodeExchangeTokenContext(h.cfg, client, authCode)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeInvalidContext)
 		return "", "", nil, err
 	}
 	clientClass, err := h.oauthAuthorizationCodeClientClass(ctx, client, authCode)
 	if err != nil {
+		if errors.Is(err, errOAuthInvalidTarget) {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodeAuthorityRevoked)
+		} else {
+			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+		}
 		return "", "", nil, oauthInstanceAuthorizationCodeExchangeError(err)
 	}
 
 	// Generate tokens
 	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudienceAndDelegatedBy(ctx, authCode.Username, clientID, "", authCode.Scopes, accessTTL, clientClass, sessionID, authCode.Resource, authCode.PrincipalUsername)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonTokenGenerationFailed)
 		return "", "", nil, errors.Join(failedToGenerateTokens(), err)
 	}
 
@@ -1546,10 +1607,13 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	if err := h.repos.Account().ConsumeAuthorizationCodeAndCreateRefreshToken(ctx, code, oauthRefreshToken); err != nil {
 		h.logger.Error("failed to atomically consume authorization code and store refresh token", zap.Error(err))
 		if errors.Is(err, storage.ErrNotFound) {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodeConsumed)
 			return "", "", nil, auth.ErrInvalidGrant
 		}
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
 	}
+	telemetry.FamilyID = oauthRefreshToken.FamilyID
 
 	return accessToken, refreshToken, authCode.Scopes, nil
 }
@@ -1606,18 +1670,22 @@ func validateAuthorizationCodeExchangeClientSecret(ctx context.Context, oauthSvc
 	return oauthSvc.ValidateClientRecord(ctx, client, clientSecret)
 }
 
-func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier string) (*storage.AuthorizationCode, error) {
+func (h *Handler) loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier string, telemetry *oauthGrantTelemetry) (*storage.AuthorizationCode, error) {
 	authCode, err := h.repos.Account().GetAuthorizationCode(ctx, code)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodeAbsent)
 			return nil, auth.ErrInvalidGrant
 		}
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 		return nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
 	}
 	if authCode.ClientID != clientID {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeClientMismatch)
 		return nil, auth.ErrInvalidGrant
 	}
 	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeRedirectMismatch)
 		return nil, auth.ErrInvalidGrant
 	}
 	// PKCE verification: when the authorization code carries a challenge,
@@ -1627,15 +1695,18 @@ func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Contex
 	// may have been issued before PKCE enforcement (no stored challenge).
 	if authCode.CodeChallenge != "" {
 		if codeVerifier == "" {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodePKCEMismatch)
 			return nil, auth.ErrInvalidGrant
 		}
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodePKCEMismatch)
 			return nil, err
 		}
 	} else if codeVerifier != "" {
 		// Legacy authorization code without a PKCE challenge stored; the
 		// exchange supplies a verifier but the code was not issued for PKCE.
 		// Reject as a grant-level mismatch (invalid_grant).
+		telemetry.setReason(oauthGrantReasonAuthorizationCodePKCEMismatch)
 		return nil, auth.ErrInvalidGrant
 	}
 	return authCode, nil
@@ -1948,13 +2019,20 @@ func standardRefreshGrantLifetimes(now time.Time, cfg *config.Config, client *st
 }
 
 // exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
-func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret, requestedResource, ipAddress, userAgent string) (string, string, []string, error) {
+func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret, requestedResource, ipAddress, userAgent string, telemetry *oauthGrantTelemetry) (string, string, []string, error) {
+	if telemetry == nil {
+		telemetry = &oauthGrantTelemetry{GrantType: oauthGrantTypeRefreshToken, RetryPath: oauthGrantRetryPathNone}
+	}
 	refreshToken = strings.TrimSpace(refreshToken)
 	clientID = strings.TrimSpace(clientID)
 	clientSecret = strings.TrimSpace(clientSecret)
+	requestedResource = strings.TrimSpace(requestedResource)
+	telemetry.ClientID = clientID
+	telemetry.Resource = requestedResource
+	telemetry.RetryPath = oauthGrantRetryPathDirectRotate
 
 	if auth.IsAgentRuntimeClientID(clientID) {
-		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
+		return h.exchangeAgentRuntimeRefreshTokenWithTelemetry(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent, telemetry)
 	}
 
 	client, err := h.validateRefreshGrantClient(ctx, oauthSvc, refreshToken, clientID, clientSecret)
@@ -1966,13 +2044,20 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	storedToken, err := h.repos.Account().GetRefreshToken(ctx, refreshToken)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
+			telemetry.setReason(oauthGrantReasonRefreshTokenAbsent)
 			return "", "", nil, auth.ErrInvalidToken
 		}
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, failedToValidateRefreshToken(), err)
+	}
+	if telemetry != nil {
+		telemetry.FamilyID = strings.TrimSpace(storedToken.FamilyID)
+		telemetry.setResourceIfEmpty(storedToken.Resource)
 	}
 
 	now := time.Now().UTC()
 	terminal := func(reason string) (string, string, []string, error) {
+		telemetry.setReason(reason)
 		h.revokeStandardRefreshFamily(ctx, storedToken, reason, ipAddress, userAgent)
 		return "", "", nil, auth.ErrInvalidToken
 	}
@@ -1982,24 +2067,23 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		return terminal("refresh_cross_client_replay")
 	}
 	if storedToken.Revoked || !storedToken.RevokedAt.IsZero() {
-		if standardRefreshRetryEligible(storedToken, now) {
-			return h.redeemStandardRefreshRetry(ctx, oauthSvc, client, storedToken, requestedResource, ipAddress, userAgent, now)
-		}
-		// Same-client staleness, including a later presentation after a rescue,
-		// is not evidence of credential theft. Only a CAS-losing concurrent
-		// retry redemption below is treated as redeemed-reuse replay.
-		return "", "", nil, auth.ErrInvalidToken
+		return h.redeemOrRejectRevokedStandardRefresh(
+			ctx, oauthSvc, client, storedToken, requestedResource, ipAddress, userAgent, now, telemetry,
+		)
 	}
 	reason, authorityErr := h.standardRefreshAuthorityRevocationReason(ctx, client, storedToken, requestedResource, now)
 	if authorityErr != nil {
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, authorityErr)
 	}
 	if reason != "" {
+		telemetry.setReason(reason)
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
 	accessTTL, refreshExpiry, clientClass, err := standardRefreshGrantLifetimes(now, h.cfg, client, storedToken)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonRefreshTokenExpired)
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
@@ -2014,10 +2098,12 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 			// Legacy actor-scoped refresh token issued before the authorizing
 			// principal was persisted. Fail closed: re-deriving DelegatedBy as the
 			// owner would silently re-attribute a grantee's token to the owner.
+			telemetry.setReason(oauthGrantReasonRefreshAuthorityAbsent)
 			return "", "", nil, auth.ErrInvalidToken
 		}
 		authorized, authErr := h.agentRefreshGrantAuthorized(ctx, storedToken.Username, delegatedByOverride)
 		if authErr != nil {
+			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 			return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, authErr)
 		}
 		if !authorized {
@@ -2027,6 +2113,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 
 	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudienceAndDelegatedBy(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, clientClass, storedToken.SessionID, storedToken.Resource, delegatedByOverride)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonTokenGenerationFailed)
 		return "", "", nil, errors.Join(failedToGenerateNewTokens(), err)
 	}
 
@@ -2067,8 +2154,10 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 
 	if err := h.repos.Account().RotateRefreshToken(ctx, storedToken, newOAuthRefreshToken, now); err != nil {
 		h.logger.Warn("refresh token rotation transaction failed", zap.Error(err))
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, failedToStoreNewRefreshToken(), err)
 	}
+	telemetry.FamilyID = strings.TrimSpace(newOAuthRefreshToken.FamilyID)
 
 	return accessToken, newRefreshToken, storedToken.Scopes, nil
 }
@@ -2106,12 +2195,46 @@ func (h *Handler) standardRefreshAuthorityRevocationReason(
 }
 
 func standardRefreshRetryEligible(token *storage.RefreshToken, now time.Time) bool {
-	if token == nil || (token.RevokedReason != "rotated" && token.RevokedReason != "retry_rescued") ||
+	if token == nil || (token.RevokedReason != standardRefreshRevokedReasonRotated && token.RevokedReason != standardRefreshRevokedReasonRetryRescued) ||
 		token.RevokedAt.IsZero() || !token.RetryRedeemedAt.IsZero() {
 		return false
 	}
 	age := now.Sub(token.RevokedAt)
 	return age >= 0 && age <= standardRefreshRetryGrace
+}
+
+func standardRefreshRetryWindowElapsed(token *storage.RefreshToken, now time.Time) bool {
+	if token == nil || (token.RevokedReason != standardRefreshRevokedReasonRotated && token.RevokedReason != standardRefreshRevokedReasonRetryRescued) || token.RevokedAt.IsZero() {
+		return false
+	}
+	return now.Sub(token.RevokedAt) > standardRefreshRetryGrace
+}
+
+func (h *Handler) redeemOrRejectRevokedStandardRefresh(
+	ctx context.Context,
+	oauthSvc *auth.OAuthService,
+	client *storage.OAuthClient,
+	storedToken *storage.RefreshToken,
+	requestedResource, ipAddress, userAgent string,
+	now time.Time,
+	telemetry *oauthGrantTelemetry,
+) (string, string, []string, error) {
+	if standardRefreshRetryEligible(storedToken, now) {
+		telemetry.RetryPath = oauthGrantRetryPathRetryRescue
+		return h.redeemStandardRefreshRetry(
+			ctx, oauthSvc, client, storedToken, requestedResource, ipAddress, userAgent, now, telemetry,
+		)
+	}
+
+	// Same-client staleness, including a later presentation after a rescue,
+	// is not evidence of credential theft. Only a CAS-losing concurrent retry
+	// redemption is treated as redeemed-reuse replay.
+	if standardRefreshRetryWindowElapsed(storedToken, now) {
+		telemetry.setReason(oauthGrantReasonRefreshOutsideRetryGrace)
+	} else {
+		telemetry.setReason(oauthGrantReasonRefreshStaleGeneration)
+	}
+	return "", "", nil, auth.ErrInvalidToken
 }
 
 func standardRefreshRetryReplacement(stale *storage.RefreshToken, family []storage.RefreshToken, now time.Time) (*storage.RefreshToken, bool) {
@@ -2168,39 +2291,58 @@ func (h *Handler) redeemStandardRefreshRetry(
 	stale *storage.RefreshToken,
 	requestedResource, ipAddress, userAgent string,
 	now time.Time,
+	telemetry *oauthGrantTelemetry,
 ) (string, string, []string, error) {
 	family, err := h.repos.Account().ListRefreshTokensByFamily(ctx, stale.FamilyID)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
 	}
 	active, authoritative := standardRefreshRetryReplacement(stale, family, now)
 	if active == nil {
 		if authoritative {
+			telemetry.setReason(oauthGrantReasonRefreshSuccessorAbsent)
 			return "", "", nil, auth.ErrInvalidToken
 		}
 		// The family index is eventually consistent. During the bounded rescue
 		// window, absence is not authoritative evidence that rotation failed.
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, errors.New("refresh successor is not yet visible"))
 	}
+	if telemetry != nil {
+		telemetry.FamilyID = strings.TrimSpace(active.FamilyID)
+		telemetry.setResourceIfEmpty(active.Resource)
+	}
 	if err := h.validateStandardRefreshRetryTarget(ctx, client, active, requestedResource); err != nil {
+		if errors.Is(err, auth.ErrOAuthTemporarilyUnavailable) {
+			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+		} else if requestedResource != "" && requestedResource != strings.TrimSpace(active.Resource) {
+			telemetry.setReason(oauthGrantReasonRefreshResourceMismatch)
+		} else {
+			telemetry.setReason(oauthGrantReasonRefreshResourceAuthorityRevoked)
+		}
 		return "", "", nil, err
 	}
 
 	accessTTL, refreshExpiry, clientClass, err := standardRefreshGrantLifetimes(now, h.cfg, client, active)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonRefreshTokenExpired)
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
 	delegatedByOverride := strings.TrimSpace(active.PrincipalUsername)
 	if oauthResourceTargetsActorMCP(active.Resource) {
 		if delegatedByOverride == "" {
+			telemetry.setReason(oauthGrantReasonRefreshAuthorityAbsent)
 			return "", "", nil, auth.ErrInvalidToken
 		}
 		authorized, authErr := h.agentRefreshGrantAuthorized(ctx, active.Username, delegatedByOverride)
 		if authErr != nil {
+			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 			return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, authErr)
 		}
 		if !authorized {
+			telemetry.setReason(oauthGrantReasonRefreshResourceAuthorityRevoked)
 			return "", "", nil, auth.ErrInvalidToken
 		}
 	}
@@ -2210,6 +2352,7 @@ func (h *Handler) redeemStandardRefreshRetry(
 		active.SessionID, active.Resource, delegatedByOverride,
 	)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonTokenGenerationFailed)
 		return "", "", nil, errors.Join(failedToGenerateNewTokens(), err)
 	}
 
@@ -2243,15 +2386,19 @@ func (h *Handler) redeemStandardRefreshRetry(
 	if err := h.repos.Account().RedeemRefreshTokenRetry(ctx, stale, active, next, now); err != nil {
 		latest, readErr := h.repos.Account().GetRefreshToken(ctx, stale.Token)
 		if readErr == nil && latest != nil && !latest.RetryRedeemedAt.IsZero() {
+			telemetry.setReason(oauthGrantReasonRefreshRetryReplayed)
 			h.revokeStandardRefreshFamily(ctx, latest, "refresh_retry_replayed", ipAddress, userAgent)
 			return "", "", nil, auth.ErrInvalidToken
 		}
 		if readErr != nil && !errors.Is(readErr, storage.ErrNotFound) {
+			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 			return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, readErr)
 		}
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
 		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
 	}
 
+	telemetry.setReason(oauthGrantReasonRefreshRetryRescueServed)
 	return accessToken, newRefreshToken, active.Scopes, nil
 }
 

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,12 @@ type Handler struct {
 	legacyTrustConfigWarnOnce       sync.Once
 	legacyTranslationConfigWarnOnce sync.Once
 	legacyTipsConfigWarnOnce        sync.Once
+
+	// oauthGrantEMFWriter receives one best-effort CloudWatch EMF line per
+	// authorization-code or refresh-token grant attempt. It is nil on handlers
+	// assembled directly by tests and os.Stdout on production NewHandler paths.
+	oauthGrantEMFWriter  io.Writer
+	oauthGrantEMFEnabled bool
 }
 
 type liftAuthResponder func(*apptheory.Context) (*apptheory.Response, error)
@@ -128,7 +135,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 	// Initialize DataLoader instances for batched data loading
 	loaders := graph.NewLoaders(repos, logger)
 
-	return &Handler{
+	handler := &Handler{
 		cfg:                 cfg,
 		repos:               repos,
 		logger:              logger,
@@ -145,6 +152,8 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		activityPubLogic:    activityPubLogic,
 		mastodonLogic:       mastodonAPILogic,
 	}
+	configureOAuthGrantEMF(handler)
+	return handler
 }
 
 // getBearerTokenLift extracts Bearer token from Authorization header

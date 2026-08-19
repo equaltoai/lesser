@@ -54,3 +54,75 @@ grace window remain terminal without triggering family revocation.
 
 Dedicated agent-runtime client paths keep their existing rotation and
 concurrency behavior; this design applies to the standard DCR refresh path.
+
+## Token-endpoint outcome telemetry
+
+Each recognized `authorization_code` or `refresh_token` attempt emits exactly
+one best-effort CloudWatch Embedded Metric Format (EMF) JSON line on stdout.
+Emission is controlled by `LESSER_OAUTH_GRANT_EMF_ENABLED` and defaults to
+enabled. A disabled flag, a handler without a writer, JSON encoding failure, or
+stdout write failure never changes the OAuth response. Write failures produce a
+warning only.
+
+The EMF contract is:
+
+- namespace: `Lesser/OAuth`;
+- metrics: `oauth_grant_outcomes_total` and
+  `oauth_grant_exceptions_total`, both `Count`;
+- fixed drill-down dimensions:
+  `{outcome, reason_code, retry_path, http_status}`;
+- an additional empty `{}` dimension set on the same directive, producing the
+  dimensionless rollups required for alarm math;
+- retry paths: `none`, `direct_rotate`, and `retry_rescue`;
+- hashed correlation properties: `client_id_hash`, `resource_hash`, and
+  `family_id_hash`, plus `request_id` and `grant_type`. These are properties,
+  never dimensions.
+
+CloudWatch creates a distinct metric stream per dimension-value combination.
+Dimensioned streams are therefore drill-down signals and must not be summed as
+totals. The exception-rate alarm contract is:
+
+```text
+SUM(dimensionless oauth_grant_exceptions_total)
+/
+SUM(dimensionless oauth_grant_outcomes_total)
+```
+
+over the same period. `refresh_retry_rescue_served` is the sole exception
+reason: it records the rescue mechanism doing work. Ordinary success and all
+failure classes increment the outcome counter but not the exception counter.
+
+### Closed reason-code vocabulary
+
+Only the following values may become the `reason_code` EMF dimension. Any new
+or unmapped internal detail is clamped to `other`; the unsanitized value remains
+in the `detail_reason` property for diagnosis.
+
+- common: `success`, `invalid_request`, `invalid_client`,
+  `unauthorized_client`, `temporarily_unavailable`, `server_error`,
+  `token_generation_failed`, `other`;
+- authorization code: `authorization_code_absent`,
+  `authorization_code_client_mismatch`,
+  `authorization_code_redirect_mismatch`,
+  `authorization_code_pkce_mismatch`, `authorization_code_scope_invalid`,
+  `authorization_code_resource_mismatch`,
+  `authorization_code_authority_revoked`,
+  `authorization_code_invalid_context`,
+  `authorization_code_already_consumed`;
+- standard refresh terminal/containment:
+  `refresh_token_absent`, `refresh_cross_client_replay`,
+  `refresh_share_grant_revoked`, `refresh_retry_replayed`,
+  `refresh_token_expired`, `refresh_stale_generation`,
+  `refresh_resource_mismatch`, `refresh_resource_authority_revoked`,
+  `refresh_outside_retry_grace`, `refresh_successor_absent`, and
+  `refresh_authority_absent`;
+- refresh rescue/specialized runtime: `refresh_retry_rescue_served`,
+  `refresh_runtime_invalid`, `refresh_runtime_reuse`, and
+  `refresh_rotation_infrastructure`.
+
+The three standard-family containment triggers retain their exact reason names:
+`refresh_cross_client_replay`, `refresh_share_grant_revoked`, and
+`refresh_retry_replayed`. Expiry, staleness, resource mismatch, an elapsed grace
+window, and authoritative absence remain distinguishable terminal outcomes
+without implying that a family revocation occurred. All retryable 503 responses
+use `temporarily_unavailable`.
