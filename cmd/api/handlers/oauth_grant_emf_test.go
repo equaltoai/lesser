@@ -253,6 +253,82 @@ func TestOAuthTokenGrantArmsEmitExactlyOneOutcome(t *testing.T) {
 	}
 }
 
+func TestOAuthAuthorizationCodeRedirectFailuresKeepWireAndTelemetryTruthful(t *testing.T) {
+	const (
+		clientID  = "client-1"
+		redirectA = "https://client.example/callback-a"
+		redirectB = "https://client.example/callback-b"
+	)
+
+	tests := []struct {
+		name                string
+		registeredRedirects []string
+		storedRedirect      string
+		presentedRedirect   string
+		wantWireError       string
+	}{
+		{
+			name:                "unregistered redirect is invalid request",
+			registeredRedirects: []string{redirectA},
+			storedRedirect:      redirectA,
+			presentedRedirect:   "https://unregistered.example/callback",
+			wantWireError:       oauthGrantReasonInvalidRequest,
+		},
+		{
+			name:                "registered redirect differing from code is invalid grant",
+			registeredRedirects: []string{redirectA, redirectB},
+			storedRedirect:      redirectA,
+			presentedRedirect:   redirectB,
+			wantWireError:       "invalid_grant",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &round10QueryState{
+				oauthClientsByID: map[string]storagemodels.OAuthClient{
+					clientID: {
+						ClientID:     clientID,
+						RedirectURIs: tc.registeredRedirects,
+						Scopes:       []string{auth.ScopeRead},
+					},
+				},
+				authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+					"code-1": {
+						Code:        "code-1",
+						ClientID:    clientID,
+						RedirectURI: tc.storedRedirect,
+						Username:    "alice",
+						ExpiresAt:   time.Now().Add(5 * time.Minute),
+						Scopes:      []string{auth.ScopeRead},
+					},
+				},
+			}
+			h, _, _ := round11NewHandler(t, state)
+			var output bytes.Buffer
+			h.oauthGrantEMFWriter = &output
+			h.oauthGrantEMFEnabled = true
+
+			params := url.Values{
+				"grant_type":   {oauthGrantTypeAuthorizationCode},
+				"code":         {"code-1"},
+				"client_id":    {clientID},
+				"redirect_uri": {tc.presentedRedirect},
+			}
+			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))
+			resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+			requireOAuthTokenError(t, resp.Status, tc.wantWireError, resp.Body)
+
+			lines := decodeOAuthGrantEMFLines(t, output.String())
+			require.Len(t, lines, 1)
+			require.Equal(t, oauthGrantReasonAuthorizationCodeRedirectMismatch, lines[0].ReasonCode)
+			require.Equal(t, oauthGrantReasonAuthorizationCodeRedirectMismatch, lines[0].DetailReason)
+			require.Equal(t, "400", lines[0].HTTPStatus)
+			require.Equal(t, oauthGrantOutcomeFailure, lines[0].Outcome)
+		})
+	}
+}
+
 func TestOAuthTokenParseFailuresEmitWireExactReason(t *testing.T) {
 	tests := []struct {
 		name       string

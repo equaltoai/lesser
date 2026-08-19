@@ -1090,6 +1090,11 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 				"error":             "invalid_target",
 				"error_description": "resource must match the original authorization request",
 			})
+		case errors.Is(err, auth.ErrInvalidRequest):
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_request",
+				"error_description": "Invalid redirect_uri",
+			})
 		case errors.Is(err, auth.ErrInvalidGrant):
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_grant",
