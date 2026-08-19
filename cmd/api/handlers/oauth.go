@@ -537,15 +537,10 @@ func (h *Handler) oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx cont
 	return h.oauthInstanceOperatorPrincipalStatus(ctx, principalUsername)
 }
 
-// oauthInstanceOperatorPrincipal reports whether the current local account is an
-// active administrator who can receive instance-plane operator authority. This
-// is intentionally evaluated against the account row at issuance/refresh time;
-// the public OAuth client's class is not itself an authority grant.
-func (h *Handler) oauthInstanceOperatorPrincipal(ctx context.Context, principalUsername string) bool {
-	authorized, err := h.oauthInstanceOperatorPrincipalStatus(ctx, principalUsername)
-	return err == nil && authorized
-}
-
+// oauthInstanceOperatorPrincipalStatus reports whether the current local account
+// is an active administrator who can receive instance-plane operator authority.
+// This is intentionally evaluated against the account row at issuance/refresh
+// time; the public OAuth client's class is not itself an authority grant.
 func (h *Handler) oauthInstanceOperatorPrincipalStatus(ctx context.Context, principalUsername string) (bool, error) {
 	principalUsername = strings.TrimSpace(principalUsername)
 	if h == nil || h.repos == nil || h.repos.Account() == nil || principalUsername == "" {
@@ -554,6 +549,9 @@ func (h *Handler) oauthInstanceOperatorPrincipalStatus(ctx context.Context, prin
 
 	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
 	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return false, nil
+		}
 		return false, fmt.Errorf("load instance-plane principal: %w", err)
 	}
 	if principal == nil {
@@ -599,6 +597,9 @@ func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context
 	principalUsername = strings.TrimSpace(principalUsername)
 	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
 	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return "", "", oauthInvalidInstanceResourceTarget()
+		}
 		return "", "", fmt.Errorf("load instance-plane resource owner: %w", err)
 	}
 	if principal == nil || principal.IsAgent {
@@ -1520,7 +1521,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	}
 	if oauthResourceTargetsInstancePlane(storedResource) {
 		if err := h.validateOAuthInstanceAuthorizationCodeTarget(ctx, client, authCode); err != nil {
-			return "", "", nil, err
+			return "", "", nil, oauthInstanceAuthorizationCodeExchangeError(err)
 		}
 	}
 
@@ -1530,7 +1531,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	}
 	clientClass, err := h.oauthAuthorizationCodeClientClass(ctx, client, authCode)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, oauthInstanceAuthorizationCodeExchangeError(err)
 	}
 
 	// Generate tokens
@@ -1748,13 +1749,24 @@ func (h *Handler) oauthAuthorizationCodeClientClass(ctx context.Context, client 
 	}
 
 	principalUsername := oauthAuthorizationCodePrincipalUsername(authCode)
-	if h.oauthInstanceOperatorPrincipal(ctx, principalUsername) {
+	operator, err := h.oauthInstanceOperatorPrincipalStatus(ctx, principalUsername)
+	if err != nil {
+		return "", err
+	}
+	if operator {
 		return auth.ClientClassOperator, nil
 	}
 	if clientClass == auth.ClientClassOperator {
 		return "", errOAuthInvalidTarget
 	}
 	return clientClass, nil
+}
+
+func oauthInstanceAuthorizationCodeExchangeError(err error) error {
+	if err == nil || errors.Is(err, errOAuthInvalidTarget) {
+		return err
+	}
+	return errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
 }
 
 func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID string, client *storage.OAuthClient, authCode *storage.AuthorizationCode, clientClass, sessionID string, accessTTL time.Duration) *storage.RefreshToken {

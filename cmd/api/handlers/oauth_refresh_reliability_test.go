@@ -217,6 +217,95 @@ func TestOAuthInstancePlaneRefreshAuthorityDistinguishesStorageFault(t *testing.
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
 		requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
 	})
+
+	t.Run("deleted principal is terminal without revocation", func(t *testing.T) {
+		token := oauthRefreshReliabilityToken("rt-instance-deleted", client.ClientID, now)
+		token.Username = "deleted-admin"
+		token.PrincipalUsername = "deleted-admin"
+		token.Resource = resource
+		token.ClientClass = auth.ClientClassOperator
+		require.NoError(t, token.UpdateKeys())
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{client.ClientID: client},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				token.Token: token,
+			},
+			usersByUsername:  map[string]storagemodels.User{},
+			notFoundPKs:      map[string]bool{"USER#deleted-admin": true},
+			disableAuditRepo: true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+
+		params := url.Values{"grant_type": {auth.GrantTypeRefreshToken}, "refresh_token": {token.Token}, "client_id": {client.ClientID}}
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+		requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+		require.Empty(t, resp.Headers["retry-after"])
+		stored := state.refreshTokensByToken[token.Token]
+		require.False(t, stored.Revoked)
+		require.True(t, stored.Current)
+	})
+}
+
+func TestOAuthInstancePlaneAuthorizationCodeAuthorityDistinguishesStorageFault(t *testing.T) {
+	resource := oauthInstanceTestResource(oauthInstanceSurfacePtah)
+	client := oauthRefreshReliabilityClient("client-1")
+	client.ClientClass = auth.ClientClassCLI
+	client.RedirectURIs = []string{"https://client.example/callback"}
+	authCode := storagemodels.AuthorizationCode{
+		Code:              "instance-code",
+		ClientID:          client.ClientID,
+		RedirectURI:       client.RedirectURIs[0],
+		Resource:          resource,
+		Username:          "admin",
+		PrincipalUsername: "admin",
+		ExpiresAt:         time.Now().UTC().Add(time.Minute),
+		Scopes:            []string{auth.ScopeRead},
+	}
+	requestBody := func() []byte {
+		return []byte(url.Values{
+			"grant_type":   {auth.GrantTypeAuthorizationCode},
+			"code":         {authCode.Code},
+			"client_id":    {client.ClientID},
+			"redirect_uri": {authCode.RedirectURI},
+			"resource":     {resource},
+		}.Encode())
+	}
+
+	t.Run("deleted principal is terminal invalid target", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID:         map[string]storagemodels.OAuthClient{client.ClientID: client},
+			authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{authCode.Code: authCode},
+			usersByUsername:          map[string]storagemodels.User{},
+			notFoundPKs:              map[string]bool{"USER#admin": true},
+			disableAuditRepo:         true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, requestBody())))
+		requireOAuthTokenError(t, resp.Status, "invalid_target", resp.Body)
+		require.Empty(t, resp.Headers["retry-after"])
+		require.Contains(t, state.authorizationCodesByCode, authCode.Code)
+		require.Empty(t, state.refreshTokensByToken)
+	})
+
+	t.Run("storage fault is retryable and preserves grant", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID:         map[string]storagemodels.OAuthClient{client.ClientID: client},
+			authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{authCode.Code: authCode},
+			usersByUsername: map[string]storagemodels.User{
+				"admin": {Username: "admin", Approved: true, Role: "admin"},
+			},
+			firstErrorByType: map[string]error{"*repositories.userCoreProjection": errors.New("account store unavailable")},
+			disableAuditRepo: true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, requestBody())))
+		requireOAuthTokenError(t, resp.Status, "temporarily_unavailable", resp.Body)
+		require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+		require.Contains(t, state.authorizationCodesByCode, authCode.Code)
+		require.Empty(t, state.refreshTokensByToken)
+	})
 }
 
 func TestOAuthRefreshAuthoritativeGrantFailuresStayTerminal(t *testing.T) {

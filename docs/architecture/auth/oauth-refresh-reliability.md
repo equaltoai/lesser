@@ -43,11 +43,13 @@ active generation, then atomically:
 2. revokes the active replacement; and
 3. creates a new sole family head.
 
-The redemption is compare-and-swap protected. A concurrent or subsequent
-redemption is terminal and cannot fork the family. Family-index absence inside
-the grace window is retryable because a DynamoDB GSI is eventually consistent.
-Cross-client use, expired credentials, revoked families, resource mismatch, or
-use outside the grace window remain terminal and trigger family revocation.
+The redemption is compare-and-swap protected. A CAS-losing concurrent redemption
+is treated as redeemed-reuse replay and revokes the family. Later same-client
+stale presentations are terminal but do not start another revocation sweep.
+Family-index absence inside the grace window is retryable because a DynamoDB GSI
+is eventually consistent. Cross-client use also revokes the family. Expired
+credentials, already-revoked or stale generations, resource mismatch, and use
+outside the grace window remain terminal without triggering family revocation.
 
 Dedicated agent-runtime client paths keep their existing rotation and
 concurrency behavior; this design applies to the standard DCR refresh path.
