@@ -93,13 +93,14 @@ func TestLoadAndValidateAuthorizationCodeRequiresStoredPKCE(t *testing.T) {
 	handler, _, _ := round11NewHandler(t, cfg, state)
 	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, cfg, handler.repos, nil)
 
-	_, err := handler.loadAndValidateAuthorizationCodeForExchange(
+	_, err := handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(
 		context.Background(),
 		oauthSvc,
 		"legacy-code",
 		"client-public",
 		"https://example.com/callback",
 		"verifier",
+		nil,
 	)
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 }
@@ -292,16 +293,16 @@ func TestLoadAndValidateAuthorizationCodeForExchange(t *testing.T) {
 	}
 	require.NoError(t, repos.account.CreateAuthorizationCode(ctx, code))
 
-	got, err := handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+	got, err := handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", nil)
 	require.NoError(t, err)
 	require.Equal(t, code.Code, got.Code)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, "other-client", code.RedirectURI, "")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code.Code, "other-client", code.RedirectURI, "", nil)
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, "https://example.com/other", "")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code.Code, code.ClientID, "https://example.com/other", "", nil)
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "wrong-verifier")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "wrong-verifier", nil)
 	require.Error(t, err)
 }

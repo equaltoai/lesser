@@ -514,7 +514,7 @@ func TestOAuthRuntimeRefreshGrant_UpdateFailureReturnsRawError(t *testing.T) {
 	h.repos.Account().SetEncryptor(noopEncryptor{})
 	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
 
-	accessToken, newRefreshToken, scopes, err := h.exchangeAgentRuntimeRefreshToken(context.Background(), oauthSvc, token.Token, delegatedAgentClientID, "", "")
+	accessToken, newRefreshToken, scopes, err := h.exchangeAgentRuntimeRefreshTokenWithTelemetry(context.Background(), oauthSvc, token.Token, delegatedAgentClientID, "", "", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Failed to update refresh token")
 	require.Empty(t, accessToken)
@@ -542,7 +542,7 @@ func TestOAuthRuntimeRefreshGrant_CreateFailureRevokesFamilyAndPersistsDiagnosti
 	h.repos.Account().SetEncryptor(noopEncryptor{})
 	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
 
-	accessToken, newRefreshToken, scopes, err := h.exchangeAgentRuntimeRefreshToken(context.Background(), oauthSvc, token.Token, delegatedAgentClientID, "198.51.100.10", "agent/1.0")
+	accessToken, newRefreshToken, scopes, err := h.exchangeAgentRuntimeRefreshTokenWithTelemetry(context.Background(), oauthSvc, token.Token, delegatedAgentClientID, "198.51.100.10", "agent/1.0", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Failed to create refresh token")
 	require.Empty(t, accessToken)
