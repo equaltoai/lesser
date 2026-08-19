@@ -11,7 +11,7 @@ grant, client, or refresh credential is invalid.
 | Refresh token is authoritatively missing, expired, revoked, bound to another client, or bound to another resource | `400 invalid_grant` | Reauthorize |
 | Client is authoritatively missing or its presented authentication fails | `400 invalid_client` | Repair client configuration |
 | Storage, throttling, transport, conditional-write, ambiguous-write, or share-authorization read failure | `503 temporarily_unavailable` with `Retry-After` | Back off and retry the same request |
-| Share or owner revalidation authoritatively denies the principal | `400 invalid_grant` | Reauthorize |
+| Share or owner revalidation authoritatively denies the principal | `400 invalid_grant`; revoke the standard refresh family | Reauthorize |
 
 Authorization-code and device-code issuance atomically consume the one-time
 grant and create the refresh-token row. If that transaction fails, Lesser
@@ -47,9 +47,10 @@ The redemption is compare-and-swap protected. A CAS-losing concurrent redemption
 is treated as redeemed-reuse replay and revokes the family. Later same-client
 stale presentations are terminal but do not start another revocation sweep.
 Family-index absence inside the grace window is retryable because a DynamoDB GSI
-is eventually consistent. Cross-client use also revokes the family. Expired
-credentials, already-revoked or stale generations, resource mismatch, and use
-outside the grace window remain terminal without triggering family revocation.
+is eventually consistent. Cross-client use and an authoritative actor share or
+owner revalidation denial also revoke the family. Expired credentials,
+already-revoked or stale generations, resource mismatch, and use outside the
+grace window remain terminal without triggering family revocation.
 
 Dedicated agent-runtime client paths keep their existing rotation and
 concurrency behavior; this design applies to the standard DCR refresh path.
