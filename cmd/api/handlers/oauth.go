@@ -1137,6 +1137,11 @@ func oauthAuthorizationCodeExchangeErrorResponse(err error) (*apptheory.Response
 			"error":             "invalid_request",
 			"error_description": "Invalid redirect_uri",
 		})
+	case errors.Is(err, auth.ErrInvalidScope):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_scope",
+			"error_description": "Authorization code scope is invalid or no longer permitted",
+		})
 	case errors.Is(err, auth.ErrInvalidGrant):
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_grant",
