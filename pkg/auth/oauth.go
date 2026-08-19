@@ -37,6 +37,10 @@ var (
 	ErrInvalidAPIKey = errors.New("invalid_api_key")
 	// ErrInvalidDelegationCredential is returned when a scoped delegation claim set is incomplete or mismatched.
 	ErrInvalidDelegationCredential = errors.New("invalid_delegation_credential")
+	// ErrOAuthTemporarilyUnavailable marks token-endpoint infrastructure and
+	// contention failures that must remain retryable for OAuth clients. Callers
+	// wrap the underlying cause and classify it with errors.Is.
+	ErrOAuthTemporarilyUnavailable = errors.New("oauth temporarily unavailable")
 )
 
 // Scopes define the permissions that can be granted
@@ -237,7 +241,17 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 		// Return invalid_client for any client lookup error (not found, etc.)
 		return ErrInvalidClient
 	}
+	return s.ValidateClientRecord(ctx, client, clientSecret)
+}
 
+// ValidateClientRecord validates a client secret against an already
+// authoritatively loaded client row. Token-endpoint handlers use this form so a
+// second storage read cannot collapse an infrastructure failure into
+// invalid_client after the first read succeeded.
+func (s *OAuthService) ValidateClientRecord(ctx context.Context, client *storage.OAuthClient, clientSecret string) error {
+	if client == nil {
+		return ErrInvalidClient
+	}
 	// For client authentication, secret is required and must verify against the stored representation.
 	if err := common.ValidateRequiredParam("clientSecret", clientSecret); err != nil {
 		return ErrInvalidClient
@@ -253,9 +267,10 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 		type secretUpdater interface {
 			UpdateOAuthClientSecretHash(ctx context.Context, clientID, clientSecretHash string) error
 		}
+		accountRepo := s.account()
 		if updater, ok := accountRepo.(secretUpdater); ok {
 			if hashed, err := HashOAuthClientSecret(clientSecret); err == nil {
-				_ = updater.UpdateOAuthClientSecretHash(ctx, clientID, hashed)
+				_ = updater.UpdateOAuthClientSecretHash(ctx, client.ClientID, hashed)
 			}
 		}
 	}

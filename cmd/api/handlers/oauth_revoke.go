@@ -186,7 +186,7 @@ func (h *Handler) validateOAuthRevokeRefreshClient(ctx context.Context, stored *
 		resp, _ := oauthRevokeError(http.StatusInternalServerError, "server_error", "OAuth service unavailable")
 		return nil, resp
 	}
-	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, stored.ClientID, clientSecret); err != nil {
+	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, clientSecret); err != nil {
 		resp, _ := oauthRevokeError(http.StatusBadRequest, "invalid_client", "invalid client credentials")
 		return nil, resp
 	}

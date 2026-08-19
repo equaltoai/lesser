@@ -95,6 +95,20 @@ These models use sparse GSI keys to support later approval, catalog, digest, and
 
 **Note on Naming Consistency:** Some models and repositories use descriptive index names (e.g., `index:user-jobs-index`). DynamoDB does **not** provide index aliases, so these names must match a real DynamoDB `IndexName` on the table to work. For clarity and correctness, standardize on one physical naming scheme end-to-end (CDK ↔ DynamoDB ↔ model tags ↔ `.Index(...)` calls).
 
+### f. OAuth `RefreshToken` lineage (`pkg/storage/models/refresh_token.go`)
+
+- **GSI2: refresh family generations**
+  - `gsi2PK`: `RUNTIME_FAMILY#{familyID}`
+  - `gsi2SK`: zero-padded generation (`%08d`)
+  - **Purpose:** Find the active successor during bounded refresh-response
+    recovery and revoke all generations after terminal reuse.
+
+The historical `RUNTIME_FAMILY#` prefix is retained for key compatibility, but
+GSI2 now covers both dedicated runtime sessions and standard OAuth refresh
+families. GSI1 (`RUNTIME_USER#...`) and GSI3 (`RUNTIME_SESSION#...`) remain
+sparse to tokens carrying the pre-existing runtime-session metadata. Ordinary
+web/CLI lineage does not populate those runtime management indexes.
+
 ## 3. Guide to Adding a New Query Pattern
 
 When you need to query data using attributes that are not in the primary key, follow these steps to implement a new GSI-backed query pattern.

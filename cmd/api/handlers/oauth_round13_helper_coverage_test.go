@@ -150,8 +150,9 @@ func TestBuildAuthorizationCodeRefreshToken(t *testing.T) {
 	require.Equal(t, "alice", base.Username)
 	require.Equal(t, "client-1", base.ClientID)
 	require.Equal(t, "web", base.ClientClass)
-	require.Empty(t, base.FamilyID)
-	require.False(t, base.Current)
+	require.NotEmpty(t, base.FamilyID)
+	require.True(t, base.Current)
+	require.Equal(t, 1, base.Generation)
 
 	agentToken := buildAuthorizationCodeRefreshToken(now, "refresh-2", "client-agent", &storage.OAuthClient{
 		Name: "agent-app",
@@ -161,8 +162,9 @@ func TestBuildAuthorizationCodeRefreshToken(t *testing.T) {
 	}, auth.ClientClassAgent, "sess-1", 45*time.Minute)
 	require.Equal(t, auth.ClientClassAgent, agentToken.ClientClass)
 	require.Equal(t, "sess-1", agentToken.SessionID)
-	require.Empty(t, agentToken.FamilyID)
-	require.False(t, agentToken.Current)
+	require.NotEmpty(t, agentToken.FamilyID)
+	require.True(t, agentToken.Current)
+	require.Equal(t, 1, agentToken.Generation)
 	require.Empty(t, agentToken.DeviceLabel)
 	require.Zero(t, agentToken.AccessTTLSeconds)
 	require.True(t, agentToken.SessionCreatedAt.IsZero())
@@ -237,9 +239,9 @@ func TestValidateAuthorizationCodeExchangeClientSecret(t *testing.T) {
 
 	oauthSvc := auth.NewOAuthService(handler.cfg.JWTSecret, handler.cfg, repos, nil)
 
-	require.ErrorIs(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, confidentialClient.ClientID, ""), auth.ErrInvalidClient)
-	require.NoError(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, confidentialClient.ClientID, confidentialClient.ClientSecret))
-	require.ErrorIs(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, confidentialClient.ClientID, "wrong-secret"), auth.ErrInvalidClient)
+	require.ErrorIs(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, ""), auth.ErrInvalidClient)
+	require.NoError(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, confidentialClient.ClientSecret))
+	require.ErrorIs(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, "wrong-secret"), auth.ErrInvalidClient)
 
 	publicClient := &storage.OAuthClient{
 		Name:         "Public App",
@@ -247,7 +249,7 @@ func TestValidateAuthorizationCodeExchangeClientSecret(t *testing.T) {
 		Confidential: false,
 	}
 	require.NoError(t, repos.account.CreateOAuthClient(ctx, publicClient))
-	require.NoError(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, publicClient, publicClient.ClientID, ""))
+	require.NoError(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, publicClient, ""))
 }
 
 func TestValidateAuthorizationCodeExchangeClient(t *testing.T) {

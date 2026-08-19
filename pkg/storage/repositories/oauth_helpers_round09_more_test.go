@@ -160,8 +160,9 @@ func TestRound09_OAuthHelpers_AuthorizationCodesAndRefreshTokens(t *testing.T) {
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		helper := NewOAuthHelper(mockDB, zap.NewNop())
-		_, err := helper.GetRefreshTokenGeneric(ctx, "expired")
-		require.Error(t, err)
+		token, err := helper.GetRefreshTokenGeneric(ctx, "expired")
+		require.NoError(t, err)
+		require.Equal(t, "expired", token.Token)
 	}
 
 	{

@@ -149,14 +149,14 @@ func TestOAuthClientHelperCoverage(t *testing.T) {
 		err := validateRefreshGrantClientSecret(context.Background(), oauthSvc, &storagepkg.OAuthClient{
 			ClientID:     "public-client",
 			Confidential: false,
-		}, "public-client", "")
+		}, "")
 		require.NoError(t, err)
 
 		err = validateRefreshGrantClientSecret(context.Background(), oauthSvc, &storagepkg.OAuthClient{
 			ClientID:     "confidential-client",
 			Confidential: true,
 			ClientSecret: "top-secret",
-		}, "confidential-client", "top-secret")
+		}, "top-secret")
 		require.NoError(t, err)
 	})
 }

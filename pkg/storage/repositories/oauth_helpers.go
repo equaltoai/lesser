@@ -645,13 +645,6 @@ func (h *OAuthHelper) GetRefreshTokenGeneric(ctx context.Context, token string) 
 		return nil, ErrorHandler.HandleGetError(err, EntityRefreshToken, "token")
 	}
 
-	// Check if token has expired
-	if time.Now().After(model.ExpiresAt) {
-		// Clean up expired token
-		_ = h.DeleteRefreshTokenGeneric(ctx, token)
-		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityRefreshToken, "token")
-	}
-
 	result := refreshTokenStorageFromModel(model)
 
 	h.logger.Debug("retrieved refresh token",
@@ -716,7 +709,8 @@ func (h *OAuthHelper) ListRefreshTokensByUserClientGeneric(ctx context.Context, 
 	return refreshTokenStorageSliceFromModels(modelsOut), nil
 }
 
-// ListRefreshTokensByFamilyGeneric returns all refresh tokens for a runtime token family.
+// ListRefreshTokensByFamilyGeneric returns all generations in a refresh-token
+// family. Both standard OAuth and dedicated runtime refresh paths use GSI2.
 func (h *OAuthHelper) ListRefreshTokensByFamilyGeneric(ctx context.Context, familyID string) ([]storage.RefreshToken, error) {
 	var modelsOut []models.RefreshToken
 	if err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
@@ -806,6 +800,7 @@ func refreshTokenModelFromStorage(token *storage.RefreshToken) *models.RefreshTo
 		Version:             token.Version,
 	}
 	model.PrincipalUsername = token.PrincipalUsername
+	model.RetryRedeemedAt = token.RetryRedeemedAt
 	if model.CreatedAt.IsZero() {
 		model.CreatedAt = time.Now()
 	}
@@ -849,6 +844,7 @@ func refreshTokenStorageFromModel(model models.RefreshToken) *storage.RefreshTok
 		Version:             model.Version,
 	}
 	result.PrincipalUsername = model.PrincipalUsername
+	result.RetryRedeemedAt = model.RetryRedeemedAt
 	return result
 }
 

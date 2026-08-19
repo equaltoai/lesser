@@ -13,8 +13,8 @@ type RefreshToken struct {
 	PK string `theorydb:"pk,attr:PK" json:"-"` // REFRESHTOKEN#token
 	SK string `theorydb:"sk,attr:SK" json:"-"` // TOKEN
 
-	// Runtime session lookup GSIs. These reuse the shared table GSIs and are only set for
-	// refresh tokens that carry runtime session metadata.
+	// Refresh lineage and runtime-session lookup GSIs. GSI2 indexes every
+	// refresh family; GSI1/GSI3 remain sparse to tokens carrying runtime state.
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"-"`
@@ -33,15 +33,16 @@ type RefreshToken struct {
 	ClientClass       string    `theorydb:"attr:clientClass" json:"ClientClass,omitempty"`
 	SessionID         string    `theorydb:"attr:sessionID" json:"SessionID,omitempty"`
 
-	// Runtime session metadata. These fields are optional for regular OAuth clients and used
-	// only by the dedicated internal agent runtime clients for safe rotation and operator-visible
-	// session management.
+	// Rotation lineage is shared by all refresh clients. The remaining optional
+	// runtime-session metadata supports long-lived agent clients and
+	// operator-visible session management.
 	FamilyID            string    `theorydb:"attr:familyID,omitempty" json:"FamilyID,omitempty"`
 	Generation          int       `theorydb:"attr:generation,omitempty" json:"Generation,omitempty"`
 	Current             bool      `theorydb:"attr:current" json:"Current"`
 	Revoked             bool      `theorydb:"attr:revoked" json:"Revoked"`
 	RevokedAt           time.Time `theorydb:"attr:revokedAt,omitempty" json:"RevokedAt,omitempty"`
 	RevokedReason       string    `theorydb:"attr:revokedReason,omitempty" json:"RevokedReason,omitempty"`
+	RetryRedeemedAt     time.Time `theorydb:"attr:retryRedeemedAt,omitempty" json:"RetryRedeemedAt,omitempty"`
 	DeviceLabel         string    `theorydb:"attr:deviceLabel,omitempty" json:"DeviceLabel,omitempty"`
 	LastUsedAt          time.Time `theorydb:"attr:lastUsedAt,omitempty" json:"LastUsedAt,omitempty"`
 	IdleExpiresAt       time.Time `theorydb:"attr:idleExpiresAt,omitempty" json:"IdleExpiresAt,omitempty"`
@@ -136,6 +137,13 @@ func (r *RefreshToken) updateRuntimeIndexes() {
 	r.GSI3PK = ""
 	r.GSI3SK = ""
 
+	// Family lineage is shared by the standard and dedicated-runtime refresh
+	// paths. Keep ordinary web/CLI tokens queryable without making them appear
+	// in the runtime user/session indexes.
+	if r.FamilyID != "" {
+		r.GSI2PK = "RUNTIME_FAMILY#" + r.FamilyID
+		r.GSI2SK = fmt.Sprintf("%08d", r.Generation)
+	}
 	if !r.carriesRuntimeSessionState() {
 		return
 	}
@@ -144,10 +152,6 @@ func (r *RefreshToken) updateRuntimeIndexes() {
 		r.GSI1PK = fmt.Sprintf("RUNTIME_USER#%s#%s", r.Username, r.ClientID)
 		r.GSI1SK = fmt.Sprintf("%d#%s#%08d", r.SessionCreatedAt.Unix(), r.SessionID, r.Generation)
 	}
-	if r.FamilyID != "" {
-		r.GSI2PK = "RUNTIME_FAMILY#" + r.FamilyID
-		r.GSI2SK = fmt.Sprintf("%08d", r.Generation)
-	}
 	if r.SessionID != "" {
 		r.GSI3PK = "RUNTIME_SESSION#" + r.SessionID
 		r.GSI3SK = fmt.Sprintf("%08d", r.Generation)
@@ -155,9 +159,8 @@ func (r *RefreshToken) updateRuntimeIndexes() {
 }
 
 func (r *RefreshToken) carriesRuntimeSessionState() bool {
-	return r.FamilyID != "" ||
-		r.Generation > 0 ||
-		r.Current ||
+	return r.ClientID == "lesser-agent-delegation" ||
+		r.ClientID == "lesser-agent-self-sovereign" ||
 		r.DeviceLabel != "" ||
 		!r.LastUsedAt.IsZero() ||
 		!r.IdleExpiresAt.IsZero() ||

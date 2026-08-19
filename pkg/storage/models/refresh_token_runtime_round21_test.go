@@ -54,4 +54,26 @@ func TestRefreshTokenRuntimeMetadataBoundaries(t *testing.T) {
 		require.Equal(t, "RUNTIME_FAMILY#fam-1", token.GSI2PK)
 		require.Equal(t, "RUNTIME_SESSION#sid-1", token.GSI3PK)
 	})
+
+	t.Run("standard lineage populates only the family index", func(t *testing.T) {
+		token := &RefreshToken{
+			Token:      "standard-lineage",
+			ClientID:   "dynamic-client",
+			Username:   "alice",
+			SessionID:  "sess-1",
+			FamilyID:   "fam-standard",
+			Generation: 2,
+			Current:    true,
+			ExpiresAt:  time.Now().UTC().Add(time.Hour),
+		}
+
+		require.NoError(t, token.BeforeCreate())
+		require.False(t, token.carriesRuntimeSessionState())
+		require.Equal(t, "RUNTIME_FAMILY#fam-standard", token.GSI2PK)
+		require.Equal(t, "00000002", token.GSI2SK)
+		require.Empty(t, token.GSI1PK)
+		require.Empty(t, token.GSI3PK)
+		require.True(t, token.SessionCreatedAt.IsZero())
+		require.True(t, token.LastUsedAt.IsZero())
+	})
 }

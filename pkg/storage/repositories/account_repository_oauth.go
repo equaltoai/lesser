@@ -215,7 +215,8 @@ func (r *AccountRepository) ListRefreshTokensByUserClient(ctx context.Context, u
 	return helper.ListRefreshTokensByUserClientGeneric(ctx, username, clientID)
 }
 
-// ListRefreshTokensByFamily returns runtime refresh tokens in the same family.
+// ListRefreshTokensByFamily returns all refresh-token generations in the same
+// standard OAuth or dedicated runtime family.
 func (r *AccountRepository) ListRefreshTokensByFamily(ctx context.Context, familyID string) ([]storage.RefreshToken, error) {
 	helper := NewOAuthHelper(r.db, r.logger)
 	return helper.ListRefreshTokensByFamilyGeneric(ctx, familyID)

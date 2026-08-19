@@ -281,6 +281,7 @@ type RefreshToken struct {
 	Revoked             bool      `json:"revoked,omitempty"`
 	RevokedAt           time.Time `json:"revoked_at,omitempty"`
 	RevokedReason       string    `json:"revoked_reason,omitempty"`
+	RetryRedeemedAt     time.Time `json:"retry_redeemed_at,omitempty"`
 	DeviceLabel         string    `json:"device_label,omitempty"`
 	LastUsedAt          time.Time `json:"last_used_at,omitempty"`
 	IdleExpiresAt       time.Time `json:"idle_expires_at,omitempty"`

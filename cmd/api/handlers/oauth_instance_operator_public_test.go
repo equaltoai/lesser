@@ -135,7 +135,7 @@ func TestOAuthInstancePlaneDynamicPublicClientOwnerGetsOperatorClaims(t *testing
 					"grant_type":    {auth.GrantTypeRefreshToken},
 					"refresh_token": {tokenBody.RefreshToken},
 					"client_id":     {registration.ClientID},
-					"resource":      {oauthInstanceOtherSurfaceResource(surface)},
+					"resource":      {resource},
 					"scope":         {"read write admin"},
 				}
 				refreshResp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(refreshParams.Encode()))))
@@ -148,7 +148,9 @@ func TestOAuthInstancePlaneDynamicPublicClientOwnerGetsOperatorClaims(t *testing
 				require.NotContains(t, refreshedClaims.Scopes, auth.ScopeAdmin)
 				require.Equal(t, auth.ClientClassOperator, state.refreshTokensByToken[refreshedBody.RefreshToken].ClientClass)
 				require.Equal(t, resource, state.refreshTokensByToken[refreshedBody.RefreshToken].Resource)
-				require.NotContains(t, state.refreshTokensByToken, tokenBody.RefreshToken)
+				rotated := state.refreshTokensByToken[tokenBody.RefreshToken]
+				require.True(t, rotated.Revoked)
+				require.False(t, rotated.Current)
 			})
 		}
 	}
