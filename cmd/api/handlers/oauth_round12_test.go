@@ -809,6 +809,25 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "invalid_client", body["error"])
 	})
 
+	t.Run("authorization_code unauthorized_client", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					RedirectURIs: []string{"https://example.com/callback"},
+					GrantTypes:   []string{auth.GrantTypeRefreshToken},
+					Scopes:       []string{auth.ScopeRead},
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "unauthorized_client", body["error"])
+	})
+
 	t.Run("authorization_code invalid_target when resource does not match authorization request", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{

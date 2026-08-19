@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -250,6 +251,119 @@ func TestOAuthTokenGrantArmsEmitExactlyOneOutcome(t *testing.T) {
 	for _, payload := range lines {
 		require.Equal(t, oauthGrantReasonInvalidRequest, payload.ReasonCode)
 		require.Equal(t, 1, payload.Outcomes)
+	}
+}
+
+func TestOAuthAuthorizationCodeRedirectFailuresKeepWireAndTelemetryTruthful(t *testing.T) {
+	const (
+		clientID  = "client-1"
+		redirectA = "https://client.example/callback-a"
+		redirectB = "https://client.example/callback-b"
+	)
+
+	tests := []struct {
+		name                string
+		registeredRedirects []string
+		storedRedirect      string
+		presentedCode       string
+		presentedRedirect   string
+		wantWireError       string
+		wantDescription     string
+		refuteDescription   string
+		wantReason          string
+	}{
+		{
+			name:                "whitespace code is a missing required parameter",
+			registeredRedirects: []string{redirectA},
+			storedRedirect:      redirectA,
+			presentedCode:       " ",
+			presentedRedirect:   redirectA,
+			wantWireError:       oauthGrantReasonInvalidRequest,
+			wantDescription:     "validation failed for parameters: missing required parameters: code",
+			refuteDescription:   "redirect_uri",
+			wantReason:          oauthGrantReasonInvalidRequest,
+		},
+		{
+			name:                "whitespace redirect is a missing required parameter",
+			registeredRedirects: []string{redirectA},
+			storedRedirect:      redirectA,
+			presentedCode:       "code-1",
+			presentedRedirect:   " ",
+			wantWireError:       oauthGrantReasonInvalidRequest,
+			wantDescription:     "validation failed for parameters: missing required parameters: redirect_uri",
+			wantReason:          oauthGrantReasonInvalidRequest,
+		},
+		{
+			name:                "unregistered redirect is invalid request",
+			registeredRedirects: []string{redirectA},
+			storedRedirect:      redirectA,
+			presentedCode:       "code-1",
+			presentedRedirect:   "https://unregistered.example/callback",
+			wantWireError:       oauthGrantReasonInvalidRequest,
+			wantDescription:     "Invalid redirect_uri",
+			wantReason:          oauthGrantReasonAuthorizationCodeRedirectMismatch,
+		},
+		{
+			name:                "registered redirect differing from code is invalid grant",
+			registeredRedirects: []string{redirectA, redirectB},
+			storedRedirect:      redirectA,
+			presentedCode:       "code-1",
+			presentedRedirect:   redirectB,
+			wantWireError:       "invalid_grant",
+			wantDescription:     "Invalid authorization code or expired",
+			wantReason:          oauthGrantReasonAuthorizationCodeRedirectMismatch,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &round10QueryState{
+				oauthClientsByID: map[string]storagemodels.OAuthClient{
+					clientID: {
+						ClientID:     clientID,
+						RedirectURIs: tc.registeredRedirects,
+						Scopes:       []string{auth.ScopeRead},
+					},
+				},
+				authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+					"code-1": {
+						Code:        "code-1",
+						ClientID:    clientID,
+						RedirectURI: tc.storedRedirect,
+						Username:    "alice",
+						ExpiresAt:   time.Now().Add(5 * time.Minute),
+						Scopes:      []string{auth.ScopeRead},
+					},
+				},
+			}
+			h, _, _ := round11NewHandler(t, state)
+			var output bytes.Buffer
+			h.oauthGrantEMFWriter = &output
+			h.oauthGrantEMFEnabled = true
+
+			params := url.Values{
+				"grant_type":   {oauthGrantTypeAuthorizationCode},
+				"code":         {tc.presentedCode},
+				"client_id":    {clientID},
+				"redirect_uri": {tc.presentedRedirect},
+			}
+			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))
+			resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+			requireOAuthTokenError(t, resp.Status, tc.wantWireError, resp.Body)
+			var wire apimodels.OAuthErrorResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &wire))
+			require.Equal(t, tc.wantDescription, wire.ErrorDescription)
+			if tc.refuteDescription != "" {
+				require.NotContains(t, wire.ErrorDescription, tc.refuteDescription)
+			}
+
+			lines := decodeOAuthGrantEMFLines(t, output.String())
+			require.Len(t, lines, 1)
+			require.Equal(t, tc.wantReason, lines[0].ReasonCode)
+			require.Equal(t, tc.wantReason, lines[0].DetailReason)
+			require.Equal(t, "400", lines[0].HTTPStatus)
+			require.Equal(t, oauthGrantOutcomeFailure, lines[0].Outcome)
+		})
 	}
 }
 

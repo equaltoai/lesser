@@ -67,6 +67,28 @@ const (
 
 var errOAuthInvalidTarget = errors.New("invalid_target")
 
+type oauthAuthorizationCodeRequestValidationError struct {
+	validationErr error
+}
+
+func (e *oauthAuthorizationCodeRequestValidationError) Error() string {
+	if e == nil || e.validationErr == nil {
+		return ""
+	}
+	return e.validationErr.Error()
+}
+
+func (e *oauthAuthorizationCodeRequestValidationError) Is(target error) bool {
+	return target == auth.ErrInvalidRequest
+}
+
+func (e *oauthAuthorizationCodeRequestValidationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.validationErr
+}
+
 type oauthAuthorizeTargetError struct {
 	code        string
 	description string
@@ -1082,40 +1104,7 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 	if err != nil {
 		setOAuthGrantReasonFromError(telemetry, err)
 		h.logger.Error("failed to exchange authorization code", zap.Error(err))
-		switch {
-		case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
-			return oauthTemporarilyUnavailable("Authorization code exchange is temporarily unavailable")
-		case errors.Is(err, errOAuthInvalidTarget):
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_target",
-				"error_description": "resource must match the original authorization request",
-			})
-		case errors.Is(err, auth.ErrInvalidGrant):
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_grant",
-				"error_description": "Invalid authorization code or expired",
-			})
-		case errors.Is(err, auth.ErrInvalidClient):
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_client",
-				"error_description": "Invalid client credentials",
-			})
-		case errors.Is(err, auth.ErrUnauthorizedClient):
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "unauthorized_client",
-				"error_description": "This client is not allowed to use authorization_code",
-			})
-		case errors.Is(err, auth.ErrInvalidCodeChallenge):
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_grant",
-				"error_description": "PKCE verification failed",
-			})
-		default:
-			return apptheory.JSON(http.StatusInternalServerError, map[string]string{
-				"error":             "server_error",
-				"error_description": "Authorization code exchange failed",
-			})
-		}
+		return oauthAuthorizationCodeExchangeErrorResponse(err)
 	}
 
 	return okJSON(apimodels.OAuthTokenResponse{
@@ -1126,6 +1115,54 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 		ExpiresIn:    oauthTokenExpiresInSeconds,
 		RefreshToken: refreshTokenOut,
 	})
+}
+
+func oauthAuthorizationCodeExchangeErrorResponse(err error) (*apptheory.Response, error) {
+	var validationErr *oauthAuthorizationCodeRequestValidationError
+	switch {
+	case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
+		return oauthTemporarilyUnavailable("Authorization code exchange is temporarily unavailable")
+	case errors.Is(err, errOAuthInvalidTarget):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_target",
+			"error_description": "resource must match the original authorization request",
+		})
+	case errors.As(err, &validationErr):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": validationErr.Error(),
+		})
+	case errors.Is(err, auth.ErrInvalidRequest):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "Invalid redirect_uri",
+		})
+	case errors.Is(err, auth.ErrInvalidGrant):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Invalid authorization code or expired",
+		})
+	case errors.Is(err, auth.ErrInvalidClient):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+	case errors.Is(err, auth.ErrUnauthorizedClient):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "unauthorized_client",
+			"error_description": "This client is not allowed to use authorization_code",
+		})
+	case errors.Is(err, auth.ErrInvalidCodeChallenge):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "PKCE verification failed",
+		})
+	default:
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error":             "server_error",
+			"error_description": "Authorization code exchange failed",
+		})
+	}
 }
 
 func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest, telemetry *oauthGrantTelemetry) (*apptheory.Response, error) {
@@ -1535,6 +1572,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 
 	client, err := h.validateAuthorizationCodeExchangeClient(ctx, oauthSvc, clientID, redirectURI, clientSecret, code)
 	if err != nil {
+		var validationErr *oauthAuthorizationCodeRequestValidationError
 		switch {
 		case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
 			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
@@ -1542,6 +1580,8 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 			telemetry.setReason(oauthGrantReasonInvalidClient)
 		case errors.Is(err, auth.ErrUnauthorizedClient):
 			telemetry.setReason(oauthGrantReasonUnauthorizedClient)
+		case errors.As(err, &validationErr):
+			telemetry.setReason(oauthGrantReasonInvalidRequest)
 		default:
 			telemetry.setReason(oauthGrantReasonAuthorizationCodeRedirectMismatch)
 		}
@@ -1643,11 +1683,11 @@ func (h *Handler) validateAuthorizationCodeExchangeClient(ctx context.Context, o
 
 func validateAuthorizationCodeExchangeRedirect(client *storage.OAuthClient, clientID, redirectURI, code string) error {
 	if err := common.ValidateMultipleRequiredParams(map[string]string{
-		"clientID":    clientID,
-		"redirectURI": redirectURI,
-		"authCode":    code,
+		"client_id":    clientID,
+		"redirect_uri": redirectURI,
+		"code":         code,
 	}); err != nil {
-		return auth.ErrInvalidRequest
+		return &oauthAuthorizationCodeRequestValidationError{validationErr: err}
 	}
 	for _, registeredURI := range client.RedirectURIs {
 		if auth.RedirectURIsMatch(client, registeredURI, redirectURI) {

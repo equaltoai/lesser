@@ -2,31 +2,111 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
+func TestOAuthAuthorizationCodeExchangeErrorResponsePinsExistingMapperArms(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		err             error
+		wantStatus      int
+		wantCode        string
+		wantDescription string
+	}{
+		{
+			name:            "temporarily unavailable",
+			err:             auth.ErrOAuthTemporarilyUnavailable,
+			wantStatus:      http.StatusServiceUnavailable,
+			wantCode:        "temporarily_unavailable",
+			wantDescription: "Authorization code exchange is temporarily unavailable",
+		},
+		{
+			name:            "invalid target",
+			err:             errOAuthInvalidTarget,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_target",
+			wantDescription: "resource must match the original authorization request",
+		},
+		{
+			name:            "invalid grant",
+			err:             auth.ErrInvalidGrant,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_grant",
+			wantDescription: "Invalid authorization code or expired",
+		},
+		{
+			name:            "invalid client",
+			err:             auth.ErrInvalidClient,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_client",
+			wantDescription: "Invalid client credentials",
+		},
+		{
+			name:            "unauthorized client",
+			err:             auth.ErrUnauthorizedClient,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "unauthorized_client",
+			wantDescription: "This client is not allowed to use authorization_code",
+		},
+		{
+			name:            "invalid code challenge",
+			err:             auth.ErrInvalidCodeChallenge,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_grant",
+			wantDescription: "PKCE verification failed",
+		},
+		{
+			name:            "unexpected failure",
+			err:             errors.New("unexpected exchange failure"),
+			wantStatus:      http.StatusInternalServerError,
+			wantCode:        "server_error",
+			wantDescription: "Authorization code exchange failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := requireStatus(t, tt.wantStatus)(oauthAuthorizationCodeExchangeErrorResponse(tt.err))
+			var body map[string]string
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, tt.wantCode, body["error"])
+			require.Equal(t, tt.wantDescription, body["error_description"])
+		})
+	}
+}
+
 func TestValidateAuthorizationCodeExchangeRedirect(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		client      *storage.OAuthClient
-		clientID    string
-		redirectURI string
-		wantErr     error
+		name                      string
+		client                    *storage.OAuthClient
+		clientID                  string
+		redirectURI               string
+		wantErr                   error
+		wantValidationDescription string
 	}{
 		{
-			name:        "missing client id",
-			client:      &storage.OAuthClient{RedirectURIs: []string{"https://example.com/callback"}},
-			redirectURI: "https://example.com/callback",
-			wantErr:     auth.ErrInvalidRequest,
+			name:                      "missing client id",
+			client:                    &storage.OAuthClient{RedirectURIs: []string{"https://example.com/callback"}},
+			redirectURI:               "https://example.com/callback",
+			wantErr:                   auth.ErrInvalidRequest,
+			wantValidationDescription: "validation failed for parameters: missing required parameters: client_id",
 		},
 		{
 			name:        "exact match",
@@ -69,6 +149,13 @@ func TestValidateAuthorizationCodeExchangeRedirect(t *testing.T) {
 			err := validateAuthorizationCodeExchangeRedirect(tt.client, tt.clientID, tt.redirectURI, "code")
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
+				if tt.wantValidationDescription != "" {
+					var requestValidationErr *oauthAuthorizationCodeRequestValidationError
+					require.ErrorAs(t, err, &requestValidationErr)
+					require.Equal(t, tt.wantValidationDescription, requestValidationErr.Error())
+					var validationErr common.ValidationError
+					require.ErrorAs(t, err, &validationErr)
+				}
 				return
 			}
 			require.NoError(t, err)
