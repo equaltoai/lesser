@@ -139,8 +139,9 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 
 	s.updateCMSArticleCountsBestEffort(ctx, nil, article)
 
-	// Federate the article creation asynchronously
-	go s.federateArticleCreation(context.Background(), article)
+	// Federate an immutable snapshot so repository ownership of article cannot
+	// race later CMS writes while this best-effort handoff is still running.
+	go s.federateArticleCreation(context.Background(), cloneArticleForFederation(article))
 
 	return nil
 }
@@ -331,7 +332,7 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 	}
 	s.updateCMSArticleCountsBestEffort(ctx, existing, article)
 
-	go s.federateArticleUpdate(context.Background(), article)
+	go s.federateArticleUpdate(context.Background(), cloneArticleForFederation(article))
 
 	return nil
 }
@@ -352,7 +353,7 @@ func (s *ArticleService) DeleteArticle(ctx context.Context, article *models.Arti
 	s.deleteCMSArticleIndexes(ctx, article)
 	s.updateCMSArticleCountsBestEffort(ctx, article, nil)
 
-	go s.federateArticleDeletion(context.Background(), article)
+	go s.federateArticleDeletion(context.Background(), cloneArticleForFederation(article))
 
 	return nil
 }
@@ -574,6 +575,39 @@ func (s *ArticleService) updateCMSArticleCountsBestEffort(ctx context.Context, b
 
 func (s *ArticleService) federateArticleCreation(ctx context.Context, article *models.Article) {
 	s.federateArticleWriteActivity(ctx, article, activitypub.CreateType, "create")
+}
+
+func cloneArticleForFederation(article *models.Article) *models.Article {
+	if article == nil {
+		return nil
+	}
+
+	clone := *article
+	clone.To = append([]string(nil), article.To...)
+	clone.CC = append([]string(nil), article.CC...)
+	clone.BTo = append([]string(nil), article.BTo...)
+	clone.BCC = append([]string(nil), article.BCC...)
+	clone.TableOfContents = append([]models.TOCEntry(nil), article.TableOfContents...)
+	clone.CategoryIDs = append([]string(nil), article.CategoryIDs...)
+
+	if article.InReplyTo != nil {
+		inReplyTo := *article.InReplyTo
+		clone.InReplyTo = &inReplyTo
+	}
+	if article.SeriesID != nil {
+		seriesID := *article.SeriesID
+		clone.SeriesID = &seriesID
+	}
+	if article.SeriesOrder != nil {
+		seriesOrder := *article.SeriesOrder
+		clone.SeriesOrder = &seriesOrder
+	}
+	if article.FeaturedImage != nil {
+		featuredImage := *article.FeaturedImage
+		clone.FeaturedImage = &featuredImage
+	}
+
+	return &clone
 }
 
 func (s *ArticleService) federateArticleUpdate(ctx context.Context, article *models.Article) {

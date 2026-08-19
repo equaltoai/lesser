@@ -284,6 +284,46 @@ func TestListAgentRuntimeSessions(t *testing.T) {
 func TestRevokeAgentRuntimeFlows(t *testing.T) {
 	t.Parallel()
 
+	t.Run("family sweep continues after an item failure and reconciles once", func(t *testing.T) {
+		repo, db, query := newAgentRuntimeAccountRepo()
+		db.ExpectedCalls = nil
+		db.On("WithContext", mock.Anything).Return(db).Maybe()
+		currentToken := ""
+		db.On("Model", mock.Anything).Return(query).Maybe().Run(func(args mock.Arguments) {
+			if model, ok := args.Get(0).(*models.RefreshToken); ok {
+				currentToken = model.Token
+			}
+		})
+
+		listCalls := 0
+		query.On("All", mock.Anything).Return(nil).Twice().Run(func(args mock.Arguments) {
+			listCalls++
+			target := args.Get(0).(*[]models.RefreshToken)
+			if listCalls == 1 {
+				*target = []models.RefreshToken{
+					{Token: "rt-first-fails", FamilyID: "fam-reconcile", Username: "alice", ClientID: "client-1", Version: 1},
+					{Token: "rt-second-succeeds", FamilyID: "fam-reconcile", Username: "alice", ClientID: "client-1", Version: 1},
+				}
+				return
+			}
+			*target = []models.RefreshToken{
+				{Token: "rt-first-fails", FamilyID: "fam-reconcile", Username: "alice", ClientID: "client-1", Version: 1},
+			}
+		})
+
+		var attempts []string
+		query.On("Update", mock.Anything).Return(errors.New("first CAS failed")).Once().Run(func(mock.Arguments) {
+			attempts = append(attempts, currentToken)
+		})
+		query.On("Update", mock.Anything).Return(nil).Twice().Run(func(mock.Arguments) {
+			attempts = append(attempts, currentToken)
+		})
+
+		err := RevokeAgentRuntimeFamily(context.Background(), agentRuntimeRepos{account: repo}, &storage.RefreshToken{FamilyID: "fam-reconcile"}, "reuse", "198.51.100.5", "client/1")
+		require.NoError(t, err)
+		require.Equal(t, []string{"rt-first-fails", "rt-second-succeeds", "rt-first-fails"}, attempts)
+	})
+
 	t.Run("family revocation updates active and reused tokens", func(t *testing.T) {
 		repo, db, query := newAgentRuntimeAccountRepo()
 
@@ -297,7 +337,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 			}
 		})
 
-		query.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		query.On("All", mock.Anything).Return(nil).Twice().Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.RefreshToken)
 			*target = []models.RefreshToken{
 				{Token: "rt-active", FamilyID: "fam-1", Username: "alice", ClientID: "lesser-agent-delegation", Revoked: false, Version: 1},
@@ -329,13 +369,13 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 
 	t.Run("family errors and pre-marked reuse", func(t *testing.T) {
 		repoErr, _, queryErr := newAgentRuntimeAccountRepo()
-		queryErr.On("All", mock.Anything).Return(errors.New("list failed")).Once()
+		queryErr.On("All", mock.Anything).Return(errors.New("list failed")).Twice()
 
 		err := RevokeAgentRuntimeFamily(context.Background(), agentRuntimeRepos{account: repoErr}, &storage.RefreshToken{FamilyID: "fam-err"}, "manual", "", "")
 		require.Error(t, err)
 
 		repoSkip, _, querySkip := newAgentRuntimeAccountRepo()
-		querySkip.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		querySkip.On("All", mock.Anything).Return(nil).Twice().Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.RefreshToken)
 			*target = []models.RefreshToken{
 				{
@@ -358,7 +398,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		repo, _, query := newAgentRuntimeAccountRepo()
 
 		allCalls := 0
-		query.On("All", mock.Anything).Return(nil).Times(3).Run(func(args mock.Arguments) {
+		query.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
 			allCalls++
 			switch target := args.Get(0).(type) {
 			case *[]models.RefreshToken:
@@ -369,7 +409,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 					}
 				case 2:
 					*target = []models.RefreshToken{}
-				case 3:
+				case 3, 4:
 					*target = []models.RefreshToken{
 						{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
@@ -405,7 +445,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		repo, _, query := newAgentRuntimeAccountRepo()
 
 		allCalls := 0
-		query.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
+		query.On("All", mock.Anything).Return(nil).Times(6).Run(func(args mock.Arguments) {
 			allCalls++
 			switch target := args.Get(0).(type) {
 			case *[]models.RefreshToken:
@@ -422,7 +462,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 					*target = []models.RefreshToken{
 						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
-				case 4:
+				case 5, 6:
 					*target = []models.RefreshToken{
 						{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
@@ -438,7 +478,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 	t.Run("revoke all surfaces family failures", func(t *testing.T) {
 		repoErr, _, queryErr := newAgentRuntimeAccountRepo()
 		allCalls := 0
-		queryErr.On("All", mock.Anything).Return(nil).Times(3).Run(func(args mock.Arguments) {
+		queryErr.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
 			allCalls++
 			switch target := args.Get(0).(type) {
 			case *[]models.RefreshToken:
@@ -449,14 +489,14 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 					}
 				case 2:
 					*target = []models.RefreshToken{}
-				case 3:
+				case 3, 4:
 					*target = []models.RefreshToken{
 						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), IdleExpiresAt: time.Now().Add(1 * time.Hour).UTC(), AbsoluteExpiresAt: time.Now().Add(2 * time.Hour).UTC(), SessionCreatedAt: time.Now().Add(-1 * time.Hour).UTC(), AccessTTLSeconds: 1800, Version: 1},
 					}
 				}
 			}
 		})
-		queryErr.On("Update", mock.Anything).Return(errors.New("update failed")).Once()
+		queryErr.On("Update", mock.Anything).Return(errors.New("update failed")).Twice()
 
 		err := RevokeAllAgentRuntimeSessions(context.Background(), agentRuntimeRepos{account: repoErr}, "alice", "owner_signout", "", "")
 		require.Error(t, err)

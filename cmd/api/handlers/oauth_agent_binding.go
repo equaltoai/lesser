@@ -54,8 +54,14 @@ func (h *Handler) agentShareGrantActive(ctx context.Context, agentUsername, prin
 // so a revocation blocks the next refresh rather than the next authorization.
 func (h *Handler) agentRefreshGrantAuthorized(ctx context.Context, agentUsername, principalUsername string) (bool, error) {
 	agentUser, err := h.repos.Account().GetUser(ctx, agentUsername)
-	if err != nil || agentUser == nil || !agentUser.IsAgent {
-		return false, errors.New("agent refresh subject unavailable")
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return false, nil
+		}
+		return false, errors.Join(errors.New("agent refresh subject lookup failed"), err)
+	}
+	if agentUser == nil || !agentUser.IsAgent {
+		return false, nil
 	}
 	if h.agentOwnedByPrincipal(agentUser, principalUsername) {
 		return true, nil

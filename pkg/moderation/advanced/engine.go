@@ -1242,7 +1242,9 @@ func (va *VideoAnalyzer) AnalyzeVideo(ctx context.Context, videoURL string, _ Co
 			mu.Unlock()
 			return
 		}
+		mu.Lock()
 		va.processTextResults(textResults, analysis)
+		mu.Unlock()
 	}()
 
 	// Face detection (async job)

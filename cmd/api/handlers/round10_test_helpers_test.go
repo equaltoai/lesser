@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -139,14 +140,16 @@ type round10QueryState struct {
 	notFoundPKSK   map[string]bool
 	notFoundGSI3PK map[string]bool
 
-	allErrorOnce     error
-	allErrorByType   map[string]error
-	scanErrorOnce    error
-	firstErrorOnce   error
-	updateErrorOnce  error
-	createErrorOnce  error
-	deleteErrorOnce  error
-	executeErrorOnce error
+	allErrorOnce         error
+	allErrorByType       map[string]error
+	scanErrorOnce        error
+	firstErrorOnce       error
+	firstErrorByType     map[string]error
+	updateErrorOnce      error
+	createErrorOnce      error
+	deleteErrorOnce      error
+	executeErrorOnce     error
+	transactionErrorOnce error
 
 	firstErrorPK     map[string]error
 	firstErrorGSI3PK map[string]error
@@ -582,15 +585,21 @@ func (b *round10TransactionBuilder) Put(any, ...dynamormcore.TransactCondition) 
 	return b
 }
 
-func (b *round10TransactionBuilder) Create(any, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+func (b *round10TransactionBuilder) Create(model any, conditions ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	b.operations = append(b.operations, round10TransactionOperation{kind: "create", model: model, conditions: append([]dynamormcore.TransactCondition(nil), conditions...)})
 	return b
 }
 
-func (b *round10TransactionBuilder) Update(any, []string, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+func (b *round10TransactionBuilder) Update(model any, _ []string, conditions ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	b.operations = append(b.operations, round10TransactionOperation{kind: "update", model: model, conditions: append([]dynamormcore.TransactCondition(nil), conditions...)})
 	return b
 }
 
-func (b *round10TransactionBuilder) UpdateWithBuilder(any, func(dynamormcore.UpdateBuilder) error, ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+func (b *round10TransactionBuilder) UpdateWithBuilder(model any, updateFn func(dynamormcore.UpdateBuilder) error, conditions ...dynamormcore.TransactCondition) dynamormcore.TransactionBuilder {
+	if updateFn != nil {
+		_ = updateFn(&round10TransactionUpdateBuilder{})
+	}
+	b.operations = append(b.operations, round10TransactionOperation{kind: "update", model: model, conditions: append([]dynamormcore.TransactCondition(nil), conditions...)})
 	return b
 }
 
@@ -617,6 +626,11 @@ func (b *round10TransactionBuilder) WithContext(context.Context) dynamormcore.Tr
 }
 
 func (b *round10TransactionBuilder) Execute() error {
+	if b.state.transactionErrorOnce != nil {
+		err := b.state.transactionErrorOnce
+		b.state.transactionErrorOnce = nil
+		return err
+	}
 	for idx, operation := range b.operations {
 		if !round10TransactionConditionsMet(b.state, operation.model, operation.conditions) {
 			return &dynamormerrors.TransactionError{
@@ -629,15 +643,28 @@ func (b *round10TransactionBuilder) Execute() error {
 	}
 
 	for idx, operation := range b.operations {
-		if operation.kind != "delete" {
-			continue
+		var err error
+		switch operation.kind {
+		case "create":
+			if b.state.createErrorOnce != nil {
+				err, b.state.createErrorOnce = b.state.createErrorOnce, nil
+			}
+		case "update":
+			if b.state.updateErrorOnce != nil {
+				err, b.state.updateErrorOnce = b.state.updateErrorOnce, nil
+			}
+		case "delete":
+			if b.state.deleteErrorOnce != nil {
+				err, b.state.deleteErrorOnce = b.state.deleteErrorOnce, nil
+			}
 		}
-		if b.state.deleteErrorOnce != nil {
-			err := b.state.deleteErrorOnce
-			b.state.deleteErrorOnce = nil
-			return err
+		if err != nil {
+			return &dynamormerrors.TransactionError{Err: err, Operation: operation.kind, OperationIndex: idx, Reason: err.Error()}
 		}
-		if !round10TransactionDeleteModel(b.state, operation.model) {
+	}
+
+	for idx, operation := range b.operations {
+		if !round10TransactionApplyOperation(b.state, operation) {
 			return &dynamormerrors.TransactionError{
 				Err:            dynamormerrors.ErrConditionFailed,
 				Operation:      operation.kind,
@@ -665,7 +692,47 @@ func round10TransactionConditionsMet(state *round10QueryState, model any, condit
 			if round10TransactionModelExists(state, model) {
 				return false
 			}
+		case dynamormcore.TransactConditionKindField:
+			if !round10TransactionFieldConditionMet(state, model, condition) {
+				return false
+			}
+		case dynamormcore.TransactConditionKindVersionEquals:
+			if !round10TransactionVersionConditionMet(state, model, condition.Value) {
+				return false
+			}
+		case dynamormcore.TransactConditionKindExpression:
+			if !round10TransactionExpressionConditionMet(state, model, condition) {
+				return false
+			}
 		}
+	}
+	return true
+}
+
+func round10TransactionExpressionConditionMet(state *round10QueryState, model any, condition dynamormcore.TransactCondition) bool {
+	typed, ok := model.(*storagemodels.RefreshToken)
+	if !ok || typed == nil {
+		return true
+	}
+	stored, exists := state.refreshTokensByToken[typed.Token]
+	if !exists {
+		return false
+	}
+	expression := condition.Expression
+	if strings.Contains(expression, "familyID") && stored.FamilyID != "" {
+		return false
+	}
+	if strings.Contains(expression, "retryRedeemedAt") && !stored.RetryRedeemedAt.IsZero() {
+		return false
+	}
+	if strings.Contains(expression, "version") {
+		want, _ := condition.Values[":expectedVersion"].(int)
+		if stored.Version != want {
+			return false
+		}
+	}
+	if strings.Contains(expression, "revoked") && stored.Revoked {
+		return false
 	}
 	return true
 }
@@ -703,10 +770,160 @@ func round10TransactionModelExists(state *round10QueryState, model any) bool {
 			}
 		}
 		return false
+	case *storagemodels.AuthorizationCode:
+		if typed == nil {
+			return false
+		}
+		code := strings.TrimSpace(typed.Code)
+		if _, ok := state.authorizationCodesByCode[code]; ok {
+			return true
+		}
+		return !state.notFoundPKs["AUTHCODE#"+code]
+	case *storagemodels.RefreshToken:
+		if typed == nil {
+			return false
+		}
+		_, ok := state.refreshTokensByToken[strings.TrimSpace(typed.Token)]
+		return ok
+	case *storagemodels.OAuthDeviceSession:
+		if typed == nil {
+			return false
+		}
+		_, ok := state.oauthDeviceSessionsByHash[strings.TrimSpace(typed.DeviceCodeHash)]
+		return ok
 	default:
 		return false
 	}
 }
+
+func round10TransactionApplyOperation(state *round10QueryState, operation round10TransactionOperation) bool {
+	switch operation.kind {
+	case "create", "update":
+		switch typed := operation.model.(type) {
+		case *storagemodels.RefreshToken:
+			if typed == nil {
+				return false
+			}
+			if state.refreshTokensByToken == nil {
+				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{}
+			}
+			updated := *typed
+			if operation.kind == "update" {
+				updated.Version = state.refreshTokensByToken[typed.Token].Version + 1
+			}
+			state.refreshTokensByToken[typed.Token] = updated
+			return true
+		case *storagemodels.OAuthDeviceSession:
+			if typed == nil {
+				return false
+			}
+			if state.oauthDeviceSessionsByHash == nil {
+				state.oauthDeviceSessionsByHash = map[string]storagemodels.OAuthDeviceSession{}
+			}
+			state.oauthDeviceSessionsByHash[typed.DeviceCodeHash] = *typed
+			return true
+		default:
+			return false
+		}
+	case "delete":
+		if code, ok := operation.model.(*storagemodels.AuthorizationCode); ok && code != nil {
+			delete(state.authorizationCodesByCode, code.Code)
+			return true
+		}
+		return round10TransactionDeleteModel(state, operation.model)
+	case "condition_check":
+		return true
+	default:
+		return false
+	}
+}
+
+func round10TransactionFieldConditionMet(state *round10QueryState, model any, condition dynamormcore.TransactCondition) bool {
+	if condition.Operator != "=" {
+		return true
+	}
+	switch typed := model.(type) {
+	case *storagemodels.OAuthDeviceSession:
+		want, ok := condition.Value.(string)
+		if !ok || typed == nil {
+			return false
+		}
+		stored, ok := state.oauthDeviceSessionsByHash[typed.DeviceCodeHash]
+		return ok && condition.Field == "Status" && stored.Status == want
+	case *storagemodels.RefreshToken:
+		if typed == nil {
+			return false
+		}
+		stored, ok := state.refreshTokensByToken[typed.Token]
+		if !ok {
+			return false
+		}
+		switch condition.Field {
+		case "Revoked":
+			want, ok := condition.Value.(bool)
+			return ok && stored.Revoked == want
+		case "Current":
+			want, ok := condition.Value.(bool)
+			return ok && stored.Current == want
+		}
+	}
+	return true
+}
+
+func round10TransactionVersionConditionMet(state *round10QueryState, model any, value any) bool {
+	typed, ok := model.(*storagemodels.RefreshToken)
+	if !ok || typed == nil {
+		return false
+	}
+	stored, ok := state.refreshTokensByToken[typed.Token]
+	if !ok {
+		return false
+	}
+	want, ok := value.(int64)
+	return ok && strconv.Itoa(stored.Version) == strconv.FormatInt(want, 10)
+}
+
+type round10TransactionUpdateBuilder struct{}
+
+func (b *round10TransactionUpdateBuilder) Set(string, any) dynamormcore.UpdateBuilder { return b }
+func (b *round10TransactionUpdateBuilder) SetIfNotExists(string, any, any) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) Add(string, any) dynamormcore.UpdateBuilder    { return b }
+func (b *round10TransactionUpdateBuilder) Increment(string) dynamormcore.UpdateBuilder   { return b }
+func (b *round10TransactionUpdateBuilder) Decrement(string) dynamormcore.UpdateBuilder   { return b }
+func (b *round10TransactionUpdateBuilder) Remove(string) dynamormcore.UpdateBuilder      { return b }
+func (b *round10TransactionUpdateBuilder) Delete(string, any) dynamormcore.UpdateBuilder { return b }
+func (b *round10TransactionUpdateBuilder) AppendToList(string, any) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) PrependToList(string, any) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) RemoveFromListAt(string, int) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) SetListElement(string, int, any) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) Condition(string, string, any) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) OrCondition(string, string, any) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) ConditionExists(string) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) ConditionNotExists(string) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) ConditionVersion(int64) dynamormcore.UpdateBuilder {
+	return b
+}
+func (b *round10TransactionUpdateBuilder) ReturnValues(string) dynamormcore.UpdateBuilder { return b }
+func (b *round10TransactionUpdateBuilder) Execute() error                                 { return nil }
+func (b *round10TransactionUpdateBuilder) ExecuteWithResult(any) error                    { return nil }
 
 func round10TransactionDeleteModel(state *round10QueryState, model any) bool {
 	switch typed := model.(type) {
@@ -995,7 +1212,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			state.authorizationCodesByCode[m.Code] = *m
 		case *storagemodels.RefreshToken:
-			if m == nil {
+			if m == nil || strings.TrimSpace(m.Token) == "" {
 				return
 			}
 			if state.refreshTokensByToken == nil {
@@ -1182,7 +1399,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			state.quotePermissionsByUser[m.Username] = *m
 		case *storagemodels.RefreshToken:
-			if m == nil {
+			if m == nil || strings.TrimSpace(m.Token) == "" {
 				return
 			}
 			if state.refreshTokensByToken == nil {
@@ -1307,6 +1524,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			value, ok := state.whereString("gsi3PK")
 			return ok && value == gsi3pk
 		})).Return(err).Maybe()
+	}
+
+	for typeName, err := range state.firstErrorByType {
+		typeName := typeName
+		err := err
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			return dest != nil && reflect.TypeOf(dest).String() == typeName
+		})).Return(err).Once()
 	}
 
 	if state.firstErrorOnce != nil {

@@ -135,7 +135,7 @@ func TestOAuthInstancePlaneDynamicPublicClientOwnerGetsOperatorClaims(t *testing
 					"grant_type":    {auth.GrantTypeRefreshToken},
 					"refresh_token": {tokenBody.RefreshToken},
 					"client_id":     {registration.ClientID},
-					"resource":      {oauthInstanceOtherSurfaceResource(surface)},
+					"resource":      {resource},
 					"scope":         {"read write admin"},
 				}
 				refreshResp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(refreshParams.Encode()))))
@@ -148,7 +148,9 @@ func TestOAuthInstancePlaneDynamicPublicClientOwnerGetsOperatorClaims(t *testing
 				require.NotContains(t, refreshedClaims.Scopes, auth.ScopeAdmin)
 				require.Equal(t, auth.ClientClassOperator, state.refreshTokensByToken[refreshedBody.RefreshToken].ClientClass)
 				require.Equal(t, resource, state.refreshTokensByToken[refreshedBody.RefreshToken].Resource)
-				require.NotContains(t, state.refreshTokensByToken, tokenBody.RefreshToken)
+				rotated := state.refreshTokensByToken[tokenBody.RefreshToken]
+				require.True(t, rotated.Revoked)
+				require.False(t, rotated.Current)
 			})
 		}
 	}
@@ -403,22 +405,30 @@ func TestOAuthInstanceOperatorPrincipalRequiresActiveLocalAdmin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.username, func(t *testing.T) {
-			require.Equal(t, tt.want, h.oauthInstanceOperatorPrincipal(context.Background(), tt.username))
+			got, err := h.oauthInstanceOperatorPrincipalStatus(context.Background(), tt.username)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
 
 func TestOAuthInstanceOperatorHelpersRejectMissingState(t *testing.T) {
 	h, _, _ := round11NewHandler(t, round11TestConfig(), &round10QueryState{})
-	require.False(t, h.oauthInstanceOperatorPrincipal(context.Background(), ""))
-	require.False(t, h.oauthInstanceOperatorPrincipal(context.Background(), "missing"))
+	authorized, err := h.oauthInstanceOperatorPrincipalStatus(context.Background(), "")
+	require.NoError(t, err)
+	require.False(t, authorized)
+	authorized, err = h.oauthInstanceOperatorPrincipalStatus(context.Background(), "missing")
+	require.NoError(t, err)
+	require.False(t, authorized)
 	var nilHandler *Handler
-	require.False(t, nilHandler.oauthInstanceOperatorPrincipal(context.Background(), "admin"))
+	authorized, err = nilHandler.oauthInstanceOperatorPrincipalStatus(context.Background(), "admin")
+	require.NoError(t, err)
+	require.False(t, authorized)
 
 	require.Empty(t, oauthAuthorizationCodePrincipalUsername(nil))
 	require.Equal(t, "legacy-user", oauthAuthorizationCodePrincipalUsername(&storage.AuthorizationCode{Username: "legacy-user"}))
 
-	_, err := h.oauthAuthorizationCodeClientClass(context.Background(), nil, nil)
+	_, err = h.oauthAuthorizationCodeClientClass(context.Background(), nil, nil)
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 }
 

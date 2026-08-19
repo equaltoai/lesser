@@ -266,7 +266,9 @@ func TestReleaseCoverageMargin_OAuthResourceValidation(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, h.validateOAuthInstanceResourceOwner(context.Background(), "", "alice", "bob"), errOAuthInvalidTarget)
 		require.Empty(t, oauthAuthorizationCodePrincipalUsername(nil))
-		require.False(t, h.oauthInstanceOperatorPrincipal(context.Background(), "missing"))
+		authorized, err := h.oauthInstanceOperatorPrincipalStatus(context.Background(), "missing")
+		require.NoError(t, err)
+		require.False(t, authorized)
 
 		require.Error(t, h.validateOAuthInstanceRefreshTokenTarget(context.Background(), &storage.OAuthClient{
 			ClientClass: "operator",
