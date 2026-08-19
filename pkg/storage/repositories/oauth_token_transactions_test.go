@@ -8,8 +8,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	tableerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -81,6 +81,7 @@ func TestOAuthRefreshRotationTransactions(t *testing.T) {
 		require.True(t, predecessor.Revoked)
 		require.False(t, predecessor.Current)
 		require.Equal(t, "rotated", predecessor.RevokedReason)
+		require.Equal(t, storage.RefreshTokenReplacementHash(successor.Token), predecessor.ReplacedByHash)
 		require.Equal(t, 3, predecessor.Version)
 
 		legacy := oauthTransactionTestToken("legacy", 0, 1, now)
@@ -120,6 +121,7 @@ func TestOAuthRefreshRotationTransactions(t *testing.T) {
 		require.True(t, active.Revoked)
 		require.False(t, active.Current)
 		require.Equal(t, "retry_rescued", active.RevokedReason)
+		require.Equal(t, storage.RefreshTokenReplacementHash(next.Token), active.ReplacedByHash)
 		require.Equal(t, 3, stale.Version)
 		require.Equal(t, 4, active.Version)
 		require.ErrorIs(t, repo.RedeemRefreshTokenRetry(ctx, nil, active, next, now), storage.ErrInvalidInput)
@@ -137,27 +139,52 @@ func TestOAuthRefreshRotationTransactions(t *testing.T) {
 }
 
 func TestOAuthRefreshTransactionVersionAndConditionHelpers(t *testing.T) {
-	ctx := context.Background()
 	model := &models.RefreshToken{Token: "legacy-version"}
 	require.NoError(t, model.UpdateKeys())
 
-	repo := NewAccountRepository(&guardedDeleteTestDB{}, "test-table", "example.com", zap.NewNop())
-	require.NoError(t, repo.seedRefreshTokenVersionIfNeeded(ctx, model, 1))
-	require.Len(t, refreshTokenVersionConditions(7), 1)
+	versioned := refreshTokenVersionConditions(7)
+	require.Len(t, versioned, 1)
+	require.Equal(t, core.TransactConditionKindVersionEquals, versioned[0].Kind)
+	require.Equal(t, int64(7), versioned[0].Value)
 
-	query := new(mocks.MockQuery)
-	update := new(mocks.MockUpdateBuilder)
-	query.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(query).Twice()
-	query.On("UpdateBuilder").Return(update).Once()
-	update.On("SetIfNotExists", "Version", nil, 0).Return(update).Once()
-	update.On("Execute").Return(nil).Once()
-	repo = NewAccountRepository(&guardedDeleteTestDB{query: query}, "test-table", "example.com", zap.NewNop())
-	require.NoError(t, repo.seedRefreshTokenVersionIfNeeded(ctx, model, 0))
+	legacy := refreshTokenVersionConditions(0)
+	require.Len(t, legacy, 1)
+	require.Equal(t, core.TransactConditionKindExpression, legacy[0].Kind)
+	require.Equal(t, "attribute_not_exists(version)", legacy[0].Expression)
 
 	conditionErr := &tableerrors.TransactionError{
 		Err: tableerrors.ErrConditionFailed, Operation: "delete", OperationIndex: 0, Reason: "ConditionalCheckFailed",
 	}
 	require.True(t, transactionConditionFailedAt(conditionErr, 0))
 	require.False(t, transactionConditionFailedAt(conditionErr, 1))
+	require.False(t, transactionConditionFailedAt(nil, 0))
 	require.False(t, transactionConditionFailedAt(errors.New("other"), 0))
+
+	mapped := refreshTokenStorageSliceFromModels([]models.RefreshToken{{
+		Token: "mapped", FamilyID: "family", ReplacedByHash: "successor-hash",
+	}})
+	require.Len(t, mapped, 1)
+	require.Equal(t, "successor-hash", mapped[0].ReplacedByHash)
+}
+
+func TestOAuthLegacyRefreshRotationCannotResurrectDeletedRow(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	query := new(mocks.MockQuery)
+	conditionErr := &tableerrors.TransactionError{
+		Err: tableerrors.ErrConditionFailed, Operation: "update", OperationIndex: 0, Reason: "ConditionalCheckFailed",
+	}
+	repo := NewAccountRepository(&guardedDeleteTestDB{query: query, txErr: conditionErr}, "test-table", "example.com", zap.NewNop())
+	predecessor := oauthTransactionTestToken("legacy-deleted", 0, 0, now)
+	predecessor.FamilyID = ""
+	predecessor.Current = false
+	successor := oauthTransactionTestToken("legacy-successor", 2, 0, now)
+	successor.FamilyID = "adopted-family"
+
+	err := repo.RotateRefreshToken(ctx, predecessor, successor, now)
+	require.ErrorIs(t, err, tableerrors.ErrConditionFailed)
+	// The legacy-version guard is part of the atomic rotation update. No
+	// query-path seed UpdateItem can race a concurrent /oauth/revoke delete and
+	// recreate the predecessor as a phantom row.
+	query.AssertNotCalled(t, "UpdateBuilder")
 }

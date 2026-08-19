@@ -124,6 +124,7 @@ func (r *AccountRepository) RotateRefreshToken(
 	predecessor.Revoked = true
 	predecessor.RevokedAt = now.UTC()
 	predecessor.RevokedReason = "rotated"
+	predecessor.ReplacedByHash = storage.RefreshTokenReplacementHash(successor.Token)
 	if trackLastUsed {
 		predecessor.LastUsedAt = now.UTC()
 	}
@@ -136,10 +137,6 @@ func (r *AccountRepository) RotateRefreshToken(
 	if err := successorModel.BeforeCreate(); err != nil {
 		return fmt.Errorf("prepare refresh successor transaction item: %w", err)
 	}
-	if err := r.seedRefreshTokenVersionIfNeeded(ctx, predecessorModel, expectedVersion); err != nil {
-		return err
-	}
-
 	conditions := refreshTokenVersionConditions(expectedVersion)
 	conditions = append(conditions, tabletheory.IfExists())
 	if legacy {
@@ -159,6 +156,7 @@ func (r *AccountRepository) RotateRefreshToken(
 				Set("Revoked", true).
 				Set("RevokedAt", predecessor.RevokedAt).
 				Set("RevokedReason", predecessor.RevokedReason).
+				Set("ReplacedByHash", predecessor.ReplacedByHash).
 				Set("GSI2PK", predecessorModel.GSI2PK).
 				Set("GSI2SK", predecessorModel.GSI2SK).
 				Increment("Version")
@@ -200,6 +198,7 @@ func (r *AccountRepository) RedeemRefreshTokenRetry(
 	active.Revoked = true
 	active.RevokedAt = now
 	active.RevokedReason = "retry_rescued"
+	active.ReplacedByHash = storage.RefreshTokenReplacementHash(successor.Token)
 	if trackLastUsed {
 		active.LastUsedAt = now
 	}
@@ -216,13 +215,6 @@ func (r *AccountRepository) RedeemRefreshTokenRetry(
 	if err := successorModel.BeforeCreate(); err != nil {
 		return fmt.Errorf("prepare retry successor transaction item: %w", err)
 	}
-	if err := r.seedRefreshTokenVersionIfNeeded(ctx, staleModel, staleVersion); err != nil {
-		return err
-	}
-	if err := r.seedRefreshTokenVersionIfNeeded(ctx, activeModel, activeVersion); err != nil {
-		return err
-	}
-
 	staleConditions := append(refreshTokenVersionConditions(staleVersion),
 		tabletheory.IfExists(),
 		tabletheory.Condition("RetryRedeemedAt", "attribute_not_exists", nil),
@@ -243,6 +235,7 @@ func (r *AccountRepository) RedeemRefreshTokenRetry(
 				Set("Revoked", true).
 				Set("RevokedAt", now).
 				Set("RevokedReason", active.RevokedReason).
+				Set("ReplacedByHash", active.ReplacedByHash).
 				Increment("Version")
 			if trackLastUsed {
 				update.Set("LastUsedAt", now)
@@ -262,23 +255,17 @@ func (r *AccountRepository) RedeemRefreshTokenRetry(
 }
 
 func refreshTokenVersionConditions(version int) []core.TransactCondition {
+	if version == 0 {
+		// Legacy rows predate the version attribute. Keep their adoption inside
+		// the rotation transaction: ADD/Increment creates version=1 only if the
+		// predecessor still exists and still has no version. A separate seed
+		// UpdateItem could recreate a row deleted concurrently by /oauth/revoke.
+		// TableTheory v3.0.4 supports raw conditions on transactional
+		// UpdateWithBuilder operations, whereas this OR/missing-attribute case is
+		// not delegated to the query-path UpdateBuilder.
+		return []core.TransactCondition{tabletheory.ConditionExpression("attribute_not_exists(version)", nil)}
+	}
 	return []core.TransactCondition{tabletheory.AtVersion(int64(version))}
-}
-
-func (r *AccountRepository) seedRefreshTokenVersionIfNeeded(ctx context.Context, model *models.RefreshToken, version int) error {
-	if version != 0 {
-		return nil
-	}
-	if err := r.db.WithContext(ctx).
-		Model(&models.RefreshToken{}).
-		Where("PK", "=", model.PK).
-		Where("SK", "=", model.SK).
-		UpdateBuilder().
-		SetIfNotExists("Version", nil, 0).
-		Execute(); err != nil {
-		return fmt.Errorf("seed refresh token version: %w", err)
-	}
-	return nil
 }
 
 func transactionConditionFailedAt(err error, operationIndex int) bool {

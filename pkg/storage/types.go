@@ -1,12 +1,23 @@
 package storage
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
+
+// RefreshTokenReplacementHash returns the stable, non-secret lineage pointer
+// used to bind a consumed refresh token to its exact successor without storing
+// another copy of the raw credential.
+func RefreshTokenReplacementHash(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
+}
 
 // Common errors
 var (
@@ -281,6 +292,7 @@ type RefreshToken struct {
 	Revoked             bool      `json:"revoked,omitempty"`
 	RevokedAt           time.Time `json:"revoked_at,omitempty"`
 	RevokedReason       string    `json:"revoked_reason,omitempty"`
+	ReplacedByHash      string    `json:"replaced_by_hash,omitempty"`
 	RetryRedeemedAt     time.Time `json:"retry_redeemed_at,omitempty"`
 	DeviceLabel         string    `json:"device_label,omitempty"`
 	LastUsedAt          time.Time `json:"last_used_at,omitempty"`

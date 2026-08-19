@@ -42,6 +42,7 @@ type RefreshToken struct {
 	Revoked             bool      `theorydb:"attr:revoked" json:"Revoked"`
 	RevokedAt           time.Time `theorydb:"attr:revokedAt,omitempty" json:"RevokedAt,omitempty"`
 	RevokedReason       string    `theorydb:"attr:revokedReason,omitempty" json:"RevokedReason,omitempty"`
+	ReplacedByHash      string    `theorydb:"attr:replacedByHash,omitempty" json:"ReplacedByHash,omitempty"`
 	RetryRedeemedAt     time.Time `theorydb:"attr:retryRedeemedAt,omitempty" json:"RetryRedeemedAt,omitempty"`
 	DeviceLabel         string    `theorydb:"attr:deviceLabel,omitempty" json:"DeviceLabel,omitempty"`
 	LastUsedAt          time.Time `theorydb:"attr:lastUsedAt,omitempty" json:"LastUsedAt,omitempty"`

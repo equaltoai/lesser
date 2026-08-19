@@ -100,6 +100,125 @@ func TestOAuthRefreshShareReadFaultReturnsRetryable503(t *testing.T) {
 	require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
 }
 
+func TestOAuthInstancePlaneRefreshAuthorityDistinguishesStorageFault(t *testing.T) {
+	now := time.Now().UTC()
+	resource := oauthInstanceTestResource(oauthInstanceSurfacePtah)
+	client := oauthRefreshReliabilityClient("client-1")
+	client.ClientClass = auth.ClientClassCLI
+
+	t.Run("direct storage fault is retryable without revocation", func(t *testing.T) {
+		token := oauthRefreshReliabilityToken("rt-instance-fault", client.ClientID, now)
+		token.Username = "admin"
+		token.PrincipalUsername = "admin"
+		token.Resource = resource
+		token.ClientClass = auth.ClientClassOperator
+		require.NoError(t, token.UpdateKeys())
+		state := &round10QueryState{
+			oauthClientsByID:     map[string]storagemodels.OAuthClient{client.ClientID: client},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{token.Token: token},
+			usersByUsername: map[string]storagemodels.User{
+				"admin": {Username: "admin", Approved: true, Role: "admin"},
+			},
+			firstErrorByType: map[string]error{"*repositories.userCoreProjection": errors.New("account store throttled")},
+			disableAuditRepo: true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+
+		params := url.Values{"grant_type": {auth.GrantTypeRefreshToken}, "refresh_token": {token.Token}, "client_id": {client.ClientID}}
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+		requireOAuthTokenError(t, resp.Status, "temporarily_unavailable", resp.Body)
+		require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+		require.False(t, state.refreshTokensByToken[token.Token].Revoked)
+	})
+
+	t.Run("resource owner resolution fault is retryable without revocation", func(t *testing.T) {
+		token := oauthRefreshReliabilityToken("rt-instance-owner-fault", client.ClientID, now)
+		token.Username = "member"
+		token.PrincipalUsername = "member"
+		token.Resource = resource
+		token.ClientClass = auth.ClientClassCLI
+		require.NoError(t, token.UpdateKeys())
+		state := &round10QueryState{
+			oauthClientsByID:     map[string]storagemodels.OAuthClient{client.ClientID: client},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{token.Token: token},
+			usersByUsername: map[string]storagemodels.User{
+				"member": {Username: "member", Approved: true, Role: "user"},
+			},
+			firstErrorByType: map[string]error{"*repositories.userCoreProjection": errors.New("resource owner read throttled")},
+			disableAuditRepo: true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+
+		params := url.Values{"grant_type": {auth.GrantTypeRefreshToken}, "refresh_token": {token.Token}, "client_id": {client.ClientID}}
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+		requireOAuthTokenError(t, resp.Status, "temporarily_unavailable", resp.Body)
+		require.False(t, state.refreshTokensByToken[token.Token].Revoked)
+	})
+
+	t.Run("rescue storage fault is retryable without revocation", func(t *testing.T) {
+		stale := oauthRefreshReliabilityToken("rt-instance-stale", client.ClientID, now)
+		stale.Username = "admin"
+		stale.PrincipalUsername = "admin"
+		stale.Resource = resource
+		stale.ClientClass = auth.ClientClassOperator
+		stale.Current = false
+		stale.Revoked = true
+		stale.RevokedAt = now.Add(-time.Second)
+		stale.RevokedReason = "rotated"
+		require.NoError(t, stale.UpdateKeys())
+		active := stale
+		active.Token = "rt-instance-active"
+		active.Generation = 2
+		active.Current = true
+		active.Revoked = false
+		active.RevokedAt = time.Time{}
+		active.RevokedReason = ""
+		require.NoError(t, active.UpdateKeys())
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{client.ClientID: client},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				stale.Token:  stale,
+				active.Token: active,
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"admin": {Username: "admin", Approved: true, Role: "admin"},
+			},
+			firstErrorByType: map[string]error{"*repositories.userCoreProjection": errors.New("account transport unavailable")},
+			disableAuditRepo: true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+
+		params := url.Values{"grant_type": {auth.GrantTypeRefreshToken}, "refresh_token": {stale.Token}, "client_id": {client.ClientID}}
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+		requireOAuthTokenError(t, resp.Status, "temporarily_unavailable", resp.Body)
+		require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+		require.Equal(t, "rotated", state.refreshTokensByToken[stale.Token].RevokedReason)
+		require.False(t, state.refreshTokensByToken[active.Token].Revoked)
+	})
+
+	t.Run("authoritative non operator is terminal", func(t *testing.T) {
+		token := oauthRefreshReliabilityToken("rt-instance-member", client.ClientID, now)
+		token.Username = "member"
+		token.PrincipalUsername = "member"
+		token.Resource = resource
+		token.ClientClass = auth.ClientClassOperator
+		require.NoError(t, token.UpdateKeys())
+		state := &round10QueryState{
+			oauthClientsByID:     map[string]storagemodels.OAuthClient{client.ClientID: client},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{token.Token: token},
+			usersByUsername: map[string]storagemodels.User{
+				"member": {Username: "member", Approved: true, Role: "user"},
+			},
+			disableAuditRepo: true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+
+		params := url.Values{"grant_type": {auth.GrantTypeRefreshToken}, "refresh_token": {token.Token}, "client_id": {client.ClientID}}
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+		requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+	})
+}
+
 func TestOAuthRefreshAuthoritativeGrantFailuresStayTerminal(t *testing.T) {
 	now := time.Now().UTC()
 	baseClient := oauthRefreshReliabilityClient("client-1")
@@ -201,7 +320,7 @@ func TestOAuthStandardRefreshRotationCASPreventsFamilyFork(t *testing.T) {
 	require.NotContains(t, state.refreshTokensByToken, secondSuccessor.Token)
 }
 
-func TestOAuthStandardRefreshGraceRescueRedeemsOnceThenTerminal(t *testing.T) {
+func TestOAuthStandardRefreshGraceRescuePreservesSuccessorChain(t *testing.T) {
 	now := time.Now().UTC()
 	stale := oauthRefreshReliabilityToken("stale", "client-1", now)
 	stale.Current = false
@@ -225,10 +344,117 @@ func TestOAuthStandardRefreshGraceRescueRedeemsOnceThenTerminal(t *testing.T) {
 	require.NotEmpty(t, issued.RefreshToken)
 	require.False(t, state.refreshTokensByToken["stale"].RetryRedeemedAt.IsZero())
 	require.True(t, state.refreshTokensByToken["active"].Revoked)
+	require.Equal(t, storage.RefreshTokenReplacementHash(issued.RefreshToken), state.refreshTokensByToken["active"].ReplacedByHash)
 	require.Equal(t, 3, state.refreshTokensByToken[issued.RefreshToken].Generation)
 
-	second := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
-	requireOAuthTokenError(t, second.Status, "invalid_grant", second.Body)
+	// The legitimate client can still hold the successor that the first rescue
+	// decapitated. Its chain pointer makes that token independently rescuable.
+	victimRequest := []byte("grant_type=refresh_token&refresh_token=active&client_id=client-1")
+	victim := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, victimRequest)))
+	var victimIssued apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(victim.Body, &victimIssued))
+	require.NotEmpty(t, victimIssued.RefreshToken)
+	require.Equal(t, 4, state.refreshTokensByToken[victimIssued.RefreshToken].Generation)
+
+	// A later same-client duplicate is stale, not evidence of token theft. It is
+	// refused without destroying the live family head.
+	lateDuplicate := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
+	requireOAuthTokenError(t, lateDuplicate.Status, "invalid_grant", lateDuplicate.Body)
+	require.False(t, state.refreshTokensByToken[victimIssued.RefreshToken].Revoked)
+}
+
+func TestOAuthStandardRefreshLateDuplicateAfterTwoAdvancesDoesNotRevokeFamily(t *testing.T) {
+	now := time.Now().UTC()
+	stale := oauthRefreshReliabilityToken("stale-two-behind", "client-1", now)
+	stale.Current = false
+	stale.Revoked = true
+	stale.RevokedAt = now.Add(-time.Second)
+	stale.RevokedReason = "rotated"
+	stale.ReplacedByHash = storage.RefreshTokenReplacementHash("middle")
+	middle := oauthRefreshReliabilityToken("middle", "client-1", now)
+	middle.Generation = 2
+	middle.Current = false
+	middle.Revoked = true
+	middle.RevokedAt = now.Add(-500 * time.Millisecond)
+	middle.RevokedReason = "rotated"
+	middle.ReplacedByHash = storage.RefreshTokenReplacementHash("head")
+	head := oauthRefreshReliabilityToken("head", "client-1", now)
+	head.Generation = 3
+	for _, token := range []*storagemodels.RefreshToken{&stale, &middle, &head} {
+		require.NoError(t, token.UpdateKeys())
+	}
+	state := &round10QueryState{
+		oauthClientsByID: map[string]storagemodels.OAuthClient{"client-1": oauthRefreshReliabilityClient("client-1")},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			stale.Token: stale, middle.Token: middle, head.Token: head,
+		},
+		disableAuditRepo: true,
+	}
+	h, _, _ := round11NewHandler(t, state)
+	request := []byte("grant_type=refresh_token&refresh_token=stale-two-behind&client_id=client-1")
+
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
+	requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+	require.False(t, state.refreshTokensByToken[head.Token].Revoked)
+}
+
+func TestOAuthStandardRefreshResourceMismatchDoesNotRevokeFamily(t *testing.T) {
+	now := time.Now().UTC()
+	boundResource := "https://api.example.com/mcp/alice"
+	mismatchedResource := "https://api.example.com/mcp/other"
+
+	t.Run("direct", func(t *testing.T) {
+		token := oauthRefreshReliabilityToken("resource-bound", "client-1", now)
+		token.Resource = boundResource
+		require.NoError(t, token.UpdateKeys())
+		state := &round10QueryState{
+			oauthClientsByID:     map[string]storagemodels.OAuthClient{"client-1": oauthRefreshReliabilityClient("client-1")},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{token.Token: token},
+			disableAuditRepo:     true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+		params := url.Values{
+			"grant_type": {auth.GrantTypeRefreshToken}, "refresh_token": {token.Token}, "client_id": {token.ClientID},
+			"resource": {mismatchedResource},
+		}
+
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+		requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+		require.False(t, state.refreshTokensByToken[token.Token].Revoked)
+	})
+
+	t.Run("rescue", func(t *testing.T) {
+		stale := oauthRefreshReliabilityToken("resource-stale", "client-1", now)
+		stale.Resource = boundResource
+		stale.Current = false
+		stale.Revoked = true
+		stale.RevokedAt = now.Add(-time.Second)
+		stale.RevokedReason = "rotated"
+		stale.ReplacedByHash = storage.RefreshTokenReplacementHash("resource-head")
+		head := oauthRefreshReliabilityToken("resource-head", "client-1", now)
+		head.Resource = boundResource
+		head.Generation = 2
+		for _, token := range []*storagemodels.RefreshToken{&stale, &head} {
+			require.NoError(t, token.UpdateKeys())
+		}
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{"client-1": oauthRefreshReliabilityClient("client-1")},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				stale.Token: stale, head.Token: head,
+			},
+			disableAuditRepo: true,
+		}
+		h, _, _ := round11NewHandler(t, state)
+		params := url.Values{
+			"grant_type": {auth.GrantTypeRefreshToken}, "refresh_token": {stale.Token}, "client_id": {stale.ClientID},
+			"resource": {mismatchedResource},
+		}
+
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))))
+		requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+		require.False(t, state.refreshTokensByToken[head.Token].Revoked)
+		require.Equal(t, "rotated", state.refreshTokensByToken[stale.Token].RevokedReason)
+	})
 }
 
 func TestOAuthLegacyRefreshRowAdoptsLineage(t *testing.T) {
@@ -288,7 +514,8 @@ func refreshTokenStorageFromTestModel(row storagemodels.RefreshToken) *storage.R
 	return &storage.RefreshToken{
 		Token: row.Token, ClientID: row.ClientID, Username: row.Username, Scopes: row.Scopes,
 		CreatedAt: row.CreatedAt, ExpiresAt: row.ExpiresAt, FamilyID: row.FamilyID,
-		Generation: row.Generation, Current: row.Current, Revoked: row.Revoked, Version: row.Version,
+		Generation: row.Generation, Current: row.Current, Revoked: row.Revoked,
+		ReplacedByHash: row.ReplacedByHash, Version: row.Version,
 	}
 }
 

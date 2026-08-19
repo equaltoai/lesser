@@ -800,6 +800,7 @@ func refreshTokenModelFromStorage(token *storage.RefreshToken) *models.RefreshTo
 		Version:             token.Version,
 	}
 	model.PrincipalUsername = token.PrincipalUsername
+	model.ReplacedByHash = token.ReplacedByHash
 	model.RetryRedeemedAt = token.RetryRedeemedAt
 	if model.CreatedAt.IsZero() {
 		model.CreatedAt = time.Now()
@@ -844,6 +845,7 @@ func refreshTokenStorageFromModel(model models.RefreshToken) *storage.RefreshTok
 		Version:             model.Version,
 	}
 	result.PrincipalUsername = model.PrincipalUsername
+	result.ReplacedByHash = model.ReplacedByHash
 	result.RetryRedeemedAt = model.RetryRedeemedAt
 	return result
 }

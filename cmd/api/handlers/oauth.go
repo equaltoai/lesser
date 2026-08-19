@@ -519,17 +519,22 @@ func oauthClientCanAuthorizeInstanceResource(client *storage.OAuthClient) bool {
 // for Lesser's internally provisioned operator client. Public client classes remain
 // governed by the existing account-holder check above and do not receive admin scope.
 func (h *Handler) oauthOperatorClientCanAuthorizeInstanceResource(ctx context.Context, client *storage.OAuthClient, principalUsername string) bool {
+	authorized, err := h.oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx, client, principalUsername)
+	return err == nil && authorized
+}
+
+func (h *Handler) oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx context.Context, client *storage.OAuthClient, principalUsername string) (bool, error) {
 	if client == nil || !strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassOperator) {
-		return true
+		return true, nil
 	}
 
 	ownerID := strings.TrimSpace(client.OwnerID)
 	principalUsername = strings.TrimSpace(principalUsername)
 	if ownerID == "" || principalUsername == "" || !strings.EqualFold(ownerID, principalUsername) || h == nil || h.repos == nil || h.repos.Account() == nil {
-		return false
+		return false, nil
 	}
 
-	return h.oauthInstanceOperatorPrincipal(ctx, principalUsername)
+	return h.oauthInstanceOperatorPrincipalStatus(ctx, principalUsername)
 }
 
 // oauthInstanceOperatorPrincipal reports whether the current local account is an
@@ -537,17 +542,25 @@ func (h *Handler) oauthOperatorClientCanAuthorizeInstanceResource(ctx context.Co
 // is intentionally evaluated against the account row at issuance/refresh time;
 // the public OAuth client's class is not itself an authority grant.
 func (h *Handler) oauthInstanceOperatorPrincipal(ctx context.Context, principalUsername string) bool {
+	authorized, err := h.oauthInstanceOperatorPrincipalStatus(ctx, principalUsername)
+	return err == nil && authorized
+}
+
+func (h *Handler) oauthInstanceOperatorPrincipalStatus(ctx context.Context, principalUsername string) (bool, error) {
 	principalUsername = strings.TrimSpace(principalUsername)
 	if h == nil || h.repos == nil || h.repos.Account() == nil || principalUsername == "" {
-		return false
+		return false, nil
 	}
 
 	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
-	if err != nil || principal == nil {
-		return false
+	if err != nil {
+		return false, fmt.Errorf("load instance-plane principal: %w", err)
+	}
+	if principal == nil {
+		return false, nil
 	}
 
-	return !principal.IsAgent && principal.Approved && !principal.Suspended && !principal.Silenced && authz.IsAdmin(principal.Role)
+	return !principal.IsAgent && principal.Approved && !principal.Suspended && !principal.Silenced && authz.IsAdmin(principal.Role), nil
 }
 
 func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context, resource, principalUsername string) (string, string, error) {
@@ -585,7 +598,10 @@ func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context
 
 	principalUsername = strings.TrimSpace(principalUsername)
 	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
-	if err != nil || principal == nil || principal.IsAgent {
+	if err != nil {
+		return "", "", fmt.Errorf("load instance-plane resource owner: %w", err)
+	}
+	if principal == nil || principal.IsAgent {
 		return "", "", &oauthAuthorizeTargetError{
 			code:        "access_denied",
 			description: "instance-plane MCP requires an account-holder principal",
@@ -634,7 +650,14 @@ func (h *Handler) validateOAuthInstanceResourceOwner(ctx context.Context, resour
 	}
 
 	resolvedUsername, canonicalResource, err := h.resolveAuthorizeTargetInstanceFromResource(ctx, resource, principalUsername)
-	if err != nil || resolvedUsername != targetUsername || canonicalResource != strings.TrimSpace(resource) {
+	if err != nil {
+		var targetErr *oauthAuthorizeTargetError
+		if errors.As(err, &targetErr) {
+			return errOAuthInvalidTarget
+		}
+		return err
+	}
+	if resolvedUsername != targetUsername || canonicalResource != strings.TrimSpace(resource) {
 		return errOAuthInvalidTarget
 	}
 
@@ -646,7 +669,11 @@ func (h *Handler) validateOAuthInstanceAuthorizationCodeTarget(ctx context.Conte
 		return errOAuthInvalidTarget
 	}
 	principalUsername := oauthAuthorizationCodePrincipalUsername(authCode)
-	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, principalUsername) {
+	authorized, err := h.oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx, client, principalUsername)
+	if err != nil {
+		return err
+	}
+	if !authorized {
 		return errOAuthInvalidTarget
 	}
 
@@ -659,11 +686,21 @@ func (h *Handler) validateOAuthInstanceRefreshTokenTarget(ctx context.Context, c
 	}
 
 	username := strings.TrimSpace(token.Username)
-	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, username) {
+	clientAuthorized, err := h.oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx, client, username)
+	if err != nil {
+		return err
+	}
+	if !clientAuthorized {
 		return errOAuthInvalidTarget
 	}
-	if strings.EqualFold(strings.TrimSpace(token.ClientClass), auth.ClientClassOperator) && !h.oauthInstanceOperatorPrincipal(ctx, username) {
-		return errOAuthInvalidTarget
+	if strings.EqualFold(strings.TrimSpace(token.ClientClass), auth.ClientClassOperator) {
+		operator, operatorErr := h.oauthInstanceOperatorPrincipalStatus(ctx, username)
+		if operatorErr != nil {
+			return operatorErr
+		}
+		if !operator {
+			return errOAuthInvalidTarget
+		}
 	}
 	return h.validateOAuthInstanceResourceOwner(ctx, token.Resource, username, username)
 }
@@ -1936,15 +1973,22 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		if standardRefreshRetryEligible(storedToken, now) {
 			return h.redeemStandardRefreshRetry(ctx, oauthSvc, client, storedToken, requestedResource, ipAddress, userAgent, now)
 		}
-		return terminal("refresh_token_reuse_detected")
+		// Same-client staleness, including a later presentation after a rescue,
+		// is not evidence of credential theft. Only a CAS-losing concurrent
+		// retry redemption below is treated as redeemed-reuse replay.
+		return "", "", nil, auth.ErrInvalidToken
 	}
-	if reason := h.standardRefreshAuthorityRevocationReason(ctx, client, storedToken, requestedResource, now); reason != "" {
-		return terminal(reason)
+	reason, authorityErr := h.standardRefreshAuthorityRevocationReason(ctx, client, storedToken, requestedResource, now)
+	if authorityErr != nil {
+		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, authorityErr)
+	}
+	if reason != "" {
+		return "", "", nil, auth.ErrInvalidToken
 	}
 
 	accessTTL, refreshExpiry, clientClass, err := standardRefreshGrantLifetimes(now, h.cfg, client, storedToken)
 	if err != nil {
-		return terminal("refresh_token_expired")
+		return "", "", nil, auth.ErrInvalidToken
 	}
 
 	// The authorizing human must survive a refresh. For actor-scoped MCP tokens the
@@ -2023,31 +2067,35 @@ func (h *Handler) standardRefreshAuthorityRevocationReason(
 	token *storage.RefreshToken,
 	requestedResource string,
 	now time.Time,
-) string {
+) (string, error) {
 	// A refresh resource parameter is optional, but when supplied it must be the
 	// exact resource bound at the original grant. A mismatch is authoritative.
 	if requestedResource != "" && requestedResource != strings.TrimSpace(token.Resource) {
-		return "refresh_resource_mismatch"
+		return "refresh_resource_mismatch", nil
 	}
 	if strings.TrimSpace(token.FamilyID) != "" && !token.Current {
-		return "refresh_stale_generation"
+		return "refresh_stale_generation", nil
 	}
 	if strings.EqualFold(strings.TrimSpace(token.ClientClass), auth.ClientClassOperator) && !oauthResourceTargetsInstancePlane(token.Resource) {
-		return "refresh_resource_mismatch"
+		return "refresh_resource_mismatch", nil
 	}
 	if oauthResourceTargetsInstancePlane(token.Resource) {
 		if err := h.validateOAuthInstanceRefreshTokenTarget(ctx, client, token); err != nil {
-			return "refresh_resource_authority_revoked"
+			if errors.Is(err, errOAuthInvalidTarget) {
+				return "refresh_resource_authority_revoked", nil
+			}
+			return "", err
 		}
 	}
 	if !token.ExpiresAt.After(now) {
-		return "refresh_token_expired"
+		return "refresh_token_expired", nil
 	}
-	return ""
+	return "", nil
 }
 
 func standardRefreshRetryEligible(token *storage.RefreshToken, now time.Time) bool {
-	if token == nil || token.RevokedReason != "rotated" || token.RevokedAt.IsZero() || !token.RetryRedeemedAt.IsZero() {
+	if token == nil || (token.RevokedReason != "rotated" && token.RevokedReason != "retry_rescued") ||
+		token.RevokedAt.IsZero() || !token.RetryRedeemedAt.IsZero() {
 		return false
 	}
 	age := now.Sub(token.RevokedAt)
@@ -2065,6 +2113,7 @@ func standardRefreshRetryReplacement(stale *storage.RefreshToken, family []stora
 			successorObserved = true
 		}
 		if candidate.FamilyID != stale.FamilyID || candidate.Generation != stale.Generation+1 ||
+			(strings.TrimSpace(stale.ReplacedByHash) != "" && storage.RefreshTokenReplacementHash(candidate.Token) != stale.ReplacedByHash) ||
 			candidate.ClientID != stale.ClientID || candidate.Username != stale.Username ||
 			candidate.PrincipalUsername != stale.PrincipalUsername || candidate.Resource != stale.Resource ||
 			!slices.Equal(candidate.Scopes, stale.Scopes) || candidate.Revoked || !candidate.Current ||
@@ -2074,6 +2123,30 @@ func standardRefreshRetryReplacement(stale *storage.RefreshToken, family []stora
 		return candidate, true
 	}
 	return nil, successorObserved
+}
+
+func (h *Handler) validateStandardRefreshRetryTarget(
+	ctx context.Context,
+	client *storage.OAuthClient,
+	active *storage.RefreshToken,
+	requestedResource string,
+) error {
+	if requestedResource != "" && requestedResource != strings.TrimSpace(active.Resource) {
+		return auth.ErrInvalidToken
+	}
+	if strings.EqualFold(strings.TrimSpace(active.ClientClass), auth.ClientClassOperator) && !oauthResourceTargetsInstancePlane(active.Resource) {
+		return auth.ErrInvalidToken
+	}
+	if !oauthResourceTargetsInstancePlane(active.Resource) {
+		return nil
+	}
+	if err := h.validateOAuthInstanceRefreshTokenTarget(ctx, client, active); err != nil {
+		if errors.Is(err, errOAuthInvalidTarget) {
+			return auth.ErrInvalidToken
+		}
+		return errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
+	}
+	return nil
 }
 
 func (h *Handler) redeemStandardRefreshRetry(
@@ -2091,38 +2164,24 @@ func (h *Handler) redeemStandardRefreshRetry(
 	active, authoritative := standardRefreshRetryReplacement(stale, family, now)
 	if active == nil {
 		if authoritative {
-			h.revokeStandardRefreshFamily(ctx, stale, "refresh_retry_stale", ipAddress, userAgent)
 			return "", "", nil, auth.ErrInvalidToken
 		}
 		// The family index is eventually consistent. During the bounded rescue
 		// window, absence is not authoritative evidence that rotation failed.
 		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, errors.New("refresh successor is not yet visible"))
 	}
-	if requestedResource != "" && requestedResource != strings.TrimSpace(active.Resource) {
-		h.revokeStandardRefreshFamily(ctx, stale, "refresh_resource_mismatch", ipAddress, userAgent)
-		return "", "", nil, auth.ErrInvalidToken
-	}
-	if strings.EqualFold(strings.TrimSpace(active.ClientClass), auth.ClientClassOperator) && !oauthResourceTargetsInstancePlane(active.Resource) {
-		h.revokeStandardRefreshFamily(ctx, stale, "refresh_resource_mismatch", ipAddress, userAgent)
-		return "", "", nil, auth.ErrInvalidToken
-	}
-	if oauthResourceTargetsInstancePlane(active.Resource) {
-		if err := h.validateOAuthInstanceRefreshTokenTarget(ctx, client, active); err != nil {
-			h.revokeStandardRefreshFamily(ctx, stale, "refresh_resource_authority_revoked", ipAddress, userAgent)
-			return "", "", nil, auth.ErrInvalidToken
-		}
+	if err := h.validateStandardRefreshRetryTarget(ctx, client, active, requestedResource); err != nil {
+		return "", "", nil, err
 	}
 
 	accessTTL, refreshExpiry, clientClass, err := standardRefreshGrantLifetimes(now, h.cfg, client, active)
 	if err != nil {
-		h.revokeStandardRefreshFamily(ctx, stale, "refresh_token_expired", ipAddress, userAgent)
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
 	delegatedByOverride := strings.TrimSpace(active.PrincipalUsername)
 	if oauthResourceTargetsActorMCP(active.Resource) {
 		if delegatedByOverride == "" {
-			h.revokeStandardRefreshFamily(ctx, stale, "refresh_principal_missing", ipAddress, userAgent)
 			return "", "", nil, auth.ErrInvalidToken
 		}
 		authorized, authErr := h.agentRefreshGrantAuthorized(ctx, active.Username, delegatedByOverride)
@@ -2130,7 +2189,6 @@ func (h *Handler) redeemStandardRefreshRetry(
 			return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, authErr)
 		}
 		if !authorized {
-			h.revokeStandardRefreshFamily(ctx, stale, "refresh_share_grant_revoked", ipAddress, userAgent)
 			return "", "", nil, auth.ErrInvalidToken
 		}
 	}
@@ -2190,6 +2248,6 @@ func (h *Handler) revokeStandardRefreshFamily(ctx context.Context, token *storag
 		return
 	}
 	if err := auth.RevokeAgentRuntimeFamily(ctx, h.repos, token, reason, ipAddress, userAgent); err != nil {
-		h.logger.Warn("failed to revoke standard refresh token family", zap.Error(err))
+		h.logger.Error("failed to revoke standard refresh token family after reconciliation", zap.Error(err))
 	}
 }

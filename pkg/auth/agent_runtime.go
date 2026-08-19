@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -359,7 +361,12 @@ func runtimeSessionExpired(now time.Time, token storage.RefreshToken) bool {
 		(!token.AbsoluteExpiresAt.IsZero() && now.After(token.AbsoluteExpiresAt))
 }
 
-// RevokeAgentRuntimeFamily revokes all refresh tokens in a runtime session family.
+// RevokeAgentRuntimeFamily revokes all refresh tokens in a runtime session
+// family. GSI2 is eventually consistent, so the sweep performs one bounded
+// reconciliation read after the initial pass and retries failed item CAS
+// updates without aborting later generations. A successor whose GSI2
+// propagation lags both reads remains a small eventual-consistency window; the
+// caller receives any residual failure for error-level operational visibility.
 func RevokeAgentRuntimeFamily(ctx context.Context, repos StorageProvider, token *storage.RefreshToken, reason, ipAddress, userAgent string) error {
 	if repos == nil || repos.Account() == nil {
 		return ErrSessionStorage
@@ -368,37 +375,72 @@ func RevokeAgentRuntimeFamily(ctx context.Context, repos StorageProvider, token 
 		return nil
 	}
 
-	familyTokens, err := repos.Account().ListRefreshTokensByFamily(ctx, token.FamilyID)
-	if err != nil {
-		return err
-	}
-
 	now := time.Now().UTC()
-	for i := range familyTokens {
-		familyToken := familyTokens[i]
-		if familyToken.Revoked {
-			if familyToken.ReuseDetectedAt.IsZero() {
-				familyToken.ReuseDetectedAt = now
-				familyToken.ReuseDetectedFromIP = ipAddress
-				familyToken.ReuseDetectedFromUA = userAgent
-				if err := repos.Account().UpdateRefreshToken(ctx, &familyToken); err != nil {
-					return err
-				}
-			}
+	completed := make(map[string]struct{})
+	residual := make(map[string]error)
+	for pass := 0; pass < 2; pass++ {
+		familyTokens, err := repos.Account().ListRefreshTokensByFamily(ctx, token.FamilyID)
+		if err != nil {
+			residual["family-list"] = fmt.Errorf("list refresh family on pass %d: %w", pass+1, err)
 			continue
 		}
-		familyToken.Revoked = true
-		familyToken.RevokedAt = now
-		familyToken.RevokedReason = reason
-		familyToken.ReuseDetectedAt = now
-		familyToken.ReuseDetectedFromIP = ipAddress
-		familyToken.ReuseDetectedFromUA = userAgent
-		if err := repos.Account().UpdateRefreshToken(ctx, &familyToken); err != nil {
-			return err
+		delete(residual, "family-list")
+		if strings.TrimSpace(token.Token) != "" && !refreshFamilyContainsToken(familyTokens, token.Token) {
+			familyTokens = append(familyTokens, *token)
+		}
+
+		for i := range familyTokens {
+			familyToken := familyTokens[i]
+			itemKey := storage.RefreshTokenReplacementHash(familyToken.Token)
+			if _, ok := completed[itemKey]; ok {
+				continue
+			}
+			if familyToken.Revoked && !familyToken.ReuseDetectedAt.IsZero() {
+				completed[itemKey] = struct{}{}
+				delete(residual, itemKey)
+				continue
+			}
+
+			if !familyToken.Revoked {
+				familyToken.Revoked = true
+				familyToken.RevokedAt = now
+				familyToken.RevokedReason = reason
+			}
+			familyToken.ReuseDetectedAt = now
+			familyToken.ReuseDetectedFromIP = ipAddress
+			familyToken.ReuseDetectedFromUA = userAgent
+			if err := repos.Account().UpdateRefreshToken(ctx, &familyToken); err != nil {
+				residual[itemKey] = fmt.Errorf("revoke refresh family generation %d on pass %d: %w", familyToken.Generation, pass+1, err)
+				continue
+			}
+			completed[itemKey] = struct{}{}
+			delete(residual, itemKey)
 		}
 	}
 
-	return nil
+	if len(residual) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(residual))
+	for key := range residual {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	errs := make([]error, 0, len(keys))
+	for _, key := range keys {
+		errs = append(errs, residual[key])
+	}
+	return errors.Join(errs...)
+}
+
+func refreshFamilyContainsToken(family []storage.RefreshToken, rawToken string) bool {
+	want := storage.RefreshTokenReplacementHash(rawToken)
+	for i := range family {
+		if storage.RefreshTokenReplacementHash(family[i].Token) == want {
+			return true
+		}
+	}
+	return false
 }
 
 // RevokeAgentRuntimeSession revokes one runtime session without affecting unrelated sessions.
