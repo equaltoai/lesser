@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -122,6 +124,7 @@ func TestOAuthGrantEMFClosedReasonVocabulary(t *testing.T) {
 		oauthGrantReasonSuccess,
 		oauthGrantReasonInvalidRequest,
 		oauthGrantReasonInvalidClient,
+		oauthGrantReasonInvalidTarget,
 		oauthGrantReasonUnauthorizedClient,
 		oauthGrantReasonTemporarilyUnavailable,
 		oauthGrantReasonServerError,
@@ -247,6 +250,105 @@ func TestOAuthTokenGrantArmsEmitExactlyOneOutcome(t *testing.T) {
 	for _, payload := range lines {
 		require.Equal(t, oauthGrantReasonInvalidRequest, payload.ReasonCode)
 		require.Equal(t, 1, payload.Outcomes)
+	}
+}
+
+func TestOAuthTokenParseFailuresEmitWireExactReason(t *testing.T) {
+	tests := []struct {
+		name       string
+		headers    map[string]string
+		body       string
+		wireReason string
+	}{
+		{
+			name: "malformed Basic credentials",
+			headers: map[string]string{
+				"Content-Type":  "application/x-www-form-urlencoded",
+				"Authorization": "Basic !!!",
+			},
+			body:       "grant_type=refresh_token&refresh_token=rt-1",
+			wireReason: oauthGrantReasonInvalidClient,
+		},
+		{
+			name:       "rejected resource indicator",
+			body:       "grant_type=refresh_token&refresh_token=rt-1&resource=https%3A%2F%2Fexample.com%2Fmcp%2Falice%23fragment",
+			wireReason: oauthGrantReasonInvalidTarget,
+		},
+		{
+			name:       "shapeless non-form request body",
+			headers:    map[string]string{"Content-Type": "application/json"},
+			body:       "grant_type=refresh_token",
+			wireReason: oauthGrantReasonInvalidRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _ := round11NewHandler(t, &round10QueryState{})
+			var output bytes.Buffer
+			h.oauthGrantEMFWriter = &output
+			h.oauthGrantEMFEnabled = true
+
+			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", tc.headers, nil, []byte(tc.body))
+			resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+			requireOAuthTokenError(t, resp.Status, tc.wireReason, resp.Body)
+
+			lines := decodeOAuthGrantEMFLines(t, output.String())
+			require.Len(t, lines, 1)
+			require.Equal(t, tc.wireReason, lines[0].ReasonCode)
+			require.Equal(t, tc.wireReason, lines[0].DetailReason)
+		})
+	}
+}
+
+func TestAgentRuntimeRefreshLookupReasonsDistinguishInfrastructureAndCredentials(t *testing.T) {
+	now := time.Now().UTC()
+	wrongClient := buildRuntimeRefreshToken(t, "rt-wrong-client", "agent1", delegatedAgentClientID, "sid-wrong", "family-wrong", "runtime", 1, true, false, now)
+	nonRuntime := buildRuntimeRefreshToken(t, "rt-non-runtime", "agent1", delegatedAgentClientID, "sid-non-runtime", "family-non-runtime", "runtime", 1, true, false, now)
+	nonRuntime.SessionID = ""
+
+	tests := []struct {
+		name     string
+		token    string
+		clientID string
+		state    *round10QueryState
+		reason   string
+	}{
+		{
+			name:  "storage infrastructure fault",
+			token: "rt-fault", clientID: delegatedAgentClientID,
+			state:  &round10QueryState{firstErrorByType: map[string]error{"*models.RefreshToken": errors.New("storage unavailable")}},
+			reason: oauthGrantReasonRefreshRotationInfrastructure,
+		},
+		{
+			name:  "authoritative absence",
+			token: "rt-missing", clientID: delegatedAgentClientID,
+			state:  &round10QueryState{notFoundPKs: map[string]bool{"REFRESHTOKEN#rt-missing": true}},
+			reason: oauthGrantReasonRefreshTokenAbsent,
+		},
+		{
+			name:  "wrong client",
+			token: wrongClient.Token, clientID: selfSovereignAgentClientID,
+			state:  &round10QueryState{refreshTokensByToken: map[string]storagemodels.RefreshToken{wrongClient.Token: wrongClient}},
+			reason: oauthGrantReasonRefreshRuntimeInvalid,
+		},
+		{
+			name:  "non-runtime token",
+			token: nonRuntime.Token, clientID: delegatedAgentClientID,
+			state:  &round10QueryState{refreshTokensByToken: map[string]storagemodels.RefreshToken{nonRuntime.Token: nonRuntime}},
+			reason: oauthGrantReasonRefreshRuntimeInvalid,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _ := round11NewHandler(t, tc.state)
+			telemetry := &oauthGrantTelemetry{}
+			stored, err := h.loadAgentRuntimeRefreshTokenForExchange(context.Background(), tc.token, tc.clientID, telemetry)
+			require.Nil(t, stored)
+			require.ErrorIs(t, err, auth.ErrInvalidToken)
+			require.Equal(t, tc.reason, telemetry.DetailReason)
+		})
 	}
 }
 

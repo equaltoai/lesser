@@ -98,7 +98,7 @@ Only the following values may become the `reason_code` EMF dimension. Any new
 or unmapped internal detail is clamped to `other`; the unsanitized value remains
 in the `detail_reason` property for diagnosis.
 
-- common: `success`, `invalid_request`, `invalid_client`,
+- common: `success`, `invalid_request`, `invalid_client`, `invalid_target`,
   `unauthorized_client`, `temporarily_unavailable`, `server_error`,
   `token_generation_failed`, `other`;
 - authorization code: `authorization_code_absent`,

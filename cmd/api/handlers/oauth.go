@@ -1016,7 +1016,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (response *appthe
 
 	req, resp, err := parseOAuthTokenRequest(ctx)
 	if resp != nil || err != nil {
-		telemetry.setReason(oauthGrantReasonInvalidRequest)
+		telemetry.setReason(oauthGrantReasonFromTokenErrorResponse(resp))
 		return resp, err
 	}
 

@@ -138,7 +138,7 @@ func (h *Handler) loadAgentRuntimeRefreshTokenForExchange(ctx context.Context, r
 		if errors.Is(err, storage.ErrNotFound) {
 			telemetry.setReason(oauthGrantReasonRefreshTokenAbsent)
 		} else {
-			telemetry.setReason(oauthGrantReasonRefreshRuntimeInvalid)
+			telemetry.setReason(oauthGrantReasonRefreshRotationInfrastructure)
 		}
 		return nil, auth.ErrInvalidToken
 	}

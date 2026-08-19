@@ -36,6 +36,7 @@ const (
 	oauthGrantReasonSuccess                           = "success"
 	oauthGrantReasonInvalidRequest                    = "invalid_request"
 	oauthGrantReasonInvalidClient                     = "invalid_client"
+	oauthGrantReasonInvalidTarget                     = "invalid_target"
 	oauthGrantReasonUnauthorizedClient                = "unauthorized_client"
 	oauthGrantReasonTemporarilyUnavailable            = "temporarily_unavailable"
 	oauthGrantReasonServerError                       = "server_error"
@@ -143,11 +144,30 @@ func setOAuthGrantReasonFromError(telemetry *oauthGrantTelemetry, err error) {
 	}
 }
 
+func oauthGrantReasonFromTokenErrorResponse(response *apptheory.Response) string {
+	reason := oauthGrantReasonInvalidRequest
+	if response == nil || len(response.Body) == 0 {
+		return reason
+	}
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body, &payload); err != nil {
+		return reason
+	}
+	if wireReason := strings.TrimSpace(payload.Error); wireReason != "" {
+		return wireReason
+	}
+	return reason
+}
+
 func oauthGrantEMFReasonCode(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case oauthGrantReasonSuccess,
 		oauthGrantReasonInvalidRequest,
 		oauthGrantReasonInvalidClient,
+		oauthGrantReasonInvalidTarget,
 		oauthGrantReasonUnauthorizedClient,
 		oauthGrantReasonTemporarilyUnavailable,
 		oauthGrantReasonServerError,
