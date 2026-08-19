@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	repoerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -21,6 +22,7 @@ func TestAccountRepository_IsAccountNotFound(t *testing.T) {
 	require.True(t, isAccountNotFound(storage.ErrNotFound))
 	require.True(t, isAccountNotFound(dynamormErrors.ErrItemNotFound))
 	require.True(t, isAccountNotFound(repoerrors.ItemNotFound("account")))
+	require.True(t, isAccountNotFound(common.ActorNotFoundError{Username: "alice"}))
 	require.True(t, isAccountNotFound(errors.Join(errors.New("query failed"), dynamormErrors.ErrItemNotFound)))
 	require.False(t, isAccountNotFound(dynamormErrors.ErrTableNotFound))
 	require.False(t, isAccountNotFound(dynamormErrors.ErrIndexNotFound))

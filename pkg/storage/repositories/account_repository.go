@@ -1538,7 +1538,11 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 // isAccountNotFound checks only stable item-absence sentinels and codes. Resource
 // failures such as a missing table or index must propagate to callers.
 func isAccountNotFound(err error) bool {
-	return errors.Is(err, storage.ErrNotFound) || dynamormErrors.IsNotFound(err) || IsRepositoryNotFoundError(err)
+	var actorNotFound common.ActorNotFoundError
+	return errors.Is(err, storage.ErrNotFound) ||
+		dynamormErrors.IsNotFound(err) ||
+		IsRepositoryNotFoundError(err) ||
+		errors.As(err, &actorNotFound)
 }
 
 // ===== Account Pin Operations =====
