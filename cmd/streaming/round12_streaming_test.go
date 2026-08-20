@@ -734,8 +734,12 @@ func TestWebSocketDefault_InitializesClientAndRespondsToPing(t *testing.T) {
 		awsConfig:      aws.Config{Region: "us-east-1"},
 	}
 
-	app := apptheory.New()
-	app.WebSocket("$default", sh.HandleWebSocketDefault)
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier:              apptheory.TierP2,
+		PrincipalResolver: sh.resolveWebSocketPrincipal,
+		WebSocketSupport:  true,
+	})
+	app.WebSocket("$default", sh.HandleWebSocketDefault, apptheory.Optional())
 
 	resp := app.ServeWebSocket(context.Background(), events.APIGatewayWebsocketProxyRequest{
 		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
@@ -1203,8 +1207,12 @@ func TestWebSocketDefault_Returns500WhenClientInitFails(t *testing.T) {
 		awsConfig:   aws.Config{Region: "us-east-1"},
 	}
 
-	app := apptheory.New()
-	app.WebSocket("$default", sh.HandleWebSocketDefault)
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier:              apptheory.TierP2,
+		PrincipalResolver: sh.resolveWebSocketPrincipal,
+		WebSocketSupport:  true,
+	})
+	app.WebSocket("$default", sh.HandleWebSocketDefault, apptheory.Optional())
 
 	resp := app.ServeWebSocket(context.Background(), events.APIGatewayWebsocketProxyRequest{
 		RequestContext: events.APIGatewayWebsocketProxyRequestContext{

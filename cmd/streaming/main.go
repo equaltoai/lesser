@@ -1056,29 +1056,99 @@ func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token 
 }
 
 func main() {
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier:              apptheory.TierP2,
+		PrincipalResolver: resolveStreamingWebSocketPrincipal,
+		WebSocketSupport:  true,
+	})
 	app.WebSocket("$connect", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		if handler == nil {
 			return nil, fmt.Errorf("streaming handler not initialized")
 		}
 		return handler.HandleWebSocketConnect(ctx)
-	})
+	}, apptheory.Optional())
 	app.WebSocket("$disconnect", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		if handler == nil {
 			return nil, fmt.Errorf("streaming handler not initialized")
 		}
 		return handler.HandleWebSocketDisconnect(ctx)
-	})
+	}, apptheory.Optional())
 	app.WebSocket("$default", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		if handler == nil {
 			return nil, fmt.Errorf("streaming handler not initialized")
 		}
 		return handler.HandleWebSocketDefault(ctx)
-	})
+	}, apptheory.Optional())
 
 	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
 		return app.HandleLambda(ctx, event)
 	})
+}
+
+func resolveStreamingWebSocketPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	if handler == nil {
+		return nil, nil
+	}
+	return handler.resolveWebSocketPrincipal(ctx)
+}
+
+func (sh *StreamingHandler) resolveWebSocketPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	if ctx == nil || sh == nil {
+		return nil, nil
+	}
+	wsCtx := ctx.AsWebSocket()
+	if wsCtx == nil {
+		return nil, nil
+	}
+	if wsCtx.RouteKey != "$connect" {
+		connection, err := sh.connectionRepo.GetConnection(ctx.Context(), wsCtx.ConnectionID)
+		if err != nil || connection == nil {
+			return nil, nil
+		}
+		identity := strings.TrimSpace(connection.Username)
+		if identity == "" {
+			identity = strings.TrimSpace(connection.UserID)
+		}
+		if identity == "" {
+			return nil, nil
+		}
+		return &apptheory.SecurePrincipal{Identity: identity, Kind: apptheory.PrincipalExternal}, nil
+	}
+
+	event, err := webSocketEventFromAppTheory(ctx)
+	if err != nil || sh.cfg == nil || sh.storageFactory == nil {
+		return nil, nil
+	}
+	token := ""
+	if event.QueryStringParameters != nil {
+		token = decodeQueryToken(event.QueryStringParameters["access_token"])
+	}
+	for _, key := range []string{"Authorization", "authorization"} {
+		if value := event.Headers[key]; strings.HasPrefix(value, "Bearer ") {
+			token = decodeQueryToken(strings.TrimPrefix(value, "Bearer "))
+			break
+		}
+	}
+	if strings.TrimSpace(token) == "" {
+		return nil, nil
+	}
+	jwtSecret, err := sh.cfg.ResolveJWTSecret()
+	if err != nil || strings.TrimSpace(jwtSecret) == "" {
+		return nil, nil
+	}
+	auditLogger := auth.NewAuditLogger(sh.storageFactory, sh.logger, auth.DefaultAuditConfig())
+	oauthService := auth.NewOAuthService(jwtSecret, sh.cfg, sh.storageFactory, auditLogger)
+	claims, err := oauthService.ValidateAccessToken(token)
+	if err != nil || claims == nil {
+		return nil, nil
+	}
+	principal := auth.PrincipalFromClaims(claims)
+	return &apptheory.SecurePrincipal{
+		Identity: principal.Identity,
+		Scopes:   principal.Scopes,
+		Claims:   principal.Claims,
+		Kind:     apptheory.PrincipalExternal,
+	}, nil
 }
 
 func ensureRepositoryFactory() error {

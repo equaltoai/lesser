@@ -1724,12 +1724,49 @@ func initializeGraphQLWS() {
 }
 
 func main() {
-	app := apptheory.New()
-	app.WebSocket("$connect", server.handleConnect)
-	app.WebSocket("$disconnect", server.handleDisconnect)
-	app.WebSocket("$default", server.handleDefault)
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier:              apptheory.TierP2,
+		PrincipalResolver: server.resolveWebSocketPrincipal,
+		WebSocketSupport:  true,
+	})
+	app.WebSocket("$connect", server.handleConnect, apptheory.Optional())
+	app.WebSocket("$disconnect", server.handleDisconnect, apptheory.Optional())
+	app.WebSocket("$default", server.handleDefault, apptheory.Optional())
 
 	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
 		return app.HandleLambda(ctx, event)
 	})
+}
+
+func (s *wsServer) resolveWebSocketPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	if ctx == nil || s == nil || s.connRepo == nil {
+		return nil, nil
+	}
+	wsCtx := ctx.AsWebSocket()
+	if wsCtx == nil || wsCtx.RouteKey == "$connect" {
+		// GraphQL WebSocket authentication is deliberately completed by the
+		// connection_init protocol message. Handshake query/header credentials
+		// are never accepted as identity.
+		return nil, nil
+	}
+	connection, err := s.connRepo.GetConnection(ctx.Context(), wsCtx.ConnectionID)
+	if err != nil || connection == nil {
+		return nil, nil
+	}
+	identity := strings.TrimSpace(connection.Username)
+	if identity == "" {
+		identity = strings.TrimSpace(connection.UserID)
+	}
+	if identity == "" {
+		return nil, nil
+	}
+	var scopes []string
+	if connection.Info.CustomHeaders != nil {
+		scopes = strings.Fields(connection.Info.CustomHeaders["scopes"])
+	}
+	return &apptheory.SecurePrincipal{
+		Identity: identity,
+		Scopes:   scopes,
+		Kind:     apptheory.PrincipalExternal,
+	}, nil
 }
