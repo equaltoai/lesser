@@ -102,7 +102,7 @@ func TestRequireAnySecureScopePreservesAliasSemantics(t *testing.T) {
 	response, err = handler(ctx)
 	require.Nil(t, response)
 	require.False(t, called)
-	var appErr *apptheory.AppError
+	var appErr *apptheory.AppTheoryError
 	require.True(t, errors.As(err, &appErr))
 	require.Equal(t, "app.forbidden", appErr.Code)
 }

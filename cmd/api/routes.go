@@ -26,7 +26,7 @@ func requireAnySecureScope(handler apptheory.Handler, scopes ...string) apptheor
 			}
 		}
 
-		return nil, &apptheory.AppError{Code: "app.forbidden", Message: "forbidden"}
+		return nil, apptheory.NewAppTheoryError("app.forbidden", "forbidden").WithStatusCode(403)
 	}
 }
 
