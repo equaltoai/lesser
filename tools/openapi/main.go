@@ -1650,8 +1650,12 @@ func inferRouteAuthFromExpr(expr ast.Expr) authMode {
 
 func authModeFromRouteMiddlewareToken(name string) authMode {
 	switch {
-	case name == "optionalAuth" || name == "OptionalAuth":
+	case name == "optionalAuth" || name == "OptionalAuth" || name == "Optional":
 		return authModeBearerOptional
+	case name == "Authenticated" || name == "InternalOnly":
+		return authModeBearerRequired
+	case name == "Public":
+		return authModePublic
 	case strings.HasPrefix(name, "require") || strings.HasPrefix(name, "Require"):
 		return authModeBearerRequired
 	default:
@@ -2097,6 +2101,9 @@ func extractHandlerName(expr ast.Expr) (string, bool) {
 	case *ast.SelectorExpr:
 		return v.Sel.Name, true
 	case *ast.CallExpr:
+		if ident, ok := v.Fun.(*ast.Ident); ok && ident.Name == "requireAnySecureScope" && len(v.Args) > 0 {
+			return extractHandlerName(v.Args[0])
+		}
 		if sel, ok := v.Fun.(*ast.SelectorExpr); ok && sel.Sel != nil {
 			if recv, ok := sel.X.(*ast.Ident); ok {
 				if recv.Name == "ratelimit" && sel.Sel.Name == "ApplyRateLimit" && len(v.Args) > 0 {
