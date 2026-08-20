@@ -71,7 +71,7 @@ func TestInboxMain_Round10_BuildAppAndLambdaHandler(t *testing.T) {
 	_, _ = handlerNoMetrics(context.Background(), noMetricsEvent)
 
 	// Exercise the panic recovery path in the middleware chain.
-	app.Get("/panic", func(*apptheory.Context) (*apptheory.Response, error) { panic("boom") })
+	app.Get("/panic", func(*apptheory.Context) (*apptheory.Response, error) { panic("boom") }, apptheory.Public())
 	panicEvent, err := json.Marshal(makeAPIEvent("GET", "/panic", map[string]string{"Host": "localhost"}))
 	require.NoError(t, err)
 	_, _ = handler(context.Background(), panicEvent)

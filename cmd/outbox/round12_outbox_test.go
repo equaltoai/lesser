@@ -32,7 +32,7 @@ func multiMap(in map[string]string) map[string][]string {
 	return out
 }
 
-func serveOutbox(app *apptheory.App, method, path string, query map[string]string, headers map[string]string, body string) apptheory.Response {
+func serveOutbox(app *apptheory.SecureApp, method, path string, query map[string]string, headers map[string]string, body string) apptheory.Response {
 	req := apptheory.Request{
 		Method:  method,
 		Path:    path,

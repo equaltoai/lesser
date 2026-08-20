@@ -1130,8 +1130,8 @@ var (
 	startLambda    = lambda.Start
 )
 
-func buildOutboxApp(processor *OutboxProcessor) *apptheory.App {
-	app := apptheory.New()
+func buildOutboxApp(processor *OutboxProcessor) *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 
 	app.Use(func(next apptheory.Handler) apptheory.Handler {
 		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -1181,8 +1181,8 @@ func buildOutboxApp(processor *OutboxProcessor) *apptheory.App {
 		return processor.HandleSQSMessage(runCtx, requestID, msg)
 	})
 
-	app.Get("/users/:username/outbox", processor.HandleOutboxGet)
-	app.Post("/users/:username/outbox", processor.HandleOutboxPost)
+	app.Get("/users/:username/outbox", processor.HandleOutboxGet, apptheory.Public())
+	app.Post("/users/:username/outbox", processor.HandleOutboxPost, apptheory.Public())
 
 	return app
 }

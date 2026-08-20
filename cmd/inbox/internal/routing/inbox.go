@@ -454,21 +454,21 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 }
 
 // RegisterRoutes registers all inbox routes
-func (ih *InboxHandler) RegisterRoutes(app *apptheory.App) {
+func (ih *InboxHandler) RegisterRoutes(app *apptheory.SecureApp) {
 	// ActivityPub inbox endpoints
 	sharedInbox := surface.SharedInbox()
 	for _, method := range sharedInbox.ServedMethods() {
 		switch method {
 		case http.MethodGet:
-			app.Get(sharedInbox.Path, ih.handleGetSharedInbox)
+			app.Get(sharedInbox.Path, ih.handleGetSharedInbox, apptheory.Public())
 		case http.MethodPost:
-			app.Post(sharedInbox.Path, ih.handlePostSharedInbox)
+			app.Post(sharedInbox.Path, ih.handlePostSharedInbox, apptheory.Public())
 		default:
 			panic(fmt.Sprintf("unsupported shared inbox method in federation surface manifest: %s", method))
 		}
 	}
-	app.Get("/users/:username/inbox", ih.handleGetInbox)
-	app.Post("/users/:username/inbox", ih.handlePostInbox)
+	app.Get("/users/:username/inbox", ih.handleGetInbox, apptheory.Public())
+	app.Post("/users/:username/inbox", ih.handlePostInbox, apptheory.Public())
 }
 
 // handleGetInbox handles GET requests to retrieve inbox activities
@@ -5132,8 +5132,8 @@ func (ih *InboxHandler) trackCentralizedCost(req *InboxRequest, operationType st
 	}
 }
 
-func buildInboxApp(_ *common.LambdaContext, handler *InboxHandler) *apptheory.App {
-	app := apptheory.New()
+func buildInboxApp(_ *common.LambdaContext, handler *InboxHandler) *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 
 	// Panic recovery middleware (MUST be first to catch all panics)
 	app.Use(panicRecovery(handler.logger))
@@ -5192,7 +5192,7 @@ func buildInboxApp(_ *common.LambdaContext, handler *InboxHandler) *apptheory.Ap
 	return app
 }
 
-func buildInboxLambdaHandler(app *apptheory.App, handler *InboxHandler) func(ctx context.Context, event json.RawMessage) (any, error) {
+func buildInboxLambdaHandler(app *apptheory.SecureApp, handler *InboxHandler) func(ctx context.Context, event json.RawMessage) (any, error) {
 	// Wrap Lambda handler with federation observability
 	return func(ctx context.Context, event json.RawMessage) (any, error) {
 		requestStart := time.Now()

@@ -356,6 +356,9 @@ func TestAppTheoryPrincipalContextHelpers(t *testing.T) {
 func TestAppTheoryPrincipalUtilityFunctions(t *testing.T) {
 	assert.Nil(t, NewAppTheoryPrincipalHookFromAuthService(nil, zap.NewNop(), "api"))
 	assert.Nil(t, NewAppTheoryPrincipalHookFromAuthAndOAuthServices(nil, nil, zap.NewNop(), "api"))
+	assert.Nil(t, NewAppTheorySecurePrincipalResolverFromAuthService(nil, zap.NewNop(), "api"))
+	assert.Nil(t, NewAppTheorySecurePrincipalResolverFromOAuthService(nil, zap.NewNop(), "api"))
+	assert.Nil(t, NewAppTheorySecurePrincipalResolverFromAuthAndOAuthServices(nil, nil, zap.NewNop(), "api"))
 
 	noOpAuthBridge := CreatePrincipalContextBridgeFromAuthService(nil, zap.NewNop(), "api")
 	nextCalled := false
@@ -428,6 +431,17 @@ func TestAppTheoryPrincipalUtilityFunctions(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, principal)
 	assert.Equal(t, "alice", principal.Identity)
+
+	secureResolver := NewAppTheorySecurePrincipalResolverFromOAuthService(oauthService, zap.NewNop(), "api")
+	require.NotNil(t, secureResolver)
+	securePrincipal, err := secureResolver(newTestContext("GET", "/api/v1/me", withHeaders(map[string]string{
+		"Authorization": "Bearer " + token,
+	})))
+	require.NoError(t, err)
+	require.NotNil(t, securePrincipal)
+	assert.Equal(t, "alice", securePrincipal.Identity)
+	assert.Equal(t, []string{"read"}, securePrincipal.Scopes)
+	assert.Equal(t, apptheory.PrincipalExternal, securePrincipal.Kind)
 
 	sessionToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "alice"},

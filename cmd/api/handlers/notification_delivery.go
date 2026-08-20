@@ -19,6 +19,28 @@ import (
 const commDeliveryAuditEventType = "comm.notification.deliver"
 const commNotificationRecipientResolutionFailure = "notification recipient could not be resolved"
 
+// ResolveNotificationDeliveryPrincipal verifies the instance-scoped credential
+// used by the internal notification-delivery route. It is intentionally separate
+// from the handler's defense-in-depth check so SecureApp can classify the route as
+// InternalOnly without treating ordinary OAuth principals as internal callers.
+func (h *Handler) ResolveNotificationDeliveryPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	if h == nil || h.cfg == nil || ctx == nil {
+		return nil, nil
+	}
+	expectedKeys, err := h.notificationDeliveryKeys(ctx.Context())
+	if err != nil || len(expectedKeys) == 0 {
+		return nil, err
+	}
+	token, err := common.ExtractBearerToken(ctx.Header("Authorization"))
+	if err != nil || !matchesNotificationDeliveryKey(token, expectedKeys) {
+		return nil, nil
+	}
+	return &apptheory.SecurePrincipal{
+		Identity: "lesser-host-notification-delivery",
+		Kind:     apptheory.PrincipalInternal,
+	}, nil
+}
+
 // HandleDeliverNotificationLift handles POST /api/v1/notifications/deliver.
 //
 // This endpoint is intended for internal, machine-to-machine delivery from lesser-host

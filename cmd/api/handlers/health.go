@@ -655,20 +655,20 @@ func (h *HealthChecker) checkFederationConnectivity(ctx context.Context) CheckRe
 }
 
 // RegisterHealthRoutes registers health check routes
-func RegisterHealthRoutes(app *apptheory.App, storage core.RepositoryStorage, logger *zap.Logger) {
+func RegisterHealthRoutes(app *apptheory.SecureApp, storage core.RepositoryStorage, logger *zap.Logger) {
 	healthChecker := NewHealthChecker(logger, storage)
 
 	// Liveness probe - simple check that service is running
-	app.Get("/health/live", healthChecker.HandleLivenessCheck)
+	app.Get("/health/live", healthChecker.HandleLivenessCheck, apptheory.Public())
 
 	// Readiness probe - checks that service is ready to handle traffic
-	app.Get("/health/ready", healthChecker.HandleReadinessCheck)
+	app.Get("/health/ready", healthChecker.HandleReadinessCheck, apptheory.Public())
 
 	// Detailed health check - comprehensive status information
-	app.Get("/health/detailed", healthChecker.HandleDetailedHealthCheck)
+	app.Get("/health/detailed", healthChecker.HandleDetailedHealthCheck, apptheory.Public())
 
 	// Legacy health endpoint for backward compatibility
-	app.Get("/health", healthChecker.HandleLivenessCheck)
+	app.Get("/health", healthChecker.HandleLivenessCheck, apptheory.Public())
 }
 
 // HealthCheckMiddleware adds health check information to request context

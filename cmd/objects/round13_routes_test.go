@@ -25,7 +25,7 @@ func TestObjectsStrictRouteInventoryParity_Round13(t *testing.T) {
 	require.Equal(t, artifact, objectsRouteInventory())
 
 	var params []map[string]string
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 	require.NoError(t, registerObjectsRoutes(app, func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		params = append(params, map[string]string{
 			"id":       ctx.Param("id"),

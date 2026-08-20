@@ -1115,12 +1115,13 @@ func main() {
 	})
 }
 
-func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
+func buildApp(lambdaLogger *zap.Logger) *apptheory.SecureApp {
 	authService := newGraphQLAuthService(lambdaLogger)
 	oauthService := newGraphQLOAuthService(lambdaLogger)
 
-	options := []apptheory.Option{
-		apptheory.WithCORS(apptheory.CORSConfig{
+	secureOptions := apptheory.SecureOptions{
+		Tier: apptheory.TierP2,
+		CORS: apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
 			AllowCredentials: false,
 			AllowHeaders: []string{
@@ -1131,22 +1132,22 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 				"X-Forwarded-For",
 				"X-Forwarded-Proto",
 			},
-		}),
-		apptheory.WithLimits(apptheory.Limits{
+		},
+		Limits: apptheory.Limits{
 			MaxRequestBytes:  1024 * 1024,
 			MaxResponseBytes: 0,
-		}),
+		},
 	}
 	if authService != nil && oauthService != nil {
-		options = append(options, apptheory.WithAuthPrincipalHook(
-			auth.NewAppTheoryPrincipalHookFromAuthAndOAuthServices(authService, oauthService, lambdaLogger, "graphql"),
-		))
+		secureOptions.PrincipalResolver = auth.NewAppTheorySecurePrincipalResolverFromAuthAndOAuthServices(
+			authService, oauthService, lambdaLogger, "graphql",
+		)
 	} else if oauthService != nil {
-		options = append(options, apptheory.WithAuthPrincipalHook(
-			auth.NewAppTheoryPrincipalHookFromOAuthService(oauthService, lambdaLogger, "graphql"),
-		))
+		secureOptions.PrincipalResolver = auth.NewAppTheorySecurePrincipalResolverFromOAuthService(
+			oauthService, lambdaLogger, "graphql",
+		)
 	}
-	app := apptheory.New(options...)
+	app := apptheory.NewSecure(secureOptions)
 
 	// Panic recovery middleware (MUST be first to catch all panics).
 	app.Use(graphqlPanicRecovery(lambdaLogger))
@@ -1212,22 +1213,22 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 		}
 	})
 
-	app.Post("/graphql", handleGraphQL)
-	app.Get("/graphql", handleGraphQL)
-	app.Post("/api/graphql", handleGraphQL)
-	app.Get("/api/graphql", handleGraphQL)
+	app.Post("/graphql", handleGraphQL, apptheory.Optional())
+	app.Get("/graphql", handleGraphQL, apptheory.Optional())
+	app.Post("/api/graphql", handleGraphQL, apptheory.Optional())
+	app.Get("/api/graphql", handleGraphQL, apptheory.Optional())
 
 	optionsHandler := func(*apptheory.Context) (*apptheory.Response, error) {
 		return &apptheory.Response{Status: http.StatusNoContent}, nil
 	}
-	app.Options("/graphql", optionsHandler)
-	app.Options("/api/graphql", optionsHandler)
+	app.Options("/graphql", optionsHandler, apptheory.Public())
+	app.Options("/api/graphql", optionsHandler, apptheory.Public())
 
 	// GraphQL playground (development only).
-	app.Get("/playground", handlePlayground)
+	app.Get("/playground", handlePlayground, apptheory.Public())
 
 	// WebSocket endpoint for subscriptions (HTTP route; actual WebSockets handled by the dedicated `graphql-ws` Lambda).
-	app.Get("/subscriptions", handleGraphQL)
+	app.Get("/subscriptions", handleGraphQL, apptheory.Optional())
 
 	app.Get("/health", func(*apptheory.Context) (*apptheory.Response, error) {
 		return apptheory.JSON(http.StatusOK, map[string]interface{}{
@@ -1244,14 +1245,14 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 				"cost_tracking": true,
 			},
 		})
-	})
+	}, apptheory.Public())
 
 	app.Get("/ready", func(*apptheory.Context) (*apptheory.Response, error) {
 		return apptheory.JSON(http.StatusOK, map[string]interface{}{
 			"ready":     true,
 			"timestamp": time.Now().Unix(),
 		})
-	})
+	}, apptheory.Public())
 
 	logger.Info("GraphQL service starting",
 		zap.String("version", "apptheory-dynamorm"),
