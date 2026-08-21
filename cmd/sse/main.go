@@ -129,6 +129,13 @@ func initializeSSE() {
 }
 
 func runSSE() {
+	app := buildSSEApp()
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
+}
+
+func buildSSEApp() *apptheory.SecureApp {
 	app := apptheory.NewSecure(apptheory.SecureOptions{
 		Tier: apptheory.TierP2,
 		CORS: apptheory.CORSConfig{
@@ -158,20 +165,22 @@ func runSSE() {
 	app.Get("/api/v1/streaming", handleStreamingRoot, apptheory.Public())
 	app.Get("/api/v1/streaming/health", handleHealth, apptheory.Public())
 
-	app.Get("/api/v1/streaming/user", handleUserStream, apptheory.Authenticated())
-	app.Get("/api/v1/streaming/user/notification", handleUserNotificationStream, apptheory.Authenticated())
-	app.Get("/api/v1/streaming/public", handlePublicStream(streaming.PublicStream), apptheory.Authenticated())
-	app.Get("/api/v1/streaming/public/local", handlePublicStream(streaming.PublicLocalStream), apptheory.Authenticated())
-	app.Get("/api/v1/streaming/public/remote", handlePublicStream(streaming.PublicRemoteStream), apptheory.Authenticated())
-	app.Get("/api/v1/streaming/hashtag", handleHashtagStream(false), apptheory.Authenticated())
-	app.Get("/api/v1/streaming/hashtag/local", handleHashtagStream(true), apptheory.Authenticated())
-	app.Get("/api/v1/streaming/list", handleListStream, apptheory.Authenticated())
-	app.Get("/api/v1/streaming/direct", handleDirectStream, apptheory.Authenticated())
+	// These nine Mastodon streaming routes deliberately retain handler-owned
+	// authentication. Public() means only that SecureApp does not preempt the
+	// handlers' legacy 401 payloads; every handler calls requireClaims before it
+	// performs authorization or opens a stream.
+	app.Get("/api/v1/streaming/user", handleUserStream, apptheory.Public())
+	app.Get("/api/v1/streaming/user/notification", handleUserNotificationStream, apptheory.Public())
+	app.Get("/api/v1/streaming/public", handlePublicStream(streaming.PublicStream), apptheory.Public())
+	app.Get("/api/v1/streaming/public/local", handlePublicStream(streaming.PublicLocalStream), apptheory.Public())
+	app.Get("/api/v1/streaming/public/remote", handlePublicStream(streaming.PublicRemoteStream), apptheory.Public())
+	app.Get("/api/v1/streaming/hashtag", handleHashtagStream(false), apptheory.Public())
+	app.Get("/api/v1/streaming/hashtag/local", handleHashtagStream(true), apptheory.Public())
+	app.Get("/api/v1/streaming/list", handleListStream, apptheory.Public())
+	app.Get("/api/v1/streaming/direct", handleDirectStream, apptheory.Public())
 	app.Get("/api/v1/streaming/oauth/device", handleOAuthDeviceStream, apptheory.Public())
 
-	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
-		return app.HandleLambda(ctx, event)
-	})
+	return app
 }
 
 func resolveSSEPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {

@@ -252,6 +252,11 @@ func (r *appTheoryPrincipalResolver) Resolve(ctx *apptheory.Context) (*apptheory
 }
 
 func (r *appTheoryPrincipalResolver) ResolveSecure(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	// Compatibility decision: Optional() routes preserve Lesser's pre-SecureApp
+	// behavior and downgrade a present-but-invalid bearer token to anonymous.
+	// This is an explicit deviation from SecureApp's recommended strict optional
+	// semantics; changing it would alter the observable behavior of 18 existing
+	// Mastodon/API routes and requires a separately coordinated contract change.
 	principal, err := r.Resolve(ctx)
 	if err != nil || principal == nil {
 		return nil, err

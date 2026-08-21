@@ -173,6 +173,20 @@ func TestAppTheoryPrincipalResolverResolve(t *testing.T) {
 	})
 }
 
+func TestAppTheorySecurePrincipalResolver_OptionalInvalidTokenDowngradesToAnonymousForPreMigrationParity(t *testing.T) {
+	resolver := newAppTheoryPrincipalResolver(func(token string) (*Claims, error) {
+		assert.Equal(t, "expired-token", token)
+		return nil, ErrInvalidToken
+	}, zap.NewNop(), "api")
+	ctx := newTestContext("GET", "/api/v1/statuses/1", withHeaders(map[string]string{
+		"Authorization": "Bearer expired-token",
+	}))
+
+	principal, err := resolver.ResolveSecure(ctx)
+	require.NoError(t, err)
+	assert.Nil(t, principal, "Optional routes deliberately preserve the pre-SecureApp anonymous downgrade")
+}
+
 func TestAppTheoryPrincipalBridgeHydratesContext(t *testing.T) {
 	t.Run("reuses legacy claims to seed principal and auth context", func(t *testing.T) {
 		claims := testAppTheoryClaims()

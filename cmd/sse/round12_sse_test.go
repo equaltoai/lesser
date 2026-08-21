@@ -112,6 +112,55 @@ func TestRequireClaims_Round12(t *testing.T) {
 	require.Equal(t, "alice", claims.Username)
 }
 
+func TestSecureStreamingRoutesPreserveLegacyUnauthorizedBodies(t *testing.T) {
+	originalAuth := authService
+	originalLogger := logger
+	t.Cleanup(func() {
+		authService = originalAuth
+		logger = originalLogger
+	})
+	logger = zap.NewNop()
+
+	routes := []string{
+		"/api/v1/streaming/user",
+		"/api/v1/streaming/user/notification",
+		"/api/v1/streaming/public",
+		"/api/v1/streaming/public/local",
+		"/api/v1/streaming/public/remote",
+		"/api/v1/streaming/hashtag",
+		"/api/v1/streaming/hashtag/local",
+		"/api/v1/streaming/list",
+		"/api/v1/streaming/direct",
+	}
+
+	for _, route := range routes {
+		t.Run(route+" missing credential", func(t *testing.T) {
+			authService = &fakeValidator{}
+			resp := buildSSEApp().Serve(context.Background(), apptheory.Request{Method: http.MethodGet, Path: route})
+			require.Equal(t, http.StatusUnauthorized, resp.Status)
+			require.JSONEq(t, `{"error":"Authentication required"}`, string(resp.Body))
+		})
+
+		t.Run(route+" invalid credential", func(t *testing.T) {
+			authService = &fakeValidator{err: auth.ErrInvalidToken}
+			resp := buildSSEApp().Serve(context.Background(), apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    route,
+				Headers: map[string][]string{"authorization": {"Bearer invalid"}},
+			})
+			require.Equal(t, http.StatusUnauthorized, resp.Status)
+			require.JSONEq(t, `{"error":"Invalid token"}`, string(resp.Body))
+		})
+	}
+
+	for _, route := range buildSSEApp().Routes() {
+		if route.Path == "/api/v1/streaming" || route.Path == "/api/v1/streaming/health" || route.Path == "/api/v1/streaming/oauth/device" {
+			continue
+		}
+		require.Equal(t, apptheory.AuthPosturePublic, route.Posture, route.Path)
+	}
+}
+
 func TestShouldSkipSSEItem_Round12(t *testing.T) {
 	require.False(t, shouldSkipSSEItem(false, streaming.StreamEventLogItem{Event: streamEventTypeUpdate, Data: "{}"}))
 	require.False(t, shouldSkipSSEItem(true, streaming.StreamEventLogItem{Event: streamEventTypeDelete, Data: "{}"}))
