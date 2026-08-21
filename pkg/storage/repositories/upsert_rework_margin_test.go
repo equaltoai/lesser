@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
@@ -310,7 +311,10 @@ func TestFederationReplayUpsertsRejectIncompleteInputs(t *testing.T) {
 			return repo.StoreDetailedFederationMetrics(ctx, &models.FederationAnalyticsTimeSeries{Domain: "remote.example"})
 		},
 	} {
-		t.Run(name, func(t *testing.T) { require.Error(t, call()) })
+		t.Run(name, func(t *testing.T) {
+			var validationErr common.ValidationError
+			require.ErrorAs(t, call(), &validationErr)
+		})
 	}
 }
 
