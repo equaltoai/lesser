@@ -55,6 +55,7 @@ func TestM4DraftPublishRejectsCanonicalArticleSlugChangeSafely(t *testing.T) {
 
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
 	articleID := "https://example.com/articles/original"
@@ -118,6 +119,7 @@ func TestM4ArticleUpdateRecordsRevisionAttributionAndFederatesUpdate(t *testing.
 
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
 	articleID := "https://example.com/articles/hello"

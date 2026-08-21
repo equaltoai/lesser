@@ -53,7 +53,7 @@ func (r *GraphQLStreamSubscriptionRepository) Put(ctx context.Context, record *m
 		return err
 	}
 
-	return r.db.WithContext(ctx).Model(record).Create()
+	return r.db.WithContext(ctx).Model(record).CreateOrUpdate()
 }
 
 // PutAll stores every stream registration in one transaction. A subscription

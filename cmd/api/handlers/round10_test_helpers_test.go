@@ -1153,6 +1153,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	if state.createErrorOnce != nil {
 		mockQuery.On("Create").Return(state.createErrorOnce).Once()
 	}
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Create").Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
 		case *storagemodels.User:

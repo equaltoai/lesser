@@ -91,7 +91,7 @@ func (m *Migrator) UpdateMigrationStatus(_ context.Context, status *MigrationSta
 	status.SK = "CURRENT"
 	status.UpdatedAt = time.Now()
 
-	return m.db.Model(status).Create()
+	return m.db.Model(status).CreateOrUpdate()
 }
 
 // recordMigrationHistory records a migration execution

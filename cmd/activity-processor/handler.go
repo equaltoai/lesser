@@ -1061,7 +1061,7 @@ func (h *ActivityHandler) processDeleteActivity(ctx context.Context, activity *a
 	}
 
 	// Create the tombstone (this will replace the original object)
-	if err := h.DB.WithContext(ctx).Model(tombstone).Create(); err != nil {
+	if err := h.DB.WithContext(ctx).Model(tombstone).CreateOrUpdate(); err != nil {
 		h.Logger.Error("Failed to create tombstone",
 			zap.String("object_id", objectID),
 			zap.String("activity_id", activity.ID),

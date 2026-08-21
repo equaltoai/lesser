@@ -41,6 +41,7 @@ func newMigratorTestDB() (*dynamormMocks.MockDB, *dynamormMocks.MockQuery) {
 	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
 	q.On("OrderBy", mock.Anything, mock.Anything).Return(q).Maybe()
 	q.On("Limit", mock.Anything).Return(q).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 
 	return db, q
 }

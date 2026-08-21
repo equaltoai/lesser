@@ -40,8 +40,8 @@ func (r *ThreadRepository) SaveThreadSync(ctx context.Context, sync *models.Thre
 		return err
 	}
 
-	// Use Create to save (will upsert)
-	err := r.db.WithContext(ctx).Model(sync).Create()
+	// Thread sync rows are deterministic projections and must overwrite.
+	err := r.db.WithContext(ctx).Model(sync).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to save thread sync",
 			zap.String("status_id", sync.StatusID),
@@ -91,8 +91,8 @@ func (r *ThreadRepository) SaveThreadNode(ctx context.Context, node *models.Thre
 		return err
 	}
 
-	// Use Create to save (will upsert)
-	err := r.db.WithContext(ctx).Model(node).Create()
+	// Thread node rows are deterministic projections and must overwrite.
+	err := r.db.WithContext(ctx).Model(node).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to save thread node",
 			zap.String("status_id", node.StatusID),
@@ -205,7 +205,7 @@ func (r *ThreadRepository) MarkMissingReplies(ctx context.Context, rootStatusID,
 			continue
 		}
 
-		err := r.db.WithContext(ctx).Model(missing).Create()
+		err := r.db.WithContext(ctx).Model(missing).CreateOrUpdate()
 		if err != nil {
 			r.logger.Error("failed to mark missing reply",
 				zap.String("reply_id", replyID),
@@ -371,7 +371,7 @@ func (r *ThreadRepository) SaveMissingReply(ctx context.Context, missing *models
 		return err
 	}
 
-	err := r.db.WithContext(ctx).Model(missing).Create()
+	err := r.db.WithContext(ctx).Model(missing).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to save missing reply",
 			zap.String("reply_id", missing.ReplyID),
@@ -454,7 +454,7 @@ func (r *ThreadRepository) BulkSaveThreadNodes(ctx context.Context, nodes []*mod
 
 		batch := nodes[i:end]
 		for _, node := range batch {
-			err := r.db.WithContext(ctx).Model(node).Create()
+			err := r.db.WithContext(ctx).Model(node).CreateOrUpdate()
 			if err != nil {
 				r.logger.Error("failed to save node in batch",
 					zap.String("status_id", node.StatusID),

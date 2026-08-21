@@ -225,7 +225,7 @@ func (r *ConversationRepository) createOrUpdateUserConversationState(ctx context
 		if err := state.BeforeCreate(); err != nil {
 			return err
 		}
-		return r.GetDB().WithContext(ctx).Model(state).Create()
+		return r.GetDB().WithContext(ctx).Model(state).CreateOrUpdate()
 	case err != nil:
 		return err
 	default:

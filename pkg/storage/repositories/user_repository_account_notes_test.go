@@ -118,7 +118,7 @@ func TestUserRepository_UpdateAccountNote_UpdatesTimestampAndStores(t *testing.T
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.AccountNote")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	note := &storage.AccountNote{
 		Username:      "alice",
@@ -132,14 +132,14 @@ func TestUserRepository_UpdateAccountNote_UpdatesTimestampAndStores(t *testing.T
 	assert.False(t, note.UpdatedAt.IsZero())
 }
 
-func TestUserRepository_UpdateAccountNote_CreateError(t *testing.T) {
+func TestUserRepository_UpdateAccountNote_UpsertError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	repo := NewUserRepository(mockDB, "test-table", zap.NewNop())
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.AccountNote")).Return(mockQuery)
-	mockQuery.On("Create").Return(ErrTestMockError)
+	mockQuery.On("CreateOrUpdate").Return(ErrTestMockError)
 
 	note := &storage.AccountNote{
 		Username:      "alice",

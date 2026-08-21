@@ -61,7 +61,7 @@ func (q *adapterFakeQuery) BatchGetBuilder() core.BatchGetBuilder {
 func (q *adapterFakeQuery) ParallelScan(_ int32, _ int32) core.Query          { return q }
 func (q *adapterFakeQuery) AllPaginated(_ any) (*core.PaginatedResult, error) { return nil, nil }
 func (q *adapterFakeQuery) Count() (int64, error)                             { return 0, nil }
-func (q *adapterFakeQuery) CreateOrUpdate() error                             { return nil }
+func (q *adapterFakeQuery) CreateOrUpdate() error                             { return q.createErr }
 func (q *adapterFakeQuery) Delete() error                                     { return nil }
 func (q *adapterFakeQuery) Scan(_ any) error                                  { return nil }
 func (q *adapterFakeQuery) ScanAllSegments(_ any, _ int32) error              { return nil }

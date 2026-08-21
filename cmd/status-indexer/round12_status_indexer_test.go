@@ -62,6 +62,7 @@ func newMockDB(t *testing.T) (*dynamormmocks.MockDB, *dynamormmocks.MockQuery) {
 	db.On("Model", mock.Anything).Return(q)
 
 	q.On("Create").Return(nil)
+	q.On("CreateOrUpdate").Return(nil)
 	q.On("Update", mock.Anything).Return(nil)
 	q.On("Index", mock.Anything).Return(q)
 	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q)
@@ -368,6 +369,7 @@ func TestStatusIndexer_processStatusEvent_Round12(t *testing.T) {
 		q.On("All", mock.Anything).Return(nil)
 		q.On("First", mock.Anything).Return(errors.New("not found"))
 		q.On("Create").Return(nil)
+		q.On("CreateOrUpdate").Return(nil)
 		q.On("Update", mock.Anything).Return(nil)
 
 		embed := &fakeEmbeddingGenerator{embedding: []float32{0.1, 0.2}}
@@ -393,6 +395,7 @@ func TestStatusIndexer_processStatusEvent_Round12(t *testing.T) {
 		q.On("All", mock.Anything).Return(nil)
 		q.On("First", mock.Anything).Return(errors.New("not found"))
 		q.On("Create").Return(errors.New("boom"))
+		q.On("CreateOrUpdate").Return(errors.New("boom"))
 		q.On("Update", mock.Anything).Return(errors.New("boom"))
 
 		embed := &fakeEmbeddingGenerator{err: errors.New("boom")}

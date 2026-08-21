@@ -518,7 +518,7 @@ func (s *ArticleService) upsertCMSArticleIndexes(ctx context.Context, article *m
 		if entry == nil {
 			continue
 		}
-		if err := db.WithContext(ctx).Model(entry).Create(); err != nil {
+		if err := db.WithContext(ctx).Model(entry).CreateOrUpdate(); err != nil {
 			return err
 		}
 	}

@@ -237,7 +237,7 @@ func (r *RelayRepository) UpdateRelayStatus(ctx context.Context, relayURL string
 	model.LastSeenAt = time.Now()
 
 	// Use BaseRepository Create method which will handle UpdateKeys and Put operation
-	err = r.ValidateAndCreate(ctx, &model)
+	err = r.ValidateAndCreateOrUpdate(ctx, &model)
 
 	if err != nil {
 		logger.Error("failed to update relay status", zap.Error(err))
@@ -287,7 +287,7 @@ func (r *RelayRepository) UpdateRelayState(ctx context.Context, relayURL string,
 	model.LastSeenAt = time.Now()
 
 	// Use BaseRepository Create method which will handle UpdateKeys and Put operation
-	err = r.ValidateAndCreate(ctx, &model)
+	err = r.ValidateAndCreateOrUpdate(ctx, &model)
 	if err != nil {
 		logger.Error("failed to update relay state", zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, "relay", relayURL)

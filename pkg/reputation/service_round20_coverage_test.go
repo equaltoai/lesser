@@ -131,6 +131,8 @@ func (q *round20CacheQuery) Create() error {
 	return nil
 }
 
+func (q *round20CacheQuery) CreateOrUpdate() error { return q.Create() }
+
 type round20UserRepo struct {
 	mu sync.Mutex
 

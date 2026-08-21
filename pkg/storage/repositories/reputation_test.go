@@ -45,7 +45,7 @@ func TestStoreReputation(t *testing.T) {
 	// Set up expectations
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	// Test
 	err := repo.StoreReputation(ctx, reputation.ActorID, reputation)

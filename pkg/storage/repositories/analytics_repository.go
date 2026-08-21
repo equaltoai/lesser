@@ -304,7 +304,7 @@ func (r *TrendingRepository) storeTrendInternal(ctx context.Context, model Trend
 	}
 
 	// Store the trend
-	err := r.db.WithContext(ctx).Model(model).Create()
+	err := r.db.WithContext(ctx).Model(model).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error(fmt.Sprintf("failed to store %s trend", trendType),
 			zap.String("identifier", identifier),
@@ -451,7 +451,7 @@ func (r *TrendingRepository) updateHashtagTrendScore(ctx context.Context, hashta
 	}
 	_ = trendItem.UpdateKeys() // Ignore error as this is internal model operation
 
-	err = r.db.WithContext(ctx).Model(trendItem).Create()
+	err = r.db.WithContext(ctx).Model(trendItem).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to update hashtag trend score", zap.String("hashtag", hashtag), zap.Error(err))
 		return err
@@ -519,7 +519,7 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 	}
 	_ = trendItem.UpdateKeys() // Ignore error as this is internal model operation
 
-	err = r.db.WithContext(ctx).Model(trendItem).Create()
+	err = r.db.WithContext(ctx).Model(trendItem).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to update status trend score", zap.String("statusID", statusID), zap.Error(err))
 		return err
@@ -597,7 +597,7 @@ func (r *TrendingRepository) updateLinkTrendScore(ctx context.Context, linkURL s
 	}
 	_ = trendItem.UpdateKeys() // Ignore error as this is internal model operation
 
-	err = r.db.WithContext(ctx).Model(trendItem).Create()
+	err = r.db.WithContext(ctx).Model(trendItem).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to update link trend score", zap.String("url", linkURL), zap.Error(err))
 		return err
@@ -822,7 +822,7 @@ func (r *TrendingRepository) StoreEngagementMetrics(ctx context.Context, metrics
 		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days TTL
 	}
 
-	err := r.db.WithContext(ctx).Model(model).Create()
+	err := r.db.WithContext(ctx).Model(model).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to store engagement metrics",
 			zap.String("statusID", metrics.StatusID),
@@ -1378,7 +1378,7 @@ func (r *TrendingRepository) RecordEngagement(ctx context.Context, metricType, t
 
 	_ = metrics.UpdateKeys() // Ignore error as this is internal model operation
 
-	err := r.db.WithContext(ctx).Model(metrics).Create()
+	err := r.db.WithContext(ctx).Model(metrics).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to record engagement",
 			zap.String("metricType", metricType),
@@ -1615,7 +1615,7 @@ func (r *TrendingRepository) UpdateTrendingHashtag(ctx context.Context, hashtag 
 	}
 
 	// Use enhanced repository for validation and creation
-	err := r.ValidateAndCreate(ctx, trending)
+	err := r.ValidateAndCreateOrUpdate(ctx, trending)
 	if err != nil {
 		r.logger.Error("failed to update trending hashtag",
 			zap.String("hashtag", hashtag),
@@ -2326,8 +2326,8 @@ func (r *TrendingRepository) RecordModerationAction(ctx context.Context, date, r
 
 	_ = analytics.UpdateKeys() // Ignore error as this is internal model operation
 
-	// Use Create to save (DynamORM doesn't have Save/Upsert)
-	err = r.db.WithContext(ctx).Model(analytics).Create()
+	// Moderation analytics is a deterministic aggregate and must overwrite explicitly.
+	err = r.db.WithContext(ctx).Model(analytics).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to record moderation action",
 			zap.String("date", date),

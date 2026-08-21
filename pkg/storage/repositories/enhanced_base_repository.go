@@ -166,6 +166,39 @@ func (r *EnhancedBaseRepository[T]) ValidateAndCreate(ctx context.Context, model
 	return nil
 }
 
+// ValidateAndCreateOrUpdate preserves the existing create validation,
+// permission, and event pipeline while opting into TableTheory's explicit
+// overwrite semantics. It is reserved for deterministic rows whose contract is
+// to replace an earlier value; true creates must use ValidateAndCreate.
+func (r *EnhancedBaseRepository[T]) ValidateAndCreateOrUpdate(ctx context.Context, model T) error {
+	if r.validator != nil {
+		if err := r.validator.ValidateRequiredFields(ctx, model); err != nil {
+			return errors.ValidationFailed("required fields", err.Error())
+		}
+		if err := r.validator.ValidateBusinessRules(ctx, model, "create"); err != nil {
+			return errors.ValidationFailed("business rules", err.Error())
+		}
+	}
+
+	if err := r.checkCreatePermissions(ctx, model); err != nil {
+		return err
+	}
+
+	if err := r.CreateOrUpdate(ctx, model); err != nil {
+		return err
+	}
+
+	// Keep the pre-v3.0.5 event contract: these paths historically ran through
+	// ValidateAndCreate even though the underlying Put was an upsert.
+	if r.events != nil {
+		event := NewEvent("entity.created", r.entityName, model.GetPK(), "create", model)
+		event.Actor = r.getActorFromContext(ctx)
+		_ = r.events.Emit(ctx, event)
+	}
+
+	return nil
+}
+
 // ValidateAndUpdate performs validation and updates with event emission
 func (r *EnhancedBaseRepository[T]) ValidateAndUpdate(ctx context.Context, model T) error {
 	// 1. Validate model

@@ -126,7 +126,7 @@ func (r *ReportTrustService) UpdateReporterTrustOnDecision(ctx context.Context, 
 	}
 
 	// Store the trust relationship using DynamORM
-	err = r.db.WithContext(ctx).Model(trustRel).Create()
+	err = r.db.WithContext(ctx).Model(trustRel).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to create trust relationship", zap.Error(err))
 		return err

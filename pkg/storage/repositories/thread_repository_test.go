@@ -36,7 +36,7 @@ func TestThreadRepository_SaveThreadSync(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.ThreadSync")).Return(mockQuery)
-		mockQuery.On("Create").Return(fmt.Errorf("boom")).Once()
+		mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("boom")).Once()
 
 		err := repo.SaveThreadSync(context.Background(), models.NewThreadSync("s1"))
 		assert.Error(t, err)
@@ -52,7 +52,7 @@ func TestThreadRepository_SaveThreadSync(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.ThreadSync")).Return(mockQuery)
-		mockQuery.On("Create").Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		err := repo.SaveThreadSync(context.Background(), models.NewThreadSync("s1"))
 		assert.NoError(t, err)
@@ -156,7 +156,7 @@ func TestThreadRepository_SaveThreadNode_GetThreadNode(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.ThreadNode")).Return(mockQuery)
-		mockQuery.On("Create").Return(fmt.Errorf("nope")).Once()
+		mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("nope")).Once()
 
 		node := models.NewThreadNode("root1", "n1", "", 0, "a1")
 		err := repo.SaveThreadNode(context.Background(), node)
@@ -174,7 +174,7 @@ func TestThreadRepository_SaveThreadNode_GetThreadNode(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.ThreadNode")).Return(mockQuery)
 
-		mockQuery.On("Create").Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 		node := models.NewThreadNode("root1", "n1", "", 0, "a1")
 		assert.NoError(t, repo.SaveThreadNode(context.Background(), node))
 
@@ -246,8 +246,8 @@ func TestThreadRepository_MarkMissingReplies(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.MissingReply")).Return(mockQuery)
-		mockQuery.On("Create").Return(fmt.Errorf("fail")).Once()
-		mockQuery.On("Create").Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("fail")).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		err := repo.MarkMissingReplies(context.Background(), "root1", "parent1", []string{"r1", "r2"})
 		assert.NoError(t, err)
@@ -390,7 +390,7 @@ func TestThreadRepository_SaveDeleteMissingReply_and_bulk(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 
-		mockQuery.On("Create").Return(fmt.Errorf("create failed")).Once()
+		mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("upsert failed")).Once()
 		err := repo.SaveMissingReply(context.Background(), models.NewMissingReply("root1", "p1", "r1"))
 		assert.Error(t, err)
 
@@ -417,8 +417,8 @@ func TestThreadRepository_SaveDeleteMissingReply_and_bulk(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.ThreadNode")).Return(mockQuery)
 
-		mockQuery.On("Create").Return(fmt.Errorf("boom")).Once()
-		mockQuery.On("Create").Return(nil).Maybe()
+		mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("boom")).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 
 		nodes := make([]*models.ThreadNode, 0, 26)
 		for i := 0; i < 26; i++ {
@@ -443,7 +443,7 @@ func TestThreadRepository_SaveDeleteMissingReply_and_bulk(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 		assert.NoError(t, repo.SaveMissingReply(context.Background(), models.NewMissingReply("root1", "p1", "r1")))
 
 		mockQuery.On("Delete").Return(nil).Once()

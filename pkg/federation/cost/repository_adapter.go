@@ -60,7 +60,7 @@ func (r *repositoryAdapter) RecordCost(ctx context.Context, cost *FederationCost
 		return err
 	}
 
-	err := r.db.WithContext(ctx).Model(model).Create()
+	err := r.db.WithContext(ctx).Model(model).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to record federation cost",
 			zap.Error(err),
@@ -157,7 +157,7 @@ func (r *repositoryAdapter) UpdateInstanceHealth(ctx context.Context, health *In
 	}
 	model.UpdateKeys()
 
-	err := r.db.WithContext(ctx).Model(model).Create()
+	err := r.db.WithContext(ctx).Model(model).CreateOrUpdate()
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func (r *repositoryAdapter) SaveInstanceConfig(ctx context.Context, config *Inst
 
 	model.UpdateKeys()
 
-	err := r.db.WithContext(ctx).Model(model).Create()
+	err := r.db.WithContext(ctx).Model(model).CreateOrUpdate()
 	if err != nil {
 		return err
 	}

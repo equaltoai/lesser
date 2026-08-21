@@ -211,7 +211,7 @@ func TestFederationCostRepository_BudgetsAndChecks_Coverage(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 
 	budget := &models.FederationBudget{
 		Domain:                  "example.com",
@@ -383,7 +383,7 @@ func TestFederationCostRepository_BudgetsAndChecks_Coverage(t *testing.T) {
 		}).
 		Return(nil).
 		Once()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	require.NoError(t, repo.ResetPeriodBudgets(ctx, PeriodDaily, newStart, newEnd))
 }
 

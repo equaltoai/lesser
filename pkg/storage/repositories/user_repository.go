@@ -878,7 +878,7 @@ func (r *UserRepository) UpdateAccountNote(ctx context.Context, note *storage.Ac
 	_ = noteModel.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Update in DynamoDB (Put overwrites existing)
-	err := r.GetDB().WithContext(ctx).Model(noteModel).Create()
+	err := r.GetDB().WithContext(ctx).Model(noteModel).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to update account note", zap.Error(err))
 		return err
@@ -918,7 +918,7 @@ func (r *UserRepository) StoreReputation(ctx context.Context, actorID string, re
 	}
 
 	// Store in DynamoDB
-	err := r.GetDB().WithContext(ctx).Model(repModel).Create()
+	err := r.GetDB().WithContext(ctx).Model(repModel).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to store reputation", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "reputation", actorID)
@@ -1516,7 +1516,7 @@ func (r *UserRepository) UpdateTrustScore(_ context.Context, score *storage.Trus
 	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Save to DynamoDB
-	if err := r.GetDB().Model(model).Create(); err != nil {
+	if err := r.GetDB().Model(model).CreateOrUpdate(); err != nil {
 		return ErrorHandler.HandleUpdateError(err, "trust score", "update")
 	}
 
@@ -2047,7 +2047,7 @@ func (r *UserRepository) UpdateUserPreferences(ctx context.Context, username str
 	prefModel.FromStorage(username, modelStorage)
 
 	// Create or update the preferences using DynamORM
-	err := r.GetDB().WithContext(ctx).Model(prefModel).Create()
+	err := r.GetDB().WithContext(ctx).Model(prefModel).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to update user preferences",
 			zap.String("username", username),
@@ -2675,7 +2675,7 @@ func (r *UserRepository) CacheRemoteActor(ctx context.Context, handle string, ac
 	remoteActor.UpdateKeys() // Internal model operation
 
 	// Create in DynamoDB using DynamORM
-	err := r.GetDB().WithContext(ctx).Model(remoteActor).Create()
+	err := r.GetDB().WithContext(ctx).Model(remoteActor).CreateOrUpdate()
 	if err != nil {
 		if errors.IsConditionFailed(err) {
 			err = r.GetDB().WithContext(ctx).Model(remoteActor).

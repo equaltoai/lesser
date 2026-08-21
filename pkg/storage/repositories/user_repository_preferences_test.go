@@ -58,20 +58,20 @@ func TestUserRepository_SetUserLanguagePreference_WhenGetFailsCreatesDefaultAndS
 	mockDB.On("Model", mock.AnythingOfType("*models.UserPreferences")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Return(ErrTestMockError).Once()
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.SetUserLanguagePreference(context.Background(), "alice", "es")
 	assert.NoError(t, err)
 }
 
-func TestUserRepository_UpdateUserPreferences_CreateError(t *testing.T) {
+func TestUserRepository_UpdateUserPreferences_UpsertError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	repo := NewUserRepository(mockDB, "test-table", zap.NewNop())
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.UserPreferences")).Return(mockQuery)
-	mockQuery.On("Create").Return(ErrTestMockError)
+	mockQuery.On("CreateOrUpdate").Return(ErrTestMockError)
 
 	err := repo.UpdateUserPreferences(context.Background(), "alice", &storage.UserPreferences{
 		Language: "en",
@@ -89,9 +89,9 @@ func TestUserRepository_SetPreference_UnknownKeyDoesNotError(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.UserPreferences")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound)
-	// UpdateUserPreferences -> Create.
+	// UpdateUserPreferences -> CreateOrUpdate.
 	mockDB.On("Model", mock.AnythingOfType("*models.UserPreferences")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.SetPreference(context.Background(), "alice", "custom_key", "custom_value")
 	assert.NoError(t, err)
@@ -122,8 +122,8 @@ func TestUserRepository_UpdatePreferences_UpdatesMultipleKeys(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.UserPreferences")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound)
-	// UpdateUserPreferences -> Create.
-	mockQuery.On("Create").Return(nil)
+	// UpdateUserPreferences -> CreateOrUpdate.
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.UpdatePreferences(context.Background(), "alice", map[string]any{
 		PrefKeyDefaultMediaSensitive: true,

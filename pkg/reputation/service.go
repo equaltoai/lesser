@@ -98,6 +98,7 @@ type reputationCacheQuery interface {
 	Where(field string, op string, value any) reputationCacheQuery
 	First(dest any) error
 	Create() error
+	CreateOrUpdate() error
 }
 
 type dynamormReputationCacheDB struct {
@@ -142,6 +143,13 @@ func (q *dynamormReputationCacheQuery) Create() error {
 		return fmt.Errorf("cache disabled")
 	}
 	return q.q.Create()
+}
+
+func (q *dynamormReputationCacheQuery) CreateOrUpdate() error {
+	if q.q == nil {
+		return fmt.Errorf("cache disabled")
+	}
+	return q.q.CreateOrUpdate()
 }
 
 // Service provides reputation management functionality
@@ -1064,7 +1072,7 @@ func (s *Service) setCachedMetric(ctx context.Context, key string, value int) {
 	if s.cache == nil {
 		return
 	}
-	err := s.cache.WithContext(ctx).Model(cached).Create()
+	err := s.cache.WithContext(ctx).Model(cached).CreateOrUpdate()
 	if err != nil {
 		s.logger.Debug("Failed to cache metric",
 			zap.String("key", key),
@@ -1132,7 +1140,7 @@ func (s *Service) setCachedTimestamp(ctx context.Context, key string, value time
 	if s.cache == nil {
 		return
 	}
-	err := s.cache.WithContext(ctx).Model(cached).Create()
+	err := s.cache.WithContext(ctx).Model(cached).CreateOrUpdate()
 	if err != nil {
 		s.logger.Debug("Failed to cache timestamp",
 			zap.String("key", key),

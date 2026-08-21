@@ -1141,7 +1141,7 @@ func (r *ObjectRepository) MarkThreadAsSynced(ctx context.Context, statusID stri
 	_ = syncRecord.UpdateKeys() // Internal model operation, error ignored as it's a local data structure update
 
 	// Update or create the record - use Create with conditional to implement upsert
-	if err := r.db.WithContext(ctx).Model(syncRecord).Create(); err != nil {
+	if err := r.db.WithContext(ctx).Model(syncRecord).CreateOrUpdate(); err != nil {
 		r.logger.Error("failed to mark thread as synced",
 			zap.String("status_id", statusID),
 			zap.Error(err))
@@ -2330,7 +2330,7 @@ func (r *ObjectRepository) updateSearchIndexForWithdrawal(ctx context.Context, s
 	searchCache.UpdateKeys() // Internal model operation
 
 	// Create invalidation record
-	if err := r.db.WithContext(ctx).Model(searchCache).Create(); err != nil {
+	if err := r.db.WithContext(ctx).Model(searchCache).CreateOrUpdate(); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityObject, "search_cache")
 	}
 

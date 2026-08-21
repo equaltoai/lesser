@@ -288,7 +288,7 @@ func (s *S3MediaStorage) UpdateMediaMetadata(mediaID string, metadata *MediaMeta
 		// Check for "not found" error pattern in DynamORM
 		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "item not found") {
 			// Record doesn't exist, create it
-			err = s.db.WithContext(ctx).Model(metadataModel).Create()
+			err = s.db.WithContext(ctx).Model(metadataModel).CreateOrUpdate()
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrCreateMetadataInDynamoDB, err)
 			}

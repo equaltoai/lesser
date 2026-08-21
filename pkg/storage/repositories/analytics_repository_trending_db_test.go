@@ -47,7 +47,7 @@ func TestRecordHashtagUsage_Success(t *testing.T) {
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.HashtagTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	err := repo.RecordHashtagUsage(ctx, hashtag, statusID, authorID)
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestRecordStatusEngagement_Success(t *testing.T) {
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	err := repo.RecordStatusEngagement(ctx, statusID, engagementType, userID)
 	require.NoError(t, err)
@@ -157,7 +157,7 @@ func TestRecordLinkShare_Success(t *testing.T) {
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	err := repo.RecordLinkShare(ctx, linkURL, statusID, authorID)
 	require.NoError(t, err)
@@ -198,7 +198,7 @@ func TestStoreHashtagTrendInternal_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.HashtagTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.storeHashtagTrendInternal(ctx, trend)
 	require.NoError(t, err)
@@ -220,7 +220,7 @@ func TestStoreHashtagTrendInternal_FromStorageType(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.HashtagTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.storeHashtagTrendInternal(ctx, trend)
 	require.NoError(t, err)
@@ -252,7 +252,7 @@ func TestStoreStatusTrendInternal_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.storeStatusTrendInternal(ctx, trend)
 	require.NoError(t, err)
@@ -273,7 +273,7 @@ func TestStoreStatusTrendInternal_FromStorageType(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.storeStatusTrendInternal(ctx, trend)
 	require.NoError(t, err)
@@ -304,7 +304,7 @@ func TestStoreLinkTrendInternal_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.storeLinkTrendInternal(ctx, trend)
 	require.NoError(t, err)
@@ -325,7 +325,7 @@ func TestStoreLinkTrendInternal_FromStorageType(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.storeLinkTrendInternal(ctx, trend)
 	require.NoError(t, err)
@@ -495,7 +495,7 @@ func TestStoreHashtagTrend_CallsInternal(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.HashtagTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.StoreHashtagTrend(ctx, trend)
 	require.NoError(t, err)
@@ -513,7 +513,7 @@ func TestStoreStatusTrend_CallsInternal(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.StoreStatusTrend(ctx, trend)
 	require.NoError(t, err)
@@ -531,7 +531,7 @@ func TestStoreLinkTrend_CallsInternal(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkTrend")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.StoreLinkTrend(ctx, trend)
 	require.NoError(t, err)

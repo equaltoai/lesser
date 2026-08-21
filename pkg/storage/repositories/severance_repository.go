@@ -223,7 +223,7 @@ func (r *SeveranceRepository) UpdateSeveranceStatus(ctx context.Context, id stri
 	}
 
 	// Save the updated record
-	err = r.db.WithContext(ctx).Model(severance).Create()
+	err = r.db.WithContext(ctx).Model(severance).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to update severance status",
 			zap.String("id", id),
@@ -350,7 +350,7 @@ func (r *SeveranceRepository) UpdateReconnectionAttempt(ctx context.Context, att
 		return err
 	}
 
-	err := r.db.WithContext(ctx).Model(attempt).Create()
+	err := r.db.WithContext(ctx).Model(attempt).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to update reconnection attempt",
 			zap.String("id", attempt.ID),

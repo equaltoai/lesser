@@ -101,7 +101,7 @@ func (r *DNSCacheRepository) SetDNSCache(ctx context.Context, entry *storage.DNS
 	_ = dnsCache.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Save to DynamoDB using DynamORM pattern
-	if err := r.db.WithContext(ctx).Model(dnsCache).Create(); err != nil {
+	if err := r.db.WithContext(ctx).Model(dnsCache).CreateOrUpdate(); err != nil {
 		r.logger.Error("failed to set DNS cache entry",
 			zap.String("hostname", entry.Hostname),
 			zap.Error(err))

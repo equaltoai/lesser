@@ -251,7 +251,7 @@ func (r *FederationCostRepository) GetDailyCostSummary(ctx context.Context, doma
 
 // CreateOrUpdateBudget creates or updates a federation budget for a domain using BaseRepository
 func (r *FederationCostRepository) CreateOrUpdateBudget(ctx context.Context, budget *models.FederationBudget) error {
-	err := r.budgetRepo.ValidateAndCreate(ctx, budget)
+	err := r.budgetRepo.ValidateAndCreateOrUpdate(ctx, budget)
 	if err != nil {
 		r.logger.Error("Failed to create/update federation budget",
 			zap.String("domain", budget.Domain),
