@@ -1325,7 +1325,7 @@ func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) 
 		}
 		_ = trendModel.UpdateKeys()
 
-		err := r.db.Model(trendModel).Create()
+		err := r.db.Model(trendModel).CreateOrUpdate()
 		if err != nil {
 			r.logger.Error("failed to store hashtag trend",
 				zap.String("hashtag", trend.HashtagName),
@@ -1352,7 +1352,7 @@ func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) 
 		}
 		_ = trendModel.UpdateKeys()
 
-		err := r.db.Model(trendModel).Create()
+		err := r.db.Model(trendModel).CreateOrUpdate()
 		if err != nil {
 			r.logger.Error("failed to store storage hashtag trend",
 				zap.String("hashtag", trend.Name),

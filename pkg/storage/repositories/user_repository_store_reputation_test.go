@@ -19,7 +19,7 @@ func TestUserRepository_StoreReputation_Success(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	rep := &storage.Reputation{
 		CalculatedAt: time.Now().UTC(),
@@ -42,14 +42,14 @@ func TestUserRepository_StoreReputation_UpdateKeysError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestUserRepository_StoreReputation_CreateError(t *testing.T) {
+func TestUserRepository_StoreReputation_UpsertError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	repo := NewUserRepository(mockDB, "test-table", zap.NewNop())
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Reputation")).Return(mockQuery)
-	mockQuery.On("Create").Return(ErrTestMockError)
+	mockQuery.On("CreateOrUpdate").Return(ErrTestMockError)
 
 	rep := &storage.Reputation{
 		CalculatedAt: time.Now().UTC(),

@@ -44,9 +44,9 @@ func TestGraphQLStreamSubscriptionRepository_Put(t *testing.T) {
 		require.ErrorContains(t, err, "user_id")
 	})
 
-	t.Run("sets_ttl_and_keys_and_creates", func(t *testing.T) {
+	t.Run("sets_ttl_and_keys_and_upserts", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
-		testDB.ExpectCreate()
+		testDB.MockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		repo := NewGraphQLStreamSubscriptionRepository(testDB.MockDB, "table", zap.NewNop())
 		record := &models.GraphQLStreamSubscription{

@@ -76,7 +76,7 @@ func TestSeveranceRepository_Round09_MoreCoverage(t *testing.T) {
 			Return(nil).
 			Once()
 
-		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewSeveranceRepository(mockDB, "test-table", nil)
 		require.Error(t, repo.UpdateSeveranceStatus(ctx, "local_remote_1", models.SeveranceStatusRestored))

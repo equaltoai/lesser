@@ -102,7 +102,7 @@ func TestMigrator_executeRollback_RecordStartFails_Round23(t *testing.T) {
 	db := new(dynamormMocks.MockDB)
 	q := new(dynamormMocks.MockQuery)
 	db.On("Model", mock.Anything).Return(q).Maybe()
-	q.On("Create").Return(errors.New("record start failed")).Once()
+	q.On("CreateOrUpdate").Return(errors.New("record start failed")).Once()
 
 	m := NewMigrator(db, NewRegistry(), zap.NewNop())
 	migration := &MockMigration{id: "m1", version: 1, description: "m1"}
@@ -119,8 +119,8 @@ func TestMigrator_executeRollback_DownFails_ReturnsDownErr_Round23(t *testing.T)
 	q := new(dynamormMocks.MockQuery)
 	db.On("Model", mock.Anything).Return(q).Maybe()
 
-	create1 := q.On("Create").Return(nil).Once()
-	create2 := q.On("Create").Return(nil).Once()
+	create1 := q.On("CreateOrUpdate").Return(nil).Once()
+	create2 := q.On("CreateOrUpdate").Return(nil).Once()
 	mock.InOrder(create1, create2)
 
 	migration := &MockMigration{id: "m1", version: 1, description: "m1"}
@@ -140,8 +140,8 @@ func TestMigrator_executeRollback_Success_RecordFailureReturnsWrap_Round23(t *te
 	q := new(dynamormMocks.MockQuery)
 	db.On("Model", mock.Anything).Return(q).Maybe()
 
-	create1 := q.On("Create").Return(nil).Once()
-	create2 := q.On("Create").Return(errors.New("record failed")).Once()
+	create1 := q.On("CreateOrUpdate").Return(nil).Once()
+	create2 := q.On("CreateOrUpdate").Return(errors.New("record failed")).Once()
 	mock.InOrder(create1, create2)
 
 	migration := &MockMigration{id: "m1", version: 1, description: "m1"}

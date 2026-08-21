@@ -25,7 +25,7 @@ type Move struct {
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"CreatedAt"` // Database timestamp
 
 	// Optional TTL for cleanup
-	TTL *int64 `theorydb:"ttl,attr:ttl" json:"TTL,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"TTL,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -64,8 +64,7 @@ func NewMove(id, actor, target string) *Move {
 
 // SetTTL sets the TTL for the move record (in Unix epoch seconds)
 func (m *Move) SetTTL(ttl time.Time) {
-	ttlUnix := ttl.Unix()
-	m.TTL = &ttlUnix
+	m.TTL = ttl.Unix()
 }
 
 // ExtractActor extracts the actor from PK

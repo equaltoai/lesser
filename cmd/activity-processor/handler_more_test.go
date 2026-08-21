@@ -62,7 +62,7 @@ func TestActivityHandler_ProcessFollowAcceptCreateLikeAnnounceDeleteBlockFlagMov
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	h := &ActivityHandler{
 		DB:               mockDB,

@@ -117,14 +117,15 @@ type permissiveDBOptions struct {
 	forceConsentNotFound bool
 	defaultCountValue    int64
 
-	firstCreateError error
-	createErrorTimes int
-	firstUpdateError error
-	firstDeleteError error
-	firstAllError    error
-	allErrorTimes    int
-	firstScanError   error
-	firstCountError  error
+	firstCreateError         error
+	createErrorTimes         int
+	firstCreateOrUpdateError error
+	firstUpdateError         error
+	firstDeleteError         error
+	firstAllError            error
+	allErrorTimes            int
+	firstScanError           error
+	firstCountError          error
 
 	firstRelationshipFirstError error
 	firstMuteFirstError         error
@@ -264,6 +265,9 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 			q.On("Create").Return(opts.firstCreateError).Once()
 		}
 	}
+	if opts.firstCreateOrUpdateError != nil {
+		q.On("CreateOrUpdate").Return(opts.firstCreateOrUpdateError).Once()
+	}
 	if opts.firstUpdateError != nil {
 		q.On("Update", mock.Anything).Return(opts.firstUpdateError).Once()
 	}
@@ -319,6 +323,7 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 			}
 		}
 	}).Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Update", mock.Anything).Run(func(_ mock.Arguments) {
 		if model, ok := getCurrentModel().(*models.WalletChallenge); ok && model != nil {
 			storeWalletChallenge(*model)
@@ -2076,9 +2081,10 @@ func TestService_Round13_MoreBranchCoverage(t *testing.T) {
 
 	t.Run("SaveMarker, StoreOAuthState, and CreateAuthorizationCode repo error branches", func(t *testing.T) {
 		svc, _ := newPermissiveAccountsService(t, permissiveDBOptions{
-			domain:           "example.com",
-			firstCreateError: errors.New("create failed"),
-			createErrorTimes: 10,
+			domain:                   "example.com",
+			firstCreateError:         errors.New("create failed"),
+			createErrorTimes:         10,
+			firstCreateOrUpdateError: errors.New("create or update failed"),
 		})
 
 		_, err := svc.SaveMarker(ctx, &SaveMarkerCommand{

@@ -72,16 +72,14 @@ func TestAccountRepository_SearchByWebfinger_InvalidFormat(t *testing.T) {
 	require.Nil(t, actor)
 }
 
-func TestAccountRepository_CacheRemoteActor_ConditionFailedUpdatesExisting(t *testing.T) {
+func TestAccountRepository_CacheRemoteActor_UpsertSucceeds(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	// Override Create/Update to hit the conditional update path deterministically.
-	mockQuery.On("Create").Return(errors.ErrConditionFailed).Once()
-	mockQuery.On("Update", mock.Anything).Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
@@ -380,15 +378,14 @@ func TestAccountRepository_FriendOfFriendSuggestions_MutualsAndEmptyFollowing(t 
 	})
 }
 
-func TestAccountRepository_CacheRemoteActor_ConditionFailedThenLookupFails(t *testing.T) {
+func TestAccountRepository_CacheRemoteActor_UpsertFails(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Create").Return(errors.ErrConditionFailed).Once()
-	mockQuery.On("First", mock.Anything).Return(fmt.Errorf("lookup failed")).Once()
+	mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("upsert failed")).Once()
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))

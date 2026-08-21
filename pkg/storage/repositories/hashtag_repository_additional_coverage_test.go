@@ -32,6 +32,7 @@ func newPermissiveDynamORM(t *testing.T) (*dynamormmocks.MockDB, *dynamormmocks.
 	q.On("Limit", mock.Anything).Return(q).Maybe()
 
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Update", mock.Anything).Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
@@ -454,7 +455,7 @@ func TestHashtagRepository_StoreHashtagTrend_TrendingScoreType(t *testing.T) {
 	q := new(dynamormmocks.MockQuery)
 
 	db.On("Model", mock.Anything).Return(q)
-	q.On("Create").Return(nil)
+	q.On("CreateOrUpdate").Return(nil)
 
 	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
 
@@ -818,13 +819,13 @@ func TestHashtagRepository_UnmuteHashtag_InvalidAndDeleteErrorBranches(t *testin
 	assert.Error(t, repo.UnmuteHashtag(ctx, "alice", "#GoLang"))
 }
 
-func TestHashtagRepository_StoreHashtagTrend_CreateFailureReturnsError(t *testing.T) {
+func TestHashtagRepository_StoreHashtagTrend_UpsertFailureReturnsError(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
 	q := new(dynamormmocks.MockQuery)
 
 	db.On("Model", mock.Anything).Return(q)
-	q.On("Create").Return(errors.New("create failed"))
+	q.On("CreateOrUpdate").Return(errors.New("create failed"))
 
 	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
 	assert.Error(t, repo.StoreHashtagTrend(ctx, &storage.TrendingHashtag{Name: "golang", URL: "https://example.com/tags/golang"}))

@@ -187,7 +187,8 @@ func TestActivityProcessor_DeletionHandlerAdditionalBranches(t *testing.T) {
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	ap := &ActivityProcessor{
 		db:     mockDB,
@@ -306,7 +307,8 @@ func TestActivityProcessor_ProcessRecord_Remove_DeletionSwitchCases(t *testing.T
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	ap := &ActivityProcessor{
 		db:     mockDB,
@@ -358,7 +360,8 @@ func TestActivityProcessor_ProcessRecord_Insert_Outbox_CreateAndAnnounce(t *test
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
 	var createEntryCount int

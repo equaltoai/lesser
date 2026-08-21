@@ -150,8 +150,7 @@ func TestMove(t *testing.T) {
 
 		ttl := time.Unix(1700001000, 0).UTC()
 		m.SetTTL(ttl)
-		require.NotNil(t, m.TTL)
-		assert.Equal(t, ttl.Unix(), *m.TTL)
+		assert.Equal(t, ttl.Unix(), m.TTL)
 
 		m2 := &Move{Actor: "alice", Target: "bob"}
 		require.NoError(t, m2.BeforeCreate())

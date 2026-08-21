@@ -93,6 +93,21 @@ func TestAccountRepository_DeleteWebAuthnCredentialConditionedOnSurvivor(t *test
 		)
 		require.ErrorIs(t, err, dynamormerrors.ErrConditionFailed)
 	})
+
+	t.Run("builder transaction conflict keeps corrected taxonomy", func(t *testing.T) {
+		txErr := &dynamormerrors.TransactionError{
+			Err:            dynamormerrors.ErrTransactionConflict,
+			Operation:      "delete",
+			OperationIndex: 0,
+			Reason:         "TransactionConflict",
+		}
+		repo := NewAccountRepository(&guardedDeleteTestDB{txErr: txErr}, "test-table", "example.com", zap.NewNop())
+
+		err := repo.DeleteWebAuthnCredentialConditionedOnSurvivor(
+			context.Background(), "alice", "cred-1", "", "0xabc",
+		)
+		require.ErrorIs(t, err, dynamormerrors.ErrTransactionConflict)
+	})
 }
 
 func TestAccountRepository_DeleteWalletCredentialConditionedOnSurvivor(t *testing.T) {
@@ -134,6 +149,21 @@ func TestAccountRepository_DeleteWalletCredentialConditionedOnSurvivor(t *testin
 			"",
 		)
 		require.ErrorIs(t, err, dynamormerrors.ErrConditionFailed)
+	})
+
+	t.Run("builder transaction conflict keeps corrected taxonomy", func(t *testing.T) {
+		txErr := &dynamormerrors.TransactionError{
+			Err:            dynamormerrors.ErrTransactionConflict,
+			Operation:      "delete",
+			OperationIndex: 0,
+			Reason:         "TransactionConflict",
+		}
+		repo := NewAccountRepository(&guardedDeleteTestDB{txErr: txErr}, "test-table", "example.com", zap.NewNop())
+
+		err := repo.DeleteWalletCredentialConditionedOnSurvivor(
+			context.Background(), "alice", "0xabc", "ethereum", "cred-1", "",
+		)
+		require.ErrorIs(t, err, dynamormerrors.ErrTransactionConflict)
 	})
 
 	t.Run("empty survivor is rejected", func(t *testing.T) {

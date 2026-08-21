@@ -41,6 +41,7 @@ func newMigratorTestDB() (*dynamormMocks.MockDB, *dynamormMocks.MockQuery) {
 	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
 	q.On("OrderBy", mock.Anything, mock.Anything).Return(q).Maybe()
 	q.On("Limit", mock.Anything).Return(q).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 
 	return db, q
 }
@@ -91,6 +92,7 @@ func TestMigrator_acquireLock_Round22_StaleLockUpdates(t *testing.T) {
 	db, q := newMigratorTestDB()
 	registry := NewRegistry()
 	m := NewMigrator(db, registry, zap.NewNop())
+	update := new(dynamormMocks.MockUpdateBuilder)
 
 	q.On("Create").Return(errors.New("already exists")).Once()
 	q.On("First", mock.Anything).Run(func(args mock.Arguments) {
@@ -99,7 +101,10 @@ func TestMigrator_acquireLock_Round22_StaleLockUpdates(t *testing.T) {
 		dest.LockedBy = "other"
 		dest.LockedAt = time.Now().Add(-11 * time.Minute)
 	}).Return(nil).Once()
-	q.On("Update", mock.Anything).Return(nil).Once()
+	q.On("UpdateBuilder").Return(update).Once()
+	update.On("Set", mock.Anything, mock.Anything).Return(update).Times(3)
+	update.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(update).Times(3)
+	update.On("Execute").Return(nil).Once()
 
 	require.NoError(t, m.acquireLock(context.Background()))
 }

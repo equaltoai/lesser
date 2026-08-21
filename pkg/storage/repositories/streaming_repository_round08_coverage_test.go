@@ -433,6 +433,7 @@ func TestStreamingRepository_Round08_Sweep(t *testing.T) {
 
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 
 	provider := &mockDeviceProvider{}
 	provider.On("GetUserDevices", mock.Anything, "alice").Return([]*storage.Device{
@@ -549,8 +550,8 @@ func TestStreamingRepository_Round08_SyncIgnoresDeviceUpdateErrors(t *testing.T)
 		dest.SetDevicePreference("d1")
 	}).Once()
 
-	// UpdateDeviceStreamingPreferences for another device attempts ValidateAndCreate -> Create and fails.
-	mockQuery.On("Create").Return(assert.AnError).Once()
+	// UpdateDeviceStreamingPreferences explicitly upserts the device row and ignores sync errors.
+	mockQuery.On("CreateOrUpdate").Return(assert.AnError).Once()
 
 	provider := &mockDeviceProvider{}
 	provider.On("GetUserDevices", mock.Anything, "alice").Return([]*storage.Device{

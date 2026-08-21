@@ -472,9 +472,10 @@ func runActor() {
 	})
 }
 
-func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
-	app := apptheory.New(
-		apptheory.WithCORS(apptheory.CORSConfig{
+func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier: apptheory.TierP2,
+		CORS: apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
 			AllowCredentials: false,
 			AllowHeaders: []string{
@@ -490,12 +491,12 @@ func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
 				common.XLesserForwardedHost,
 				common.XLesserForwardedProto,
 			},
-		}),
-		apptheory.WithLimits(apptheory.Limits{
+		},
+		Limits: apptheory.Limits{
 			MaxRequestBytes:  64 * 1024,
 			MaxResponseBytes: 0,
-		}),
-	)
+		},
+	})
 
 	// Panic recovery middleware (MUST be first to catch all panics).
 	app.Use(actorPanicRecovery(lambdaLogger))
@@ -545,7 +546,7 @@ func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
 		}
 	})
 
-	app.Get("/users/:username", handler.HandleActorProfile)
+	app.Get("/users/:username", handler.HandleActorProfile, apptheory.Public())
 
 	return app
 }

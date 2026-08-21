@@ -178,7 +178,7 @@ func (r *MetricsRepository) CreateAggregated(ctx context.Context, aggregated *mo
 	}
 
 	// Use enhanced repository for validation and creation
-	err := r.aggregatedRepo.ValidateAndCreate(ctx, aggregated)
+	err := r.aggregatedRepo.ValidateAndCreateOrUpdate(ctx, aggregated)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create aggregated metrics")
 	}

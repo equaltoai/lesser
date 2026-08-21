@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3"
+	"github.com/theory-cloud/tabletheory/v3/pkg/session"
 	dynamormtesting "github.com/theory-cloud/tabletheory/v3/pkg/testing"
+	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -85,7 +87,7 @@ type dynamormFederationStorageActivityRepoStub struct {
 	err     error
 }
 
-func (s *dynamormFederationStorageActivityRepoStub) Create(_ context.Context, activity *models.FederationActivity) error {
+func (s *dynamormFederationStorageActivityRepoStub) CreateOrUpdate(_ context.Context, activity *models.FederationActivity) error {
 	s.created = append(s.created, activity)
 	return s.err
 }
@@ -278,48 +280,19 @@ func TestDynamORMFederationStorage_CacheRemoteActor(t *testing.T) {
 		Inbox:             "https://remote.example/users/bob/inbox",
 	}
 
-	t.Run("create_success", func(t *testing.T) {
+	t.Run("upsert_success", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
-		testDB.ExpectCreate()
+		testDB.MockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		svc := &DynamORMFederationStorage{db: testDB.MockDB}
 		require.NoError(t, svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute))
 		testDB.AssertExpectations(t)
 	})
 
-	t.Run("create_condition_failed_then_update_success", func(t *testing.T) {
-		testDB := dynamormtesting.NewTestDB()
-		testDB.ExpectCreateError(dynamormerrors.ErrConditionFailed)
-		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#bob@remote.example").
-			ExpectWhere("SK", "=", "PROFILE").
-			ExpectUpdate()
-
-		svc := &DynamORMFederationStorage{db: testDB.MockDB}
-		require.NoError(t, svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute))
-		testDB.AssertExpectations(t)
-	})
-
-	t.Run("create_condition_failed_then_update_error", func(t *testing.T) {
-		testDB := dynamormtesting.NewTestDB()
-		testDB.ExpectCreateError(dynamormerrors.ErrConditionFailed)
-		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#bob@remote.example").
-			ExpectWhere("SK", "=", "PROFILE")
-
-		boom := errors.New("boom")
-		testDB.MockQuery.On("Update", mock.Anything).Return(boom).Once()
-
-		svc := &DynamORMFederationStorage{db: testDB.MockDB}
-		err := svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrRemoteActorCacheUpdateFailed)
-		assert.ErrorIs(t, err, boom)
-		testDB.AssertExpectations(t)
-	})
-
-	t.Run("create_error_returns_joined_error", func(t *testing.T) {
+	t.Run("upsert_error_returns_joined_error", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		boom := errors.New("boom")
-		testDB.ExpectCreateError(boom)
+		testDB.MockQuery.On("CreateOrUpdate").Return(boom).Once()
 
 		svc := &DynamORMFederationStorage{db: testDB.MockDB}
 		err := svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute)
@@ -328,6 +301,30 @@ func TestDynamORMFederationStorage_CacheRemoteActor(t *testing.T) {
 		assert.ErrorIs(t, err, boom)
 		testDB.AssertExpectations(t)
 	})
+}
+
+func TestDynamORMFederationStorage_CacheRemoteActorRefreshesOnReplay(t *testing.T) {
+	ctx := context.Background()
+	fake := fakedb.New()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.RemoteActor{}))
+
+	svc := &DynamORMFederationStorage{db: db}
+	actor := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/bob", Type: activitypub.PersonType},
+		PreferredUsername: "bob",
+		Name:              "Old name",
+		Inbox:             "https://remote.example/users/bob/inbox",
+	}
+	require.NoError(t, svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute))
+	actor.Name = "New name"
+	require.NoError(t, svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute))
+	require.Len(t, fake.Items(models.MainTableName), 1)
+
+	got, err := svc.GetCachedRemoteActor(ctx, "bob@remote.example")
+	require.NoError(t, err)
+	require.Equal(t, "New name", got.Name)
 }
 
 func TestDynamORMFederationStorage_RecordFederationActivity(t *testing.T) {
@@ -366,4 +363,46 @@ func TestDynamORMFederationStorage_RecordFederationActivity(t *testing.T) {
 	require.Len(t, repo.created, 2)
 	assert.Equal(t, int64(0), repo.created[1].OutboundSize)
 	assert.Equal(t, int64(99), repo.created[1].InboundSize)
+}
+
+func TestDynamORMFederationStorage_RecordFederationActivityRefreshesCollidingMetricsKey(t *testing.T) {
+	ctx := context.Background()
+	fake := fakedb.New()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.FederationActivity{}))
+
+	svc := NewDynamORMFederationStorage(db, models.MainTableName, "example.com", zaptest.NewLogger(t))
+	timestamp := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
+	first := &storage.FederationActivity{
+		Type:         "egress",
+		Domain:       "remote.example",
+		ActivityType: "Create",
+		Success:      true,
+		ByteSize:     10,
+		Timestamp:    timestamp,
+	}
+	second := &storage.FederationActivity{
+		Type:         "egress",
+		Domain:       "remote.example",
+		ActivityType: "Create",
+		Success:      false,
+		ByteSize:     20,
+		ErrorMessage: "latest delivery result",
+		Timestamp:    timestamp,
+	}
+
+	require.NoError(t, svc.RecordFederationActivity(ctx, first))
+	require.NoError(t, svc.RecordFederationActivity(ctx, second),
+		"ID-less delivery metrics in the same second must retain last-write-wins behavior")
+	require.Len(t, fake.Items(models.MainTableName), 1)
+
+	var persisted models.FederationActivity
+	require.NoError(t, db.Model(&models.FederationActivity{}).
+		Where("PK", "=", "fed_activity#remote.example").
+		Where("SK", "=", "activity#20260821120000#").
+		First(&persisted))
+	require.False(t, persisted.Success)
+	require.Equal(t, int64(20), persisted.OutboundSize)
+	require.Equal(t, "latest delivery result", persisted.ErrorMessage)
 }

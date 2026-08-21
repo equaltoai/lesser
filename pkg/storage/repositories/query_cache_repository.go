@@ -100,7 +100,7 @@ func (r *QueryCacheRepository) SetCachedValue(ctx context.Context, cacheKey stri
 		ExpiresAt: time.Now().Add(ttl),
 	}
 
-	err = r.Create(ctx, entry)
+	err = r.CreateOrUpdate(ctx, entry)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityQueryCache, cacheKey)
 	}

@@ -1353,9 +1353,9 @@
   {
     "method": "POST",
     "path": "/api/v1/notifications/deliver",
-    "runtimePosture": "anonymous",
+    "runtimePosture": "auth-required",
     "openapiSecurity": "required",
-    "verdict": "failOpen"
+    "verdict": "agree"
   },
   {
     "method": "GET",

@@ -528,7 +528,7 @@ func (si *StatusIndexer) indexWord(ctx context.Context, word, statusID string, p
 		TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(),
 	}
 
-	return si.db.WithContext(ctx).Model(&wordIndex).Create()
+	return si.db.WithContext(ctx).Model(&wordIndex).CreateOrUpdate()
 }
 
 // indexHashtag indexes a hashtag for search using DynamORM
@@ -544,7 +544,7 @@ func (si *StatusIndexer) indexHashtag(ctx context.Context, tag, statusID string,
 		TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(),
 	}
 
-	return si.db.WithContext(ctx).Model(&tagIndex).Create()
+	return si.db.WithContext(ctx).Model(&tagIndex).CreateOrUpdate()
 }
 
 // indexByAuthor indexes a status by author using DynamORM
@@ -560,7 +560,7 @@ func (si *StatusIndexer) indexByAuthor(ctx context.Context, authorID, statusID s
 		TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(),
 	}
 
-	return si.db.WithContext(ctx).Model(&authorIndex).Create()
+	return si.db.WithContext(ctx).Model(&authorIndex).CreateOrUpdate()
 }
 
 // Utility functions for text processing
@@ -683,7 +683,7 @@ func (si *StatusIndexer) storeEmbedding(ctx context.Context, statusID string, em
 		return fmt.Errorf("failed to update embedding keys: %w", err)
 	}
 
-	return si.db.WithContext(ctx).Model(embeddingModel).Create()
+	return si.db.WithContext(ctx).Model(embeddingModel).CreateOrUpdate()
 }
 
 // updateTrendingStatus updates or creates a trending status record
@@ -706,8 +706,8 @@ func (si *StatusIndexer) updateTrendingStatus(ctx context.Context, statusID, con
 	}
 	trendingStatus.UpdateKeys()
 
-	// Use Create which will update if exists due to the key structure
-	return si.db.WithContext(ctx).Model(trendingStatus).Create()
+	// Trending status is a deterministic projection, so overwrite it explicitly.
+	return si.db.WithContext(ctx).Model(trendingStatus).CreateOrUpdate()
 }
 
 func (si *StatusIndexer) statusURL(statusID string) string {

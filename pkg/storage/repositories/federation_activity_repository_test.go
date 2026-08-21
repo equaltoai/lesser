@@ -166,10 +166,10 @@ func TestFederationActivityRepository_UpdateInstanceInfo_UpdateFails_CreateSucce
 	mockDB.On("Model", mock.AnythingOfType("*repositories.InstanceInfoItem")).Return(mockUpdateQuery).Once()
 	mockUpdateQuery.On("Update", mock.Anything).Return(updateErr)
 
-	// Set up mock for Create to succeed (fallback)
+	// Set up mock for explicit upsert to succeed (fallback)
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*repositories.InstanceInfoItem")).Return(mockCreateQuery).Once()
-	mockCreateQuery.On("Create").Return(nil)
+	mockCreateQuery.On("CreateOrUpdate").Return(nil)
 
 	// Execute
 	err := repo.UpdateInstanceInfo(ctx, info)
@@ -204,10 +204,10 @@ func TestFederationActivityRepository_UpdateInstanceInfo_UpdateFails_CreateFails
 	mockDB.On("Model", mock.AnythingOfType("*repositories.InstanceInfoItem")).Return(mockUpdateQuery).Once()
 	mockUpdateQuery.On("Update", mock.Anything).Return(updateErr)
 
-	// Set up mock for Create to fail
+	// Set up mock for explicit upsert to fail
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*repositories.InstanceInfoItem")).Return(mockCreateQuery).Once()
-	mockCreateQuery.On("Create").Return(createErr)
+	mockCreateQuery.On("CreateOrUpdate").Return(createErr)
 
 	// Execute
 	err := repo.UpdateInstanceInfo(ctx, info)
@@ -243,10 +243,10 @@ func TestFederationActivityRepository_UpdateInstanceInfo_FirstSeenZero(t *testin
 	mockDB.On("Model", mock.AnythingOfType("*repositories.InstanceInfoItem")).Return(mockUpdateQuery).Once()
 	mockUpdateQuery.On("Update", mock.Anything).Return(updateErr)
 
-	// Set up mock for Create
+	// Set up mock for explicit upsert
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*repositories.InstanceInfoItem")).Return(mockCreateQuery).Once()
-	mockCreateQuery.On("Create").Return(nil)
+	mockCreateQuery.On("CreateOrUpdate").Return(nil)
 
 	// Execute
 	err := repo.UpdateInstanceInfo(ctx, info)

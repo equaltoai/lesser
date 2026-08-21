@@ -22,7 +22,8 @@ func TestActivityProcessor_AnnounceFanoutAndObjectReferencePaths(t *testing.T) {
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
 	objectRepo := testmocks.NewMockObjectRepository()
@@ -114,7 +115,8 @@ func TestActivityProcessor_AnnounceFanoutPreservesPrivateVisibility(t *testing.T
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
 	objectRepo := testmocks.NewMockObjectRepository()

@@ -533,6 +533,9 @@ func (r *AnnouncementRepository) DismissAnnouncement(ctx context.Context, userna
 
 	err := r.db.WithContext(ctx).Model(dismissal).Create()
 	if err != nil {
+		if errors.IsConditionFailed(err) {
+			return nil
+		}
 		return ErrorHandler.HandleCreateError(err, "announcement dismissal", announcementID)
 	}
 

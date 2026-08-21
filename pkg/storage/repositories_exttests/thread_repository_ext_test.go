@@ -46,6 +46,7 @@ func TestThreadRepository_ext_sweep(t *testing.T) {
 		}
 	}).Return(nil).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
 
 	repo := repositories.NewThreadRepository(mockDB, zap.NewNop())

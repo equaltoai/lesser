@@ -61,7 +61,7 @@ func (q *adapterFakeQuery) BatchGetBuilder() core.BatchGetBuilder {
 func (q *adapterFakeQuery) ParallelScan(_ int32, _ int32) core.Query          { return q }
 func (q *adapterFakeQuery) AllPaginated(_ any) (*core.PaginatedResult, error) { return nil, nil }
 func (q *adapterFakeQuery) Count() (int64, error)                             { return 0, nil }
-func (q *adapterFakeQuery) CreateOrUpdate() error                             { return nil }
+func (q *adapterFakeQuery) CreateOrUpdate() error                             { return q.createErr }
 func (q *adapterFakeQuery) Delete() error                                     { return nil }
 func (q *adapterFakeQuery) Scan(_ any) error                                  { return nil }
 func (q *adapterFakeQuery) ScanAllSegments(_ any, _ int32) error              { return nil }
@@ -312,4 +312,14 @@ func TestRepositoryAdapter_HealthAndConfig(t *testing.T) {
 	configs, err := adapter.ListInstanceConfigs(context.Background())
 	assert.NoError(t, err)
 	assert.Len(t, configs, 1)
+}
+
+func TestRepositoryAdapter_ReplayWritesSurfaceUpsertErrors(t *testing.T) {
+	failure := errors.New("projection upsert failed")
+	q := &adapterFakeQuery{createErr: failure}
+	adapter := NewRepositoryAdapter(&adapterFakeDB{query: q}, zap.NewNop(), nil)
+	ctx := context.Background()
+
+	assert.ErrorIs(t, adapter.UpdateInstanceHealth(ctx, &InstanceHealth{Domain: "remote.example"}), failure)
+	assert.ErrorIs(t, adapter.SaveInstanceConfig(ctx, &InstanceConfig{Domain: "remote.example"}), failure)
 }

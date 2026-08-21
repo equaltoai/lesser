@@ -241,7 +241,7 @@ func TestAICostRepository_Queries_Summary_Trends_Aggregations(t *testing.T) {
 		mockDB.On("WithContext", ctx).Return(mockDB)
 
 		mockDB.On("Model", mock.Anything).Return(mockCreateQuery).Once()
-		mockCreateQuery.On("Create").Return(nil).Once()
+		mockCreateQuery.On("CreateOrUpdate").Return(nil).Once()
 		require.NoError(t, repo.CreateOrUpdateAggregatedCost(ctx, &models.AIAggregatedCost{Period: "day"}))
 
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()

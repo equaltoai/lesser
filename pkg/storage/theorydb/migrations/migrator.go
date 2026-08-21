@@ -3,6 +3,7 @@ package migrations
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -91,7 +92,7 @@ func (m *Migrator) UpdateMigrationStatus(_ context.Context, status *MigrationSta
 	status.SK = "CURRENT"
 	status.UpdatedAt = time.Now()
 
-	return m.db.Model(status).Create()
+	return m.db.Model(status).CreateOrUpdate()
 }
 
 // recordMigrationHistory records a migration execution
@@ -112,7 +113,7 @@ func (m *Migrator) recordMigrationHistory(_ context.Context, migration Migration
 
 	history.PK, history.SK = history.GetTableKeys()
 
-	return m.db.Model(history).Create()
+	return m.db.Model(history).CreateOrUpdate()
 }
 
 // calculateChecksum calculates a checksum for a migration
@@ -147,14 +148,29 @@ func (m *Migrator) acquireLock(_ context.Context) error {
 			Where("SK", "=", existingLock.SK).
 			First(existingLock)
 
-		if checkErr == nil && existingLock.IsLocked {
-			// Check if lock is stale (older than 10 minutes)
-			if existingLock.LockedAt.Before(time.Now().Add(-10 * time.Minute)) {
-				// Lock is stale, try to update it
-				return m.db.Model(lock).Update()
-			}
-			return fmt.Errorf("migration lock held by %s since %s", existingLock.LockedBy, existingLock.LockedAt)
+		if checkErr != nil {
+			return fmt.Errorf("failed to inspect migration lock after create failed: %w", errors.Join(err, checkErr))
 		}
+		if !existingLock.IsLocked {
+			return fmt.Errorf("failed to acquire migration lock after create failed: lock row is not held: %w", err)
+		}
+
+		// Check if lock is stale (older than 10 minutes)
+		if existingLock.LockedAt.Before(time.Now().Add(-10 * time.Minute)) {
+			// Only the contender that still observes this exact stale lock may take it over.
+			return m.db.Model(lock).
+				Where("PK", "=", lock.PK).
+				Where("SK", "=", lock.SK).
+				UpdateBuilder().
+				Set("IsLocked", lock.IsLocked).
+				Set("LockedBy", lock.LockedBy).
+				Set("LockedAt", lock.LockedAt).
+				Condition("IsLocked", "=", existingLock.IsLocked).
+				Condition("LockedBy", "=", existingLock.LockedBy).
+				Condition("LockedAt", "=", existingLock.LockedAt).
+				Execute()
+		}
+		return fmt.Errorf("migration lock held by %s since %s", existingLock.LockedBy, existingLock.LockedAt)
 	}
 
 	return nil
@@ -264,13 +280,10 @@ func (m *Migrator) Rollback(ctx context.Context) error {
 		}
 	}()
 
-	// Get migration history
-	var histories []MigrationHistory
-	err := m.db.Model(&MigrationHistory{}).
-		Where("PK", "=", migrationHistoryPK).
-		OrderBy("Version", "DESC").
-		Limit(1).
-		All(&histories)
+	// Get migration history. TableTheory orders DynamoDB queries by the table or
+	// index sort key, so GetMigrationHistory applies numeric Version ordering
+	// client-side before this method selects the newest record.
+	histories, err := m.GetMigrationHistory(ctx)
 
 	if err != nil || len(histories) == 0 {
 		return fmt.Errorf("no migrations to rollback")
@@ -293,23 +306,24 @@ func (m *Migrator) Rollback(ctx context.Context) error {
 
 	// Execute rollback
 	startTime := time.Now()
-	err = migration.Down(ctx, m.db)
+	rollbackErr := migration.Down(ctx, m.db)
 	duration := time.Since(startTime)
 
 	// Record rollback
 	status := "rolled_back"
-	if err != nil {
+	if rollbackErr != nil {
 		status = "rollback_failed"
 		m.logger.Error("Rollback failed",
 			zap.String("id", migration.ID()),
-			zap.Error(err))
+			zap.Error(rollbackErr))
 	} else {
 		m.logger.Info("Rollback completed",
 			zap.String("id", migration.ID()),
 			zap.Duration("duration", duration))
 	}
 
-	return m.recordMigrationHistory(ctx, migration, status, duration, err)
+	historyErr := m.recordMigrationHistory(ctx, migration, status, duration, rollbackErr)
+	return errors.Join(rollbackErr, historyErr)
 }
 
 // GetMigrationHistory returns the migration history
@@ -317,7 +331,6 @@ func (m *Migrator) GetMigrationHistory(_ context.Context) ([]*MigrationHistory, 
 	var histories []MigrationHistory
 	err := m.db.Model(&MigrationHistory{}).
 		Where("PK", "=", migrationHistoryPK).
-		OrderBy("Version", "DESC").
 		All(&histories)
 
 	if err != nil {
@@ -329,6 +342,7 @@ func (m *Migrator) GetMigrationHistory(_ context.Context) ([]*MigrationHistory, 
 	for i := range histories {
 		result[i] = &histories[i]
 	}
+	m.sortMigrationsByVersion(result)
 
 	return result, nil
 }

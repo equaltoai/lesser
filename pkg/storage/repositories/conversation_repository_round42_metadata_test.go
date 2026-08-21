@@ -60,7 +60,7 @@ func TestRound42_ConversationRepository_EnsureUserConversationStateModel_Bootstr
 			state.PreviewStatusID == "status-3" &&
 			state.SortAt.Equal(updatedAt)
 	})).Return(createQuery).Once()
-	createQuery.On("Create").Return(nil).Once()
+	createQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	state, err := repo.ensureUserConversationStateModel(ctx, "Arch", "conv-3")
@@ -208,7 +208,7 @@ func TestRound42_ConversationRepository_PutUserConversationState_CreatesCanonica
 			candidate.ConversationID == "conv-put" &&
 			candidate.CounterpartID == "medic"
 	})).Return(createQuery).Once()
-	createQuery.On("Create").Return(nil).Once()
+	createQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	require.NoError(t, repo.PutUserConversationState(ctx, state))
@@ -534,7 +534,7 @@ func TestRound42_ConversationRepository_InitializeUserConversationStates_Preserv
 			state.CreatedAt.Equal(existingCreatedAt) &&
 			state.UpdatedAt.Equal(updatedAt)
 	})).Return(createBob).Once()
-	createBob.On("Create").Return(nil).Once()
+	createBob.On("CreateOrUpdate").Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	require.NoError(t, repo.initializeUserConversationStates(ctx, conversation))

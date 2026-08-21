@@ -73,6 +73,42 @@ func NewAppTheoryPrincipalHookFromAuthAndOAuthServices(authService *AuthService,
 	return resolver.Resolve
 }
 
+// NewAppTheorySecurePrincipalResolverFromAuthService builds the application-owned
+// principal resolver used by AppTheory SecureApp route gates.
+func NewAppTheorySecurePrincipalResolverFromAuthService(authService *AuthService, logger *zap.Logger, serviceName string) apptheory.SecurePrincipalResolver {
+	if authService == nil {
+		return nil
+	}
+
+	resolver := newAppTheoryPrincipalResolver(func(token string) (*Claims, error) {
+		return authService.ValidateAccessToken(token)
+	}, logger, serviceName)
+
+	return resolver.ResolveSecure
+}
+
+// NewAppTheorySecurePrincipalResolverFromOAuthService builds the application-owned
+// principal resolver used by AppTheory SecureApp route gates.
+func NewAppTheorySecurePrincipalResolverFromOAuthService(oauthService *OAuthService, logger *zap.Logger, serviceName string) apptheory.SecurePrincipalResolver {
+	if oauthService == nil {
+		return nil
+	}
+
+	resolver := newAppTheoryPrincipalResolver(oauthService.ValidateAccessToken, logger, serviceName)
+	return resolver.ResolveSecure
+}
+
+// NewAppTheorySecurePrincipalResolverFromAuthAndOAuthServices accepts both native
+// session tokens and OAuth access tokens on the same SecureApp surface.
+func NewAppTheorySecurePrincipalResolverFromAuthAndOAuthServices(authService *AuthService, oauthService *OAuthService, logger *zap.Logger, serviceName string) apptheory.SecurePrincipalResolver {
+	resolver := newCompositeAppTheoryPrincipalResolver(authService, oauthService, logger, serviceName)
+	if resolver == nil {
+		return nil
+	}
+
+	return resolver.ResolveSecure
+}
+
 // CreatePrincipalContextBridgeFromAuthService mirrors AuthService-backed principal data into the legacy request context.
 func CreatePrincipalContextBridgeFromAuthService(authService *AuthService, logger *zap.Logger, serviceName string) apptheory.Middleware {
 	if authService == nil {
@@ -213,6 +249,25 @@ func (r *appTheoryPrincipalResolver) Resolve(ctx *apptheory.Context) (*apptheory
 	}
 
 	return PrincipalFromClaims(claims), nil
+}
+
+func (r *appTheoryPrincipalResolver) ResolveSecure(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	// Compatibility decision: Optional() routes preserve Lesser's pre-SecureApp
+	// behavior and downgrade a present-but-invalid bearer token to anonymous.
+	// This is an explicit deviation from SecureApp's recommended strict optional
+	// semantics; changing it would alter the observable behavior of 18 existing
+	// Mastodon/API routes and requires a separately coordinated contract change.
+	principal, err := r.Resolve(ctx)
+	if err != nil || principal == nil {
+		return nil, err
+	}
+
+	return &apptheory.SecurePrincipal{
+		Identity: principal.Identity,
+		Scopes:   append([]string(nil), principal.Scopes...),
+		Claims:   principal.Claims,
+		Kind:     apptheory.PrincipalExternal,
+	}, nil
 }
 
 func (r *appTheoryPrincipalResolver) logDebug(ctx *apptheory.Context, message string, fields ...zap.Field) {

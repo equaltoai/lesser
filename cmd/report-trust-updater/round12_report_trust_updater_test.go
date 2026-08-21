@@ -46,7 +46,7 @@ func TestReportTrustService_UpdateReporterTrustOnDecision_Round12(t *testing.T) 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 
 	var createdRel *models.TrustRelationship
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe().Run(func(args mock.Arguments) {

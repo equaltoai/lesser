@@ -85,7 +85,7 @@ func (r *PublicKeyCacheRepository) GetByActorURL(ctx context.Context, actorURL s
 func (r *PublicKeyCacheRepository) Store(ctx context.Context, actorURL, keyID, publicKeyPEM, algorithm string) (*models.PublicKeyCache, error) {
 	cache := models.NewPublicKeyCache(actorURL, keyID, publicKeyPEM, algorithm)
 
-	err := r.ValidateAndCreate(ctx, cache)
+	err := r.ValidateAndCreateOrUpdate(ctx, cache)
 	if err != nil {
 		r.logger.Error("failed to store public key cache",
 			zap.Error(err),

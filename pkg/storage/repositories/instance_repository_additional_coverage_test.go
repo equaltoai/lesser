@@ -110,6 +110,7 @@ func TestInstanceRepository_RulesAndDescriptions_SanitizeAndFilter(t *testing.T)
 	}).Return(nil).Maybe()
 
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 
 	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
 
@@ -185,6 +186,7 @@ func TestInstanceRepository_MetricsAndHistory_Sweep(t *testing.T) {
 	}).Return(nil).Maybe()
 
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Update", mock.Anything).Return(nil).Maybe()
 
 	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
@@ -465,7 +467,7 @@ func TestInstanceRepository_SetExtendedDescription_CreateFailure(t *testing.T) {
 
 	db.On("WithContext", mock.Anything).Return(db)
 	db.On("Model", mock.Anything).Return(q)
-	q.On("Create").Return(fmt.Errorf("create failed"))
+	q.On("CreateOrUpdate").Return(fmt.Errorf("create failed"))
 
 	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
 	assert.Error(t, repo.SetExtendedDescription(ctx, "desc"))
@@ -679,7 +681,7 @@ func TestInstanceRepository_SetInstanceRules_CreateFailureReturnsError(t *testin
 
 	db.On("WithContext", mock.Anything).Return(db).Maybe()
 	db.On("Model", mock.Anything).Return(q).Maybe()
-	q.On("Create").Return(fmt.Errorf("create failed")).Once()
+	q.On("CreateOrUpdate").Return(fmt.Errorf("create failed")).Once()
 
 	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
 	assert.Error(t, repo.SetInstanceRules(ctx, []storage.InstanceRule{{Text: "rule"}}))

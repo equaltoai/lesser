@@ -55,6 +55,21 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 	payload, err := os.ReadFile(fixturePath)
 	require.NoError(t, err)
 
+	t.Run("secure resolver classifies only the instance key as internal", func(t *testing.T) {
+		missing := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", nil, nil, payload)
+		principal, resolveErr := h.ResolveNotificationDeliveryPrincipal(missing)
+		require.NoError(t, resolveErr)
+		require.Nil(t, principal)
+
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		valid := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, payload)
+		principal, resolveErr = h.ResolveNotificationDeliveryPrincipal(valid)
+		require.NoError(t, resolveErr)
+		require.NotNil(t, principal)
+		require.Equal(t, "lesser-host-notification-delivery", principal.Identity)
+		require.Equal(t, "internal", string(principal.Kind))
+	})
+
 	t.Run("missing auth is rejected", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", nil, nil, payload)
 		requireStatus(t, http.StatusUnauthorized)(h.HandleDeliverNotificationLift(ctx))

@@ -23,7 +23,7 @@ func TestThreadRepository_ext_error_branches(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(fmt.Errorf("boom")).Once()
+		mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("boom")).Once()
 
 		repo := repositories.NewThreadRepository(mockDB, zap.NewNop())
 		assert.Error(t, repo.SaveThreadSync(ctx, models.NewThreadSync("s1")))
@@ -49,7 +49,7 @@ func TestThreadRepository_ext_error_branches(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(fmt.Errorf("boom")).Once()
+		mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("boom")).Once()
 
 		repo := repositories.NewThreadRepository(mockDB, zap.NewNop())
 		assert.Error(t, repo.SaveThreadNode(ctx, models.NewThreadNode("root", "n1", "", 0, "a1")))
@@ -118,7 +118,7 @@ func TestThreadRepository_ext_error_branches(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(fmt.Errorf("boom")).Once()
+		mockQuery.On("CreateOrUpdate").Return(fmt.Errorf("boom")).Once()
 
 		repo := repositories.NewThreadRepository(mockDB, zap.NewNop())
 		assert.Error(t, repo.SaveMissingReply(ctx, models.NewMissingReply("root", "p1", "r1")))

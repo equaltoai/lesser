@@ -23,7 +23,7 @@ func TestCacheService_CacheUser_Round24(t *testing.T) {
 		require.True(t, ok)
 		captured = u
 	}).Once()
-	query.On("Create").Return(nil).Once()
+	query.On("CreateOrUpdate").Return(nil).Once()
 
 	cs := NewCacheService(db, zap.NewNop())
 	require.NoError(t, cs.CacheUser(context.Background(), "user-1", &models.User{Username: "alice"}))

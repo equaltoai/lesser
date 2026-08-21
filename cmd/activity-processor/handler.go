@@ -4,12 +4,14 @@ package main
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -603,7 +605,9 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 	}
 
 	// Store the status/object
-	if err := h.ObjectRepo.CreateObject(ctx, note); err != nil {
+	if err := h.ObjectRepo.CreateObject(ctx, note); err != nil &&
+		!dynamormerrors.IsConditionFailed(err) &&
+		!stdErrors.Is(err, storage.ErrAlreadyExists) {
 		h.Logger.Error("failed to store Note object",
 			zap.Error(err),
 			zap.String("status_id", status.StatusID))
@@ -1061,7 +1065,7 @@ func (h *ActivityHandler) processDeleteActivity(ctx context.Context, activity *a
 	}
 
 	// Create the tombstone (this will replace the original object)
-	if err := h.DB.WithContext(ctx).Model(tombstone).Create(); err != nil {
+	if err := h.DB.WithContext(ctx).Model(tombstone).CreateOrUpdate(); err != nil {
 		h.Logger.Error("Failed to create tombstone",
 			zap.String("object_id", objectID),
 			zap.String("activity_id", activity.ID),

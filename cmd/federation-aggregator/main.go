@@ -357,15 +357,10 @@ func (p *FederationAggregatorProcessor) handleAggregationEvent(ctx context.Conte
 
 // storeAggregation stores federation aggregation data
 func (p *FederationAggregatorProcessor) storeAggregation(_ context.Context, agg *FederationAggregation) error {
-	// Store using DynamORM directly since no specific interface method exists
-	err := p.db.Model(agg).Create()
-	if err != nil {
-		// Try update if create fails (aggregation might already exist)
-		agg.UpdatedAt = time.Now()
-		err = p.db.Model(agg).Update()
-		if err != nil {
-			return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to store aggregation")
-		}
+	// Aggregation windows have deterministic keys and are recomputed by
+	// retryable workers, so a replay refreshes the whole snapshot.
+	if err := p.db.Model(agg).CreateOrUpdate(); err != nil {
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to store aggregation")
 	}
 	return nil
 }

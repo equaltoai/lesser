@@ -24,7 +24,7 @@ func TestUserRepository_GetTrustScore_CalculatesWithPropagationAndCaches(t *test
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 	mockQuery.On("Cursor", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	actorA := "actorA"
 	actorB := "actorB"
@@ -126,7 +126,7 @@ func TestUserRepository_GetTrustScore_CacheWriteFailureReturnsCalculatedScore(t 
 		*dest = nil
 	}).Return(nil)
 	// Cache write fails.
-	mockQuery.On("Create").Return(ErrTestMockError)
+	mockQuery.On("CreateOrUpdate").Return(ErrTestMockError)
 
 	score, err := repo.GetTrustScore(context.Background(), "actorA", "general")
 	assert.NoError(t, err)

@@ -422,9 +422,10 @@ func inferAuthSurfaceGuardExpr(expr ast.Expr) authSurfaceGuard {
 
 func authSurfaceGuardToken(name string) authSurfaceGuard {
 	switch {
-	case name == "optionalAuth" || name == "OptionalAuth":
+	case name == "optionalAuth" || name == "OptionalAuth" || name == "Optional":
 		return authSurfaceGuardOptional
-	case strings.HasPrefix(name, "require") || strings.HasPrefix(name, "Require"):
+	case name == "Authenticated" || name == "InternalOnly" ||
+		strings.HasPrefix(name, "require") || strings.HasPrefix(name, "Require"):
 		return authSurfaceGuardRequired
 	default:
 		return authSurfaceGuardNone

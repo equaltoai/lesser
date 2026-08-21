@@ -447,7 +447,7 @@ func (rt *RelationshipTracker) getOrCreateAggregate(ctx context.Context, instanc
 func (rt *RelationshipTracker) saveRelationship(ctx context.Context, rel *models.FederationRelationship) error {
 	rel.UpdateKeys()
 
-	err := rt.db.WithContext(ctx).Model(rel).Create()
+	err := rt.db.WithContext(ctx).Model(rel).CreateOrUpdate()
 	if err != nil {
 		rt.logger.Error("Failed to save relationship",
 			zap.String("rel_id", rel.ID),
@@ -470,7 +470,7 @@ func (rt *RelationshipTracker) saveRelationship(ctx context.Context, rel *models
 func (rt *RelationshipTracker) saveAggregate(ctx context.Context, agg *models.FederationRelationshipAggregate) error {
 	agg.UpdateKeys()
 
-	err := rt.db.WithContext(ctx).Model(agg).Create()
+	err := rt.db.WithContext(ctx).Model(agg).CreateOrUpdate()
 	if err != nil {
 		rt.logger.Error("Failed to save aggregate",
 			zap.String("instance_domain", agg.InstanceDomain),
@@ -603,7 +603,7 @@ func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) 
 		index.UpdateKeys()
 
 		// Save index and delete full record
-		if err := rt.db.WithContext(ctx).Model(index).Create(); err != nil {
+		if err := rt.db.WithContext(ctx).Model(index).CreateOrUpdate(); err != nil {
 			rt.logger.Error("Failed to create relationship index",
 				zap.String("rel_id", rel.ID),
 				zap.Error(err))

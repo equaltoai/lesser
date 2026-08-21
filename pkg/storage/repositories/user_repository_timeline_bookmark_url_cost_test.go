@@ -133,7 +133,7 @@ func TestUserRepository_CacheRemoteActor_Stores(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.RemoteActor")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	err := repo.CacheRemoteActor(
 		context.Background(),

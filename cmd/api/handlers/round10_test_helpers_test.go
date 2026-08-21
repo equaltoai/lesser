@@ -140,16 +140,17 @@ type round10QueryState struct {
 	notFoundPKSK   map[string]bool
 	notFoundGSI3PK map[string]bool
 
-	allErrorOnce         error
-	allErrorByType       map[string]error
-	scanErrorOnce        error
-	firstErrorOnce       error
-	firstErrorByType     map[string]error
-	updateErrorOnce      error
-	createErrorOnce      error
-	deleteErrorOnce      error
-	executeErrorOnce     error
-	transactionErrorOnce error
+	allErrorOnce            error
+	allErrorByType          map[string]error
+	scanErrorOnce           error
+	firstErrorOnce          error
+	firstErrorByType        map[string]error
+	updateErrorOnce         error
+	createErrorOnce         error
+	createOrUpdateErrorOnce error
+	deleteErrorOnce         error
+	executeErrorOnce        error
+	transactionErrorOnce    error
 
 	firstErrorPK     map[string]error
 	firstErrorGSI3PK map[string]error
@@ -1153,6 +1154,10 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	if state.createErrorOnce != nil {
 		mockQuery.On("Create").Return(state.createErrorOnce).Once()
 	}
+	if state.createOrUpdateErrorOnce != nil {
+		mockQuery.On("CreateOrUpdate").Return(state.createOrUpdateErrorOnce).Once()
+	}
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Create").Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
 		case *storagemodels.User:

@@ -13,7 +13,7 @@ import (
 func TestRound12_ZeroCoverageTargets(t *testing.T) {
 	require.NotNil(t, failedToConvertStatus())
 
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 	RegisterHealthRoutes(app, nil, zap.NewNop())
 
 	h := &Handler{

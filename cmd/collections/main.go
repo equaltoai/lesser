@@ -142,11 +142,11 @@ func NewCollectionsHandler() *CollectionsHandler {
 }
 
 // RegisterRoutes registers all collections routes
-func (ch *CollectionsHandler) RegisterRoutes(app *apptheory.App) {
+func (ch *CollectionsHandler) RegisterRoutes(app *apptheory.SecureApp) {
 	// ActivityPub federation collection endpoints
-	_ = app.Get("/users/:username/followers", ch.handleFollowersCollection)
-	_ = app.Get("/users/:username/following", ch.handleFollowingCollection)
-	_ = app.Get("/users/:username/liked", ch.handleLikedCollection)
+	_ = app.Get("/users/:username/followers", ch.handleFollowersCollection, apptheory.Public())
+	_ = app.Get("/users/:username/following", ch.handleFollowingCollection, apptheory.Public())
+	_ = app.Get("/users/:username/liked", ch.handleLikedCollection, apptheory.Public())
 }
 
 // handleFollowersCollection handles the followers collection endpoint
@@ -773,9 +773,10 @@ func runCollections() {
 	})
 }
 
-func buildApp(_ *CollectionsHandler, lambdaLogger *zap.Logger) *apptheory.App {
-	app := apptheory.New(
-		apptheory.WithCORS(apptheory.CORSConfig{
+func buildApp(_ *CollectionsHandler, lambdaLogger *zap.Logger) *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier: apptheory.TierP2,
+		CORS: apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
 			AllowCredentials: false,
 			AllowHeaders: []string{
@@ -786,12 +787,12 @@ func buildApp(_ *CollectionsHandler, lambdaLogger *zap.Logger) *apptheory.App {
 				"Date",
 				"Digest",
 			},
-		}),
-		apptheory.WithLimits(apptheory.Limits{
+		},
+		Limits: apptheory.Limits{
 			MaxRequestBytes:  1024 * 1024,
 			MaxResponseBytes: 0,
-		}),
-	)
+		},
+	})
 
 	// Panic recovery middleware (MUST be first to catch all panics).
 	app.Use(collectionsPanicRecovery(lambdaLogger))

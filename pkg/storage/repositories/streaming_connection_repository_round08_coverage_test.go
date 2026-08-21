@@ -125,7 +125,7 @@ func TestStreamingConnectionRepository_Round08_SubscriptionsAndQueries(t *testin
 
 		mockSubDB.On("WithContext", mock.Anything).Return(mockSubDB).Once()
 		mockSubDB.On("Model", mock.Anything).Return(mockSubQuery).Once()
-		mockSubQuery.On("Create").Return(assert.AnError).Once()
+		mockSubQuery.On("CreateOrUpdate").Return(assert.AnError).Once()
 
 		repo := NewStreamingConnectionRepository(nil, "table", mockSubDB, "subs", zap.NewNop(), nil)
 		repo.SetValidationService(nil)
@@ -700,7 +700,7 @@ func TestStreamingConnectionRepository_Round08_Sweep(t *testing.T) {
 	mockSubQuery.On("Limit", mock.Anything).Return(mockSubQuery).Maybe()
 	mockSubQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockSubQuery).Maybe()
 	mockSubQuery.On("Cursor", mock.Anything).Return(mockSubQuery).Maybe()
-	mockSubQuery.On("Create").Return(nil).Maybe()
+	mockSubQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockSubQuery.On("Delete").Return(nil).Maybe()
 
 	mockSubQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {

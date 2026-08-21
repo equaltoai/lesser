@@ -21,7 +21,7 @@ func TestWebFingerStrictRouteInventoryParity_Round13(t *testing.T) {
 	require.Equal(t, artifact, webfingerRouteInventory())
 
 	hits := 0
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 	require.NoError(t, registerWebFingerRoutes(app, func(*apptheory.Context) (*apptheory.Response, error) {
 		hits++
 		return &apptheory.Response{Status: http.StatusNoContent}, nil

@@ -24,8 +24,8 @@ func TestWebAuthnService_DeleteCredential_ClassifiesGuardedRemovalFailuresFromPo
 			err:  guardedRemovalTransactionError(dynamormerrors.ErrConditionFailed, "delete", 0, "ConditionalCheckFailed"),
 		},
 		{
-			name: "transaction_failed",
-			err:  guardedRemovalTransactionError(dynamormerrors.ErrTransactionFailed, "delete", 0, "TransactionConflict"),
+			name: "transaction_conflict",
+			err:  guardedRemovalTransactionError(dynamormerrors.ErrTransactionConflict, "delete", 0, "TransactionConflict"),
 		},
 	} {
 		txFailure := txFailure
@@ -110,8 +110,8 @@ func TestWalletService_UnlinkWallet_ClassifiesGuardedRemovalFailuresFromPostStat
 			err:  guardedRemovalTransactionError(dynamormerrors.ErrConditionFailed, "delete", 0, "ConditionalCheckFailed"),
 		},
 		{
-			name: "transaction_failed",
-			err:  guardedRemovalTransactionError(dynamormerrors.ErrTransactionFailed, "delete", 0, "TransactionConflict"),
+			name: "transaction_conflict",
+			err:  guardedRemovalTransactionError(dynamormerrors.ErrTransactionConflict, "delete", 0, "TransactionConflict"),
 		},
 	} {
 		txFailure := txFailure
@@ -189,7 +189,7 @@ func TestWebAuthnService_DeleteCredential_RereadFailureReturns500(t *testing.T) 
 	repo.credentialsByUsername["alice"] = []*storage.WebAuthnCredential{target}
 	repo.credentialsByID[target.ID] = target
 	repo.deleteConditionedFunc = func(context.Context, string, string, string, string) error {
-		return guardedRemovalTransactionError(dynamormerrors.ErrTransactionFailed, "delete", 0, "TransactionConflict")
+		return guardedRemovalTransactionError(dynamormerrors.ErrTransactionConflict, "delete", 0, "TransactionConflict")
 	}
 
 	lookupErr := errors.New("lookup failed")
@@ -216,7 +216,7 @@ func TestClassifyGuardedWebAuthnRemovalFailure_DirectBranches(t *testing.T) {
 		repo,
 		"alice",
 		target.ID,
-		guardedRemovalTransactionError(dynamormerrors.ErrTransactionFailed, "delete", 0, "TransactionConflict"),
+		guardedRemovalTransactionError(dynamormerrors.ErrTransactionConflict, "delete", 0, "TransactionConflict"),
 	), ErrCredentialNotFound)
 
 	repo.credentialsByID[target.ID] = &storage.WebAuthnCredential{ID: target.ID, UserID: "alice", PublicKey: []byte("pk")}
@@ -226,7 +226,7 @@ func TestClassifyGuardedWebAuthnRemovalFailure_DirectBranches(t *testing.T) {
 		&webAuthnRepoGetWalletErr{inMemoryWebAuthnRepo: repo, err: inventoryErr},
 		"alice",
 		target.ID,
-		guardedRemovalTransactionError(dynamormerrors.ErrTransactionFailed, "delete", 0, "TransactionConflict"),
+		guardedRemovalTransactionError(dynamormerrors.ErrTransactionConflict, "delete", 0, "TransactionConflict"),
 	), inventoryErr)
 }
 
@@ -260,7 +260,7 @@ func TestClassifyGuardedWalletRemovalFailure_DirectBranches(t *testing.T) {
 		&walletRepoGetCredentialErr{inMemoryWalletRepo: repo, err: lookupErr},
 		"alice",
 		"0xabc",
-		guardedRemovalTransactionError(dynamormerrors.ErrTransactionFailed, "delete", 0, "TransactionConflict"),
+		guardedRemovalTransactionError(dynamormerrors.ErrTransactionConflict, "delete", 0, "TransactionConflict"),
 	), lookupErr)
 
 	repo.walletsByAddr["0xabc"] = &storage.WalletCredential{Username: "bob", Address: "0xabc", Type: "ethereum", ChainID: 1}
@@ -270,7 +270,7 @@ func TestClassifyGuardedWalletRemovalFailure_DirectBranches(t *testing.T) {
 		repo,
 		"alice",
 		"0xabc",
-		guardedRemovalTransactionError(dynamormerrors.ErrTransactionFailed, "delete", 0, "TransactionConflict"),
+		guardedRemovalTransactionError(dynamormerrors.ErrTransactionConflict, "delete", 0, "TransactionConflict"),
 	)))
 
 	repo.walletsByAddr["0xabc"] = &storage.WalletCredential{Username: "alice", Address: "0xabc", Type: "ethereum", ChainID: 1}
@@ -281,7 +281,7 @@ func TestClassifyGuardedWalletRemovalFailure_DirectBranches(t *testing.T) {
 		&walletRepoGetPasskeysErr{inMemoryWalletRepo: repo, err: passkeyErr},
 		"alice",
 		"0xabc",
-		guardedRemovalTransactionError(dynamormerrors.ErrTransactionFailed, "delete", 0, "TransactionConflict"),
+		guardedRemovalTransactionError(dynamormerrors.ErrTransactionConflict, "delete", 0, "TransactionConflict"),
 	), passkeyErr)
 }
 

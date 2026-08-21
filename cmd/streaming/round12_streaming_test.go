@@ -41,6 +41,7 @@ type fakeConnectionRepo struct {
 	writeConnectionErr error
 	getConnectionResp  *models.WebSocketConnection
 	getConnectionErr   error
+	getConnectionCalls int
 
 	updatedConnections  []*models.WebSocketConnection
 	updateConnectionErr error
@@ -90,6 +91,7 @@ func (f *fakeConnectionRepo) DeleteAllSubscriptions(_ context.Context, _ string)
 }
 
 func (f *fakeConnectionRepo) GetConnection(_ context.Context, _ string) (*models.WebSocketConnection, error) {
+	f.getConnectionCalls++
 	if f.getConnectionErr != nil {
 		return nil, f.getConnectionErr
 	}
@@ -726,16 +728,21 @@ func TestWebSocketDefault_InitializesClientAndRespondsToPing(t *testing.T) {
 		return ws, nil
 	}
 
+	connRepo := &fakeConnectionRepo{getConnectionResp: &models.WebSocketConnection{ConnectionID: "c1", Username: "alice"}}
 	sh := &StreamingHandler{
-		connectionRepo: &fakeConnectionRepo{},
+		connectionRepo: connRepo,
 		costTracker:    &fakeCostTracker{},
 		logger:         zap.NewNop(),
 		cfg:            &config.Config{JWTSecret: "secret"},
 		awsConfig:      aws.Config{Region: "us-east-1"},
 	}
 
-	app := apptheory.New()
-	app.WebSocket("$default", sh.HandleWebSocketDefault)
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier:              apptheory.TierP2,
+		PrincipalResolver: sh.resolveWebSocketPrincipal,
+		WebSocketSupport:  true,
+	})
+	app.WebSocket("$default", sh.HandleWebSocketDefault, apptheory.Optional())
 
 	resp := app.ServeWebSocket(context.Background(), events.APIGatewayWebsocketProxyRequest{
 		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
@@ -752,6 +759,7 @@ func TestWebSocketDefault_InitializesClientAndRespondsToPing(t *testing.T) {
 	require.NotEmpty(t, ws.posts)
 	require.Equal(t, "c1", ws.posts[0].connectionID)
 	require.Contains(t, string(ws.posts[0].data), `"type":"pong"`)
+	require.Equal(t, 1, connRepo.getConnectionCalls, "the gate-loaded connection is reused by the frame handler")
 }
 
 func TestInitializeStreaming_SuccessAndErrors(t *testing.T) {
@@ -1203,8 +1211,12 @@ func TestWebSocketDefault_Returns500WhenClientInitFails(t *testing.T) {
 		awsConfig:   aws.Config{Region: "us-east-1"},
 	}
 
-	app := apptheory.New()
-	app.WebSocket("$default", sh.HandleWebSocketDefault)
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier:              apptheory.TierP2,
+		PrincipalResolver: sh.resolveWebSocketPrincipal,
+		WebSocketSupport:  true,
+	})
+	app.WebSocket("$default", sh.HandleWebSocketDefault, apptheory.Optional())
 
 	resp := app.ServeWebSocket(context.Background(), events.APIGatewayWebsocketProxyRequest{
 		RequestContext: events.APIGatewayWebsocketProxyRequestContext{

@@ -528,14 +528,8 @@ func (r *EnhancedPatternRepository) SetPatternCache(ctx context.Context, cache *
 
 	_ = cache.UpdateKeys() // Ignore error as this is internal model operation
 
-	err := r.db.WithContext(ctx).Model(cache).Create()
-	if err != nil {
-		// Try update if create fails (cache entry might exist)
-		cache.UpdatedAt = now
-		err = r.db.WithContext(ctx).Model(cache).Update()
-		if err != nil {
-			return fmt.Errorf("%w: %w", storage.ErrPatternCacheUpdateFailed, err)
-		}
+	if err := r.db.WithContext(ctx).Model(cache).CreateOrUpdate(); err != nil {
+		return fmt.Errorf("%w: %w", storage.ErrPatternCacheUpdateFailed, err)
 	}
 
 	return nil

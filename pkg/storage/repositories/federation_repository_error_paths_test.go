@@ -46,7 +46,7 @@ func TestFederationRepository_AcknowledgeSeverance_NotFoundAndUpdateError(t *tes
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -97,7 +97,7 @@ func TestFederationRepository_AttemptReconnection_CreateErrors(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.On("Create").Return(nil).Once()
-		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -352,7 +352,7 @@ func TestFederationRepository_CreateErrors_NodeEdgeMetadata(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -364,7 +364,7 @@ func TestFederationRepository_CreateErrors_NodeEdgeMetadata(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -376,7 +376,7 @@ func TestFederationRepository_CreateErrors_NodeEdgeMetadata(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -393,7 +393,7 @@ func TestFederationRepository_CreateErrors_TimeSeriesAndMetrics(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -405,7 +405,7 @@ func TestFederationRepository_CreateErrors_TimeSeriesAndMetrics(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -883,7 +883,7 @@ func TestFederationRepository_RetryDelivery_CreateError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Create").Return(ErrTestMockError).Once()
+	mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})

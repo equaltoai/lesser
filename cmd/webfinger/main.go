@@ -79,15 +79,18 @@ func webfingerRouteInventory() []webfingerRouteInventoryEntry {
 }
 
 // RegisterRoutes registers all webfinger routes.
-func (wh *WebFingerHandler) RegisterRoutes(app *apptheory.App) error {
+func (wh *WebFingerHandler) RegisterRoutes(app *apptheory.SecureApp) error {
 	return registerWebFingerRoutes(app, wh.handleWebFinger)
 }
 
-func registerWebFingerRoutes(app *apptheory.App, handler apptheory.Handler) error {
+func registerWebFingerRoutes(app *apptheory.SecureApp, handler apptheory.Handler) error {
+	if app == nil {
+		return nil
+	}
 	for _, route := range webfingerRouteInventory() {
 		switch route.Method {
 		case http.MethodGet:
-			app.Get(route.Path, handler)
+			app.Get(route.Path, handler, apptheory.Public())
 		default:
 			return fmt.Errorf("unsupported webfinger route method %q for %s", route.Method, route.Path)
 		}
@@ -348,9 +351,10 @@ func runWebFinger(handler *WebFingerHandler, lambdaCtx *common.LambdaContext) {
 	})
 }
 
-func buildApp(handler *WebFingerHandler, lambdaLogger *zap.Logger) *apptheory.App {
-	app := apptheory.New(
-		apptheory.WithCORS(apptheory.CORSConfig{
+func buildApp(handler *WebFingerHandler, lambdaLogger *zap.Logger) *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier: apptheory.TierP2,
+		CORS: apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
 			AllowCredentials: false,
 			AllowHeaders: []string{
@@ -364,12 +368,12 @@ func buildApp(handler *WebFingerHandler, lambdaLogger *zap.Logger) *apptheory.Ap
 				"X-Forwarded-For",
 				"X-Forwarded-Proto",
 			},
-		}),
-		apptheory.WithLimits(apptheory.Limits{
+		},
+		Limits: apptheory.Limits{
 			MaxRequestBytes:  64 * 1024,
 			MaxResponseBytes: 0,
-		}),
-	)
+		},
+	})
 
 	// Panic recovery middleware (MUST be first to catch all panics).
 	app.Use(webfingerPanicRecovery(lambdaLogger))

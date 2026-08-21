@@ -379,29 +379,15 @@ func (r *AccountRepository) CacheRemoteActor(ctx context.Context, actor *activit
 	// Set domain for GSI3 (domain-based queries)
 	actorModel.GSI3PK = fmt.Sprintf("DOMAIN#%s", domain)
 	actorModel.GSI3SK = username
+	if err := actorModel.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityActor, webfinger)
+	}
 
-	// Create or update
-	err := r.db.WithContext(ctx).Model(actorModel).Create()
-	if err != nil {
-		if errors.IsConditionFailed(err) {
-			// Update existing
-			var existingActor models.Actor
-			err = r.db.WithContext(ctx).Model(&existingActor).
-				Where("PK", "=", fmt.Sprintf("ACTOR#%s", webfinger)).
-				Where("SK", "=", "PROFILE").
-				First(&existingActor)
-			if err == nil {
-				existingActor.Actor = actor
-				existingActor.UpdatedAt = time.Now()
-				err = r.db.WithContext(ctx).Model(&existingActor).Update()
-			}
-		}
-		if err != nil {
-			r.logger.Error("failed to cache remote actor",
-				zap.String("webfinger", webfinger),
-				zap.Error(err))
-			return ErrorHandler.HandleUpdateError(err, EntityActor, webfinger)
-		}
+	if err := r.db.WithContext(ctx).Model(actorModel).CreateOrUpdate(); err != nil {
+		r.logger.Error("failed to cache remote actor",
+			zap.String("webfinger", webfinger),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityActor, webfinger)
 	}
 
 	return nil

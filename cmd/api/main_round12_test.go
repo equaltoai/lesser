@@ -230,7 +230,7 @@ func TestConfigureHealthRoutesRound12(t *testing.T) {
 
 	repos = newMainTestRepos(t)
 
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 	configureHealthRoutes(app)
 
 	call := func(path string) apptheory.Response {
@@ -567,17 +567,17 @@ func TestBuildApp_APIAuthRouteMatrix(t *testing.T) {
 	createInstanceLockMiddlewareFn = func(_ storagecore.RepositoryStorage, _ *zap.Logger) apptheory.Middleware {
 		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
-	configureRoutesFn = func(app *apptheory.App) {
+	configureRoutesFn = func(app *apptheory.SecureApp) {
 		app.Get("/protected", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			return apptheory.JSON(http.StatusOK, map[string]string{
 				"username": auth.UsernameFromAppTheoryContext(ctx),
 			})
-		}, apptheory.RequireScope(auth.ScopeRead))
+		}, apptheory.Authenticated(auth.ScopeRead))
 		app.Get("/optional", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			return apptheory.JSON(http.StatusOK, map[string]string{
 				"username": auth.UsernameFromAppTheoryContext(ctx),
 			})
-		}, apptheory.OptionalAuth())
+		}, apptheory.Optional())
 	}
 
 	now := time.Now().UTC()
@@ -740,10 +740,10 @@ func TestMainRound12(t *testing.T) {
 	createInstanceLockMiddlewareFn = func(_ storagecore.RepositoryStorage, _ *zap.Logger) apptheory.Middleware {
 		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
-	configureRoutesFn = func(app *apptheory.App) {
+	configureRoutesFn = func(app *apptheory.SecureApp) {
 		app.Get("/api/v1/instance", func(*apptheory.Context) (*apptheory.Response, error) {
 			return apptheory.JSON(200, map[string]string{"ok": "true"})
-		})
+		}, apptheory.Public())
 	}
 
 	var captured any
