@@ -113,7 +113,7 @@ func (m *Migrator) recordMigrationHistory(_ context.Context, migration Migration
 
 	history.PK, history.SK = history.GetTableKeys()
 
-	return m.db.Model(history).Create()
+	return m.db.Model(history).CreateOrUpdate()
 }
 
 // calculateChecksum calculates a checksum for a migration

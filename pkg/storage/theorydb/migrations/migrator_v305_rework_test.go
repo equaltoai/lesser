@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	tabletheory "github.com/theory-cloud/tabletheory/v3"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"github.com/theory-cloud/tabletheory/v3/pkg/session"
 	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
 	"go.uber.org/zap"
@@ -17,7 +18,12 @@ import (
 func newRollbackReworkMigrator(t *testing.T, downErr, historyErr error) (*Migrator, *mockMigration) {
 	t.Helper()
 
-	db, query := newMigratorTestDB()
+	db := new(dynamormMocks.MockDB)
+	query := new(dynamormMocks.MockQuery)
+	db.On("Model", mock.Anything).Return(query).Maybe()
+	query.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
+	query.On("OrderBy", mock.Anything, mock.Anything).Return(query).Maybe()
+	query.On("Limit", mock.Anything).Return(query).Maybe()
 	query.On("Create").Return(nil).Once()
 	query.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		destination := args.Get(0).(*[]MigrationHistory)
@@ -27,7 +33,7 @@ func newRollbackReworkMigrator(t *testing.T, downErr, historyErr error) (*Migrat
 			Status:  migrationStatusApplied,
 		}}
 	}).Return(nil).Once()
-	query.On("Create").Return(historyErr).Once()
+	query.On("CreateOrUpdate").Return(historyErr).Once()
 	query.On("Delete").Return(nil).Once()
 
 	migration := &mockMigration{
@@ -92,6 +98,54 @@ func TestMigratorUpdateMigrationStatusRegistersAndUpsertsV305(t *testing.T) {
 	require.Equal(t, "migration-2", persisted.LastMigrationID)
 	require.Equal(t, int64(2), persisted.LastVersion)
 	require.False(t, persisted.IsLocked)
+}
+
+func TestMigratorRunThenRollbackPersistsHistoryTransitionsV305(t *testing.T) {
+	fake := fakedb.New()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&MigrationStatus{}))
+	require.NoError(t, db.CreateTable(&MigrationHistory{}))
+
+	migration := &mockMigration{
+		BaseMigration: NewBaseMigration("migration-1", 1, "migration one"),
+	}
+	registry := NewRegistry()
+	registry.MustRegister(migration)
+	migrator := NewMigrator(db, registry, zap.NewNop())
+
+	require.NoError(t, migrator.Run(context.Background()))
+	require.Equal(t, 1, migration.upCalls)
+	require.NoError(t, migrator.Rollback(context.Background()))
+	require.Equal(t, 1, migration.downCalls)
+
+	histories, err := migrator.GetMigrationHistory(context.Background())
+	require.NoError(t, err)
+	require.Len(t, histories, 1, "history transitions must replace the deterministic migration row")
+	require.Equal(t, "rolled_back", histories[0].Status)
+}
+
+func TestGSIHelperReplaysDeterministicMigrationRecordV305(t *testing.T) {
+	fake := fakedb.New()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&GSIMigrationRecord{}))
+
+	helper, err := NewGSIHelper(db, "lesser-test", zap.NewNop())
+	require.NoError(t, err)
+	definition := GSIDefinition{
+		Name:           "GSI7",
+		HashKey:        "gsi7PK",
+		HashKeyType:    "S",
+		ProjectionType: projectionTypeAll,
+	}
+
+	require.NoError(t, helper.CreateGSI(context.Background(), definition))
+	require.NoError(t, helper.CreateGSI(context.Background(), definition))
+
+	items := fake.Items("GSIMigrationRecords")
+	require.Len(t, items, 1, "GSI migration retries must replace the deterministic tracking row")
+	require.Contains(t, items[0], "status")
 }
 
 func TestMigratorRollbackReportsExecutionAndHistoryErrors(t *testing.T) {
