@@ -313,3 +313,13 @@ func TestRepositoryAdapter_HealthAndConfig(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, configs, 1)
 }
+
+func TestRepositoryAdapter_ReplayWritesSurfaceUpsertErrors(t *testing.T) {
+	failure := errors.New("projection upsert failed")
+	q := &adapterFakeQuery{createErr: failure}
+	adapter := NewRepositoryAdapter(&adapterFakeDB{query: q}, zap.NewNop(), nil)
+	ctx := context.Background()
+
+	assert.ErrorIs(t, adapter.UpdateInstanceHealth(ctx, &InstanceHealth{Domain: "remote.example"}), failure)
+	assert.ErrorIs(t, adapter.SaveInstanceConfig(ctx, &InstanceConfig{Domain: "remote.example"}), failure)
+}
