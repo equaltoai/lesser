@@ -87,7 +87,7 @@ type dynamormFederationStorageActivityRepoStub struct {
 	err     error
 }
 
-func (s *dynamormFederationStorageActivityRepoStub) Create(_ context.Context, activity *models.FederationActivity) error {
+func (s *dynamormFederationStorageActivityRepoStub) CreateOrUpdate(_ context.Context, activity *models.FederationActivity) error {
 	s.created = append(s.created, activity)
 	return s.err
 }
@@ -363,4 +363,46 @@ func TestDynamORMFederationStorage_RecordFederationActivity(t *testing.T) {
 	require.Len(t, repo.created, 2)
 	assert.Equal(t, int64(0), repo.created[1].OutboundSize)
 	assert.Equal(t, int64(99), repo.created[1].InboundSize)
+}
+
+func TestDynamORMFederationStorage_RecordFederationActivityRefreshesCollidingMetricsKey(t *testing.T) {
+	ctx := context.Background()
+	fake := fakedb.New()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.FederationActivity{}))
+
+	svc := NewDynamORMFederationStorage(db, models.MainTableName, "example.com", zaptest.NewLogger(t))
+	timestamp := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
+	first := &storage.FederationActivity{
+		Type:         "egress",
+		Domain:       "remote.example",
+		ActivityType: "Create",
+		Success:      true,
+		ByteSize:     10,
+		Timestamp:    timestamp,
+	}
+	second := &storage.FederationActivity{
+		Type:         "egress",
+		Domain:       "remote.example",
+		ActivityType: "Create",
+		Success:      false,
+		ByteSize:     20,
+		ErrorMessage: "latest delivery result",
+		Timestamp:    timestamp,
+	}
+
+	require.NoError(t, svc.RecordFederationActivity(ctx, first))
+	require.NoError(t, svc.RecordFederationActivity(ctx, second),
+		"ID-less delivery metrics in the same second must retain last-write-wins behavior")
+	require.Len(t, fake.Items(models.MainTableName), 1)
+
+	var persisted models.FederationActivity
+	require.NoError(t, db.Model(&models.FederationActivity{}).
+		Where("PK", "=", "fed_activity#remote.example").
+		Where("SK", "=", "activity#20260821120000#").
+		First(&persisted))
+	require.False(t, persisted.Success)
+	require.Equal(t, int64(20), persisted.OutboundSize)
+	require.Equal(t, "latest delivery result", persisted.ErrorMessage)
 }

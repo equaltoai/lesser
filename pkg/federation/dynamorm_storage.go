@@ -34,7 +34,7 @@ type dynamormFederationActorRepository interface {
 }
 
 type dynamormFederationActivityRepository interface {
-	Create(ctx context.Context, activity *models.FederationActivity) error
+	CreateOrUpdate(ctx context.Context, activity *models.FederationActivity) error
 }
 
 type dynamormFederationRelationshipRepository interface {
@@ -175,7 +175,10 @@ func (s *DynamORMFederationStorage) RecordFederationActivity(ctx context.Context
 		modelActivity.InboundSize = activity.ByteSize
 	}
 
-	return s.federationActivityRepository.Create(ctx, modelActivity)
+	// Legacy callers do not consistently provide an activity ID. Their
+	// second-granularity keys can therefore collide during delivery bursts;
+	// preserve the pre-v3.0.5 last-write-wins metrics behavior explicitly.
+	return s.federationActivityRepository.CreateOrUpdate(ctx, modelActivity)
 }
 
 func normalizeFederationCachedActor(handle string, actor *activitypub.Actor) *activitypub.Actor {

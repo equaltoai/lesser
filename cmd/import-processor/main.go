@@ -790,7 +790,7 @@ func (p *ImportProcessor) importLikeActivity(ctx context.Context, event ImportPr
 		event.Username, // statusAuthorID - using the username of the person doing the like
 	)
 
-	return p.repos.Object().CreateObject(ctx, like)
+	return tolerateActivityPubImportReplay(p.repos.Object().CreateObject(ctx, like))
 }
 
 // importAnnounceActivity imports an Announce (boost/share) activity
@@ -809,7 +809,7 @@ func (p *ImportProcessor) importAnnounceActivity(ctx context.Context, event Impo
 		return ErrAnnouncePrepFailed(err)
 	}
 
-	return p.repos.Object().CreateObject(ctx, announce)
+	return tolerateActivityPubImportReplay(p.repos.Object().CreateObject(ctx, announce))
 }
 
 // importObject imports a generic ActivityPub object (Note, Article, etc.)
@@ -1100,7 +1100,7 @@ func (p *ImportProcessor) followAccount(ctx context.Context, username, targetAcc
 	follow := models.NewFollow(username, actorID, fmt.Sprintf("%s/activities/follow-%d", actorID, time.Now().Unix()))
 	follow.State = models.FollowStateAccepted // Import assumes accepted
 
-	if err := p.repos.Object().CreateObject(ctx, follow); err != nil {
+	if err := tolerateActivityPubImportReplay(p.repos.Object().CreateObject(ctx, follow)); err != nil {
 		return ErrFollowRelationshipStore(err)
 	}
 
@@ -1265,6 +1265,16 @@ func (p *ImportProcessor) resolveAccount(_ context.Context, accountAddress strin
 
 	// Construct likely actor ID as fallback
 	return fmt.Sprintf("https://%s/users/%s", domain, username)
+}
+
+// tolerateActivityPubImportReplay keeps archive re-imports idempotent without
+// weakening object uniqueness. Only the repository's existing-key result is
+// accepted; validation, transport, and storage failures still fail the item.
+func tolerateActivityPubImportReplay(err error) error {
+	if repositories.IsRepositoryConflictError(err) {
+		return nil
+	}
+	return err
 }
 
 // Helper functions for status updates

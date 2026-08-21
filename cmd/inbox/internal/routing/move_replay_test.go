@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestInboxMoveReplayAcceptsExistingMigrationAndTombstone(t *testing.T) {
+func TestInboxMoveReplayRefreshesMigrationAndTombstone(t *testing.T) {
 	fake := fakedb.New()
 	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
 	require.NoError(t, err)
@@ -24,15 +24,33 @@ func TestInboxMoveReplayAcceptsExistingMigrationAndTombstone(t *testing.T) {
 	require.NoError(t, err)
 	handler := &InboxHandler{storageAdapter: repos}
 
-	migration := models.NewMove(
+	firstMigration := models.NewMove(
 		"https://remote.example/activities/move-1",
 		"https://remote.example/users/alice",
 		"https://new.example/users/alice",
 	)
-	migration.SetTTL(time.Now().Add(30 * 24 * time.Hour))
-	require.NoError(t, handler.storeMoveMigration(context.Background(), migration))
-	require.NoError(t, handler.storeMoveMigration(context.Background(), migration),
-		"redelivery after the migration write must continue to follower side effects")
+	firstMigration.Published = time.Now().UTC().Add(-24 * time.Hour)
+	firstMigration.SetTTL(time.Now().Add(time.Hour))
+	require.NoError(t, handler.storeMoveMigration(context.Background(), firstMigration))
+
+	secondMigration := models.NewMove(
+		"https://remote.example/activities/move-2",
+		firstMigration.Actor,
+		firstMigration.Target,
+	)
+	secondMigration.Published = firstMigration.Published.Add(24 * time.Hour)
+	secondMigration.SetTTL(time.Now().Add(30 * 24 * time.Hour))
+	require.NoError(t, handler.storeMoveMigration(context.Background(), secondMigration),
+		"a genuine repeat migration to the same target must refresh the retained record")
+
+	var persistedMigration models.Move
+	require.NoError(t, db.Model(&models.Move{}).
+		Where("PK", "=", secondMigration.PK).
+		Where("SK", "=", secondMigration.SK).
+		First(&persistedMigration))
+	require.Equal(t, secondMigration.ID, persistedMigration.ID)
+	require.Equal(t, secondMigration.Published, persistedMigration.Published)
+	require.Equal(t, secondMigration.TTL, persistedMigration.TTL)
 
 	require.NoError(t, handler.createAccountTombstone(
 		context.Background(),
@@ -42,8 +60,15 @@ func TestInboxMoveReplayAcceptsExistingMigrationAndTombstone(t *testing.T) {
 	require.NoError(t, handler.createAccountTombstone(
 		context.Background(),
 		"https://remote.example/users/alice",
-		"https://new.example/users/alice",
-	), "a replayed account tombstone must be idempotent")
+		"https://newer.example/users/alice",
+	), "a later migration must refresh the account tombstone summary")
+
+	var persistedTombstone models.Tombstone
+	require.NoError(t, db.Model(&models.Tombstone{}).
+		Where("PK", "=", "OBJECT#https://remote.example/users/alice").
+		Where("SK", "=", "TOMBSTONE").
+		First(&persistedTombstone))
+	require.Equal(t, "Account moved to https://newer.example/users/alice", persistedTombstone.Summary)
 
 	require.Len(t, fake.Items(models.MainTableName), 2)
 }

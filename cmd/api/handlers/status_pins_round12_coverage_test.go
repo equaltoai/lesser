@@ -116,7 +116,7 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 
 		// storeMuteWithRetry non-already-exists error branch
 		errState := &round10QueryState{
-			createErrorOnce: apperrors.Internal("boom"),
+			createOrUpdateErrorOnce: apperrors.Internal("boom"),
 		}
 		errHandler, _, _ := round11NewHandler(t, cfg, errState)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/x", nil, nil, nil)
@@ -125,15 +125,15 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 
 		// replaceMute delete warning branch (already-exists -> replace, delete fails, create succeeds)
 		retryState := &round10QueryState{
-			createErrorOnce: apperrors.AlreadyExists("conversation mute"),
-			deleteErrorOnce: errors.New("delete failed"),
+			createOrUpdateErrorOnce: apperrors.AlreadyExists("conversation mute"),
+			deleteErrorOnce:         errors.New("delete failed"),
 		}
 		retryHandler, _, _ := round11NewHandler(t, cfg, retryState)
 		require.NoError(t, retryHandler.storeMuteWithRetry(ctx, "alice", "conv", &storage.ConversationMute{Username: "alice", ConversationID: "conv", CreatedAt: time.Now()}))
 
 		// replaceMute create error branch (direct)
 		createFailState := &round10QueryState{
-			createErrorOnce: errors.New("create failed"),
+			createOrUpdateErrorOnce: errors.New("create failed"),
 		}
 		createFailHandler, _, _ := round11NewHandler(t, cfg, createFailState)
 		require.Error(t, createFailHandler.replaceMute(ctx, "alice", "conv", &storage.ConversationMute{Username: "alice", ConversationID: "conv", CreatedAt: time.Now()}))

@@ -4342,11 +4342,10 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 }
 
 func (ih *InboxHandler) storeMoveMigration(ctx context.Context, migration *models.Move) error {
-	err := ih.storageAdapter.GetDB().WithContext(ctx).Model(migration).Create()
-	if dynamormerrors.IsConditionFailed(err) || stdErrors.Is(err, storage.ErrAlreadyExists) {
-		return nil
+	if err := migration.BeforeCreate(); err != nil {
+		return err
 	}
-	return err
+	return ih.storageAdapter.GetDB().WithContext(ctx).Model(migration).CreateOrUpdate()
 }
 
 // Helper functions for Flag activity processing
@@ -4534,13 +4533,12 @@ func (ih *InboxHandler) createAccountTombstone(ctx context.Context, oldAccountID
 		Deleted:    time.Now(),
 		CreatedAt:  time.Now(),
 	}
+	if err := tombstone.BeforeCreate(); err != nil {
+		return err
+	}
 
 	// Store the tombstone
-	err := ih.storageAdapter.GetDB().WithContext(ctx).Model(tombstone).Create()
-	if dynamormerrors.IsConditionFailed(err) || stdErrors.Is(err, storage.ErrAlreadyExists) {
-		return nil
-	}
-	return err
+	return ih.storageAdapter.GetDB().WithContext(ctx).Model(tombstone).CreateOrUpdate()
 }
 
 func (ih *InboxHandler) notifyFollowersOfMove(ctx context.Context, oldAccountID, newAccountID string) error {

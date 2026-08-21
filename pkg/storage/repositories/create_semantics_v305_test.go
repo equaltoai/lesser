@@ -48,6 +48,8 @@ var upsertAuditSites = []upsertAuditSite{
 	{file: "cmd/activity-processor/main.go", function: "updateActivityMetrics", method: "CreateOrUpdate", count: 1},
 	{file: "cmd/activity-processor/main.go", function: "recordMetric", method: "CreateOrUpdate", count: 1},
 	{file: "cmd/federation-aggregator/main.go", function: "storeAggregation", method: "CreateOrUpdate", count: 1},
+	{file: "cmd/inbox/internal/routing/inbox.go", function: "storeMoveMigration", method: "CreateOrUpdate", count: 1},
+	{file: "cmd/inbox/internal/routing/inbox.go", function: "createAccountTombstone", method: "CreateOrUpdate", count: 1},
 	{file: "cmd/report-trust-updater/main.go", function: "UpdateReporterTrustOnDecision", method: "CreateOrUpdate", count: 1},
 	{file: "cmd/search-indexer/main.go", function: "createSearchIndex", method: "CreateOrUpdate", count: 1},
 	{file: "cmd/search-indexer/main.go", function: "createAdditionalIndexes", method: "CreateOrUpdate", count: 2},
@@ -60,6 +62,7 @@ var upsertAuditSites = []upsertAuditSite{
 	{file: "pkg/federation/cost/repository_adapter.go", function: "UpdateInstanceHealth", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/cost/repository_adapter.go", function: "SaveInstanceConfig", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/dynamorm_storage.go", function: "CacheRemoteActor", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/federation/dynamorm_storage.go", function: "RecordFederationActivity", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/relationship_tracker.go", function: "saveRelationship", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/relationship_tracker.go", function: "saveAggregate", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/relationship_tracker.go", function: "archiveDormantRelationships", method: "CreateOrUpdate", count: 1},
@@ -80,6 +83,7 @@ var upsertAuditSites = []upsertAuditSite{
 	{file: "pkg/storage/repositories/analytics_repository.go", function: "RecordModerationAction", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/account_repository_search.go", function: "CacheRemoteActor", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/conversation_state_repository.go", function: "createOrUpdateUserConversationState", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/conversation_repository.go", function: "CreateConversationMute", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/cost_tracking_repository.go", function: "CreateAggregated", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/dns_cache_repository.go", function: "SetDNSCache", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/enhanced_pattern_repository.go", function: "SetPatternCache", method: "CreateOrUpdate", count: 1},
@@ -147,10 +151,10 @@ var replayToleranceAuditSites = []replayToleranceAuditSite{
 	{file: "cmd/activity-processor/main.go", function: "processOutboxActivity", guardCall: "tolerateActivityReplayCreate", guardCount: 1},
 	{file: "cmd/activity-processor/main.go", function: "cleanupActivityReferences", guardCall: "tolerateActivityReplayCreate", guardCount: 1},
 	{file: "cmd/activity-processor/main.go", function: "createTombstone", guardCall: "tolerateActivityReplayCreate", guardCount: 1},
-	{file: "cmd/inbox/internal/routing/inbox.go", function: "storeMoveMigration", guardCall: "IsConditionFailed", guardCount: 1},
-	{file: "cmd/inbox/internal/routing/inbox.go", function: "createAccountTombstone", guardCall: "IsConditionFailed", guardCount: 1},
+	{file: "cmd/import-processor/main.go", function: "followAccount", guardCall: "tolerateActivityPubImportReplay", guardCount: 1},
+	{file: "cmd/import-processor/main.go", function: "importLikeActivity", guardCall: "tolerateActivityPubImportReplay", guardCount: 1},
+	{file: "cmd/import-processor/main.go", function: "importAnnounceActivity", guardCall: "tolerateActivityPubImportReplay", guardCount: 1},
 	{file: "pkg/storage/repositories/announcement_repository.go", function: "DismissAnnouncement", guardCall: "IsConditionFailed", guardCount: 1},
-	{file: "pkg/storage/repositories/conversation_repository.go", function: "CreateConversationMute", guardCall: "IsConditionFailed", guardCount: 1},
 }
 
 // TestIntentionalUpsertsUseV305StateBackedSemantics pins every production site

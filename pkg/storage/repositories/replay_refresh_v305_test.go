@@ -181,10 +181,27 @@ func TestDuplicateClientStateCreatesAreIdempotent(t *testing.T) {
 	t.Run("conversation mute", func(t *testing.T) {
 		db, fake := newReplayRefreshDB(t, &models.ConversationMute{})
 		repo := NewConversationRepository(db, models.MainTableName, zap.NewNop(), nil)
-		mute := &storage.ConversationMute{Username: "alice", ConversationID: "conversation-1", CreatedAt: time.Now().UTC()}
+		createdAt := time.Now().UTC()
+		firstExpiry := createdAt.Add(time.Hour)
+		secondExpiry := createdAt.Add(24 * time.Hour)
+		mute := &storage.ConversationMute{
+			Username:       "alice",
+			ConversationID: "conversation-1",
+			CreatedAt:      createdAt,
+			ExpiresAt:      firstExpiry,
+		}
 		require.NoError(t, repo.CreateConversationMute(ctx, mute))
+		mute.ExpiresAt = secondExpiry
 		require.NoError(t, repo.CreateConversationMute(ctx, mute))
 		require.Len(t, fake.Items(models.MainTableName), 1)
+
+		var persisted models.ConversationMute
+		require.NoError(t, db.Model(&models.ConversationMute{}).
+			Where("PK", "=", "USER#alice").
+			Where("SK", "=", "CONVERSATION_MUTE#conversation-1").
+			First(&persisted))
+		require.Equal(t, secondExpiry, persisted.ExpiresAt)
+		require.Equal(t, secondExpiry.Unix(), persisted.TTL)
 	})
 }
 

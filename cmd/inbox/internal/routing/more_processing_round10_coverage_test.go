@@ -325,7 +325,7 @@ func TestInboxHandler_Round10_ProcessMoveActivity_StoreMigrationError(t *testing
 
 	env.local.AlsoKnownAs = []string{env.cfg.ActorURL("old")}
 
-	call := env.mockQuery.On("Create").Return(stdliberrors.New("boom")).Once()
+	call := env.mockQuery.On("CreateOrUpdate").Return(stdliberrors.New("boom")).Once()
 	env.mockQuery.ExpectedCalls = append([]*mock.Call{call}, env.mockQuery.ExpectedCalls[:len(env.mockQuery.ExpectedCalls)-1]...)
 
 	activity := &activitypub.Activity{
