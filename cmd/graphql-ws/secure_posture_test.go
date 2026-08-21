@@ -29,6 +29,9 @@ func TestSecureWebSocketPosturesRevalidatePersistedConnection(t *testing.T) {
 	})
 	app.WebSocket("$default", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		resolved = ctx.SecurePrincipal()
+		state, err := server.getConnection(resolvedGraphQLFrameContext(ctx), "connection-1")
+		require.NoError(t, err)
+		require.Equal(t, "alice", state.username)
 		return &apptheory.Response{Status: 200}, nil
 	}, apptheory.Optional())
 

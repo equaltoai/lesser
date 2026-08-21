@@ -46,6 +46,10 @@ const graphqlTransportWSSubprotocol = "graphql-transport-ws"
 const wsCodeUnauthenticated = "UNAUTHENTICATED"
 const wsCodeCredentialExpired = "TOKEN_EXPIRED"
 const wsCredentialExpiresAtHeader = "token_expires_at"
+const wsResolvedConnectionKey = "lesser.graphql_ws.resolved_connection"
+
+type wsResolvedConnectionContextKey struct{}
+
 const protocolErrorID = "protocol-error"
 
 const (
@@ -460,6 +464,25 @@ func (s *wsServer) removeConnection(ctx context.Context, connectionID string) {
 }
 
 func (s *wsServer) getConnection(ctx context.Context, connectionID string) (*connectionState, error) {
+	if connection, ok := ctx.Value(wsResolvedConnectionContextKey{}).(*models.WebSocketConnection); ok && connection != nil {
+		fresh, err := connectionStateFromPersistedConnection(connection)
+		if err != nil {
+			return nil, err
+		}
+		s.mu.Lock()
+		if existing := s.connections[connectionID]; existing != nil {
+			existing.username = fresh.username
+			existing.claims = fresh.claims
+			existing.initialized = fresh.initialized
+			existing.credentialExpiryUnavailable = fresh.credentialExpiryUnavailable
+			fresh = existing
+		} else {
+			s.connections[connectionID] = fresh
+		}
+		s.mu.Unlock()
+		return fresh, nil
+	}
+
 	s.mu.RLock()
 	state, ok := s.connections[connectionID]
 	s.mu.RUnlock()
@@ -475,7 +498,19 @@ func (s *wsServer) getConnection(ctx context.Context, connectionID string) (*con
 	if err != nil {
 		return nil, err
 	}
+	state, err = connectionStateFromPersistedConnection(connection)
+	if err != nil {
+		return nil, err
+	}
 
+	s.mu.Lock()
+	s.connections[connectionID] = state
+	s.mu.Unlock()
+
+	return state, nil
+}
+
+func connectionStateFromPersistedConnection(connection *models.WebSocketConnection) (*connectionState, error) {
 	var scopes []string
 	if connection.Info.CustomHeaders != nil {
 		if scopeValue, ok := connection.Info.CustomHeaders["scopes"]; ok && scopeValue != "" {
@@ -506,19 +541,13 @@ func (s *wsServer) getConnection(ctx context.Context, connectionID string) (*con
 		}
 	}
 
-	state = &connectionState{
+	return &connectionState{
 		username:                    connection.Username,
 		claims:                      claims,
 		initialized:                 connection.Username != "" || connection.Info.AuthMethod == "anonymous",
 		credentialExpiryUnavailable: credentialExpiryUnavailable,
 		subscriptions:               make(map[string]*subscriptionState),
-	}
-
-	s.mu.Lock()
-	s.connections[connectionID] = state
-	s.mu.Unlock()
-
-	return state, nil
+	}, nil
 }
 
 func subscriptionStreamName(subscriptionID string) string {
@@ -816,6 +845,7 @@ func (s *wsServer) handleDefault(ctx *apptheory.Context) (*apptheory.Response, e
 	}
 
 	s.rememberWebSocketContext(connectionID, wsCtx)
+	frameCtx := resolvedGraphQLFrameContext(ctx)
 
 	var msg wsMessage
 	if err := json.Unmarshal(ctx.Request.Body, &msg); err != nil {
@@ -827,23 +857,31 @@ func (s *wsServer) handleDefault(ctx *apptheory.Context) (*apptheory.Response, e
 
 	switch strings.ToLower(msg.Type) {
 	case "connection_init":
-		return s.handleConnectionInit(ctx.Context(), wsCtx, connectionID, msg)
+		return s.handleConnectionInit(frameCtx, wsCtx, connectionID, msg)
 	case "ping":
 		if err := s.sendJSON(wsCtx, responseEnvelope{Type: "pong"}); err != nil {
 			return nil, err
 		}
 		return okWebSocketResponse(), nil
 	case "subscribe":
-		s.handleSubscribe(ctx.Context(), msg, wsCtx)
+		s.handleSubscribe(frameCtx, msg, wsCtx)
 		return okWebSocketResponse(), nil
 	case "complete":
-		return s.handleComplete(ctx.Context(), wsCtx, connectionID, msg)
+		return s.handleComplete(frameCtx, wsCtx, connectionID, msg)
 	default:
 		s.logger.Warn("received unsupported websocket message type",
 			zap.String("connection_id", connectionID),
 			zap.String("type", msg.Type))
 		return nil, appError("app.bad_request", fmt.Sprintf("message type %q is not supported", msg.Type))
 	}
+}
+
+func resolvedGraphQLFrameContext(ctx *apptheory.Context) context.Context {
+	frameCtx := ctx.Context()
+	if connection, ok := ctx.Get(wsResolvedConnectionKey).(*models.WebSocketConnection); ok && connection != nil {
+		return context.WithValue(frameCtx, wsResolvedConnectionContextKey{}, connection)
+	}
+	return frameCtx
 }
 
 func (s *wsServer) webSocketContextFromEvent(ctx *apptheory.Context) (*apptheory.WebSocketContext, string, error) {
@@ -1764,6 +1802,7 @@ func (s *wsServer) resolveWebSocketPrincipal(ctx *apptheory.Context) (*apptheory
 	if connection.Info.CustomHeaders != nil {
 		scopes = strings.Fields(connection.Info.CustomHeaders["scopes"])
 	}
+	ctx.Set(wsResolvedConnectionKey, connection)
 	return &apptheory.SecurePrincipal{
 		Identity: identity,
 		Scopes:   scopes,

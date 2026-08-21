@@ -69,6 +69,10 @@ type streamingConnectionRepository interface {
 	DeleteSubscription(ctx context.Context, connectionID, stream string) error
 }
 
+const streamingResolvedConnectionKey = "lesser.streaming.resolved_connection"
+
+type streamingResolvedConnectionContextKey struct{}
+
 type websocketCostTracker interface {
 	TrackWebSocketOperation(ctx context.Context, opCtx *repositories.WebSocketOperationContext, result *repositories.WebSocketOperationResult) error
 }
@@ -357,11 +361,20 @@ func (sh *StreamingHandler) HandleWebSocketDefault(ctx *apptheory.Context) (*app
 	}
 	sh.wsClient = wsClient
 
-	if err := sh.handleMessage(ctx.Context(), event); err != nil {
+	frameCtx := resolvedStreamingFrameContext(ctx)
+	if err := sh.handleMessage(frameCtx, event); err != nil {
 		return nil, err
 	}
 
 	return &apptheory.Response{Status: 200}, nil
+}
+
+func resolvedStreamingFrameContext(ctx *apptheory.Context) context.Context {
+	frameCtx := ctx.Context()
+	if connection, ok := ctx.Get(streamingResolvedConnectionKey).(*models.WebSocketConnection); ok && connection != nil {
+		return context.WithValue(frameCtx, streamingResolvedConnectionContextKey{}, connection)
+	}
+	return frameCtx
 }
 
 // handleConnect handles WebSocket connection events
@@ -515,7 +528,11 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 	}
 
 	// Get connection details using DynamORM repository
-	connection, err := sh.connectionRepo.GetConnection(ctx, event.RequestContext.ConnectionID)
+	connection, _ := ctx.Value(streamingResolvedConnectionContextKey{}).(*models.WebSocketConnection)
+	var err error
+	if connection == nil {
+		connection, err = sh.connectionRepo.GetConnection(ctx, event.RequestContext.ConnectionID)
+	}
 	if err != nil {
 		logger.Error("failed to get connection", zap.Error(err))
 		return sh.sendError(event.RequestContext.ConnectionID, pkgErrors.StreamingConnectionNotFound().Error())
@@ -1112,6 +1129,7 @@ func (sh *StreamingHandler) resolveWebSocketPrincipal(ctx *apptheory.Context) (*
 		if identity == "" {
 			return nil, nil
 		}
+		ctx.Set(streamingResolvedConnectionKey, connection)
 		return &apptheory.SecurePrincipal{Identity: identity, Kind: apptheory.PrincipalExternal}, nil
 	}
 
