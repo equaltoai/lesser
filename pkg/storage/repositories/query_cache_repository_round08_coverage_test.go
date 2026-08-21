@@ -140,8 +140,8 @@ func TestQueryCacheRepository_Round08_CacheCRUD(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Twice()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Twice()
-		mockQuery.On("Create").Return(assert.AnError).Once()
-		mockQuery.On("Create").Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(assert.AnError).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		require.Error(t, repo.SetCachedValue(ctx, "k1", map[string]any{"x": 1}, 1, time.Minute))
 		require.NoError(t, repo.SetCachedValue(ctx, "k2", map[string]any{"x": 2}, 1, time.Minute))
@@ -345,7 +345,7 @@ func TestQueryCacheRepository_Round08_CacheFallbacksAndBatch(t *testing.T) {
 
 		// Cache set -> create error.
 		cacheDB.On("Model", mock.Anything).Return(cacheQueryCreate).Once()
-		cacheQueryCreate.On("Create").Return(assert.AnError).Once()
+		cacheQueryCreate.On("CreateOrUpdate").Return(assert.AnError).Once()
 
 		instanceDB := new(mocks.MockDB)
 		instanceQuery := new(mocks.MockQuery)
@@ -413,7 +413,7 @@ func TestQueryCacheRepository_Round08_CacheFallbacksAndBatch(t *testing.T) {
 
 		// SetInstance(i2) -> create success.
 		cacheDB.On("Model", mock.Anything).Return(cacheQueryCreate1).Once()
-		cacheQueryCreate1.On("Create").Return(nil).Once()
+		cacheQueryCreate1.On("CreateOrUpdate").Return(nil).Once()
 
 		instanceDB := new(mocks.MockDB)
 		instanceQuery := new(mocks.MockQuery)
@@ -533,7 +533,7 @@ func TestQueryCacheRepository_Round08_CacheFallbacksAndBatch(t *testing.T) {
 		cacheQueryGet.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 
 		cacheDB.On("Model", mock.Anything).Return(cacheQueryCreate).Once()
-		cacheQueryCreate.On("Create").Return(nil).Once()
+		cacheQueryCreate.On("CreateOrUpdate").Return(nil).Once()
 
 		instanceDB := new(mocks.MockDB)
 		instanceQuery := new(mocks.MockQuery)

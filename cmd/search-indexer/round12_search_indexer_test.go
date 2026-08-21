@@ -16,9 +16,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	"github.com/theory-cloud/tabletheory/v3"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	ttmodel "github.com/theory-cloud/tabletheory/v3/pkg/model"
+	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
 	"go.uber.org/zap"
 )
 
@@ -226,9 +229,9 @@ func TestSearchIndexer_createSearchIndex_AndAdditionalIndexes_Round12(t *testing
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 
-	mockQuery.On("Create").Return(nil).Once()                // main index
-	mockQuery.On("Create").Return(errors.New("boom")).Once() // actor index fails (warned, non-fatal)
-	mockQuery.On("Create").Return(nil).Maybe()               // remaining writes
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()                // main index
+	mockQuery.On("CreateOrUpdate").Return(errors.New("boom")).Once() // actor index fails (warned, non-fatal)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()               // remaining writes
 
 	si := &SearchIndexer{
 		db:        mockDB,
@@ -249,12 +252,51 @@ func TestSearchIndexer_createSearchIndex_AndAdditionalIndexes_Round12(t *testing
 	require.NoError(t, si.createSearchIndex(context.Background(), content))
 }
 
+func TestSearchIndexer_ReplayRefreshesDeterministicIndexes(t *testing.T) {
+	fake := fakedb.New()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&searchIndexRecord{}))
+
+	si := &SearchIndexer{db: db, tableName: searchIndexRecord{}.TableName(), logger: zap.NewNop()}
+	createdAt := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	content := &IndexableContent{
+		ID:        "status-1",
+		Type:      "Note",
+		Text:      "before edit",
+		ActorID:   "https://remote.example/users/alice",
+		Tags:      []string{"Fediverse"},
+		Language:  "en",
+		CreatedAt: createdAt,
+	}
+	require.NoError(t, si.createSearchIndex(context.Background(), content))
+
+	content.Text = "after edit"
+	require.NoError(t, si.createSearchIndex(context.Background(), content),
+		"a MODIFY replay must refresh all deterministic search rows")
+
+	var mainIndex searchIndexRecord
+	require.NoError(t, db.Model(&searchIndexRecord{}).
+		Where("PK", "=", "SEARCH#Note").
+		Where("SK", "=", "CONTENT#2026-08-20#status-1").
+		First(&mainIndex))
+	require.Equal(t, "after edit", mainIndex.Text)
+
+	var actorIndex searchActorIndex
+	require.NoError(t, db.Model(&searchActorIndex{}).
+		Where("PK", "=", "SEARCH#ACTOR#https://remote.example/users/alice").
+		Where("SK", "=", "CONTENT#status-1").
+		First(&actorIndex))
+	require.Equal(t, "after edit", actorIndex.Text)
+	require.Len(t, fake.Items(searchIndexRecord{}.TableName()), 3)
+}
+
 func TestSearchIndexer_createAdditionalIndexes_TagCreateError_Round12(t *testing.T) {
 	mockDB := new(dynamormmocks.MockDB)
 	mockQuery := new(dynamormmocks.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(errors.New("boom")).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(errors.New("boom")).Maybe()
 
 	si := &SearchIndexer{
 		db:        mockDB,
@@ -302,8 +344,8 @@ func TestSearchIndexer_HandleDynamoDBRecord_ErrorAndSuccess_Round12(t *testing.T
 	mockQuery := new(dynamormmocks.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(errors.New("boom")).Once()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(errors.New("boom")).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 
 	costRepo := &fakeSearchCostRepo{err: errors.New("boom")}
 	tracker := &fakeUnifiedTracker{err: errors.New("boom")}
@@ -369,7 +411,7 @@ func TestRunSearchIndexer_Round12(t *testing.T) {
 	mockQuery := new(dynamormmocks.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 
 	processor = &SearchIndexer{
 		db:             mockDB,

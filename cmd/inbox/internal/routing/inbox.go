@@ -4308,7 +4308,7 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 	migration.SetTTL(time.Now().Add(30 * 24 * time.Hour))
 
 	// Store the migration
-	if err := ih.storageAdapter.GetDB().WithContext(ctx).Model(migration).Create(); err != nil {
+	if err := ih.storeMoveMigration(ctx, migration); err != nil {
 		log.Error("failed to store account migration", zap.Error(err))
 		return storeMigrationError()
 	}
@@ -4339,6 +4339,14 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 		zap.String("migration_id", migration.ID))
 
 	return nil
+}
+
+func (ih *InboxHandler) storeMoveMigration(ctx context.Context, migration *models.Move) error {
+	err := ih.storageAdapter.GetDB().WithContext(ctx).Model(migration).Create()
+	if dynamormerrors.IsConditionFailed(err) || stdErrors.Is(err, storage.ErrAlreadyExists) {
+		return nil
+	}
+	return err
 }
 
 // Helper functions for Flag activity processing
@@ -4528,7 +4536,11 @@ func (ih *InboxHandler) createAccountTombstone(ctx context.Context, oldAccountID
 	}
 
 	// Store the tombstone
-	return ih.storageAdapter.GetDB().WithContext(ctx).Model(tombstone).Create()
+	err := ih.storageAdapter.GetDB().WithContext(ctx).Model(tombstone).Create()
+	if dynamormerrors.IsConditionFailed(err) || stdErrors.Is(err, storage.ErrAlreadyExists) {
+		return nil
+	}
+	return err
 }
 
 func (ih *InboxHandler) notifyFollowersOfMove(ctx context.Context, oldAccountID, newAccountID string) error {

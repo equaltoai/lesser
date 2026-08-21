@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3"
+	"github.com/theory-cloud/tabletheory/v3/pkg/session"
 	dynamormtesting "github.com/theory-cloud/tabletheory/v3/pkg/testing"
+	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -278,48 +280,19 @@ func TestDynamORMFederationStorage_CacheRemoteActor(t *testing.T) {
 		Inbox:             "https://remote.example/users/bob/inbox",
 	}
 
-	t.Run("create_success", func(t *testing.T) {
+	t.Run("upsert_success", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
-		testDB.ExpectCreate()
+		testDB.MockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		svc := &DynamORMFederationStorage{db: testDB.MockDB}
 		require.NoError(t, svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute))
 		testDB.AssertExpectations(t)
 	})
 
-	t.Run("create_condition_failed_then_update_success", func(t *testing.T) {
-		testDB := dynamormtesting.NewTestDB()
-		testDB.ExpectCreateError(dynamormerrors.ErrConditionFailed)
-		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#bob@remote.example").
-			ExpectWhere("SK", "=", "PROFILE").
-			ExpectUpdate()
-
-		svc := &DynamORMFederationStorage{db: testDB.MockDB}
-		require.NoError(t, svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute))
-		testDB.AssertExpectations(t)
-	})
-
-	t.Run("create_condition_failed_then_update_error", func(t *testing.T) {
-		testDB := dynamormtesting.NewTestDB()
-		testDB.ExpectCreateError(dynamormerrors.ErrConditionFailed)
-		testDB.ExpectWhere("PK", "=", "REMOTE_ACTOR#bob@remote.example").
-			ExpectWhere("SK", "=", "PROFILE")
-
-		boom := errors.New("boom")
-		testDB.MockQuery.On("Update", mock.Anything).Return(boom).Once()
-
-		svc := &DynamORMFederationStorage{db: testDB.MockDB}
-		err := svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrRemoteActorCacheUpdateFailed)
-		assert.ErrorIs(t, err, boom)
-		testDB.AssertExpectations(t)
-	})
-
-	t.Run("create_error_returns_joined_error", func(t *testing.T) {
+	t.Run("upsert_error_returns_joined_error", func(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		boom := errors.New("boom")
-		testDB.ExpectCreateError(boom)
+		testDB.MockQuery.On("CreateOrUpdate").Return(boom).Once()
 
 		svc := &DynamORMFederationStorage{db: testDB.MockDB}
 		err := svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute)
@@ -328,6 +301,30 @@ func TestDynamORMFederationStorage_CacheRemoteActor(t *testing.T) {
 		assert.ErrorIs(t, err, boom)
 		testDB.AssertExpectations(t)
 	})
+}
+
+func TestDynamORMFederationStorage_CacheRemoteActorRefreshesOnReplay(t *testing.T) {
+	ctx := context.Background()
+	fake := fakedb.New()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.RemoteActor{}))
+
+	svc := &DynamORMFederationStorage{db: db}
+	actor := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/bob", Type: activitypub.PersonType},
+		PreferredUsername: "bob",
+		Name:              "Old name",
+		Inbox:             "https://remote.example/users/bob/inbox",
+	}
+	require.NoError(t, svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute))
+	actor.Name = "New name"
+	require.NoError(t, svc.CacheRemoteActor(ctx, "bob@remote.example", actor, time.Minute))
+	require.Len(t, fake.Items(models.MainTableName), 1)
+
+	got, err := svc.GetCachedRemoteActor(ctx, "bob@remote.example")
+	require.NoError(t, err)
+	require.Equal(t, "New name", got.Name)
 }
 
 func TestDynamORMFederationStorage_RecordFederationActivity(t *testing.T) {

@@ -36,9 +36,21 @@ type upsertAuditSite struct {
 	count    int
 }
 
+type replayToleranceAuditSite struct {
+	file       string
+	function   string
+	guardCall  string
+	guardCount int
+}
+
 var upsertAuditSites = []upsertAuditSite{
 	{file: "cmd/activity-processor/handler.go", function: "processDeleteActivity", method: "CreateOrUpdate", count: 1},
+	{file: "cmd/activity-processor/main.go", function: "updateActivityMetrics", method: "CreateOrUpdate", count: 1},
+	{file: "cmd/activity-processor/main.go", function: "recordMetric", method: "CreateOrUpdate", count: 1},
+	{file: "cmd/federation-aggregator/main.go", function: "storeAggregation", method: "CreateOrUpdate", count: 1},
 	{file: "cmd/report-trust-updater/main.go", function: "UpdateReporterTrustOnDecision", method: "CreateOrUpdate", count: 1},
+	{file: "cmd/search-indexer/main.go", function: "createSearchIndex", method: "CreateOrUpdate", count: 1},
+	{file: "cmd/search-indexer/main.go", function: "createAdditionalIndexes", method: "CreateOrUpdate", count: 2},
 	{file: "cmd/status-indexer/main.go", function: "indexWord", method: "CreateOrUpdate", count: 1},
 	{file: "cmd/status-indexer/main.go", function: "indexHashtag", method: "CreateOrUpdate", count: 1},
 	{file: "cmd/status-indexer/main.go", function: "indexByAuthor", method: "CreateOrUpdate", count: 1},
@@ -47,6 +59,7 @@ var upsertAuditSites = []upsertAuditSite{
 	{file: "pkg/federation/cost/repository_adapter.go", function: "RecordCost", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/cost/repository_adapter.go", function: "UpdateInstanceHealth", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/cost/repository_adapter.go", function: "SaveInstanceConfig", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/federation/dynamorm_storage.go", function: "CacheRemoteActor", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/relationship_tracker.go", function: "saveRelationship", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/relationship_tracker.go", function: "saveAggregate", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/federation/relationship_tracker.go", function: "archiveDormantRelationships", method: "CreateOrUpdate", count: 1},
@@ -65,8 +78,11 @@ var upsertAuditSites = []upsertAuditSite{
 	{file: "pkg/storage/repositories/analytics_repository.go", function: "RecordEngagement", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/analytics_repository.go", function: "UpdateTrendingHashtag", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/analytics_repository.go", function: "RecordModerationAction", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/account_repository_search.go", function: "CacheRemoteActor", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/conversation_state_repository.go", function: "createOrUpdateUserConversationState", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/cost_tracking_repository.go", function: "CreateAggregated", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/dns_cache_repository.go", function: "SetDNSCache", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/enhanced_pattern_repository.go", function: "SetPatternCache", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/federation_activity_repository.go", function: "UpdateInstanceInfo", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/federation_cost_repository.go", function: "CreateOrUpdateBudget", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/federation_repository.go", function: "UpsertInstanceInfo", method: "CreateOrUpdate", count: 1},
@@ -83,16 +99,29 @@ var upsertAuditSites = []upsertAuditSite{
 	{file: "pkg/storage/repositories/federation_repository.go", function: "StoreDetailedFederationMetrics", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/graphql_stream_subscription_repository.go", function: "Put", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/hashtag_repository.go", function: "StoreHashtagTrend", method: "CreateOrUpdate", count: 2},
+	{file: "pkg/storage/repositories/instance_health_repository.go", function: "SaveHealthSummary", method: "ValidateAndCreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/instance_repository.go", function: "SetInstanceRules", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/instance_repository.go", function: "SetExtendedDescription", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/instance_repository.go", function: "RecordDailyMetrics", method: "CreateOrUpdate", count: 4},
 	{file: "pkg/storage/repositories/marker_repository.go", function: "SaveMarker", method: "ValidateAndCreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/metrics_repository.go", function: "CreateAggregated", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/object_repository.go", function: "MarkThreadAsSynced", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/object_repository.go", function: "updateSearchIndexForWithdrawal", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/public_key_cache_repository.go", function: "Store", method: "ValidateAndCreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/query_cache_repository.go", function: "SetCachedValue", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/relay_repository.go", function: "UpdateRelayStatus", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/relay_repository.go", function: "UpdateRelayState", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/severance_repository.go", function: "UpdateSeveranceStatus", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/severance_repository.go", function: "UpdateReconnectionAttempt", method: "CreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/routing_metrics_repository.go", function: "StoreRouteMetricsWindow", method: "ValidateAndCreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/routing_metrics_repository.go", function: "StoreGlobalMetricsWindow", method: "ValidateAndCreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/routing_metrics_repository.go", function: "StoreInstanceMetricsWindow", method: "ValidateAndCreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/routing_metrics_repository.go", function: "BatchStoreMetrics", method: "ValidateAndCreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/routing_metrics_repository.go", function: "validateAndUpsertMetricsWindows", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/social_repository.go", function: "CreateAccountNote", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/social_repository.go", function: "UpdateAccountNote", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/streaming_cloudwatch_repository.go", function: "CacheQualityBreakdown", method: "ValidateAndCreateOrUpdate", count: 1},
+	{file: "pkg/storage/repositories/streaming_connection_repository.go", function: "WriteSubscription", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/streaming_repository.go", function: "UpdateDeviceStreamingPreferences", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/thread_repository.go", function: "SaveThreadSync", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/thread_repository.go", function: "SaveThreadNode", method: "CreateOrUpdate", count: 1},
@@ -106,6 +135,22 @@ var upsertAuditSites = []upsertAuditSite{
 	{file: "pkg/storage/repositories/user_repository.go", function: "UpdateUserPreferences", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/user_repository.go", function: "CacheRemoteActor", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/theorydb/migrations/migrator.go", function: "UpdateMigrationStatus", method: "CreateOrUpdate", count: 1},
+}
+
+// replayToleranceAuditSites records create-only rows whose uniqueness remains
+// intentional but whose callers run on at-least-once or duplicate-tolerant
+// paths. These callers accept only the existing-key condition; they continue
+// to propagate every other storage error.
+var replayToleranceAuditSites = []replayToleranceAuditSite{
+	{file: "cmd/activity-processor/handler.go", function: "processCreateActivity", guardCall: "IsConditionFailed", guardCount: 1},
+	{file: "cmd/activity-processor/main.go", function: "processInboxActivity", guardCall: "tolerateActivityReplayCreate", guardCount: 1},
+	{file: "cmd/activity-processor/main.go", function: "processOutboxActivity", guardCall: "tolerateActivityReplayCreate", guardCount: 1},
+	{file: "cmd/activity-processor/main.go", function: "cleanupActivityReferences", guardCall: "tolerateActivityReplayCreate", guardCount: 1},
+	{file: "cmd/activity-processor/main.go", function: "createTombstone", guardCall: "tolerateActivityReplayCreate", guardCount: 1},
+	{file: "cmd/inbox/internal/routing/inbox.go", function: "storeMoveMigration", guardCall: "IsConditionFailed", guardCount: 1},
+	{file: "cmd/inbox/internal/routing/inbox.go", function: "createAccountTombstone", guardCall: "IsConditionFailed", guardCount: 1},
+	{file: "pkg/storage/repositories/announcement_repository.go", function: "DismissAnnouncement", guardCall: "IsConditionFailed", guardCount: 1},
+	{file: "pkg/storage/repositories/conversation_repository.go", function: "CreateConversationMute", guardCall: "IsConditionFailed", guardCount: 1},
 }
 
 // TestIntentionalUpsertsUseV305StateBackedSemantics pins every production site
@@ -153,6 +198,10 @@ func TestIntentionalUpsertsUseV305StateBackedSemantics(t *testing.T) {
 }
 
 func countMethodCallsInFunction(file *ast.File, function, method string) int {
+	return countCallsInFunction(file, function, method)
+}
+
+func countCallsInFunction(file *ast.File, function, target string) int {
 	count := 0
 	for _, declaration := range file.Decls {
 		functionDeclaration, ok := declaration.(*ast.FuncDecl)
@@ -164,14 +213,41 @@ func countMethodCallsInFunction(file *ast.File, function, method string) int {
 			if !ok {
 				return true
 			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if ok && selector.Sel.Name == method {
-				count++
+			switch functionCall := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				if functionCall.Sel.Name == target {
+					count++
+				}
+			case *ast.Ident:
+				if functionCall.Name == target {
+					count++
+				}
 			}
 			return true
 		})
 	}
 	return count
+}
+
+func TestReplayTolerantCreatesRetainExplicitConditionGuards(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "../../.."))
+
+	for _, site := range replayToleranceAuditSites {
+		site := site
+		t.Run(filepath.Base(site.file)+"_"+site.function, func(t *testing.T) {
+			parsed, err := parser.ParseFile(
+				token.NewFileSet(),
+				filepath.Join(repoRoot, filepath.FromSlash(site.file)),
+				nil,
+				0,
+			)
+			require.NoError(t, err)
+			require.Equal(t, site.guardCount, countCallsInFunction(parsed, site.function, site.guardCall),
+				"%s must retain its replay-only condition guard", site.file)
+		})
+	}
 }
 
 func TestSocialRepositoryAccountNoteOverwritesOnDeterministicKey(t *testing.T) {

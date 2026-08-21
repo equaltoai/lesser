@@ -40,7 +40,7 @@ func TestRoutingMetricsRepository_StoreAndGet_RouteWindows(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	windowStart := time.Date(2025, 1, 2, 3, 4, 0, 0, time.UTC)
 	require.NoError(t, repo.StoreRouteMetricsWindow(ctx, &models.RouteMetricsWindow{
@@ -151,7 +151,7 @@ func TestRoutingMetricsRepository_StoreGlobalAndInstance_Windows_SuccessAndError
 
 		mockDB.On("WithContext", ctx).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		require.NoError(t, repo.StoreGlobalMetricsWindow(ctx, &models.GlobalMetricsWindow{
 			WindowStart:     windowStart,
@@ -172,7 +172,7 @@ func TestRoutingMetricsRepository_StoreGlobalAndInstance_Windows_SuccessAndError
 
 		mockDB.On("WithContext", ctx).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(errors.New("create failed")).Once()
+		mockQuery.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 		require.Error(t, repo.StoreGlobalMetricsWindow(ctx, &models.GlobalMetricsWindow{
 			WindowStart: windowStart,
@@ -187,7 +187,7 @@ func TestRoutingMetricsRepository_StoreGlobalAndInstance_Windows_SuccessAndError
 
 		mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Create").Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		require.NoError(t, repo.StoreInstanceMetricsWindow(ctx, &models.InstanceMetricsWindow{
 			InstanceID:    "instance-1",
@@ -224,7 +224,7 @@ func TestRoutingMetricsRepository_StoreGlobalAndInstance_Windows_SuccessAndError
 
 		mockDB.On("WithContext", ctx).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(errors.New("create failed")).Once()
+		mockQuery.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 		require.Error(t, repo.StoreInstanceMetricsWindow(ctx, &models.InstanceMetricsWindow{
 			InstanceID:  "instance-1",
@@ -243,7 +243,7 @@ func TestRoutingMetricsRepository_BatchStoreMetrics_CoversBranches(t *testing.T)
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 
 	windowStart := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, repo.BatchStoreMetrics(ctx,
@@ -258,7 +258,7 @@ func TestRoutingMetricsRepository_BatchStoreMetrics_CoversBranches(t *testing.T)
 	repo2 := NewRoutingMetricsRepository(mockDB2, "test-table", logger, nil)
 	mockDB2.On("WithContext", ctx).Return(mockDB2)
 	mockDB2.On("Model", mock.Anything).Return(mockQuery2)
-	mockQuery2.On("Create").Return(errors.New("create failed")).Once()
+	mockQuery2.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 	err := repo2.BatchStoreMetrics(ctx,
 		[]*models.RouteMetricsWindow{{RouteID: "route-1", WindowStart: windowStart}},
@@ -273,7 +273,7 @@ func TestRoutingMetricsRepository_BatchStoreMetrics_CoversBranches(t *testing.T)
 	repo3 := NewRoutingMetricsRepository(mockDB3, "test-table", logger, nil)
 	mockDB3.On("WithContext", ctx).Return(mockDB3)
 	mockDB3.On("Model", mock.Anything).Return(mockQuery3)
-	mockQuery3.On("Create").Return(errors.New("create failed")).Once()
+	mockQuery3.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 	err = repo3.BatchStoreMetrics(ctx,
 		nil,
@@ -288,7 +288,7 @@ func TestRoutingMetricsRepository_BatchStoreMetrics_CoversBranches(t *testing.T)
 	repo4 := NewRoutingMetricsRepository(mockDB4, "test-table", logger, nil)
 	mockDB4.On("WithContext", ctx).Return(mockDB4)
 	mockDB4.On("Model", mock.Anything).Return(mockQuery4)
-	mockQuery4.On("Create").Return(errors.New("create failed")).Once()
+	mockQuery4.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 	err = repo4.BatchStoreMetrics(ctx,
 		nil,

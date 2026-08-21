@@ -304,7 +304,7 @@ func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *Indexab
 		TTL:         time.Now().Add(365 * 24 * time.Hour).Unix(), // 1 year retention
 	}
 
-	if err := si.db.WithContext(ctx).Model(&searchRecord).Create(); err != nil {
+	if err := si.db.WithContext(ctx).Model(&searchRecord).CreateOrUpdate(); err != nil {
 		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to store search index")
 	}
 
@@ -333,7 +333,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *I
 			TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 		}
 
-		if err := si.db.WithContext(ctx).Model(&actorIndex).Create(); err != nil {
+		if err := si.db.WithContext(ctx).Model(&actorIndex).CreateOrUpdate(); err != nil {
 			return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to create actor search index")
 		}
 	}
@@ -352,7 +352,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *I
 				TTL:       time.Now().Add(180 * 24 * time.Hour).Unix(), // 180 days retention
 			}
 
-			if err := si.db.WithContext(ctx).Model(&tagIndex).Create(); err != nil {
+			if err := si.db.WithContext(ctx).Model(&tagIndex).CreateOrUpdate(); err != nil {
 				si.logger.Warn("failed to create tag search index",
 					zap.String("tag", tag),
 					zap.Error(err),

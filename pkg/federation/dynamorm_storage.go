@@ -143,29 +143,14 @@ func (s *DynamORMFederationStorage) CacheRemoteActor(ctx context.Context, handle
 	// Update keys for DynamORM
 	remoteActor.UpdateKeys()
 
-	// Store in database
-	err := s.db.WithContext(ctx).Model(remoteActor).Create()
-	if err != nil {
-		// If already exists, update it
-		if dynamormErrors.IsConditionFailed(err) {
-			err = s.db.WithContext(ctx).Model(remoteActor).
-				Where("PK", "=", remoteActor.PK).
-				Where("SK", "=", remoteActor.SK).
-				Update()
-			if err != nil {
-				zap.L().Error("failed to update cached remote actor",
-					zap.String("handle", canonicalHandle),
-					zap.String("actorID", cachedActor.ID),
-					zap.Error(err))
-				return errors.Join(ErrRemoteActorCacheUpdateFailed, err)
-			}
-		} else {
-			zap.L().Error("failed to cache remote actor",
-				zap.String("handle", canonicalHandle),
-				zap.String("actorID", cachedActor.ID),
-				zap.Error(err))
-			return errors.Join(ErrRemoteActorCacheStoreFailed, err)
-		}
+	// Remote actors are refreshable cache rows; key rotation and concurrent
+	// resolution must replace the deterministic handle entry.
+	if err := s.db.WithContext(ctx).Model(remoteActor).CreateOrUpdate(); err != nil {
+		zap.L().Error("failed to cache remote actor",
+			zap.String("handle", canonicalHandle),
+			zap.String("actorID", cachedActor.ID),
+			zap.Error(err))
+		return errors.Join(ErrRemoteActorCacheStoreFailed, err)
 	}
 
 	return nil

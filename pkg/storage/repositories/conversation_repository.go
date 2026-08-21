@@ -675,6 +675,9 @@ func (r *ConversationRepository) CreateConversationMute(ctx context.Context, mut
 	}
 
 	if err := r.GetDB().Model(model).WithContext(ctx).Create(); err != nil {
+		if errors.IsConditionFailed(err) {
+			return nil
+		}
 		return ErrorHandler.HandleCreateError(err, EntityConversation, model.ConversationID)
 	}
 

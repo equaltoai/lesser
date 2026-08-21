@@ -49,7 +49,8 @@ func TestActivityProcessor_FanOutToTimelines_PublicLocalWithFollowers(t *testing
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
 	actorRepo := testmocks.NewMockActorRepository()
@@ -133,7 +134,7 @@ func TestActivityProcessor_RecordMetric_IgnoresCreateErrors(t *testing.T) {
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(errors.New("boom"))
+	mockQuery.On("CreateOrUpdate").Return(errors.New("boom"))
 
 	ap := &ActivityProcessor{
 		db:     mockDB,

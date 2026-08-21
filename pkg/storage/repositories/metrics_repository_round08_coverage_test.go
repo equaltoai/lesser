@@ -26,6 +26,7 @@ func setupMetricsRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery, bas
 	mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Update").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()

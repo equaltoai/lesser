@@ -23,7 +23,8 @@ func TestActivityProcessor_SendToDeadLetterQueue(t *testing.T) {
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	ap := &ActivityProcessor{
 		db:     mockDB,
@@ -94,7 +95,8 @@ func TestActivityProcessor_FetchRemoteObjectWithRetry_RetriesAndSucceeds(t *test
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	orig := fetchAuthorizedObjectFn
 	t.Cleanup(func() { fetchAuthorizedObjectFn = orig })
