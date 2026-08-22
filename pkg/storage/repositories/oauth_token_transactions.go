@@ -256,14 +256,15 @@ func (r *AccountRepository) RedeemRefreshTokenRetry(
 
 func refreshTokenVersionConditions(version int) []core.TransactCondition {
 	if version == 0 {
-		// Legacy rows predate the version attribute. Keep their adoption inside
-		// the rotation transaction: ADD/Increment creates version=1 only if the
-		// predecessor still exists and still has no version. A separate seed
+		// A decoded zero can mean either a legacy row with no version attribute or
+		// a TableTheory-created row whose initial version is explicitly zero. Keep
+		// both cases inside the atomic rotation transaction: the winner increments
+		// to one, so a concurrent loser fails this same condition. A separate seed
 		// UpdateItem could recreate a row deleted concurrently by /oauth/revoke.
-		// TableTheory v3.0.4 supports raw conditions on transactional
-		// UpdateWithBuilder operations, whereas this OR/missing-attribute case is
-		// not delegated to the query-path UpdateBuilder.
-		return []core.TransactCondition{tabletheory.ConditionExpression("attribute_not_exists(version)", nil)}
+		return []core.TransactCondition{tabletheory.ConditionExpression(
+			"attribute_not_exists(version) OR version = :zero",
+			map[string]any{":zero": 0},
+		)}
 	}
 	return []core.TransactCondition{tabletheory.AtVersion(int64(version))}
 }

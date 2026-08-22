@@ -150,7 +150,8 @@ func TestOAuthRefreshTransactionVersionAndConditionHelpers(t *testing.T) {
 	legacy := refreshTokenVersionConditions(0)
 	require.Len(t, legacy, 1)
 	require.Equal(t, core.TransactConditionKindExpression, legacy[0].Kind)
-	require.Equal(t, "attribute_not_exists(version)", legacy[0].Expression)
+	require.Equal(t, "attribute_not_exists(version) OR version = :zero", legacy[0].Expression)
+	require.Equal(t, map[string]any{":zero": 0}, legacy[0].Values)
 
 	conditionErr := &tableerrors.TransactionError{
 		Err: tableerrors.ErrConditionFailed, Operation: "delete", OperationIndex: 0, Reason: "ConditionalCheckFailed",
