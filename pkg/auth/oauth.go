@@ -402,6 +402,60 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndDelega
 	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, "", delegation, "")
 }
 
+// GenerateAgentAccessTokenWithClientContextAndDelegation mints only a short-lived
+// agent access token. Dedicated machine clients re-prove their authority and call
+// their mint endpoint again; they never receive or persist a refresh credential.
+//
+// The agent lookup is deliberately authoritative. A storage failure must not
+// silently downgrade an agent token to an ordinary user token.
+func (s *OAuthService) GenerateAgentAccessTokenWithClientContextAndDelegation(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	sessionID string,
+	delegation DelegationCredentialClaims,
+) (string, error) {
+	if s == nil || s.repos == nil || s.repos.Account() == nil {
+		return "", ErrSessionStorage
+	}
+
+	user, err := s.repos.Account().GetUser(ctx, username)
+	if err != nil {
+		return "", errors.Join(ErrSessionStorage, err)
+	}
+	if user == nil || !user.IsAgent {
+		return "", ErrInvalidToken
+	}
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = AccessTokenDuration
+	}
+
+	effectiveSessionID := strings.TrimSpace(sessionID)
+	if effectiveSessionID == "" {
+		effectiveSessionID = generateSecureJTI()
+	}
+	delegatedBy := normalizeDelegatedBy(user.AgentOwner)
+	if principal := strings.TrimSpace(delegation.Principal); principal != "" &&
+		!s.agentOwnerMatchesPrincipal(user.AgentOwner, principal) {
+		delegatedBy = normalizeDelegatedBy(principal)
+	}
+
+	return s.generateAccessTokenWithMetadata(username, clientID, scopes, accessTokenMetadata{
+		ExpiresAt:              time.Now().Add(accessTokenTTL),
+		IPAddress:              ipAddress,
+		SessionID:              effectiveSessionID,
+		ClientClass:            ClientClassAgent,
+		IsAgent:                true,
+		AgentType:              strings.TrimSpace(user.AgentType),
+		DelegatedBy:            delegatedBy,
+		AgentSessionID:         effectiveSessionID,
+		DelegationPrincipal:    strings.TrimSpace(delegation.Principal),
+		DelegationAgent:        strings.TrimSpace(delegation.Agent),
+		DelegationContentClass: strings.TrimSpace(delegation.ContentClass),
+	})
+}
+
 func (s *OAuthService) generateTokensWithAccessTokenTTLAndClientContextAndDelegation(
 	ctx context.Context,
 	username, clientID, ipAddress string,
