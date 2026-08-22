@@ -38,6 +38,7 @@ func replaceBucketWithDirPrefix(ctx context.Context, client s3BucketUploaderAPI,
 		return fmt.Errorf("bucket is empty")
 	}
 
+	//nolint:gosec // G703: dir is the local operator-selected publish source; this read-only check verifies it is a directory.
 	info, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("stat dir %s: %w", dir, err)
@@ -61,6 +62,7 @@ type localFile struct {
 func listFiles(root string) ([]localFile, error) {
 	var files []localFile
 
+	//nolint:gosec // G703: root is the local operator-selected publish tree; relative S3 keys are still derived with filepath.Rel below.
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -144,6 +146,7 @@ func uploadDirWithPrefix(ctx context.Context, client s3PutObjectAPI, bucket stri
 		return fmt.Errorf("bucket is empty")
 	}
 
+	//nolint:gosec // G703: dir is the local operator-selected publish source; this read-only check verifies it is a directory.
 	info, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("stat dir %s: %w", dir, err)

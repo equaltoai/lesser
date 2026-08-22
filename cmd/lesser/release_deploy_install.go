@@ -576,9 +576,11 @@ func resetReleaseWorkspaceDir(path string) error {
 }
 
 func finalizeReleaseWorkspaceDir(targetPath string, stagingDir string) error {
+	//nolint:gosec // G703: targetPath is the fixed deployment workspace and is validated before this atomic replacement helper is called.
 	if err := os.RemoveAll(targetPath); err != nil {
 		return fmt.Errorf("reset release workspace %s: %w", targetPath, err)
 	}
+	//nolint:gosec // G703: stagingDir is created beside the validated target specifically for this atomic workspace replacement.
 	if err := os.Rename(stagingDir, targetPath); err != nil {
 		return fmt.Errorf("finalize release workspace %s: %w", targetPath, err)
 	}

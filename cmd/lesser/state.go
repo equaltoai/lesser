@@ -115,14 +115,17 @@ func writeReceipt(path string, receipt *upReceipt) error {
 	}
 	data = append(data, '\n')
 
+	//nolint:gosec // G703: path is the operator's local deployment receipt destination and its parent is owner-only.
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 
 	tmp := path + ".tmp"
+	//nolint:gosec // G703: tmp is the fixed 0600 sibling of the operator-selected receipt path.
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
+	//nolint:gosec // G703: both paths are fixed siblings derived from the same operator-selected receipt destination.
 	return os.Rename(tmp, path)
 }
 

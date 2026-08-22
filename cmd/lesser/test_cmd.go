@@ -497,7 +497,7 @@ func isGeneratedFile(repoRoot, modulePrefix, filePath string) bool {
 		localPath = filepath.Join(repoRoot, localPath)
 	}
 
-	// #nosec G304 -- reads module-owned files from disk.
+	//nolint:gosec // G703: localPath comes from Go's coverage profile and is normalized beneath the discovered module root when relative.
 	f, err := os.Open(localPath)
 	if err != nil {
 		return false

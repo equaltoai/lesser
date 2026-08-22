@@ -292,9 +292,10 @@ func (erm *ErrorRecoveryManager) attemptRecovery(ctx context.Context, conn *mode
 			zap.Error(err))
 
 		// Fallback to goroutine if job queue fails
+		recoveryCtx := context.WithoutCancel(ctx)
 		go func() {
 			time.Sleep(delay)
-			erm.executeRecovery(context.Background(), conn.ConnectionID)
+			erm.executeRecovery(recoveryCtx, conn.ConnectionID)
 		}()
 	}
 
@@ -495,9 +496,10 @@ func (erm *ErrorRecoveryManager) handleRecoveryFailure(ctx context.Context, conn
 				zap.Error(err))
 
 			// Fallback to goroutine if job queue fails
+			recoveryCtx := context.WithoutCancel(ctx)
 			go func() {
 				time.Sleep(delay)
-				erm.executeRecovery(context.Background(), conn.ConnectionID)
+				erm.executeRecovery(recoveryCtx, conn.ConnectionID)
 			}()
 		}
 	}

@@ -740,6 +740,7 @@ func normalizeReleaseDir(input string) (string, error) {
 		return "", fmt.Errorf("resolve --release-dir %q: %w", input, err)
 	}
 
+	//nolint:gosec // G703: --release-dir is an explicit local-operator path; this read-only check verifies the selected directory.
 	info, err := os.Stat(absReleaseDir)
 	if err != nil {
 		return "", fmt.Errorf("stat --release-dir %s: %w", absReleaseDir, err)

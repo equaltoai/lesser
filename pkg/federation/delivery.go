@@ -149,6 +149,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	if trace != nil {
 		ctx = WithFollowTrace(ctx, trace)
 	}
+	activityCtx := context.WithoutCancel(ctx)
 
 	// Get the actor's private key from storage
 	privateKeyPEM, err := d.store.GetActorPrivateKey(ctx, signingActor.PreferredUsername)
@@ -157,7 +158,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
+		go func() { _ = d.store.RecordFederationActivity(activityCtx, federationActivity) }()
 		return errors.Join(ErrPrivateKeyRetrievalFailed, err)
 	}
 
@@ -168,7 +169,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
+		go func() { _ = d.store.RecordFederationActivity(activityCtx, federationActivity) }()
 		return errors.Join(ErrPrivateKeyParseFailed, err)
 	}
 
@@ -184,7 +185,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
+		go func() { _ = d.store.RecordFederationActivity(activityCtx, federationActivity) }()
 		if req == nil {
 			return errors.Join(ErrRequestCreationFailed, err)
 		}
@@ -208,7 +209,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.Success = false
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
-		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
+		go func() { _ = d.store.RecordFederationActivity(activityCtx, federationActivity) }()
 		return errors.Join(ErrHTTPRequestFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -230,7 +231,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 			zap.String("response", respBody))
 
 		federationActivity.Success = true
-		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
+		go func() { _ = d.store.RecordFederationActivity(activityCtx, federationActivity) }()
 		return nil
 	}
 
@@ -242,7 +243,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	// Record failure
 	federationActivity.Success = false
 	federationActivity.ErrorMessage = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, respBody)
-	go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
+	go func() { _ = d.store.RecordFederationActivity(activityCtx, federationActivity) }()
 
 	// Return error for non-2xx status codes
 	log.Error("delivery failed with non-2xx status",

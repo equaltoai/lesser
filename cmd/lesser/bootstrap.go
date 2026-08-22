@@ -156,14 +156,17 @@ func writeBootstrapKeyMaterial(outPath string, wallet bootstrapWallet) error {
 	data = append(data, '\n')
 
 	dir := filepath.Dir(outPath)
+	//nolint:gosec // G703: outPath is the operator-selected local bootstrap export path; its parent is created with owner-only permissions.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
 	tmp := outPath + ".tmp"
+	//nolint:gosec // G703: tmp is the fixed sibling of the operator-selected bootstrap path and contains sensitive material at mode 0600.
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("write output file: %w", err)
 	}
+	//nolint:gosec // G703: both paths are fixed siblings derived from the same operator-selected bootstrap destination.
 	if err := os.Rename(tmp, outPath); err != nil {
 		return fmt.Errorf("finalize output file: %w", err)
 	}

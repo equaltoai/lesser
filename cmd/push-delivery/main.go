@@ -358,6 +358,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 		AccessToken:      msg.AccessToken,
 	}
 
+	//nolint:gosec // The access token is required inside the Web Push payload and is encrypted before any network delivery.
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		result.Status = PushStatusFailed

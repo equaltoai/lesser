@@ -83,6 +83,7 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 	if outputsPath == "" {
 		outputsPath = filepath.Join(repoRoot, "tmp", "cdk-outputs.json")
 	}
+	//nolint:gosec // G703: OutputsPath is an explicit CLI deployment artifact destination, defaulted beneath the discovered repo root.
 	if err := os.MkdirAll(filepath.Dir(outputsPath), 0o750); err != nil {
 		return cdkDeployResult{}, err
 	}
@@ -279,6 +280,7 @@ func writeCdkOutputs(path string, stackName string, outputs map[string]string) e
 	if strings.TrimSpace(stackName) == "" {
 		return fmt.Errorf("cdk stack name is required")
 	}
+	//nolint:gosec // G703: path is the deployment engine's chosen local outputs artifact, never a request-controlled server path.
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
@@ -289,6 +291,7 @@ func writeCdkOutputs(path string, stackName string, outputs map[string]string) e
 		return fmt.Errorf("marshal cdk outputs: %w", err)
 	}
 	serialized = append(serialized, '\n')
+	//nolint:gosec // G703: path is the same deployment-engine outputs artifact and is written with owner-only permissions.
 	if err := os.WriteFile(path, serialized, 0o600); err != nil {
 		return fmt.Errorf("write cdk outputs: %w", err)
 	}

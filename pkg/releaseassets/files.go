@@ -76,7 +76,8 @@ func zipDirectory(sourceDir string, outPath string) error {
 		return err
 	}
 
-	f, err := os.OpenFile(outPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- caller controls output path
+	//nolint:gosec // This zip is a public release artifact written to the caller-selected release workspace.
+	f, err := os.OpenFile(outPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("create zip %s: %w", outPath, err)
 	}

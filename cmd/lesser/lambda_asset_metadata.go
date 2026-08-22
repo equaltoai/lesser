@@ -29,9 +29,11 @@ func writeLambdaAssetMetadata(assetRoot string, metadata lambdaAssetMetadata) er
 	data = append(data, '\n')
 
 	path := filepath.Join(assetRoot, lambdaAssetMetadataFileName)
+	//nolint:gosec // G703: assetRoot is the release engine's validated staging directory, not an HTTP or tenant-controlled path.
 	if err := os.MkdirAll(assetRoot, 0o750); err != nil {
 		return fmt.Errorf("create lambda asset metadata dir: %w", err)
 	}
+	//nolint:gosec // G703: path appends a fixed metadata filename to the validated release staging root.
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write lambda asset metadata: %w", err)
 	}

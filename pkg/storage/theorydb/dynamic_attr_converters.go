@@ -300,9 +300,7 @@ func toAttributeValueSliceOrArray(rv reflect.Value) (types.AttributeValue, bool,
 		}
 
 		out := make([]byte, rv.Len())
-		for i := 0; i < rv.Len(); i++ {
-			out[i] = byte(rv.Index(i).Uint())
-		}
+		reflect.Copy(reflect.ValueOf(out), rv)
 		return &types.AttributeValueMemberB{Value: out}, true, nil
 	}
 

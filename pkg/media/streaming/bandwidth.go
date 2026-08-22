@@ -323,7 +323,7 @@ func (bt *BandwidthTracker) selectQualityByBandwidth(bandwidth int) Quality {
 }
 
 // publishBandwidthMetric publishes bandwidth data to CloudWatch
-func (bt *BandwidthTracker) publishBandwidthMetric(_ context.Context, userID string, bytesTransferred int64, timestamp time.Time) {
+func (bt *BandwidthTracker) publishBandwidthMetric(ctx context.Context, userID string, bytesTransferred int64, timestamp time.Time) {
 	if bt.cloudWatch == nil {
 		return
 	}
@@ -365,8 +365,9 @@ func (bt *BandwidthTracker) publishBandwidthMetric(_ context.Context, userID str
 	}
 
 	// Publish metrics to CloudWatch (async)
+	publishCtx := context.WithoutCancel(ctx)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(publishCtx, 10*time.Second)
 		defer cancel()
 
 		input := &cloudwatch.PutMetricDataInput{

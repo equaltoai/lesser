@@ -141,7 +141,7 @@ func (s *ArticleService) CreateArticle(ctx context.Context, article *models.Arti
 
 	// Federate an immutable snapshot so repository ownership of article cannot
 	// race later CMS writes while this best-effort handoff is still running.
-	go s.federateArticleCreation(context.Background(), cloneArticleForFederation(article))
+	go s.federateArticleCreation(context.WithoutCancel(ctx), cloneArticleForFederation(article))
 
 	return nil
 }
@@ -332,7 +332,7 @@ func (s *ArticleService) UpdateArticle(ctx context.Context, article *models.Arti
 	}
 	s.updateCMSArticleCountsBestEffort(ctx, existing, article)
 
-	go s.federateArticleUpdate(context.Background(), cloneArticleForFederation(article))
+	go s.federateArticleUpdate(context.WithoutCancel(ctx), cloneArticleForFederation(article))
 
 	return nil
 }
@@ -353,7 +353,7 @@ func (s *ArticleService) DeleteArticle(ctx context.Context, article *models.Arti
 	s.deleteCMSArticleIndexes(ctx, article)
 	s.updateCMSArticleCountsBestEffort(ctx, article, nil)
 
-	go s.federateArticleDeletion(context.Background(), cloneArticleForFederation(article))
+	go s.federateArticleDeletion(context.WithoutCancel(ctx), cloneArticleForFederation(article))
 
 	return nil
 }

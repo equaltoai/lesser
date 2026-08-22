@@ -308,7 +308,7 @@ func (r *FederationRepository) RecordFederationActivity(ctx context.Context, act
 	}
 
 	// Update aggregated costs asynchronously
-	go r.updateAggregatedCosts(context.Background(), activity)
+	go r.updateAggregatedCosts(context.WithoutCancel(ctx), activity)
 
 	return nil
 }

@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -208,9 +209,15 @@ func main() {
 	}
 
 	directory := os.Args[1]
+	migrationRoot, err := os.OpenRoot(directory)
+	if err != nil {
+		fmt.Printf("Error opening directory: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = migrationRoot.Close() }()
 
 	// Find all Go files in the directory
-	files, err := filepath.Glob(filepath.Join(directory, "*.go"))
+	files, err := fs.Glob(migrationRoot.FS(), "*.go")
 	if err != nil {
 		fmt.Printf("Error finding files: %v\n", err)
 		os.Exit(1)
@@ -220,7 +227,7 @@ func main() {
 	filesModified := 0
 
 	for _, file := range files {
-		replacements, err := processFile(file)
+		replacements, err := processFile(migrationRoot, file)
 		if err != nil {
 			fmt.Printf("Error processing %s: %v\n", file, err)
 			continue
@@ -237,9 +244,9 @@ func main() {
 	fmt.Printf("Total replacements: %d\n", totalReplacements)
 }
 
-func processFile(filename string) (int, error) {
+func processFile(root *os.Root, filename string) (int, error) {
 	// Read the file
-	content, err := os.ReadFile(filename) // #nosec G304 -- controlled input in migration tool
+	content, err := root.ReadFile(filename)
 	if err != nil {
 		return 0, err
 	}
@@ -279,13 +286,13 @@ func processFile(filename string) (int, error) {
 	if replacements > 0 {
 		// Create backup
 		backupName := filename + ".backup"
-		err = os.WriteFile(backupName, content, 0600)
+		err = root.WriteFile(backupName, content, 0o600)
 		if err != nil {
 			return 0, fmt.Errorf("failed to create backup: %w", err)
 		}
 
 		// Write modified content
-		err = os.WriteFile(filename, []byte(modifiedContent), 0600)
+		err = root.WriteFile(filename, []byte(modifiedContent), 0o600)
 		if err != nil {
 			return 0, fmt.Errorf("failed to write file: %w", err)
 		}

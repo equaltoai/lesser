@@ -28,7 +28,8 @@ func runCommand(ctx context.Context, name string, args []string, opts execOption
 		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 	}
 
-	cmd := exec.CommandContext(ctx, path, args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
+	//nolint:gosec // G702: path is resolved through the constructed PATH and args are passed directly without a shell or string evaluation.
+	cmd := exec.CommandContext(ctx, path, args...)
 	if opts.Dir != "" {
 		cmd.Dir = opts.Dir
 	}
@@ -182,6 +183,7 @@ func ensureGoCacheDir(repoRoot string) (string, error) {
 	}
 
 	path := filepath.Join(repoRoot, "tmp", "go-cache", cacheDirVersionKey())
+	//nolint:gosec // G703: path is deterministically confined beneath the discovered repo root and contains only Go build cache data.
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return "", fmt.Errorf("create go-cache dir: %w", err)
 	}
@@ -197,6 +199,7 @@ func ensureXDGCacheDir(repoRoot string) (string, error) {
 	}
 
 	path := filepath.Join(repoRoot, "tmp", "xdg-cache", cacheDirVersionKey())
+	//nolint:gosec // G703: path is deterministically confined beneath the discovered repo root and contains only tool cache data.
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return "", fmt.Errorf("create xdg-cache dir: %w", err)
 	}

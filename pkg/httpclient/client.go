@@ -426,6 +426,13 @@ func isPrivateIP(ip net.IP) bool {
 
 // Do performs an HTTP request with security checks
 func (c *SecureClient) Do(req *http.Request) (*http.Response, error) {
+	if req == nil {
+		return nil, errors.New("nil request")
+	}
+	if err := validateURL(req.URL, c.logger); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBlockedRequest, err)
+	}
+	//nolint:gosec // secureTransport revalidates the URL, resolves every address, blocks private ranges, and dials only the validated public IP.
 	return c.client.Do(req)
 }
 

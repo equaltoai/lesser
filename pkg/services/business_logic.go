@@ -122,7 +122,7 @@ func (s *businessLogicService) CreatePost(ctx context.Context, user *UserContext
 	}
 
 	// 10. Perform post-creation tasks asynchronously
-	go s.performPostCreationTasks(context.Background(), createActivity, input, hashtags, actor, user, now)
+	go s.performPostCreationTasks(context.WithoutCancel(ctx), createActivity, input, hashtags, actor, user, now)
 
 	return &CreatePostResult{
 		Activity:     createActivity,
@@ -198,8 +198,9 @@ func (s *businessLogicService) DeletePost(ctx context.Context, user *UserContext
 	// - Mentioned users (for private/direct posts)
 	// - Original recipients (for replies)
 	// This ensures proper tombstone propagation across the fediverse
+	deliveryCtx := context.WithoutCancel(ctx)
 	go func() {
-		if err := s.deliverFederatedActivity(context.Background(), deleteActivity, actor); err != nil {
+		if err := s.deliverFederatedActivity(deliveryCtx, deleteActivity, actor); err != nil {
 			s.logger.Error("failed to deliver delete activity", zap.Error(err))
 		}
 	}()
@@ -267,7 +268,7 @@ func (s *businessLogicService) FollowActor(ctx context.Context, user *UserContex
 
 	// 8. Handle approval flow and federation asynchronously
 	requested := targetActor.ManuallyApprovesFollowers
-	go s.handleFollowFederation(context.Background(), followActivity, actor, targetActor, requested)
+	go s.handleFollowFederation(context.WithoutCancel(ctx), followActivity, actor, targetActor, requested)
 
 	return &FollowResult{
 		Activity:  followActivity,
@@ -329,7 +330,7 @@ func (s *businessLogicService) LikeObject(ctx context.Context, user *UserContext
 	}
 
 	// 8. Handle analytics and federation asynchronously
-	go s.handleLikePostProcessing(context.Background(), likeActivity, actor, object)
+	go s.handleLikePostProcessing(context.WithoutCancel(ctx), likeActivity, actor, object)
 
 	return &LikeResult{
 		Activity: likeActivity,

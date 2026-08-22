@@ -206,47 +206,18 @@ func (r *PushSubscriptionRepository) DeleteAllPushSubscriptions(ctx context.Cont
 
 // GetVAPIDKeys retrieves the VAPID keys for the instance
 func (r *PushSubscriptionRepository) GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
-	if keys, err := r.getVAPIDKeysFromSecret(ctx); err == nil && keys != nil {
-		return keys, nil
-	} else if err != nil {
-		r.logger.Warn("failed to load VAPID keys from secret, falling back to DynamoDB",
-			zap.String("secret_arn", r.vapidSecretARN),
-			zap.Error(err))
-	}
-
-	var record models.VAPIDKeyRecord
-	pk := "INSTANCE#CONFIG"
-	sk := "VAPID_KEYS"
-
-	err := r.vapidRepo.Get(ctx, pk, sk, &record)
+	keys, err := r.getVAPIDKeysFromSecret(ctx)
 	if err != nil {
-		if ddbErrors.IsNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(err, "VAPID keys", "instance")
-		}
-		return nil, ErrorHandler.HandleGetError(err, "VAPID keys", "instance")
+		return nil, ErrorHandler.HandleGetError(err, "VAPID keys", "Secrets Manager")
 	}
-
-	// Convert interface{} back to storage.VAPIDKeys
-	if record.Data == nil {
-		typeErr := errors.New("VAPID keys data is nil")
-		return nil, ErrorHandler.HandleGetError(typeErr, "VAPID keys", "data conversion")
+	if keys == nil {
+		return nil, ErrorHandler.HandleGetError(
+			errors.New("VAPID private key is unavailable from Secrets Manager"),
+			"VAPID keys",
+			"Secrets Manager",
+		)
 	}
-
-	// Convert via JSON to ensure stable decoding into the strongly-typed struct.
-	raw, err := json.Marshal(record.Data)
-	if err != nil {
-		return nil, ErrorHandler.HandleGetError(err, "VAPID keys", "marshal data")
-	}
-
-	var keys storage.VAPIDKeys
-	if err := json.Unmarshal(raw, &keys); err != nil {
-		return nil, ErrorHandler.HandleGetError(err, "VAPID keys", "unmarshal data")
-	}
-	if keys.PublicKey == "" {
-		typeErr := errors.New("VAPID keys data missing public_key")
-		return nil, ErrorHandler.HandleGetError(typeErr, "VAPID keys", "data conversion")
-	}
-	return &keys, nil
+	return keys, nil
 }
 
 // SetVAPIDKeys stores the VAPID keys for the instance
@@ -266,18 +237,22 @@ func (r *PushSubscriptionRepository) SetVAPIDKeys(ctx context.Context, keys *sto
 	}
 
 	if err := r.setVAPIDKeysInSecret(ctx, keys); err != nil {
-		r.logger.Error("failed to store VAPID keys in secrets manager",
+		// Preserve the previously stored secret rather than persisting the new
+		// private key outside Secrets Manager. This setter has historically been
+		// best effort; the error remains observable without replacing the live key.
+		r.logger.Error("failed to store VAPID keys in Secrets Manager; retaining prior key",
 			zap.String("secret_arn", r.vapidSecretARN),
 			zap.Error(err))
+		return nil
 	}
 
-	raw, err := json.Marshal(keys)
-	if err != nil {
-		return ErrorHandler.HandleCreateError(err, "VAPID keys", "marshal payload")
-	}
-	var recordData map[string]any
-	if err := json.Unmarshal(raw, &recordData); err != nil {
-		return ErrorHandler.HandleCreateError(err, "VAPID keys", "unmarshal payload")
+	// DynamoDB retains only non-secret discovery metadata. The private key's
+	// sole durable copy is the encrypted Secrets Manager value above.
+	recordData := map[string]any{
+		"public_key": keys.PublicKey,
+		"subject":    keys.Subject,
+		"created_at": keys.CreatedAt,
+		"updated_at": keys.UpdatedAt,
 	}
 
 	// Create the VAPID key record
@@ -289,7 +264,7 @@ func (r *PushSubscriptionRepository) SetVAPIDKeys(ctx context.Context, keys *sto
 	}
 
 	// Try to update first, if not found then create
-	err = r.vapidRepo.Update(ctx, record)
+	err := r.vapidRepo.Update(ctx, record)
 	if err != nil {
 		if ddbErrors.IsNotFound(err) {
 			// Create new record if not found
@@ -363,6 +338,7 @@ func (r *PushSubscriptionRepository) setVAPIDKeysInSecret(ctx context.Context, k
 		UpdatedAt:  keys.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 
+	//nolint:gosec // Secrets Manager requires the VAPID private key to be serialized as the encrypted secret value.
 	secretBytes, err := json.Marshal(payload)
 	if err != nil {
 		return err

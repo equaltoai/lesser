@@ -729,15 +729,16 @@ func (pm *PatternManager) MatchContentEnhanced(ctx context.Context, content *Con
 	}
 
 	// Record matches for pattern statistics
+	recordCtx := context.WithoutCancel(ctx)
 	for _, match := range matches {
-		go func(patternID string) {
-			err := pm.enhancedRepo.RecordMatch(context.Background(), patternID, true, true, match.MatchTime)
+		go func(patternID string, matchTime float64) {
+			err := pm.enhancedRepo.RecordMatch(recordCtx, patternID, true, true, matchTime)
 			if err != nil {
 				pm.logger.Warn("failed to record pattern match",
 					zap.String("pattern_id", patternID),
 					zap.Error(err))
 			}
-		}(match.PatternID)
+		}(match.PatternID, match.MatchTime)
 	}
 
 	return matches, nil

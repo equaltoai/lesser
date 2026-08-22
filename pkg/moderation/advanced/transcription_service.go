@@ -106,8 +106,9 @@ func (ts *TranscriptionService) TranscribeAudio(ctx context.Context, s3URI strin
 	}
 
 	// Clean up transcription job (optional - jobs auto-expire after 90 days)
+	cleanupCtx := context.WithoutCancel(ctx)
 	go func() {
-		deleteCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		deleteCtx, cancel := context.WithTimeout(cleanupCtx, 30*time.Second)
 		defer cancel()
 
 		err := ts.deleteTranscriptionJob(deleteCtx, jobName)

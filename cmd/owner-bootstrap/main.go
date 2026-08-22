@@ -367,6 +367,7 @@ func generateBootstrapArtifacts(ctx context.Context, kmsClient kmsAPI, args owne
 		"urn:ietf:wg:oauth:2.0:oob",
 	}
 
+	//nolint:gosec // This bootstrap command must serialize the generated wallet key solely for its encrypted Secrets Manager write.
 	walletSecretJSON, err := json.Marshal(walletSecretPayload{
 		Address:    walletAddress,
 		PrivateKey: walletPrivKey,
@@ -379,6 +380,7 @@ func generateBootstrapArtifacts(ctx context.Context, kmsClient kmsAPI, args owne
 		ownerBootstrapFatal("json_marshal_failed", "marshal wallet secret", map[string]any{"error": err.Error()})
 	}
 
+	//nolint:gosec // This bootstrap command must serialize the generated OAuth secret solely for its encrypted Secrets Manager write.
 	oauthSecretJSON, err := json.Marshal(oauthSecretPayload{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
