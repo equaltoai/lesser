@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	agentpkg "github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -31,6 +33,39 @@ import (
 
 type round12TestClaims struct {
 	username string
+}
+
+type round12VAPIDSecretsClient struct {
+	secret string
+}
+
+func newRound12VAPIDSecretsClient() *round12VAPIDSecretsClient {
+	payload, _ := json.Marshal(map[string]string{
+		"public_key":  "server-key",
+		"private_key": "test-private-key",
+		"subject":     "mailto:admin@localhost",
+	})
+	return &round12VAPIDSecretsClient{secret: string(payload)}
+}
+
+func (c *round12VAPIDSecretsClient) GetSecretValue(
+	_ context.Context,
+	_ *secretsmanager.GetSecretValueInput,
+	_ ...func(*secretsmanager.Options),
+) (*secretsmanager.GetSecretValueOutput, error) {
+	return &secretsmanager.GetSecretValueOutput{SecretString: aws.String(c.secret)}, nil
+}
+
+func (c *round12VAPIDSecretsClient) PutSecretValue(
+	_ context.Context,
+	input *secretsmanager.PutSecretValueInput,
+	_ ...func(*secretsmanager.Options),
+) (*secretsmanager.PutSecretValueOutput, error) {
+	if input == nil || input.SecretString == nil {
+		return nil, fmt.Errorf("test VAPID secret value is absent")
+	}
+	c.secret = aws.ToString(input.SecretString)
+	return &secretsmanager.PutSecretValueOutput{}, nil
 }
 
 func (c round12TestClaims) HasScope(string) bool { return true }
@@ -1527,7 +1562,15 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 	pollRepo := repositories.NewPollRepository(mockDB, tableName, zap.NewNop(), nil)
 	scheduledStatusRepo := repositories.NewScheduledStatusRepository(mockDB, tableName, zap.NewNop(), nil)
 	scheduledStatusRepo.SetMediaRepository(mediaRepo)
-	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(mockDB, tableName, zap.NewNop(), nil, nil, "", "mailto:admin@localhost")
+	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(
+		mockDB,
+		tableName,
+		zap.NewNop(),
+		nil,
+		newRound12VAPIDSecretsClient(),
+		"test-vapid-secret",
+		"mailto:admin@localhost",
+	)
 	markerRepo := repositories.NewMarkerRepository(mockDB, tableName, zap.NewNop(), nil)
 	communityNoteRepo := repositories.NewCommunityNoteRepository(mockDB, tableName, zap.NewNop(), nil)
 	costRepo := repositories.NewTrackingRepository(mockDB, tableName, zap.NewNop(), nil)
