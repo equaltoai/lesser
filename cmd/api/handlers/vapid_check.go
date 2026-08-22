@@ -12,6 +12,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
@@ -19,8 +20,7 @@ import (
 
 // IsProductionEnvironment checks if the current environment is production
 func IsProductionEnvironment(cfg *config.Config) bool {
-	env := cfg.Stage
-	return env == "production" || env == "prod"
+	return naming.IsLiveEnvironment(cfg.Stage)
 }
 
 // ValidateVAPIDKeysForProduction validates that VAPID keys are available in production
