@@ -115,7 +115,7 @@ func handler(ctx context.Context, event cfn.Event) (physicalResourceID string, d
 		PrivateKey: string(privateKeyPEM),
 		PublicKey:  string(publicKeyPEM),
 	}
-	secretValue, err := json.Marshal(keyData)
+	secretValue, err := json.Marshal(keyData) //nolint:gosec // G117: intentional private-key serialization — this tool exists to generate and store a CloudFront key pair in Secrets Manager
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to marshal key pair data: %w", err)
 	}
