@@ -175,7 +175,7 @@ func setEnv(env []string, key string, value string) []string {
 
 func ensureGoCacheDir(repoRoot string) (string, error) {
 	if override := strings.TrimSpace(os.Getenv("GOCACHE")); override != "" && override != "off" {
-		if err := os.MkdirAll(override, 0o750); err != nil {
+		if err := os.MkdirAll(override, 0o750); err != nil { //nolint:gosec // G703: GOCACHE is an explicit operator environment override and this CLI must create the exact cache directory the operator selected
 			return "", fmt.Errorf("create go-cache dir: %w", err)
 		}
 		return override, nil
@@ -190,7 +190,7 @@ func ensureGoCacheDir(repoRoot string) (string, error) {
 
 func ensureXDGCacheDir(repoRoot string) (string, error) {
 	if override := strings.TrimSpace(os.Getenv("XDG_CACHE_HOME")); override != "" {
-		if err := os.MkdirAll(override, 0o750); err != nil {
+		if err := os.MkdirAll(override, 0o750); err != nil { //nolint:gosec // G703: XDG_CACHE_HOME is an explicit operator environment override and this CLI must create the exact cache directory the operator selected
 			return "", fmt.Errorf("create xdg-cache dir: %w", err)
 		}
 		return override, nil

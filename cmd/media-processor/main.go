@@ -2035,7 +2035,7 @@ func (mp *MediaProcessor) handleProcessingError(ctx context.Context, job *models
 		// Trigger alerts for high error rates if needed
 		if mp.alertManager != nil && isPermanent {
 			go func() {
-				alertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				alertCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 				defer cancel()
 				mp.alertManager.CheckErrorRate(alertCtx, "media-processor", 100.0) // This failure represents 100% error rate for this job
 			}()

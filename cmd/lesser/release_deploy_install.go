@@ -539,7 +539,7 @@ func writeExtractedFile(targetPath string, reader io.Reader, expectedSize int64,
 	}
 
 	tmpPath := targetPath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- target path comes from validated archive entries
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- target path comes from validated archive entries
 	if err != nil {
 		return fmt.Errorf("create extracted file %s: %w", label, err)
 	}

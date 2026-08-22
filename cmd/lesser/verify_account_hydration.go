@@ -219,7 +219,13 @@ func parseAccountHydrationUsernames(usernamesCSV string) []string {
 }
 
 func loadAccountHydrationFixtureUsernames(path string) ([]string, error) {
-	raw, err := os.ReadFile(path)
+	fixtureRoot, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, fmt.Errorf("open account hydration fixture root: %w", err)
+	}
+	defer func() { _ = fixtureRoot.Close() }()
+
+	raw, err := fixtureRoot.ReadFile(filepath.Base(path))
 	if err != nil {
 		return nil, fmt.Errorf("read account hydration fixture: %w", err)
 	}

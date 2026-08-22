@@ -32,7 +32,7 @@ func writeLambdaAssetMetadata(assetRoot string, metadata lambdaAssetMetadata) er
 	if err := os.MkdirAll(assetRoot, 0o750); err != nil {
 		return fmt.Errorf("create lambda asset metadata dir: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write lambda asset metadata: %w", err)
 	}
 	return nil

@@ -367,7 +367,7 @@ func writeVerifiedExtractedFile(targetPath string, reader io.Reader, manifestFil
 	}
 
 	tmpPath := targetPath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- staging path is derived from validated manifest entries
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- staging path is derived from validated manifest entries
 	if err != nil {
 		return fmt.Errorf("create staging file %s: %w", manifestFile.Path, err)
 	}
@@ -430,7 +430,7 @@ func copyFile(targetPath string, sourcePath string) error {
 	defer func() { _ = sourceFile.Close() }()
 
 	tmpPath := targetPath + ".tmp"
-	targetFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- target path is derived from repoRoot/bin and validated manifest entries
+	targetFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- target path is derived from repoRoot/bin and validated manifest entries
 	if err != nil {
 		return fmt.Errorf("create target file %s: %w", targetPath, err)
 	}

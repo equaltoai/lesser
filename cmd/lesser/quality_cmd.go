@@ -116,9 +116,15 @@ func ensureGolangCILintCacheFresh(repoRoot, xdgCache string) error {
 	}
 	versionLine := strings.TrimSpace(strings.SplitN(versionOut, "\n", 2)[0])
 
-	stampPath := filepath.Join(xdgCache, "golangci-lint.cache.stamp")
 	stamp := fmt.Sprintf("%s\nconfig-sha256:%x\n", versionLine, cfgHash[:])
-	if existing, err := os.ReadFile(filepath.Clean(stampPath)); err == nil && string(existing) == stamp {
+	cacheRoot, err := os.OpenRoot(xdgCache)
+	if err != nil {
+		return fmt.Errorf("open xdg cache root: %w", err)
+	}
+	defer func() { _ = cacheRoot.Close() }()
+
+	const stampName = "golangci-lint.cache.stamp"
+	if existing, err := cacheRoot.ReadFile(stampName); err == nil && string(existing) == stamp {
 		return nil
 	}
 
@@ -131,7 +137,7 @@ func ensureGolangCILintCacheFresh(repoRoot, xdgCache string) error {
 		return err
 	}
 
-	if err := os.WriteFile(stampPath, []byte(stamp), 0o600); err != nil {
+	if err := cacheRoot.WriteFile(stampName, []byte(stamp), 0o600); err != nil {
 		return fmt.Errorf("write golangci-lint cache stamp: %w", err)
 	}
 	return nil

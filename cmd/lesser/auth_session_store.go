@@ -161,7 +161,7 @@ func writeAuthSession(baseURL string, key []byte, session *cliAuthSession) error
 
 	session.BaseURL = strings.TrimSpace(baseURL)
 
-	plaintext, err := json.Marshal(session)
+	plaintext, err := json.Marshal(session) //nolint:gosec // G117: the refresh token is intentionally serialized only into this in-memory plaintext, then AEAD-encrypted before the 0600 session file is written
 	if err != nil {
 		return err
 	}
