@@ -237,13 +237,12 @@ func (r *PushSubscriptionRepository) SetVAPIDKeys(ctx context.Context, keys *sto
 	}
 
 	if err := r.setVAPIDKeysInSecret(ctx, keys); err != nil {
-		// Preserve the previously stored secret rather than persisting the new
-		// private key outside Secrets Manager. This setter has historically been
-		// best effort; the error remains observable without replacing the live key.
+		// Do not report a rotation as successful or publish discovery metadata
+		// unless Secrets Manager accepted the new private key.
 		r.logger.Error("failed to store VAPID keys in Secrets Manager; retaining prior key",
 			zap.String("secret_arn", r.vapidSecretARN),
 			zap.Error(err))
-		return nil
+		return ErrorHandler.HandleCreateError(err, "VAPID keys", "Secrets Manager")
 	}
 
 	// DynamoDB retains only non-secret discovery metadata. The private key's

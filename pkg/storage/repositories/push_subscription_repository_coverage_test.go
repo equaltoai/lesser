@@ -236,6 +236,7 @@ func TestRound07_PushSubscriptionRepository_VAPIDSecretAndFallbackBranches(t *te
 
 	secretARN := "arn:aws:secretsmanager:us-east-1:000000000000:secret:test"
 	defaultSubject := "mailto:default@example.com"
+	putErr := stdErrors.New("put-failed")
 
 	repo := NewPushSubscriptionRepository(
 		mockDB,
@@ -257,7 +258,7 @@ func TestRound07_PushSubscriptionRepository_VAPIDSecretAndFallbackBranches(t *te
 				return &secretsmanager.GetSecretValueOutput{SecretString: aws.String(str)}, nil
 			},
 			put: func(_ context.Context, _ *secretsmanager.PutSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error) {
-				return nil, stdErrors.New("put-failed")
+				return nil, putErr
 			},
 		},
 		secretARN,
@@ -277,7 +278,9 @@ func TestRound07_PushSubscriptionRepository_VAPIDSecretAndFallbackBranches(t *te
 	require.True(t, parseVAPIDTimestamp("").IsZero())
 	require.True(t, parseVAPIDTimestamp("not-a-time").IsZero())
 
-	require.NoError(t, repo.SetVAPIDKeys(context.Background(), &storage.VAPIDKeys{PublicKey: "p", PrivateKey: "s"}))
+	err = repo.SetVAPIDKeys(context.Background(), &storage.VAPIDKeys{PublicKey: "p", PrivateKey: "s"})
+	require.Error(t, err)
+	require.ErrorIs(t, err, putErr)
 }
 
 func TestRound07_PushSubscriptionRepository_VAPIDFallbackAndTypeAssertionError(t *testing.T) {
