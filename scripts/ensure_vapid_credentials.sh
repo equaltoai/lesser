@@ -159,8 +159,6 @@ if [ -z "$SECRET_ARN" ] || [ "$SECRET_ARN" = "None" ]; then
   exit 1
 fi
 
-cat <<EOF
-VAPID_SECRET_ARN=${SECRET_ARN}
-VAPID_PUBLIC_KEY=${PUBLIC_KEY}
-VAPID_SUBJECT=${SUBJECT_RESOLVED}
-EOF
+printf 'export VAPID_SECRET_ARN=%q\n' "$SECRET_ARN"
+printf 'export VAPID_PUBLIC_KEY=%q\n' "$PUBLIC_KEY"
+printf 'export VAPID_SUBJECT=%q\n' "$SUBJECT_RESOLVED"

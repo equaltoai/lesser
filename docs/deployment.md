@@ -91,7 +91,7 @@ Every `lesser up` invocation that targets `live` requires `VAPID_SECRET_ARN`. Th
 artifacts or invoking CDK, so a missing ARN cannot first surface as an API Lambda startup failure after the live stack
 has been updated. Dev- or staging-only deploys may omit it; those stages retain their warning-and-skip behavior.
 
-Provision the stage-specific Secrets Manager value with the existing helper, then evaluate the deployment assignments
+Provision the stage-specific Secrets Manager value with the existing helper, then evaluate the deployment exports
 it prints before running `lesser up`:
 
 ```bash
