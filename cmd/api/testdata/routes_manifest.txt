@@ -26,6 +26,7 @@ GET /
 GET /.well-known/lesser-soul-agent
 GET /.well-known/nodeinfo
 GET /.well-known/oauth-authorization-server
+GET /.well-known/oauth-protected-resource/mcp/{username}
 GET /.well-known/reputation-keys
 GET /api/oembed
 GET /api/v1/accounts/lookup
@@ -168,6 +169,7 @@ GET /api/v2/trends/statuses
 GET /api/v2/trends/tags
 GET /auth/device
 GET /auth/wallet/list
+GET /authorize
 GET /embed/{id}
 GET /nodeinfo/2.0
 GET /oauth/authorize
@@ -300,10 +302,12 @@ POST /oauth/device/verify
 POST /oauth/register
 POST /oauth/revoke
 POST /oauth/token
+POST /register
 POST /setup/admin
 POST /setup/bootstrap/challenge
 POST /setup/bootstrap/verify
 POST /setup/finalize
+POST /token
 PUT /api/v1/accounts/quote_permissions
 PUT /api/v1/admin/agents/policy
 PUT /api/v1/admin/custom_emojis/{shortcode}

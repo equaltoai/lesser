@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/golang-jwt/jwt/v5"
+	frameworkoauth "github.com/theory-cloud/apptheory/v3/runtime/oauth"
 	"go.uber.org/zap"
 )
 
@@ -327,8 +327,8 @@ func (s *OAuthService) GenerateAuthorizationCode() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// VerifyCodeChallenge verifies the PKCE code challenge per Mastodon 4.3.0+ requirements
-// Mastodon only supports S256 method for PKCE
+// VerifyCodeChallenge verifies PKCE using AppTheory's RFC 7636 S256 primitive.
+// Verifiers must use the RFC character set and be 43-128 characters long.
 func (s *OAuthService) VerifyCodeChallenge(codeChallenge, codeVerifier, challengeMethod string) error {
 	// If PKCE is not used, skip verification
 	if common.ValidateRequiredParam("codeChallenge", codeChallenge) != nil && common.ValidateRequiredParam("codeVerifier", codeVerifier) != nil && common.ValidateRequiredParam("challengeMethod", challengeMethod) != nil {
@@ -345,10 +345,8 @@ func (s *OAuthService) VerifyCodeChallenge(codeChallenge, codeVerifier, challeng
 		return ErrInvalidRequest
 	}
 
-	// Verify S256 code challenge
-	h := sha256.Sum256([]byte(codeVerifier))
-	computedChallenge := base64.RawURLEncoding.EncodeToString(h[:])
-	if codeChallenge != computedChallenge {
+	matched, err := frameworkoauth.PKCEVerifyS256(codeVerifier, codeChallenge)
+	if err != nil || !matched {
 		return ErrInvalidCodeChallenge
 	}
 

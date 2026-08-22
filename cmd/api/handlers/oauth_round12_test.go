@@ -966,7 +966,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 	})
 
 	t.Run("authorization_code PKCE verification failed", func(t *testing.T) {
-		verifier := "good-verifier"
+		verifier := "good-verifier-rfc7636-minimum-length-43-characters"
 		sum := sha256.Sum256([]byte(verifier))
 		challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 

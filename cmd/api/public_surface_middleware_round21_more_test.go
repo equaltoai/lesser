@@ -40,6 +40,7 @@ func TestAPIRequestIsPublic_Round21(t *testing.T) {
 		{"notes read is public", http.MethodGet, "/api/v1/notes/1", true},
 		{"soul well-known proof is public", http.MethodGet, "/.well-known/lesser-soul-agent", true},
 		{"oauth metadata is public", http.MethodGet, "/.well-known/oauth-authorization-server", true},
+		{"actor oauth protected resource metadata is public", http.MethodGet, "/.well-known/oauth-protected-resource/mcp/agent1", true},
 		{"trust jwks proxy is public", http.MethodGet, "/api/v1/trust/jwks.json", true},
 		{"trust attestations proxy is public", http.MethodGet, "/api/v1/trust/attestations", true},
 		{"trust attestation id proxy is public", http.MethodGet, "/api/v1/trust/attestations/abc", true},
@@ -47,7 +48,9 @@ func TestAPIRequestIsPublic_Round21(t *testing.T) {
 
 		{"apps registration is public", http.MethodPost, "/api/v1/apps", true},
 		{"oauth dynamic registration is public", http.MethodPost, "/oauth/register", true},
+		{"framework oauth registration is public", http.MethodPost, "/register", true},
 		{"oauth token is public", http.MethodPost, "/oauth/token", true},
+		{"framework oauth token is public", http.MethodPost, "/token", true},
 		{"oauth revoke is public", http.MethodPost, "/oauth/revoke", true},
 		{"wallet login is public", http.MethodPost, "/auth/wallet/login", true},
 		{"post search statuses is public", http.MethodPost, "/api/v1/search/statuses", true},

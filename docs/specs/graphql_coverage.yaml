@@ -114,6 +114,10 @@ routes:
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
+      path: /.well-known/oauth-protected-resource/mcp/{username}
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
       path: /.well-known/reputation-keys
       policy: rest_only
       exemptedBy: protocol_infra
@@ -1775,6 +1779,10 @@ routes:
       policy: rest_only
       exemptedBy: auth_setup
     - method: GET
+      path: /authorize
+      policy: graphql_required
+      status: missing
+    - method: GET
       path: /embed/{id}
       policy: rest_only
       exemptedBy: embeds
@@ -1830,6 +1838,10 @@ routes:
       path: /oauth/token
       policy: rest_only
       exemptedBy: oauth_oidc
+    - method: POST
+      path: /register
+      policy: graphql_required
+      status: missing
     - method: GET
       path: /robots.txt
       policy: rest_only
@@ -1854,4 +1866,8 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
+    - method: POST
+      path: /token
+      policy: graphql_required
+      status: missing
 

@@ -75,6 +75,7 @@ The `tools/authsurface_doc` Go test asserts that the committed section matches t
 | GET/HEAD | exact | `/` | root document |
 | GET/HEAD | exact | `/robots.txt` | robots metadata |
 | GET/HEAD | exact | `/.well-known/oauth-authorization-server` | OAuth authorization-server metadata |
+| GET/HEAD | single_segment | `/.well-known/oauth-protected-resource/mcp/` | actor-scoped MCP protected-resource metadata |
 | GET/HEAD | exact | `/.well-known/nodeinfo` | NodeInfo discovery |
 | GET/HEAD | exact | `/.well-known/lesser-soul-agent` | Lesser Soul agent discovery |
 | GET/HEAD | exact | `/nodeinfo/2.0` | NodeInfo document |
@@ -94,6 +95,7 @@ The `tools/authsurface_doc` Go test asserts that the committed section matches t
 | GET/HEAD | exact | `/api/v2/search` | Mastodon v2 search endpoint |
 | GET/HEAD | exact | `/api/v2/suggestions` | public suggestions endpoint |
 | GET/HEAD | exact | `/setup/status` | setup status check |
+| GET/HEAD | exact | `/authorize` | AppTheory-conventional OAuth authorization entrypoint |
 | GET/HEAD | exact | `/oauth/authorize` | OAuth authorization entrypoint |
 | GET/HEAD | exact | `/api/v1/trust/jwks.json` | lesser.host trust-proxy JWKS |
 | GET/HEAD | exact | `/api/v1/trust/attestations` | lesser.host trust-proxy attestation index |
@@ -111,6 +113,8 @@ The `tools/authsurface_doc` Go test asserts that the committed section matches t
 | GET/HEAD | skills_catalog | `/api/v1/skills` | public skills catalog; exact resolver remains private; excludes exact `/api/v1/skills/resolve` |
 | GET/HEAD | prefix | `/api/v1/search/statuses` | public status-search read path; route-level guard may still require OAuth |
 | GET/HEAD | prefix | `/api/v1/notes/` | public community-note reads |
+| POST | exact | `/register` | AppTheory-conventional dynamic OAuth client registration |
+| POST | exact | `/token` | AppTheory-conventional OAuth token endpoint |
 | POST | exact | `/api/v1/apps` | OAuth app registration |
 | POST | exact | `/oauth/register` | legacy OAuth app registration |
 | POST | exact | `/api/v1/accounts` | account registration with wallet/WebAuthn proof |

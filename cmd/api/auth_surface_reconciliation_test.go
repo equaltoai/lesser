@@ -585,6 +585,8 @@ var authSurfaceExpectedPublicMutations = map[string]bool{
 	"POST /oauth/register":                                                         true,
 	"POST /oauth/revoke":                                                           true,
 	"POST /oauth/token":                                                            true,
+	"POST /register":                                                               true,
+	"POST /token":                                                                  true,
 	"POST /setup/admin":                                                            true,
 	"POST /setup/bootstrap/challenge":                                              true,
 	"POST /setup/bootstrap/verify":                                                 true,

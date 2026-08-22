@@ -25,7 +25,7 @@ func TestOAuthInstancePlaneDynamicPublicClientOwnerGetsOperatorClaims(t *testing
 				cfg := round11TestConfig()
 				resource := oauthInstanceTestResource(surface)
 				redirectURI := "http://127.0.0.1:8787/callback"
-				verifier := "lesser-owner-operator-verifier-" + clientClass + "-" + surface
+				verifier := "lesser-owner-operator-verifier-rfc7636-" + clientClass + "-" + surface
 				challengeBytes := sha256.Sum256([]byte(verifier))
 				challenge := base64.RawURLEncoding.EncodeToString(challengeBytes[:])
 				state := &round10QueryState{

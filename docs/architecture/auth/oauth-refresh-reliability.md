@@ -8,24 +8,64 @@ grant, client, or refresh credential is invalid.
 
 | Evidence | Response | Client action |
 | --- | --- | --- |
-| Refresh token is authoritatively missing, expired, revoked, bound to another client, or bound to another resource | `400 invalid_grant` | Reauthorize |
+| Refresh token is authoritatively missing, expired, bound to another client/resource, or fails an authority revalidation | `400 invalid_grant` | Reauthorize |
+| A consumed standard refresh token has a complete retained successor chain | `200`; a fresh access token plus the already-minted live refresh head | Continue with the returned head |
+| A replay authority, encrypted successor artifact, budget item, or head integrity check cannot be completed | `503 temporarily_unavailable` with `Retry-After: 1` | Back off and retry the same request |
 | Client is authoritatively missing or its presented authentication fails | `400 invalid_client` | Repair client configuration |
-| Storage, throttling, transport, conditional-write, ambiguous-write, or share-authorization read failure | `503 temporarily_unavailable` with `Retry-After` | Back off and retry the same request |
-| Share or owner revalidation authoritatively denies the principal | `400 invalid_grant`; revoke the standard refresh family | Reauthorize |
+| Storage, throttling, transport, conditional-write, ambiguous-write, agent re-mint, or share-authorization read failure | `503 temporarily_unavailable` with `Retry-After: 1` | Back off and retry the same request |
+| Three refresh CAS attempts are exhausted | `503 temporarily_unavailable` with `Retry-After: 1` | Back off and retry the same request |
+| Share or owner revalidation authoritatively denies the principal | `400 invalid_grant` | Reauthorize |
 
 Authorization-code and device-code issuance atomically consume the one-time
 grant and create the refresh-token row. If that transaction fails, Lesser
 returns no tokens and leaves no intentionally unbacked refresh credential.
 
-## Standard refresh lineage
+## Stateless agent and machine re-mint
+
+Dedicated agent-runtime clients receive a short-TTL signed access token only.
+They re-prove their existing delegation, key challenge, or other mint-endpoint
+authority and invoke that endpoint again. Re-minting is idempotent with respect
+to refresh state: it performs no refresh create, update, rotation, or revocation
+write. Infrastructure failures from every agent mint surface use the retryable
+`503 temporarily_unavailable` taxonomy rather than a bare 500.
+
+The migration is **honor until expiry**. Agent-runtime refresh credentials
+issued before this contract remain usable until their persisted idle, absolute,
+or token expiry. A valid legacy credential mints only a new access token and
+returns no refresh token; the stored family is not mutated. Revoked, malformed,
+or expired legacy credentials remain invalid. No new agent-runtime refresh
+credential is issued, so the legacy population drains naturally without a
+revocation wave or a non-transactional revoke-then-create interval.
+
+## Standard refresh authority and lineage
 
 Standard dynamically registered clients use the existing refresh-token
 `familyID`, `generation`, `current`, `revoked`, `revokedAt`, `revokedReason`,
-and optimistic-lock `version` fields. Rotation is one TableTheory transaction:
+and optimistic-lock `version` fields. The critical-path authority is a strongly
+consistent singleton `OAUTH_REFRESH_AUTHORITY#<tuple-hash>` / `CURRENT` row per
+`(username, client_id, resource)`. It contains a bounded eight-entry LRU family
+slot list. Each slot binds the family ID, live-head hash, generation, expiry,
+and update time. The authority row's TableTheory `revision` version field is the
+CAS boundary. GSI2 remains populated only as reconciliation and operator
+evidence; refresh authorization and replay never discover a head through it.
+
+Rotation is one TableTheory transaction:
 
 1. compare-and-swap the presented current generation;
 2. retain it as revoked with reason `rotated`; and
-3. create exactly one next generation.
+3. create exactly one next generation;
+4. create an immutable successor artifact whose raw successor is a fail-closed
+   TableTheory `theorydb:"encrypted"` field and whose other lineage pointers are
+   hashes; and
+5. advance the tuple authority slot at its expected revision.
+
+Each of at most three CAS attempts strongly re-reads the predecessor and
+authority, then derives the family, generation, token version, and authority
+revision inside that attempt. There is no out-of-transaction version seed.
+Conditional contention uses injectable full-jitter backoff with a 25 ms base,
+doubling delay, and 200 ms cap. A request that began on the active head and
+loses contention returns retryable 503 after bounded exhaustion; contention
+never destroys the grant or becomes `invalid_grant`.
 
 Rows issued before lineage adoption are assigned a family and generation 1 in
 their first rotation transaction. Primary keys and sort keys do not change.
@@ -33,27 +73,61 @@ The existing GSI2 family index is populated for standard lineage; the runtime
 user and session indexes remain sparse to tokens carrying the pre-existing
 runtime-session metadata. Ordinary web/CLI lineage does not populate them.
 
-## Bounded retry rescue
+## Encrypted successor replay walk
 
-For roughly 30 seconds after rotation, the same client may present the replaced
-generation once to recover from a lost token response. Lesser locates the sole
-active generation, then atomically:
+A consumed standard token walks immutable direct-key successor artifacts until
+its successor hash equals the consistently read authority slot's live-head
+hash. Lesser then consistently reads and validates that head, revalidates the
+resource and delegation authority, mints a fresh access token, and returns the
+head's already-minted raw refresh token. Replay never rotates, revokes, or
+creates another refresh credential. Missing/corrupt artifacts, absent authority,
+decryption errors, head mismatches, budget errors, and walk exhaustion are all
+retryable 503 responses.
 
-1. marks the stale generation's retry as redeemed;
-2. revokes the active replacement; and
-3. creates a new sole family head.
+Before walking, Lesser pre-charges eight steps against a per-family, per-minute
+budget item capped at 64 steps. It refunds unused steps after the walk. Charge,
+refund, and budget CAS failures fail closed as retryable 503, preventing a
+replay request from turning a long retained chain into unbounded read
+amplification.
 
-The redemption is compare-and-swap protected. A CAS-losing concurrent redemption
-is treated as redeemed-reuse replay and revokes the family. Later same-client
-stale presentations are terminal but do not start another revocation sweep.
-Family-index absence inside the grace window is retryable because a DynamoDB GSI
-is eventually consistent. Cross-client use and an authoritative actor share or
-owner revalidation denial also revoke the family. Expired credentials,
-already-revoked or stale generations, resource mismatch, and use outside the
-grace window remain terminal without triggering family revocation.
+## AppTheory OAuth primitive adoption
 
-Dedicated agent-runtime client paths keep their existing rotation and
-concurrency behavior; this design applies to the standard DCR refresh path.
+Lesser adapts its OAuth wire surface to AppTheory's `runtime/oauth` primitives:
+
+- RFC 8414 authorization-server metadata is constructed and served by
+  `NewAuthorizationServerMetadata` and
+  `AuthorizationServerMetadataHandler`. The advertised `/authorize`, `/token`,
+  and `/register` paths are real routes; the historical `/oauth/*` forms remain
+  additive compatibility aliases. Lesser fills the framework metadata's scope
+  and supported token-authentication lists. Because Lesser currently signs
+  OAuth access tokens symmetrically, the optional `jwks_uri` is omitted rather
+  than advertising public key material that does not exist.
+- RFC 7591 request parsing and response serialization embed AppTheory's
+  `DynamicClientRegistrationRequest` and
+  `DynamicClientRegistrationResponse`. Every request passes through
+  `ValidateDynamicClientRegistrationRequest`. Lesser uses the framework
+  `AllowedRedirectURIs` policy seam to supply only redirects allowed by its
+  stricter HTTPS, native custom-scheme, and loopback-HTTP policy, then layers
+  its additive metadata, client-class, scope, and grant policy on the validated
+  core.
+- RFC 9728 actor-scoped MCP protected-resource metadata is constructed and
+  served by `NewProtectedResourceMetadata` and
+  `ProtectedResourceMetadataHandler`.
+- PKCE S256 verification delegates to AppTheory `PKCEVerifyS256`, including
+  RFC 7636's 43-to-128-character verifier bounds.
+
+### PKCE short-verifier sunset
+
+The prior acceptance of verifiers shorter than 43 characters was a non-RFC
+compatibility deviation and ends with this release. No stored token or database
+migration is required: code verifiers are client-held and authorization codes
+are short-lived. An affected client fails loudly with OAuth `invalid_grant`
+during code redemption in its next authorization flow; Lesser neither accepts
+the short proof nor silently falls back. Clients must generate a verifier of
+43–128 characters from the RFC 7636 unreserved character set, derive an S256
+challenge, and restart authorization. Authorization codes issued before the
+cutover remain redeemable only when their client presents an RFC-conformant
+verifier matching the stored challenge.
 
 ## Token-endpoint outcome telemetry
 
