@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -30,6 +32,66 @@ type round10Where struct {
 	field string
 	op    string
 	value any
+}
+
+type round10VAPIDSecretsClient struct {
+	mu     sync.Mutex
+	secret string
+}
+
+func round10NewVAPIDSecretsClient(state *round10QueryState) *round10VAPIDSecretsClient {
+	client := &round10VAPIDSecretsClient{}
+	if state != nil && state.forceVapidNotFound {
+		return client
+	}
+	keys := &storage.VAPIDKeys{
+		PublicKey:  "pub",
+		PrivateKey: "priv",
+		Subject:    "mailto:test@example.com",
+		CreatedAt:  time.Now().Add(-24 * time.Hour),
+		UpdatedAt:  time.Now(),
+	}
+	if state != nil && state.vapidKeys != nil {
+		keys = state.vapidKeys
+	}
+	payload, err := json.Marshal(map[string]any{
+		"public_key":  keys.PublicKey,
+		"private_key": keys.PrivateKey,
+		"subject":     keys.Subject,
+		"created_at":  keys.CreatedAt.UTC().Format(time.RFC3339),
+		"updated_at":  keys.UpdatedAt.UTC().Format(time.RFC3339),
+	})
+	if err == nil {
+		client.secret = string(payload)
+	}
+	return client
+}
+
+func (c *round10VAPIDSecretsClient) GetSecretValue(
+	_ context.Context,
+	_ *secretsmanager.GetSecretValueInput,
+	_ ...func(*secretsmanager.Options),
+) (*secretsmanager.GetSecretValueOutput, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.secret == "" {
+		return nil, fmt.Errorf("test VAPID secret is absent")
+	}
+	return &secretsmanager.GetSecretValueOutput{SecretString: aws.String(c.secret)}, nil
+}
+
+func (c *round10VAPIDSecretsClient) PutSecretValue(
+	_ context.Context,
+	input *secretsmanager.PutSecretValueInput,
+	_ ...func(*secretsmanager.Options),
+) (*secretsmanager.PutSecretValueOutput, error) {
+	if input == nil || input.SecretString == nil {
+		return nil, fmt.Errorf("test VAPID secret value is absent")
+	}
+	c.mu.Lock()
+	c.secret = aws.ToString(input.SecretString)
+	c.mu.Unlock()
+	return &secretsmanager.PutSecretValueOutput{}, nil
 }
 
 type round10QueryState struct {
