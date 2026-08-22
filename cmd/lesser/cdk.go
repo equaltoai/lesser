@@ -111,7 +111,7 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		"lesserHostInstanceKeyArn":     strings.TrimSpace(os.Getenv("LESSER_HOST_INSTANCE_KEY_ARN")),
 		"lesserHostAttestationsUrl":    strings.TrimSpace(os.Getenv("LESSER_HOST_ATTESTATIONS_URL")),
 		"soulBindingIntegrationKeyArn": strings.TrimSpace(os.Getenv("SOUL_BINDING_INTEGRATION_KEY_ARN")),
-		"vapidSecretArn":               strings.TrimSpace(os.Getenv("VAPID_SECRET_ARN")),
+		"vapidSecretArn":               resolveVAPIDSecretARN(),
 		"vapidPublicKey":               strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")),
 		"vapidSubject":                 strings.TrimSpace(os.Getenv("VAPID_SUBJECT")),
 		"bodyEnabled":                  strings.TrimSpace(os.Getenv("BODY_ENABLED")),
@@ -203,6 +203,10 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		StackName: req.StackName,
 		Outputs:   outputs,
 	}, nil
+}
+
+func resolveVAPIDSecretARN() string {
+	return strings.TrimSpace(os.Getenv("VAPID_SECRET_ARN"))
 }
 
 func cdkDestroyStack(ctx context.Context, repoRoot string, awsProfile string, req cdkDestroyRequest) error {

@@ -350,6 +350,9 @@ func selectUpStages(withStaging bool, stage string) ([]naming.Stage, error) {
 }
 
 func (e *upEnv) run(ctx context.Context) error {
+	if err := validateVAPIDDeployPreflight(e.stages, resolveVAPIDSecretARN()); err != nil {
+		return err
+	}
 	if err := e.ensureToolsAvailable(); err != nil {
 		return err
 	}
@@ -393,6 +396,20 @@ func (e *upEnv) run(ctx context.Context) error {
 	}
 
 	e.printSummary(statePath)
+	return nil
+}
+
+func validateVAPIDDeployPreflight(stages []naming.Stage, vapidSecretARN string) error {
+	if strings.TrimSpace(vapidSecretARN) != "" {
+		return nil
+	}
+
+	for _, stage := range stages {
+		if naming.IsLiveEnvironment(string(stage)) {
+			return errors.New("VAPID_SECRET_ARN is required before deploying the live stage; provision it with scripts/ensure_vapid_credentials.sh, export the emitted VAPID variables, and rerun ./lesser up")
+		}
+	}
+
 	return nil
 }
 
