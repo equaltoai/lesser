@@ -51,8 +51,11 @@ type Handler struct {
 	// oauthGrantEMFWriter receives one best-effort CloudWatch EMF line per
 	// authorization-code or refresh-token grant attempt. It is nil on handlers
 	// assembled directly by tests and os.Stdout on production NewHandler paths.
-	oauthGrantEMFWriter  io.Writer
-	oauthGrantEMFEnabled bool
+	oauthGrantEMFWriter   io.Writer
+	oauthGrantEMFEnabled  bool
+	oauthRefreshSleep     func(context.Context, time.Duration) error
+	oauthRefreshJitter    func(time.Duration) time.Duration
+	oauthRefreshBeforeCAS func()
 }
 
 type liftAuthResponder func(*apptheory.Context) (*apptheory.Response, error)
@@ -151,6 +154,8 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		commonBusinessLogic: commonBusinessLogic,
 		activityPubLogic:    activityPubLogic,
 		mastodonLogic:       mastodonAPILogic,
+		oauthRefreshSleep:   sleepWithContext,
+		oauthRefreshJitter:  fullJitterDuration,
 	}
 	configureOAuthGrantEMF(handler)
 	return handler

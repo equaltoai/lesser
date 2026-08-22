@@ -389,6 +389,27 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndAudien
 	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience, DelegationCredentialClaims{}, delegatedBy)
 }
 
+// GenerateRefreshTokensWithAuthoritativeSubject mints a standard refresh
+// successor only after an authoritative subject read. Refresh rotation must not
+// silently downgrade an agent subject to ordinary user claims when storage is
+// unavailable between authority validation and token minting.
+func (s *OAuthService) GenerateRefreshTokensWithAuthoritativeSubject(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	clientClass, sessionID, audience, delegatedBy string,
+) (accessToken, refreshToken string, err error) {
+	isAgent, agentType, resolvedDelegatedBy, err := s.resolveAgentClaimsAuthoritatively(ctx, username, delegatedBy)
+	if err != nil {
+		return "", "", err
+	}
+	return s.generateTokenPairWithResolvedClaims(
+		ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience,
+		DelegationCredentialClaims{}, isAgent, agentType, resolvedDelegatedBy,
+	)
+}
+
 // GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation extends Lesser's existing signed
 // OAuth access-token mechanism with an optional, server-minted content-class delegation binding.
 func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation(
@@ -470,6 +491,25 @@ func (s *OAuthService) generateTokensWithAccessTokenTTLAndClientContextAndDelega
 	}
 
 	isAgent, agentType, delegatedBy := s.resolveAgentClaims(ctx, username, delegatedByOverride)
+	return s.generateTokenPairWithResolvedClaims(
+		ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience,
+		delegation, isAgent, agentType, delegatedBy,
+	)
+}
+
+func (s *OAuthService) generateTokenPairWithResolvedClaims(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	clientClass, sessionID, audience string,
+	delegation DelegationCredentialClaims,
+	isAgent bool,
+	agentType, delegatedBy string,
+) (accessToken, refreshToken string, err error) {
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = AccessTokenDuration
+	}
 	effectiveSessionID := strings.TrimSpace(sessionID)
 	agentSessionID := ""
 	if isAgent {
@@ -672,6 +712,32 @@ func (s *OAuthService) resolveAgentClaims(ctx context.Context, username string, 
 	}
 
 	return true, strings.TrimSpace(user.AgentType), delegatedBy
+}
+
+func (s *OAuthService) resolveAgentClaimsAuthoritatively(ctx context.Context, username string, delegatedByOverride string) (bool, string, string, error) {
+	if s == nil || s.repos == nil || s.repos.Account() == nil {
+		return false, "", "", ErrSessionStorage
+	}
+	user, err := s.repos.Account().GetUser(ctx, username)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return false, "", "", ErrInvalidToken
+		}
+		return false, "", "", errors.Join(ErrSessionStorage, err)
+	}
+	if user == nil {
+		return false, "", "", ErrInvalidToken
+	}
+	if !user.IsAgent {
+		return false, "", "", nil
+	}
+
+	delegatedBy := normalizeDelegatedBy(user.AgentOwner)
+	if override := strings.TrimSpace(delegatedByOverride); override != "" &&
+		!s.agentOwnerMatchesPrincipal(user.AgentOwner, override) {
+		delegatedBy = normalizeDelegatedBy(override)
+	}
+	return true, strings.TrimSpace(user.AgentType), delegatedBy, nil
 }
 
 func (s *OAuthService) agentOwnerMatchesPrincipal(owner, principalUsername string) bool {
