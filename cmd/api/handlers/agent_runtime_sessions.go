@@ -97,7 +97,10 @@ func (h *Handler) noteAgentRuntimeRefreshFailure(ctx context.Context, refreshTok
 // exchangeAgentRuntimeRefreshTokenWithTelemetry is the bounded migration path
 // for refresh credentials issued before stateless agent re-minting. Existing
 // credentials are honored until their already-persisted expiry, but are never
-// rotated and never produce another refresh token.
+// rotated and never produce another refresh token. This transitional path is
+// intentionally read-only: a reused/revoked legacy token is rejected, but it
+// does not revoke another member of the stored family. Stateless re-mint is the
+// theft-resistant replacement, and the legacy population drains by expiry.
 func (h *Handler) exchangeAgentRuntimeRefreshTokenWithTelemetry(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, _, _ string, telemetry *oauthGrantTelemetry) (string, string, []string, error) {
 	storedToken, err := h.loadAgentRuntimeRefreshTokenForExchange(ctx, refreshToken, clientID, telemetry)
 	if err != nil {

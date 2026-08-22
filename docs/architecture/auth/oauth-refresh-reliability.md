@@ -33,9 +33,13 @@ The migration is **honor until expiry**. Agent-runtime refresh credentials
 issued before this contract remain usable until their persisted idle, absolute,
 or token expiry. A valid legacy credential mints only a new access token and
 returns no refresh token; the stored family is not mutated. Revoked, malformed,
-or expired legacy credentials remain invalid. No new agent-runtime refresh
-credential is issued, so the legacy population drains naturally without a
-revocation wave or a non-transactional revoke-then-create interval.
+or expired legacy credentials remain invalid. Reuse of a revoked legacy token
+is rejected but intentionally does not revoke another stored family member:
+the transitional honor path is read-only and does not retain the former
+rotation-based theft-detection write. No new agent-runtime refresh credential
+is issued, so the legacy population drains naturally by expiry while stateless
+authority re-mint replaces the legacy family mechanism without a revocation
+wave or a non-transactional revoke-then-create interval.
 
 ## Standard refresh authority and lineage
 

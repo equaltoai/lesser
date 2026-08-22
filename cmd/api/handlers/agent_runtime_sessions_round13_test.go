@@ -73,7 +73,7 @@ func TestOAuthRuntimeRefreshGrant_SelfSovereignLegacyTokenRemintsAccessOnly(t *t
 	require.Len(t, state.refreshTokensByToken, 1)
 }
 
-func TestOAuthRuntimeRefreshGrant_ReusedTokenRevokesFamily(t *testing.T) {
+func TestOAuthRuntimeRefreshGrant_ReusedLegacyTokenRejectsWithoutFamilyMutation(t *testing.T) {
 	cfg := round10TestConfig()
 	now := time.Now().UTC()
 	oldToken := buildRuntimeRefreshToken(t, "rt-agent-old", "agent1", delegatedAgentClientID, "sid-agent-2", "family-agent-2", "local-agent", 1, false, true, now)
@@ -98,6 +98,7 @@ func TestOAuthRuntimeRefreshGrant_ReusedTokenRevokesFamily(t *testing.T) {
 	updatedCurrent := state.refreshTokensByToken["rt-agent-current"]
 	require.False(t, updatedCurrent.Revoked)
 	require.Empty(t, updatedCurrent.RevokedReason)
+	require.Equal(t, currentToken.Version, updatedCurrent.Version)
 }
 
 func TestOAuthRuntimeRefreshGrant_LegacyRemintIgnoresRefreshWriteFaults(t *testing.T) {
