@@ -41,7 +41,7 @@ The inventory set is enforced by:
 | activity-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=5; maxRetry=3; maxAge=3600s; poisonQueue=activity-processor-stream-poison-queue; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
 | actor | api-http | HTTP: GET /users/{username} | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | ai-processor | processor-stream | Stream: table=main-table; start=TRIM_HORIZON; batch=25; window=5s; parallel=2; maxRetry=3; maxAge=3600s; poisonQueue=ai-processor-stream-poison-queue; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=300s; logs=7d |
-| api | api-http | HTTP: ANY /api/v1/{proxy+}<br>HTTP: ANY /api/v2/{proxy+}<br>HTTP: GET /.well-known/nodeinfo<br>HTTP: GET /robots.txt | — | encryption | memory=512MB; timeout=30s; logs=7d |
+| api | api-http | HTTP: ANY /api/v1/{proxy+}<br>HTTP: ANY /api/v2/{proxy+}<br>HTTP: GET /.well-known/nodeinfo<br>HTTP: GET /robots.txt | VAPID_SECRET_ARN | encryption | memory=512MB; timeout=30s; logs=7d |
 | cms-scheduler | processor-scheduled | Schedule: expression=rate(1 minute) | — | basic | memory=512MB; timeout=300s; logs=7d |
 | collections | api-http | HTTP: GET /users/{username}/followers<br>HTTP: GET /users/{username}/following<br>HTTP: GET /users/{username}/liked | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | cost-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=2s; parallel=1; maxRetry=3; maxAge=3600s; poisonQueue=cost-aggregator-stream-poison-queue; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |

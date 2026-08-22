@@ -1026,6 +1026,13 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		[]awsiam.IRole{s.LambdaBasicRole, s.LambdaEncryptionRole},
 		s.Configuration,
 	)
+	attachVAPIDSecretReadWritePolicy(
+		s.Stack,
+		s.AppName,
+		s.Environment,
+		s.LambdaEncryptionRole,
+		s.Configuration,
+	)
 
 	// Output API URLs
 	awscdk.NewCfnOutput(s.Stack, jsii.String("RestApiUrl"), &awscdk.CfnOutputProps{
