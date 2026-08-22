@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -225,6 +226,12 @@ func (r *PushSubscriptionRepository) SetVAPIDKeys(ctx context.Context, keys *sto
 	if keys == nil {
 		return errors.New("vapid keys payload cannot be nil")
 	}
+	if err := r.validateVAPIDSecretConfiguration(); err != nil {
+		r.logger.Error("cannot store VAPID keys without durable Secrets Manager configuration",
+			zap.String("secret_arn", r.vapidSecretARN),
+			zap.Error(err))
+		return fmt.Errorf("cannot store VAPID keys durably: %w", err)
+	}
 
 	// Set creation timestamp if not set
 	if keys.CreatedAt.IsZero() {
@@ -286,8 +293,8 @@ type vapidSecretPayload struct {
 }
 
 func (r *PushSubscriptionRepository) getVAPIDKeysFromSecret(ctx context.Context) (*storage.VAPIDKeys, error) {
-	if r.secretsClient == nil || r.vapidSecretARN == "" {
-		return nil, nil
+	if err := r.validateVAPIDSecretConfiguration(); err != nil {
+		return nil, err
 	}
 
 	result, err := r.secretsClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
@@ -325,8 +332,8 @@ func (r *PushSubscriptionRepository) getVAPIDKeysFromSecret(ctx context.Context)
 }
 
 func (r *PushSubscriptionRepository) setVAPIDKeysInSecret(ctx context.Context, keys *storage.VAPIDKeys) error {
-	if r.secretsClient == nil || r.vapidSecretARN == "" {
-		return nil
+	if err := r.validateVAPIDSecretConfiguration(); err != nil {
+		return err
 	}
 
 	payload := vapidSecretPayload{
@@ -348,6 +355,22 @@ func (r *PushSubscriptionRepository) setVAPIDKeysInSecret(ctx context.Context, k
 		SecretString: aws.String(string(secretBytes)),
 	})
 	return err
+}
+
+func (r *PushSubscriptionRepository) validateVAPIDSecretConfiguration() error {
+	secretARNMissing := strings.TrimSpace(r.vapidSecretARN) == ""
+	clientMissing := r.secretsClient == nil
+
+	switch {
+	case secretARNMissing && clientMissing:
+		return errors.New("VAPID key persistence requires a Secrets Manager client and VAPID secret ARN")
+	case secretARNMissing:
+		return errors.New("VAPID key persistence requires a VAPID secret ARN")
+	case clientMissing:
+		return errors.New("VAPID key persistence requires a Secrets Manager client")
+	default:
+		return nil
+	}
 }
 
 func parseVAPIDTimestamp(value string) time.Time {

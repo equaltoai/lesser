@@ -43,6 +43,7 @@ func round11TestConfig() *config.Config {
 		JWTSecret:       round11StrongJWTSecret,
 		DynamoTableName: "test-table",
 		Stage:           "development",
+		VAPIDSecretARN:  "test-vapid-secret",
 	}
 }
 
