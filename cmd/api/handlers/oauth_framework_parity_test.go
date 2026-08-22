@@ -30,6 +30,7 @@ func TestOAuthAuthorizationServerMetadataAdoptsAppTheoryPrimitive(t *testing.T) 
 	)
 	require.NoError(t, err)
 	framework.ScopesSupported = auth.CanonicalOAuthScopes()
+	framework.GrantTypesSupported = []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken, oauthDeviceCodeGrantType}
 	framework.TokenEndpointAuthMethodsSupported = []string{"client_secret_basic", "client_secret_post", "none"}
 	framework.JWKSURI = ""
 	require.Equal(t, *framework, current)

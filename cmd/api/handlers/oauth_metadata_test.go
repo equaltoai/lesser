@@ -42,7 +42,11 @@ func TestHandleOAuthAuthorizationServerMetadataLift(t *testing.T) {
 			require.Equal(t, allowDeviceFlow, advertisesDeviceFlow)
 			require.Empty(t, body.JWKSURI)
 			require.Equal(t, []string{"code"}, body.ResponseTypesSupported)
-			require.Equal(t, []string{"authorization_code", "refresh_token"}, body.GrantTypesSupported)
+			expectedGrantTypes := []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}
+			if allowDeviceFlow {
+				expectedGrantTypes = append(expectedGrantTypes, oauthDeviceCodeGrantType)
+			}
+			require.Equal(t, expectedGrantTypes, body.GrantTypesSupported)
 			require.Equal(t, []string{"client_secret_basic", "client_secret_post", "none"}, body.TokenEndpointAuthMethodsSupported)
 			require.Equal(t, []string{"S256"}, body.CodeChallengeMethodsSupported)
 			require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite, auth.ScopeFollow, auth.ScopePush}, body.ScopesSupported)

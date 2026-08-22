@@ -13,10 +13,11 @@ import (
 // HandleOAuthAuthorizationServerMetadataLift serves RFC 8414 authorization server metadata.
 func (h *Handler) HandleOAuthAuthorizationServerMetadataLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	baseURL := h.cfg.BaseURL()
+	deviceFlowEnabled := oauthDeviceFlowEnabled(h.cfg)
 	metadataOptions := []frameworkoauth.AuthorizationServerMetadataOption{
 		frameworkoauth.WithRevocationEndpoint(baseURL + "/oauth/revoke"),
 	}
-	if oauthDeviceFlowEnabled(h.cfg) {
+	if deviceFlowEnabled {
 		metadataOptions = append(metadataOptions,
 			frameworkoauth.WithDeviceAuthorizationEndpoint(baseURL+"/oauth/device/code"))
 	}
@@ -31,6 +32,10 @@ func (h *Handler) HandleOAuthAuthorizationServerMetadataLift(ctx *apptheory.Cont
 	// Lesser supplies its scope catalog and actual token authentication methods;
 	// the legacy /oauth/* routes remain additive compatibility aliases.
 	metadata.ScopesSupported = auth.CanonicalOAuthScopes()
+	metadata.GrantTypesSupported = []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}
+	if deviceFlowEnabled {
+		metadata.GrantTypesSupported = append(metadata.GrantTypesSupported, oauthDeviceCodeGrantType)
+	}
 	metadata.TokenEndpointAuthMethodsSupported = []string{"client_secret_basic", "client_secret_post", "none"}
 	// Lesser access tokens are currently symmetric JWTs, so there is no public
 	// signing-key set to advertise. JWKSURI is optional in RFC 8414.
