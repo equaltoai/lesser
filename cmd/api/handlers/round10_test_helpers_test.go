@@ -218,6 +218,7 @@ type round10QueryState struct {
 	deleteErrorOnce         error
 	executeErrorOnce        error
 	transactionErrorOnce    error
+	transactionErrors       []error
 
 	firstErrorPK     map[string]error
 	firstErrorGSI3PK map[string]error
@@ -706,6 +707,13 @@ func (b *round10TransactionBuilder) Execute() error {
 		err := b.state.transactionErrorOnce
 		b.state.transactionErrorOnce = nil
 		return err
+	}
+	if len(b.state.transactionErrors) > 0 {
+		err := b.state.transactionErrors[0]
+		b.state.transactionErrors = b.state.transactionErrors[1:]
+		if err != nil {
+			return err
+		}
 	}
 	for idx, operation := range b.operations {
 		if !round10TransactionConditionsMet(b.state, operation.model, operation.conditions) {

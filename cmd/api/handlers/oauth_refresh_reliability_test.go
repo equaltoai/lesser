@@ -631,6 +631,46 @@ func TestOAuthStandardRefreshGraceRescuePreservesSuccessorChain(t *testing.T) {
 	require.False(t, state.refreshTokensByToken[active.Token].Revoked)
 }
 
+func TestOAuthStandardRefreshGraceRescueRefundFailurePreservesSuccess(t *testing.T) {
+	now := time.Now().UTC()
+	stale := oauthRefreshReliabilityToken("stale-refund-failure", "client-1", now)
+	stale.Current = false
+	stale.Revoked = true
+	stale.RevokedAt = now.Add(-time.Second)
+	stale.RevokedReason = "rotated"
+	head := oauthRefreshReliabilityToken("head-refund-failure", "client-1", now)
+	head.Generation = 2
+	require.NoError(t, head.UpdateKeys())
+	state := &round10QueryState{
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			"client-1": oauthRefreshReliabilityClient("client-1"),
+		},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			stale.Token: stale,
+			head.Token:  head,
+		},
+		disableAuditRepo:  true,
+		transactionErrors: []error{nil, errors.New("refund unavailable")},
+	}
+	seedOAuthRefreshReplayChain(t, state, stale, head)
+	h, _, _ := round11NewHandler(t, state)
+	request := []byte("grant_type=refresh_token&refresh_token=" + stale.Token + "&client_id=client-1")
+
+	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(
+		round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request),
+	))
+	var replayed apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &replayed))
+	require.NotEmpty(t, replayed.AccessToken)
+	require.Equal(t, head.Token, replayed.RefreshToken)
+	require.False(t, state.refreshTokensByToken[head.Token].Revoked)
+
+	require.Len(t, state.refreshWalkBudgetsByKey, 1)
+	for _, budget := range state.refreshWalkBudgetsByKey {
+		require.Equal(t, oauthRefreshWalkMaxSteps, budget.Consumed)
+	}
+}
+
 func TestOAuthStandardRefreshLateDuplicateAfterTwoAdvancesDoesNotRevokeFamily(t *testing.T) {
 	now := time.Now().UTC()
 	stale := oauthRefreshReliabilityToken("stale-two-behind", "client-1", now)

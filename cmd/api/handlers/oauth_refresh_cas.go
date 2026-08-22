@@ -376,7 +376,12 @@ func (h *Handler) serveStandardRefreshReplay(
 	finish := func(access, head string, scopes []string, resultErr error) (string, string, []string, error) {
 		unused := oauthRefreshWalkMaxSteps - used
 		if refundErr := h.repos.Account().RefundOAuthRefreshWalkBudget(ctx, charged, unused, time.Now().UTC()); refundErr != nil {
-			return h.refreshUnavailable(telemetry, refundErr)
+			// The full walk was charged before any reads. A failed refund therefore
+			// leaves a conservative overcharge; it must not discard an already-minted
+			// rescue response or replace the walk's authoritative outcome.
+			h.logger.Warn("failed to refund unused OAuth refresh replay budget; retaining conservative charge",
+				zap.Int("unused_steps", unused),
+				zap.Error(refundErr))
 		}
 		return access, head, scopes, resultErr
 	}

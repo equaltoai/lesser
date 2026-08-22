@@ -10,7 +10,7 @@ grant, client, or refresh credential is invalid.
 | --- | --- | --- |
 | Refresh token is authoritatively missing, expired, bound to another client/resource, or fails an authority revalidation | `400 invalid_grant` | Reauthorize |
 | A consumed standard refresh token has a complete retained successor chain | `200`; a fresh access token plus the already-minted live refresh head | Continue with the returned head |
-| A replay authority, encrypted successor artifact, budget item, or head integrity check cannot be completed | `503 temporarily_unavailable` with `Retry-After: 1` | Back off and retry the same request |
+| A replay authority, encrypted successor artifact, budget pre-charge, or head integrity check cannot be completed | `503 temporarily_unavailable` with `Retry-After: 1` | Back off and retry the same request |
 | Client is authoritatively missing or its presented authentication fails | `400 invalid_client` | Repair client configuration |
 | Storage, throttling, transport, conditional-write, ambiguous-write, agent re-mint, or share-authorization read failure | `503 temporarily_unavailable` with `Retry-After: 1` | Back off and retry the same request |
 | Three refresh CAS attempts are exhausted | `503 temporarily_unavailable` with `Retry-After: 1` | Back off and retry the same request |
@@ -81,14 +81,16 @@ hash. Lesser then consistently reads and validates that head, revalidates the
 resource and delegation authority, mints a fresh access token, and returns the
 head's already-minted raw refresh token. Replay never rotates, revokes, or
 creates another refresh credential. Missing/corrupt artifacts, absent authority,
-decryption errors, head mismatches, budget errors, and walk exhaustion are all
-retryable 503 responses.
+decryption errors, head mismatches, budget charge/read errors, and walk
+exhaustion are all retryable 503 responses.
 
 Before walking, Lesser pre-charges eight steps against a per-family, per-minute
-budget item capped at 64 steps. It refunds unused steps after the walk. Charge,
-refund, and budget CAS failures fail closed as retryable 503, preventing a
-replay request from turning a long retained chain into unbounded read
-amplification.
+budget item capped at 64 steps. It refunds unused steps after the walk. Charge
+and budget-read failures fail closed as retryable 503, preventing a replay
+request from turning a long retained chain into unbounded read amplification.
+A refund CAS failure is logged and retains the conservative full charge; it
+does not downgrade an already-minted rescue response or replace the walk's
+authoritative outcome.
 
 ## AppTheory OAuth primitive adoption
 
