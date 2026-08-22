@@ -23,7 +23,11 @@ func TestOAuthAuthorizationServerMetadataAdoptsAppTheoryPrimitive(t *testing.T) 
 	var current frameworkoauth.AuthorizationServerMetadata
 	require.NoError(t, json.Unmarshal(currentResponse.Body, &current))
 
-	framework, err := frameworkoauth.NewAuthorizationServerMetadata(cfg.BaseURL())
+	framework, err := frameworkoauth.NewAuthorizationServerMetadata(
+		cfg.BaseURL(),
+		frameworkoauth.WithRevocationEndpoint(cfg.BaseURL()+"/oauth/revoke"),
+		frameworkoauth.WithDeviceAuthorizationEndpoint(cfg.BaseURL()+"/oauth/device/code"),
+	)
 	require.NoError(t, err)
 	framework.ScopesSupported = auth.CanonicalOAuthScopes()
 	framework.TokenEndpointAuthMethodsSupported = []string{"client_secret_basic", "client_secret_post", "none"}

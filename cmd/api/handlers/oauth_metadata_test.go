@@ -26,10 +26,20 @@ func TestHandleOAuthAuthorizationServerMetadataLift(t *testing.T) {
 
 			var body frameworkoauth.AuthorizationServerMetadata
 			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			var rawBody map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(resp.Body, &rawBody))
 			require.Equal(t, "https://example.com", body.Issuer)
 			require.Equal(t, "https://example.com/authorize", body.AuthorizationEndpoint)
 			require.Equal(t, "https://example.com/token", body.TokenEndpoint)
 			require.Equal(t, "https://example.com/register", body.RegistrationEndpoint)
+			require.Equal(t, "https://example.com/oauth/revoke", body.RevocationEndpoint)
+			if allowDeviceFlow {
+				require.Equal(t, "https://example.com/oauth/device/code", body.DeviceAuthorizationEndpoint)
+			} else {
+				require.Empty(t, body.DeviceAuthorizationEndpoint)
+			}
+			_, advertisesDeviceFlow := rawBody["device_authorization_endpoint"]
+			require.Equal(t, allowDeviceFlow, advertisesDeviceFlow)
 			require.Empty(t, body.JWKSURI)
 			require.Equal(t, []string{"code"}, body.ResponseTypesSupported)
 			require.Equal(t, []string{"authorization_code", "refresh_token"}, body.GrantTypesSupported)

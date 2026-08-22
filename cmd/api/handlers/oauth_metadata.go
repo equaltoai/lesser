@@ -12,7 +12,15 @@ import (
 
 // HandleOAuthAuthorizationServerMetadataLift serves RFC 8414 authorization server metadata.
 func (h *Handler) HandleOAuthAuthorizationServerMetadataLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	metadata, err := frameworkoauth.NewAuthorizationServerMetadata(h.cfg.BaseURL())
+	baseURL := h.cfg.BaseURL()
+	metadataOptions := []frameworkoauth.AuthorizationServerMetadataOption{
+		frameworkoauth.WithRevocationEndpoint(baseURL + "/oauth/revoke"),
+	}
+	if oauthDeviceFlowEnabled(h.cfg) {
+		metadataOptions = append(metadataOptions,
+			frameworkoauth.WithDeviceAuthorizationEndpoint(baseURL+"/oauth/device/code"))
+	}
+	metadata, err := frameworkoauth.NewAuthorizationServerMetadata(baseURL, metadataOptions...)
 	if err != nil {
 		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "server_error",
