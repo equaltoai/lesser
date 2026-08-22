@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,7 +15,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
@@ -54,6 +57,31 @@ func oauthRefreshReliabilityToken(token, clientID string, now time.Time) storage
 	return row
 }
 
+func seedOAuthRefreshReplayChain(t *testing.T, state *round10QueryState, chain ...storagemodels.RefreshToken) {
+	t.Helper()
+	require.GreaterOrEqual(t, len(chain), 2)
+	if state.refreshAuthoritiesByKey == nil {
+		state.refreshAuthoritiesByKey = map[string]storagemodels.OAuthRefreshAuthority{}
+	}
+	if state.refreshArtifactsByKey == nil {
+		state.refreshArtifactsByKey = map[string]storagemodels.OAuthRefreshSuccessorArtifact{}
+	}
+	head := chain[len(chain)-1]
+	authority := repositories.OAuthRefreshAuthorityWithHead(nil, head.Username, head.ClientID, head.Resource, head.FamilyID,
+		storage.RefreshTokenReplacementHash(head.Token), head.Generation, head.ExpiresAt, time.Now().UTC())
+	require.NoError(t, authority.BeforeCreate())
+	state.refreshAuthoritiesByKey[authority.PK+"#"+authority.SK] = *authority
+	for i := 0; i+1 < len(chain); i++ {
+		artifact := storagemodels.OAuthRefreshSuccessorArtifact{
+			FamilyID: chain[i].FamilyID, PredecessorHash: storage.RefreshTokenReplacementHash(chain[i].Token),
+			SuccessorHash: storage.RefreshTokenReplacementHash(chain[i+1].Token), SuccessorToken: chain[i+1].Token,
+			SuccessorGeneration: chain[i+1].Generation, CreatedAt: time.Now().UTC(), TTL: head.ExpiresAt.Unix(),
+		}
+		require.NoError(t, artifact.BeforeCreate())
+		state.refreshArtifactsByKey[artifact.PK+"#"+artifact.SK] = artifact
+	}
+}
+
 func requireOAuthTokenError(t *testing.T, responseStatus int, expectedError string, responseBody []byte) {
 	t.Helper()
 	var body map[string]string
@@ -82,6 +110,26 @@ func TestOAuthRefreshTransientStorageFaultReturnsRetryable503(t *testing.T) {
 	resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(ctx))
 	requireOAuthTokenError(t, resp.Status, "temporarily_unavailable", resp.Body)
 	require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+}
+
+func TestOAuthRefreshSubjectReadFaultDuringMintReturnsRetryable503(t *testing.T) {
+	now := time.Now().UTC()
+	token := oauthRefreshReliabilityToken("subject-read-fault", "client-1", now)
+	state := &round10QueryState{
+		oauthClientsByID:     map[string]storagemodels.OAuthClient{"client-1": oauthRefreshReliabilityClient("client-1")},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{token.Token: token},
+		firstErrorByType:     map[string]error{"*repositories.userCoreProjection": errors.New("subject read throttled")},
+		disableAuditRepo:     true,
+	}
+	h, _, _ := round11NewHandler(t, state)
+	request := []byte("grant_type=refresh_token&refresh_token=subject-read-fault&client_id=client-1")
+
+	resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(
+		round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request),
+	))
+	requireOAuthTokenError(t, resp.Status, "temporarily_unavailable", resp.Body)
+	require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+	require.False(t, state.refreshTokensByToken[token.Token].Revoked)
 }
 
 func TestOAuthRefreshShareReadFaultReturnsRetryable503(t *testing.T) {
@@ -366,10 +414,62 @@ func TestOAuthRefreshAuthoritativeGrantFailuresStayTerminal(t *testing.T) {
 				params.Set("resource", tc.resource)
 			}
 			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))
-			resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
-			requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+			wantStatus, wantError := http.StatusBadRequest, "invalid_grant"
+			if tc.name == "revoked" {
+				wantStatus, wantError = http.StatusServiceUnavailable, "temporarily_unavailable"
+			}
+			resp := requireStatus(t, wantStatus)(h.HandleOAuthTokenLift(ctx))
+			requireOAuthTokenError(t, resp.Status, wantError, resp.Body)
 		})
 	}
+}
+
+func TestOAuthRefreshManualRevocationCannotEnterSuccessorReplay(t *testing.T) {
+	now := time.Now().UTC()
+	revoked := oauthRefreshReliabilityToken("manually-revoked", "client-1", now)
+	revoked.Current = false
+	revoked.Revoked = true
+	revoked.RevokedAt = now.Add(-time.Second)
+	revoked.RevokedReason = "manual_revocation"
+
+	state := &round10QueryState{
+		oauthClientsByID:     map[string]storagemodels.OAuthClient{"client-1": oauthRefreshReliabilityClient("client-1")},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{revoked.Token: revoked},
+		disableAuditRepo:     true,
+	}
+	h, _, _ := round11NewHandler(t, state)
+	request := []byte("grant_type=refresh_token&refresh_token=manually-revoked&client_id=client-1")
+
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(
+		round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request),
+	))
+	requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+	require.Empty(t, state.refreshAuthoritiesByKey)
+	require.Empty(t, state.refreshArtifactsByKey)
+}
+
+func TestOAuthRefreshCrossClientPresentationRetainsContainmentSweep(t *testing.T) {
+	now := time.Now().UTC()
+	head := oauthRefreshReliabilityToken("cross-client-head", "client-1", now)
+	state := &round10QueryState{
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			"client-1": oauthRefreshReliabilityClient("client-1"),
+			"client-2": oauthRefreshReliabilityClient("client-2"),
+		},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{head.Token: head},
+		disableAuditRepo:     true,
+	}
+	h, _, _ := round11NewHandler(t, state)
+	request := []byte("grant_type=refresh_token&refresh_token=cross-client-head&client_id=client-2")
+
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(
+		round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request),
+	))
+	requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+	contained := state.refreshTokensByToken[head.Token]
+	require.True(t, contained.Revoked)
+	require.Equal(t, "refresh_cross_client_replay", contained.RevokedReason)
+	require.False(t, contained.ReuseDetectedAt.IsZero())
 }
 
 func TestOAuthRefreshClientLookupDistinguishesAuthorityFromInfrastructure(t *testing.T) {
@@ -415,6 +515,88 @@ func TestOAuthStandardRefreshRotationCASPreventsFamilyFork(t *testing.T) {
 	require.NotContains(t, state.refreshTokensByToken, secondSuccessor.Token)
 }
 
+func TestOAuthRefreshConcurrentCASAndReplayWalkReturnsLiveHead(t *testing.T) {
+	now := time.Now().UTC()
+	predecessor := oauthRefreshReliabilityToken("concurrent-predecessor", "client-1", now)
+	sharedTokens := map[string]storagemodels.RefreshToken{predecessor.Token: predecessor}
+	sharedAuthorities := map[string]storagemodels.OAuthRefreshAuthority{}
+	sharedArtifacts := map[string]storagemodels.OAuthRefreshSuccessorArtifact{}
+	sharedBudgets := map[string]storagemodels.OAuthRefreshWalkBudget{}
+	sharedMu := &sync.Mutex{}
+	clients := map[string]storagemodels.OAuthClient{"client-1": oauthRefreshReliabilityClient("client-1")}
+
+	newConcurrentState := func() *round10QueryState {
+		return &round10QueryState{
+			sharedMu:                sharedMu,
+			oauthClientsByID:        clients,
+			refreshTokensByToken:    sharedTokens,
+			refreshAuthoritiesByKey: sharedAuthorities,
+			refreshArtifactsByKey:   sharedArtifacts,
+			refreshWalkBudgetsByKey: sharedBudgets,
+			disableAuditRepo:        true,
+		}
+	}
+	h1, _, _ := round11NewHandler(t, newConcurrentState())
+	h2, _, _ := round11NewHandler(t, newConcurrentState())
+	ready := &sync.WaitGroup{}
+	ready.Add(2)
+	start := make(chan struct{})
+	installBarrier := func(h *Handler) {
+		var once sync.Once
+		h.oauthRefreshBeforeCAS = func() {
+			once.Do(func() {
+				ready.Done()
+				<-start
+			})
+		}
+		h.oauthRefreshSleep = func(context.Context, time.Duration) error { return nil }
+		h.oauthRefreshJitter = func(time.Duration) time.Duration { return 0 }
+	}
+	installBarrier(h1)
+	installBarrier(h2)
+
+	request := []byte("grant_type=refresh_token&refresh_token=" + predecessor.Token + "&client_id=client-1")
+	responses := make(chan *apptheory.Response, 2)
+	for _, h := range []*Handler{h1, h2} {
+		go func(handler *Handler) {
+			resp, err := handler.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request))
+			require.NoError(t, err)
+			responses <- resp
+		}(h)
+	}
+	ready.Wait()
+	close(start)
+	first := <-responses
+	second := <-responses
+	close(responses)
+
+	statuses := []int{first.Status, second.Status}
+	require.ElementsMatch(t, []int{http.StatusOK, http.StatusServiceUnavailable}, statuses)
+	var winner apimodels.OAuthTokenResponse
+	if first.Status == http.StatusOK {
+		require.NoError(t, json.Unmarshal(first.Body, &winner))
+	} else {
+		require.NoError(t, json.Unmarshal(second.Body, &winner))
+	}
+	require.NotEmpty(t, winner.RefreshToken)
+	loser := first
+	if first.Status == http.StatusOK {
+		loser = second
+	}
+	require.Equal(t, []string{"1"}, loser.Headers["retry-after"])
+
+	tokenCount := len(sharedTokens)
+	replayHandler, _, _ := round11NewHandler(t, newConcurrentState())
+	replay := requireStatus(t, http.StatusOK)(replayHandler.HandleOAuthTokenLift(
+		round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request),
+	))
+	var replayBody apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(replay.Body, &replayBody))
+	require.Equal(t, winner.RefreshToken, replayBody.RefreshToken)
+	require.Len(t, sharedTokens, tokenCount, "replay must not mint another refresh credential")
+	require.False(t, sharedTokens[winner.RefreshToken].Revoked)
+}
+
 func TestOAuthStandardRefreshGraceRescuePreservesSuccessorChain(t *testing.T) {
 	now := time.Now().UTC()
 	stale := oauthRefreshReliabilityToken("stale", "client-1", now)
@@ -430,32 +612,23 @@ func TestOAuthStandardRefreshGraceRescuePreservesSuccessorChain(t *testing.T) {
 		refreshTokensByToken: map[string]storagemodels.RefreshToken{stale.Token: stale, active.Token: active},
 		disableAuditRepo:     true,
 	}
+	seedOAuthRefreshReplayChain(t, state, stale, active)
 	h, _, _ := round11NewHandler(t, state)
 	request := []byte("grant_type=refresh_token&refresh_token=stale&client_id=client-1")
 
 	first := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
 	var issued apimodels.OAuthTokenResponse
 	require.NoError(t, json.Unmarshal(first.Body, &issued))
-	require.NotEmpty(t, issued.RefreshToken)
-	require.False(t, state.refreshTokensByToken["stale"].RetryRedeemedAt.IsZero())
-	require.True(t, state.refreshTokensByToken["active"].Revoked)
-	require.Equal(t, storage.RefreshTokenReplacementHash(issued.RefreshToken), state.refreshTokensByToken["active"].ReplacedByHash)
-	require.Equal(t, 3, state.refreshTokensByToken[issued.RefreshToken].Generation)
+	require.Equal(t, active.Token, issued.RefreshToken)
+	require.True(t, state.refreshTokensByToken["stale"].RetryRedeemedAt.IsZero())
+	require.False(t, state.refreshTokensByToken["active"].Revoked)
+	require.Len(t, state.refreshTokensByToken, 2)
 
-	// The legitimate client can still hold the successor that the first rescue
-	// decapitated. Its chain pointer makes that token independently rescuable.
-	victimRequest := []byte("grant_type=refresh_token&refresh_token=active&client_id=client-1")
-	victim := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, victimRequest)))
-	var victimIssued apimodels.OAuthTokenResponse
-	require.NoError(t, json.Unmarshal(victim.Body, &victimIssued))
-	require.NotEmpty(t, victimIssued.RefreshToken)
-	require.Equal(t, 4, state.refreshTokensByToken[victimIssued.RefreshToken].Generation)
-
-	// A later same-client duplicate is stale, not evidence of token theft. It is
-	// refused without destroying the live family head.
-	lateDuplicate := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
-	requireOAuthTokenError(t, lateDuplicate.Status, "invalid_grant", lateDuplicate.Body)
-	require.False(t, state.refreshTokensByToken[victimIssued.RefreshToken].Revoked)
+	lateDuplicate := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
+	var repeated apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(lateDuplicate.Body, &repeated))
+	require.Equal(t, active.Token, repeated.RefreshToken)
+	require.False(t, state.refreshTokensByToken[active.Token].Revoked)
 }
 
 func TestOAuthStandardRefreshLateDuplicateAfterTwoAdvancesDoesNotRevokeFamily(t *testing.T) {
@@ -485,11 +658,14 @@ func TestOAuthStandardRefreshLateDuplicateAfterTwoAdvancesDoesNotRevokeFamily(t 
 		},
 		disableAuditRepo: true,
 	}
+	seedOAuthRefreshReplayChain(t, state, stale, middle, head)
 	h, _, _ := round11NewHandler(t, state)
 	request := []byte("grant_type=refresh_token&refresh_token=stale-two-behind&client_id=client-1")
 
-	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
-	requireOAuthTokenError(t, resp.Status, "invalid_grant", resp.Body)
+	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
+	var replayed apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &replayed))
+	require.Equal(t, head.Token, replayed.RefreshToken)
 	require.False(t, state.refreshTokensByToken[head.Token].Revoked)
 }
 

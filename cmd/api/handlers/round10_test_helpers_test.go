@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ type round10Where struct {
 }
 
 type round10QueryState struct {
+	sharedMu       *sync.Mutex
 	wheres         []round10Where
 	model          any
 	sets           map[string]any
@@ -66,6 +68,9 @@ type round10QueryState struct {
 	oauthClientsByID              map[string]storagemodels.OAuthClient
 	authorizationCodesByCode      map[string]storagemodels.AuthorizationCode
 	refreshTokensByToken          map[string]storagemodels.RefreshToken
+	refreshAuthoritiesByKey       map[string]storagemodels.OAuthRefreshAuthority
+	refreshArtifactsByKey         map[string]storagemodels.OAuthRefreshSuccessorArtifact
+	refreshWalkBudgetsByKey       map[string]storagemodels.OAuthRefreshWalkBudget
 	revokedAccessTokensByJTI      map[string]storagemodels.RevokedAccessToken
 	oauthDeviceSessionsByHash     map[string]storagemodels.OAuthDeviceSession
 	oauthDeviceSessionsByUserCode map[string]storagemodels.OAuthDeviceSession
@@ -357,6 +362,10 @@ func round10ResolveUserForRead(state *round10QueryState) storagemodels.User {
 		CreatedAt: now.Add(-time.Hour),
 		UpdatedAt: now,
 	}
+	if strings.HasPrefix(strings.ToLower(username), "agent") {
+		user.IsAgent = true
+		user.AgentType = "service"
+	}
 	for candidate, actor := range state.actorsByUser {
 		if !strings.EqualFold(candidate, username) && !strings.EqualFold(actor.Username, username) {
 			continue
@@ -627,6 +636,10 @@ func (b *round10TransactionBuilder) WithContext(context.Context) dynamormcore.Tr
 }
 
 func (b *round10TransactionBuilder) Execute() error {
+	if b.state.sharedMu != nil {
+		b.state.sharedMu.Lock()
+		defer b.state.sharedMu.Unlock()
+	}
 	if b.state.transactionErrorOnce != nil {
 		err := b.state.transactionErrorOnce
 		b.state.transactionErrorOnce = nil
@@ -792,6 +805,15 @@ func round10TransactionModelExists(state *round10QueryState, model any) bool {
 		}
 		_, ok := state.oauthDeviceSessionsByHash[strings.TrimSpace(typed.DeviceCodeHash)]
 		return ok
+	case *storagemodels.OAuthRefreshAuthority:
+		_, ok := state.refreshAuthoritiesByKey[typed.PK+"#"+typed.SK]
+		return ok
+	case *storagemodels.OAuthRefreshSuccessorArtifact:
+		_, ok := state.refreshArtifactsByKey[typed.PK+"#"+typed.SK]
+		return ok
+	case *storagemodels.OAuthRefreshWalkBudget:
+		_, ok := state.refreshWalkBudgetsByKey[typed.PK+"#"+typed.SK]
+		return ok
 	default:
 		return false
 	}
@@ -822,6 +844,32 @@ func round10TransactionApplyOperation(state *round10QueryState, operation round1
 				state.oauthDeviceSessionsByHash = map[string]storagemodels.OAuthDeviceSession{}
 			}
 			state.oauthDeviceSessionsByHash[typed.DeviceCodeHash] = *typed
+			return true
+		case *storagemodels.OAuthRefreshAuthority:
+			if state.refreshAuthoritiesByKey == nil {
+				state.refreshAuthoritiesByKey = map[string]storagemodels.OAuthRefreshAuthority{}
+			}
+			updated := *typed
+			if operation.kind == "update" {
+				updated.Revision = state.refreshAuthoritiesByKey[typed.PK+"#"+typed.SK].Revision + 1
+			}
+			state.refreshAuthoritiesByKey[typed.PK+"#"+typed.SK] = updated
+			return true
+		case *storagemodels.OAuthRefreshSuccessorArtifact:
+			if state.refreshArtifactsByKey == nil {
+				state.refreshArtifactsByKey = map[string]storagemodels.OAuthRefreshSuccessorArtifact{}
+			}
+			state.refreshArtifactsByKey[typed.PK+"#"+typed.SK] = *typed
+			return true
+		case *storagemodels.OAuthRefreshWalkBudget:
+			if state.refreshWalkBudgetsByKey == nil {
+				state.refreshWalkBudgetsByKey = map[string]storagemodels.OAuthRefreshWalkBudget{}
+			}
+			updated := *typed
+			if operation.kind == "update" {
+				updated.Version = state.refreshWalkBudgetsByKey[typed.PK+"#"+typed.SK].Version + 1
+			}
+			state.refreshWalkBudgetsByKey[typed.PK+"#"+typed.SK] = updated
 			return true
 		default:
 			return false
@@ -872,16 +920,23 @@ func round10TransactionFieldConditionMet(state *round10QueryState, model any, co
 }
 
 func round10TransactionVersionConditionMet(state *round10QueryState, model any, value any) bool {
-	typed, ok := model.(*storagemodels.RefreshToken)
-	if !ok || typed == nil {
-		return false
-	}
-	stored, ok := state.refreshTokensByToken[typed.Token]
+	want, ok := value.(int64)
 	if !ok {
 		return false
 	}
-	want, ok := value.(int64)
-	return ok && strconv.Itoa(stored.Version) == strconv.FormatInt(want, 10)
+	switch typed := model.(type) {
+	case *storagemodels.RefreshToken:
+		stored, exists := state.refreshTokensByToken[typed.Token]
+		return exists && strconv.Itoa(stored.Version) == strconv.FormatInt(want, 10)
+	case *storagemodels.OAuthRefreshAuthority:
+		stored, exists := state.refreshAuthoritiesByKey[typed.PK+"#"+typed.SK]
+		return exists && strconv.Itoa(stored.Revision) == strconv.FormatInt(want, 10)
+	case *storagemodels.OAuthRefreshWalkBudget:
+		stored, exists := state.refreshWalkBudgetsByKey[typed.PK+"#"+typed.SK]
+		return exists && strconv.Itoa(stored.Version) == strconv.FormatInt(want, 10)
+	default:
+		return false
+	}
 }
 
 type round10TransactionUpdateBuilder struct{}
@@ -1735,6 +1790,28 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		return !exactExists
 	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK {
+			return false
+		}
+		key := pk + "#" + sk
+		switch dest.(type) {
+		case *storagemodels.OAuthRefreshAuthority:
+			_, exists := state.refreshAuthoritiesByKey[key]
+			return !exists
+		case *storagemodels.OAuthRefreshSuccessorArtifact:
+			_, exists := state.refreshArtifactsByKey[key]
+			return !exists
+		case *storagemodels.OAuthRefreshWalkBudget:
+			_, exists := state.refreshWalkBudgetsByKey[key]
+			return !exists
+		default:
+			return false
+		}
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0)
 		if round10PopulateAccountProjection(dest, state) {
@@ -1970,6 +2047,18 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				CreatedAt: time.Now().Add(-1 * time.Minute),
 			}
 			_ = d.UpdateKeys()
+		case *storagemodels.OAuthRefreshAuthority:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			*d = state.refreshAuthoritiesByKey[pk+"#"+sk]
+		case *storagemodels.OAuthRefreshSuccessorArtifact:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			*d = state.refreshArtifactsByKey[pk+"#"+sk]
+		case *storagemodels.OAuthRefreshWalkBudget:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			*d = state.refreshWalkBudgetsByKey[pk+"#"+sk]
 		case *storagemodels.RevokedAccessToken:
 			jti := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "REVOKEDTOKEN#") {

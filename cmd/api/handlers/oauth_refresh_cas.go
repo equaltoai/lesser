@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +22,8 @@ const (
 	oauthRefreshCASAttempts     = 3
 	oauthRefreshCASBaseDelay    = 25 * time.Millisecond
 	oauthRefreshCASDelayCap     = 200 * time.Millisecond
+	oauthRefreshWalkMaxSteps    = 8
+	oauthRefreshWalkWindowLimit = 64
 )
 
 func sleepWithContext(ctx context.Context, delay time.Duration) error {
@@ -205,8 +208,19 @@ func (h *Handler) resolveStandardRefreshStart(
 		return &standardRefreshStartResult{err: auth.ErrInvalidToken}
 	}
 	if initial.Revoked || !initial.RevokedAt.IsZero() {
-		telemetry.setReason(oauthGrantReasonRefreshStaleGeneration)
-		return &standardRefreshStartResult{err: auth.ErrInvalidToken}
+		// Only a predecessor consumed by the atomic rotation transaction owns
+		// a successor artifact. Manual/session/containment revocations are
+		// terminal and must never be converted into replay access.
+		if initial.RevokedReason != standardRefreshRevokedReasonRotated {
+			telemetry.setReason(oauthGrantReasonRefreshStaleGeneration)
+			return &standardRefreshStartResult{err: auth.ErrInvalidToken}
+		}
+		access, refresh, scopes, replayErr := h.serveStandardRefreshReplay(
+			ctx, oauthSvc, client, initial, requestedResource, ipAddress, telemetry,
+		)
+		return &standardRefreshStartResult{
+			accessToken: access, refreshToken: refresh, scopes: scopes, err: replayErr,
+		}
 	}
 	if strings.TrimSpace(initial.FamilyID) != "" && initial.Generation > 0 && !initial.Current {
 		telemetry.setReason(oauthGrantReasonRefreshStaleGeneration)
@@ -327,6 +341,119 @@ func refreshAuthoritySlot(authority *storagemodels.OAuthRefreshAuthority, family
 	return storagemodels.OAuthRefreshFamilySlot{}, false
 }
 
+func (h *Handler) serveStandardRefreshReplay(
+	ctx context.Context,
+	oauthSvc *auth.OAuthService,
+	client *storage.OAuthClient,
+	stale *storage.RefreshToken,
+	requestedResource, ipAddress string,
+	telemetry *oauthGrantTelemetry,
+) (string, string, []string, error) {
+	if stale == nil || strings.TrimSpace(stale.FamilyID) == "" || stale.Generation < 1 {
+		return h.refreshUnavailable(telemetry, errors.New("refresh replay has no lineage authority"))
+	}
+	if requestedResource != "" && requestedResource != strings.TrimSpace(stale.Resource) {
+		telemetry.setReason(oauthGrantReasonRefreshResourceMismatch)
+		return "", "", nil, auth.ErrInvalidToken
+	}
+	authority, err := h.repos.Account().GetOAuthRefreshAuthority(ctx, stale.Username, stale.ClientID, stale.Resource)
+	if err != nil {
+		return h.refreshUnavailable(telemetry, err)
+	}
+	slot, ok := refreshAuthoritySlot(authority, stale.FamilyID)
+	if !ok || strings.TrimSpace(slot.HeadTokenHash) == "" {
+		return h.refreshUnavailable(telemetry, errors.New("refresh family authority slot is absent"))
+	}
+
+	now := time.Now().UTC()
+	charged, err := h.repos.Account().ChargeOAuthRefreshWalkBudget(
+		ctx, stale.FamilyID, oauthRefreshWalkMaxSteps, oauthRefreshWalkWindowLimit, now,
+	)
+	if err != nil {
+		return h.refreshUnavailable(telemetry, err)
+	}
+	used := 0
+	finish := func(access, head string, scopes []string, resultErr error) (string, string, []string, error) {
+		unused := oauthRefreshWalkMaxSteps - used
+		if refundErr := h.repos.Account().RefundOAuthRefreshWalkBudget(ctx, charged, unused, time.Now().UTC()); refundErr != nil {
+			return h.refreshUnavailable(telemetry, refundErr)
+		}
+		return access, head, scopes, resultErr
+	}
+
+	currentRaw := stale.Token
+	currentHash := storage.RefreshTokenReplacementHash(currentRaw)
+	currentGeneration := stale.Generation
+	for used < oauthRefreshWalkMaxSteps {
+		if currentHash == slot.HeadTokenHash {
+			return h.finishRefreshReplayHead(ctx, oauthSvc, client, stale, slot, currentRaw, requestedResource, ipAddress, telemetry, finish)
+		}
+		artifact, artifactErr := h.repos.Account().GetOAuthRefreshSuccessorArtifact(ctx, stale.FamilyID, currentHash)
+		used++
+		if artifactErr != nil {
+			return finish("", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, artifactErr))
+		}
+		if artifact.FamilyID != stale.FamilyID || artifact.PredecessorHash != currentHash ||
+			artifact.SuccessorHash != storage.RefreshTokenReplacementHash(artifact.SuccessorToken) ||
+			artifact.SuccessorGeneration != currentGeneration+1 {
+			return finish("", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, errors.New("refresh successor artifact integrity failure")))
+		}
+		currentRaw = artifact.SuccessorToken
+		currentHash = artifact.SuccessorHash
+		currentGeneration = artifact.SuccessorGeneration
+	}
+	return finish("", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, errors.New("refresh replay walk limit exhausted")))
+}
+
+type refreshReplayFinish func(string, string, []string, error) (string, string, []string, error)
+
+func (h *Handler) finishRefreshReplayHead(
+	ctx context.Context,
+	oauthSvc *auth.OAuthService,
+	client *storage.OAuthClient,
+	stale *storage.RefreshToken,
+	slot storagemodels.OAuthRefreshFamilySlot,
+	headRaw, requestedResource, ipAddress string,
+	telemetry *oauthGrantTelemetry,
+	finish refreshReplayFinish,
+) (string, string, []string, error) {
+	head, err := h.repos.Account().GetRefreshTokenConsistent(ctx, headRaw)
+	if err != nil {
+		return finish("", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err))
+	}
+	if head.FamilyID != stale.FamilyID || head.Generation != slot.Generation || !head.Current || head.Revoked ||
+		storage.RefreshTokenReplacementHash(head.Token) != slot.HeadTokenHash || head.Username != stale.Username ||
+		head.ClientID != stale.ClientID || head.Resource != stale.Resource || head.PrincipalUsername != stale.PrincipalUsername ||
+		!slices.Equal(head.Scopes, stale.Scopes) {
+		return finish("", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, errors.New("refresh replay head integrity failure")))
+	}
+	now := time.Now().UTC()
+	if reason, authorityErr := h.standardRefreshAuthorityRevocationReason(ctx, client, head, requestedResource, now); authorityErr != nil {
+		return finish("", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, authorityErr))
+	} else if reason != "" {
+		telemetry.setReason(reason)
+		return finish("", "", nil, auth.ErrInvalidToken)
+	}
+	delegatedBy, err := h.validateRefreshDelegation(ctx, head, telemetry)
+	if err != nil {
+		return finish("", "", nil, err)
+	}
+	accessTTL, _, clientClass, err := standardRefreshGrantLifetimes(now, h.cfg, client, head)
+	if err != nil {
+		telemetry.setReason(oauthGrantReasonRefreshTokenExpired)
+		return finish("", "", nil, auth.ErrInvalidToken)
+	}
+	accessToken, err := oauthSvc.GenerateAccessTokenWithClientContextAndAudienceAndDelegatedBy(
+		ctx, head.Username, head.ClientID, ipAddress, head.Scopes, accessTTL, clientClass,
+		head.SessionID, head.Resource, delegatedBy,
+	)
+	if err != nil {
+		return finish("", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err))
+	}
+	telemetry.RetryPath = oauthGrantRetryPathRetryRescue
+	telemetry.setReason(oauthGrantReasonRefreshRetryRescueServed)
+	return finish(accessToken, headRaw, head.Scopes, nil)
+}
 
 func (h *Handler) refreshUnavailable(telemetry *oauthGrantTelemetry, err error) (string, string, []string, error) {
 	telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)

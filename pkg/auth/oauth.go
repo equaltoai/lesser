@@ -477,6 +477,44 @@ func (s *OAuthService) GenerateAgentAccessTokenWithClientContextAndDelegation(
 	})
 }
 
+// GenerateAccessTokenWithClientContextAndAudienceAndDelegatedBy mints only an
+// access credential. Refresh replay uses it when returning the already-minted
+// family head, so replay cannot accidentally create a second successor.
+func (s *OAuthService) GenerateAccessTokenWithClientContextAndAudienceAndDelegatedBy(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	clientClass, sessionID, audience, delegatedByOverride string,
+) (string, error) {
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = AccessTokenDuration
+	}
+	isAgent, agentType, delegatedBy, err := s.resolveAgentClaimsAuthoritatively(ctx, username, delegatedByOverride)
+	if err != nil {
+		return "", err
+	}
+	effectiveSessionID := strings.TrimSpace(sessionID)
+	agentSessionID := ""
+	if isAgent {
+		if effectiveSessionID == "" {
+			effectiveSessionID = generateSecureJTI()
+		}
+		agentSessionID = effectiveSessionID
+	}
+	return s.generateAccessTokenWithMetadata(username, clientID, scopes, accessTokenMetadata{
+		ExpiresAt:      time.Now().Add(accessTokenTTL),
+		IPAddress:      ipAddress,
+		SessionID:      effectiveSessionID,
+		ClientClass:    clientClass,
+		Audience:       audience,
+		IsAgent:        isAgent,
+		AgentType:      agentType,
+		DelegatedBy:    delegatedBy,
+		AgentSessionID: agentSessionID,
+	})
+}
+
 func (s *OAuthService) generateTokensWithAccessTokenTTLAndClientContextAndDelegation(
 	ctx context.Context,
 	username, clientID, ipAddress string,
