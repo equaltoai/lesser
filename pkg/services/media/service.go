@@ -785,6 +785,16 @@ func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) err
 		// A concurrent re-mint re-published the record; leave its serving intact.
 		return nil
 	}
+	// Residual TOCTOU window: between the fresh re-read above and this delete,
+	// a concurrent same-key re-mint can land and still lose its object. Fully
+	// closing the window needs a conditional delete or per-mint object keys
+	// (schema/scale change), which is deliberately out of scope; a post-delete
+	// re-check is pointless because the object is already gone and the
+	// deterministic key makes a later reconcile idempotent. The version-guarded
+	// clear above already bounds the window to this single delete, and the
+	// reconcile path re-verifies the orphan premise before unpublishing, so the
+	// residual risk is a re-mint landing within this delete's latency and
+	// losing its serving, which the operator can re-mint by re-publishing.
 	s.deletePublishedObject(ctx, bucket, publishedKey)
 	return nil
 }
