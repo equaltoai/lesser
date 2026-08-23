@@ -794,6 +794,18 @@ func (s *Service) UpdateEditorialLifecycle(ctx context.Context, cmd *UpdateEdito
 	if lifecycle == models.EditorialLifecycleSuperseded && cmd.SupersededByMediaID == "" {
 		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded editorial media must name the superseding asset"))
 	}
+	if lifecycle == models.EditorialLifecycleSuperseded {
+		successor, getErr := s.mediaRepo.GetMedia(ctx, cmd.SupersededByMediaID)
+		if getErr != nil {
+			return nil, errors.Join(ErrMediaRetrievalFailed, getErr)
+		}
+		if successor == nil || strings.TrimSpace(successor.UserID) != cmd.UserID {
+			return nil, ErrMediaUnauthorizedAccess
+		}
+		if !successor.IsInternalEditorial() {
+			return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseding media must be an internal editorial asset"))
+		}
+	}
 	if err := s.mediaRepo.UpdateMediaEditorialState(ctx, cmd.MediaID, lifecycle, cmd.SupersededByMediaID, media.ModelVersion); err != nil {
 		return nil, errors.Join(ErrMediaUpdateFailed, err)
 	}

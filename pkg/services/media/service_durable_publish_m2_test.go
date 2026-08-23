@@ -316,3 +316,62 @@ func TestServiceUnpublishMediaDurablyClearsRecordAndDeletesObject(t *testing.T) 
 		require.Empty(t, objectStore.deleteCalls)
 	})
 }
+
+func TestServiceUpdateEditorialLifecycleValidatesSupersedingAsset(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("g", 64)
+	internalReady := m2ReadyInternalMedia("m1", "alice", digest)
+	successorReady := m2ReadyInternalMedia("m2", "alice", digest)
+	successorReady.ModelVersion = 1
+
+	t.Run("missing successor rejected", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m2").Return(nil, errors.New("not found")).Once()
+		_, err := service.UpdateEditorialLifecycle(context.Background(), &UpdateEditorialLifecycleCommand{
+			MediaID: "m1", UserID: "alice", Lifecycle: models.EditorialLifecycleSuperseded, SupersededByMediaID: "m2",
+		})
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrMediaRetrievalFailed)
+	})
+
+	t.Run("wrong-owner successor rejected", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		foreign := *successorReady
+		foreign.UserID = "mallory"
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m2").Return(&foreign, nil).Once()
+		_, err := service.UpdateEditorialLifecycle(context.Background(), &UpdateEditorialLifecycleCommand{
+			MediaID: "m1", UserID: "alice", Lifecycle: models.EditorialLifecycleSuperseded, SupersededByMediaID: "m2",
+		})
+		require.ErrorIs(t, err, ErrMediaUnauthorizedAccess)
+	})
+
+	t.Run("non-internal successor rejected", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		public := *successorReady
+		public.Visibility = models.MediaVisibilityPublic
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m2").Return(&public, nil).Once()
+		_, err := service.UpdateEditorialLifecycle(context.Background(), &UpdateEditorialLifecycleCommand{
+			MediaID: "m1", UserID: "alice", Lifecycle: models.EditorialLifecycleSuperseded, SupersededByMediaID: "m2",
+		})
+		require.ErrorContains(t, err, "internal editorial asset")
+	})
+
+	t.Run("valid internal successor accepted", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		superseded := *internalReady
+		superseded.EditorialState = models.EditorialLifecycleSuperseded
+		superseded.SupersededByMediaID = "m2"
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m2").Return(successorReady, nil).Once()
+		mediaRepo.On("UpdateMediaEditorialState", mock.Anything, "m1", models.EditorialLifecycleSuperseded, "m2", 1).Return(nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(&superseded, nil).Once()
+		result, err := service.UpdateEditorialLifecycle(context.Background(), &UpdateEditorialLifecycleCommand{
+			MediaID: "m1", UserID: "alice", Lifecycle: models.EditorialLifecycleSuperseded, SupersededByMediaID: "m2",
+		})
+		require.NoError(t, err)
+		require.Equal(t, models.EditorialLifecycleSuperseded, result.EditorialState)
+		require.Equal(t, "m2", result.SupersededByMediaID)
+	})
+}

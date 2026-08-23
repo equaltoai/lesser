@@ -144,3 +144,45 @@ func TestBuildCMSDraftReviewActiveReviewerIDsExcludeExpired(t *testing.T) {
 		"expired grants must not be classified as active reviewers")
 	require.Len(t, review.Grants, 2, "expired grants remain visible on the grant list")
 }
+
+func TestUpdateEditorialMediaLifecycleMutationValidatesSupersedingAsset(t *testing.T) {
+	resolver, _, _, _, state := newRound12GraphResolverWithMocks(t)
+	now := time.Now().UTC()
+	digest := "sha256:" + strings.Repeat("h", 64)
+	internal := func(id, owner string) *models.Media {
+		return &models.Media{
+			MediaID: id, UserID: owner, ContentType: "image/png", FileSize: 12,
+			ContentHash: digest, Status: "ready", Visibility: models.MediaVisibilityInternal,
+			S3Bucket: "media-private", S3Key: "alice/" + id + ".png", ModelVersion: 1,
+			Provenance: &models.MediaProvenance{
+				Origin: models.EditorialMediaOriginSupplied, ResponsibleActor: owner,
+				RecordedAt: now, ContentIntegrity: digest,
+			},
+		}
+	}
+	state.seededMedia = map[string]*models.Media{
+		"m1": internal("m1", "alice"),
+		"m2": internal("m2", "alice"),
+		"public": {
+			MediaID: "public", UserID: "alice", ContentType: "image/png", FileSize: 12,
+			ContentHash: digest, Status: "ready", Visibility: models.MediaVisibilityPublic,
+			S3Bucket: "media-private", S3Key: "alice/public.png",
+		},
+	}
+
+	// A non-internal successor is rejected through the mutation surface.
+	_, err := resolver.Mutation().UpdateEditorialMediaLifecycle(
+		round12AuthContext("alice"), "m1", model.EditorialMediaLifecycleSuperseded, ptrString("public"),
+	)
+	require.Error(t, err)
+
+	// A valid internal successor succeeds and is echoed back.
+	payload, err := resolver.Mutation().UpdateEditorialMediaLifecycle(
+		round12AuthContext("alice"), "m1", model.EditorialMediaLifecycleSuperseded, ptrString("m2"),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, payload)
+	require.Equal(t, model.EditorialMediaLifecycleSuperseded, payload.Lifecycle)
+	require.NotNil(t, payload.SupersededByMediaID)
+	require.Equal(t, "m2", *payload.SupersededByMediaID)
+}
