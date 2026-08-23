@@ -406,6 +406,7 @@ func createTestService(t *testing.T) (*Service, *MockMediaRepository, *MockJobQu
 		"cdn.example.com",
 	)
 	service.SetDeletionDependencies(&recordingMediaObjectDeleter{}, &recordingMediaMetadataDeleter{})
+	service.SetS3Service(newFakeMediaS3Service())
 
 	return service, mediaRepo, jobQueue, publisher
 }
@@ -530,6 +531,7 @@ func TestService_UploadMedia_Success(t *testing.T) {
 
 	// Mock expectations
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
+	mediaRepo.On("CreateMediaJob", ctx, mock.AnythingOfType("*models.MediaJob")).Return(nil)
 	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
 
 	// Execute
@@ -1211,6 +1213,7 @@ func createTestServiceForBenchmark() (*Service, *MockMediaRepository, *MockJobQu
 		"test-bucket",
 		"cdn.example.com",
 	)
+	service.SetS3Service(newFakeMediaS3Service())
 
 	return service, mediaRepo, jobQueue, publisher
 }
@@ -1220,6 +1223,7 @@ func BenchmarkService_UploadMedia(b *testing.B) {
 	ctx := context.Background()
 
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
+	mediaRepo.On("CreateMediaJob", ctx, mock.AnythingOfType("*models.MediaJob")).Return(nil)
 	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
 
 	cmd := createValidUploadCommand()
@@ -1261,6 +1265,7 @@ func TestService_EmitEvents_PublisherError(t *testing.T) {
 
 	// Mock expectations
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
+	mediaRepo.On("CreateMediaJob", ctx, mock.AnythingOfType("*models.MediaJob")).Return(nil)
 	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
 
 	// Execute

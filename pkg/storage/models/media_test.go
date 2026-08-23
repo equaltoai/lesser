@@ -1,11 +1,19 @@
 package models
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestMediaContentHashStorageTagDoesNotChangeJSONShape(t *testing.T) {
+	field, ok := reflect.TypeOf(Media{}).FieldByName("ContentHash")
+	assert.True(t, ok)
+	assert.Equal(t, "attr:contentHash,omitempty", field.Tag.Get("theorydb"))
+	assert.Equal(t, "-", field.Tag.Get("json"))
+}
 
 func TestMedia_TableName(t *testing.T) {
 	m := &Media{}
