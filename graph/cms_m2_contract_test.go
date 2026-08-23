@@ -121,3 +121,26 @@ func TestUpdateEditorialMediaLifecycleMutationWiresFieldScopedWrite(t *testing.T
 	)
 	require.Error(t, err)
 }
+
+func TestBuildCMSDraftReviewActiveReviewerIDsExcludeExpired(t *testing.T) {
+	resolver, drafts := newDraftReviewCursorResolver(t)
+	ctx := round12AuthContext("owner")
+	now := time.Now().UTC()
+	draft := &models.Draft{
+		ID: "active-ids", AuthorID: "owner", ContentType: "Article", Content: "body", ContentFormat: "markdown",
+		Status: "draft", CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, drafts.CreateDraft(ctx, draft))
+
+	active := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draft.ID, Reviewer: "active-reviewer", GrantedAt: now, ExpiresAt: m2FutureExpiry()}
+	past := now.Add(-time.Hour)
+	expired := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draft.ID, Reviewer: "expired-reviewer", GrantedAt: now, ExpiresAt: &past}
+	drafts.ownedDraftReviews = []*models.DraftReviewGrant{active, expired}
+	drafts.sharedDraftReviews = []*models.DraftReviewGrant{active, expired}
+
+	review, err := resolver.buildCMSDraftReview(ctx, draft, nil, nil, false)
+	require.NoError(t, err)
+	require.Equal(t, []string{"active-reviewer"}, review.ActiveReviewerIds,
+		"expired grants must not be classified as active reviewers")
+	require.Len(t, review.Grants, 2, "expired grants remain visible on the grant list")
+}

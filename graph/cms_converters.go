@@ -787,7 +787,7 @@ func (r *Resolver) buildCMSDraftReview(
 			continue
 		}
 		grants = append(grants, r.convertCMSDraftReviewGrant(ctx, item))
-		if item.RevokedAt == nil {
+		if item.IsActive(time.Now().UTC()) {
 			activeReviewerIDs = append(activeReviewerIDs, item.Reviewer)
 		}
 	}

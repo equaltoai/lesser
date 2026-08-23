@@ -110,3 +110,51 @@ func TestScheduleDraftBlocksUnreadyBoundMediaWithExplicitReason(t *testing.T) {
 	require.Equal(t, draftStatusScheduled, scheduled.Status)
 	require.NotNil(t, scheduled.ScheduledAt)
 }
+
+func TestExpiredGrantsExcludedFromCountAndActiveSort(t *testing.T) {
+	svc, repo, media, minter := m2ReviewService(t)
+	ctx := context.Background()
+	digestA := m2Digest("a")
+	media.byID["hero"] = m2ReadyMedia("hero", "owner", digestA)
+	minter.seedFromMedia(media)
+
+	now := time.Now().UTC()
+	activeExpiry := now.Add(time.Hour)
+	expiredExpiry := now.Add(-time.Hour)
+	reviewer := "reviewer"
+
+	t.Run("count excludes expired grants", func(t *testing.T) {
+		require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+			OwnerID: "owner", DraftID: "d1", Reviewer: reviewer, GrantedAt: now, ExpiresAt: &activeExpiry,
+		}))
+		require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+			OwnerID: "owner", DraftID: "d2", Reviewer: reviewer, GrantedAt: now, ExpiresAt: &expiredExpiry,
+		}))
+
+		count, err := svc.CountSharedDraftReviews(ctx, reviewer)
+		require.NoError(t, err)
+		require.Equal(t, 1, count, "totalCount must not include grants the list would exclude")
+
+		listed, _, err := svc.SharedDraftReviews(ctx, reviewer, 10, "")
+		require.NoError(t, err)
+		require.Equal(t, count, len(listed), "count must equal the active queue edges")
+	})
+
+	t.Run("read state sorts active grants first", func(t *testing.T) {
+		draft := &models.Draft{ID: "sort-grants", AuthorID: "owner", ContentType: activitypub.ArticleType, Title: "Sort", Slug: "sort", Content: "draft", ContentFormat: "markdown"}
+		require.NoError(t, svc.CreateDraft(ctx, draft))
+		require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+			OwnerID: "owner", DraftID: draft.ID, Reviewer: "expired-reviewer", GrantedAt: now.Add(-2 * time.Hour), ExpiresAt: &expiredExpiry,
+		}))
+		require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+			OwnerID: "owner", DraftID: draft.ID, Reviewer: "active-reviewer", GrantedAt: now.Add(-time.Hour), ExpiresAt: &activeExpiry,
+		}))
+
+		state, err := svc.DraftReviewState(ctx, "owner", draft.ID, nil)
+		require.NoError(t, err)
+		require.Len(t, state.Grants, 2)
+		require.Equal(t, "active-reviewer", state.Grants[0].Reviewer,
+			"expired grants must sort after active grants in the read state")
+		require.Equal(t, "expired-reviewer", state.Grants[1].Reviewer)
+	})
+}

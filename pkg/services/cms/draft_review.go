@@ -357,13 +357,36 @@ func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, 
 	return active, nextCursor, nil
 }
 
-// CountSharedDraftReviews returns the full active queue size.
+// CountSharedDraftReviews returns the full active queue size, applying the same
+// active-grant predicate as SharedDraftReviews so the reported count can never
+// exceed the edges the list would return for the same reviewer.
 func (s *DraftService) CountSharedDraftReviews(ctx context.Context, reviewer string) (int, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {
 		return 0, err
 	}
-	return repo.CountActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer))
+	now := time.Now().UTC()
+	total := 0
+	cursor := ""
+	for {
+		grants, nextCursor, listErr := repo.ListActiveDraftReviewGrants(ctx, strings.TrimSpace(reviewer), maxDraftReviewReadGrants, cursor)
+		if listErr != nil {
+			return 0, listErr
+		}
+		for _, grant := range grants {
+			if grant != nil && grant.IsActive(now) {
+				total++
+			}
+		}
+		if nextCursor == "" {
+			break
+		}
+		if nextCursor == cursor {
+			return 0, errors.New("draft review pagination did not advance")
+		}
+		cursor = nextCursor
+	}
+	return total, nil
 }
 
 // OwnedDraftReviews returns active review assignments created by one draft owner.
@@ -591,9 +614,10 @@ func (s *DraftService) DraftReviewState(ctx context.Context, owner, draftID stri
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
 	sort.SliceStable(grants, func(i, j int) bool {
-		leftActive := grants[i] != nil && grants[i].RevokedAt == nil
-		rightActive := grants[j] != nil && grants[j].RevokedAt == nil
+		leftActive := grants[i] != nil && grants[i].IsActive(now)
+		rightActive := grants[j] != nil && grants[j].IsActive(now)
 		if leftActive != rightActive {
 			return leftActive
 		}
