@@ -35,7 +35,9 @@ type round12TestClaims struct {
 	username string
 }
 
-type round12MediaS3Service struct{}
+type round12MediaS3Service struct {
+	state *round12PermissiveQueryState
+}
 
 func (round12MediaS3Service) UploadFile(
 	_ context.Context,
@@ -60,7 +62,13 @@ func (s round12MediaS3Service) UploadInternalFile(
 
 func (round12MediaS3Service) DeleteFile(context.Context, string, string) error { return nil }
 
-func (round12MediaS3Service) GeneratePresignedURL(_ context.Context, bucket, key string, _ time.Duration) (string, error) {
+func (s round12MediaS3Service) GeneratePresignedURL(_ context.Context, bucket, key string, _ time.Duration) (string, error) {
+	if s.state != nil {
+		s.state.presignCalls++
+		if s.state.presignErr != nil {
+			return "", s.state.presignErr
+		}
+	}
 	return "https://signed.example/" + bucket + "/" + key + "?signature=review", nil
 }
 
@@ -121,6 +129,8 @@ type round12PermissiveQueryState struct {
 	seededAgentShareGrants map[string]*models.AgentShareGrant
 	seededMedia            map[string]*models.Media
 	persistMedia           bool
+	presignCalls           int
+	presignErr             error
 	pendingUpdateSets      map[string]any
 	pendingUpdateRemovals  map[string]struct{}
 }
@@ -1706,7 +1716,7 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 		services.WithStorage(storage),
 		services.WithPublisher(streaming.NewMockPublisher()),
 		services.WithLogger(zap.NewNop()),
-		services.WithMediaS3Service(round12MediaS3Service{}),
+		services.WithMediaS3Service(round12MediaS3Service{state: state}),
 		services.WithConfig(&services.ServiceConfig{
 			BaseURL:   "https://localhost",
 			JWTSecret: strings.Repeat("x", 32),

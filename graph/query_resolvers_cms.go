@@ -1398,7 +1398,7 @@ func (r *queryResolver) MyDraftReviews(ctx context.Context, first *int, after *m
 		if verdictErr != nil {
 			return nil, verdictErr
 		}
-		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, verdicts)
+		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, verdicts, false)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -1517,7 +1517,7 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 		if e != nil {
 			return nil, e
 		}
-		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, vs)
+		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, vs, false)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -1562,5 +1562,5 @@ func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.Draf
 	if err != nil {
 		return nil, err
 	}
-	return r.buildCMSDraftReview(ctx, d, g, vs)
+	return r.buildCMSDraftReview(ctx, d, g, vs, true)
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"go.uber.org/zap"
 )
 
 func (r *Resolver) cmsStorage() core.RepositoryStorage {
@@ -125,10 +126,7 @@ func (r *Resolver) convertCMSDraftPreview(
 		sourceFormat = cmsrender.FormatMarkdown
 	}
 
-	editorialMedia, err := r.convertCMSEditorialMediaBindingsWithAccess(ctx, bindings)
-	if err != nil {
-		return nil, err
-	}
+	editorialMedia := r.convertCMSEditorialMediaBindingsWithAccess(ctx, bindings)
 	return &model.DraftPreview{
 		DraftID:        draft.ID,
 		Success:        renderErr == nil,
@@ -175,20 +173,25 @@ func (r *Resolver) convertCMSEditorialMediaBindings(
 func (r *Resolver) convertCMSEditorialMediaBindingsWithAccess(
 	ctx context.Context,
 	bindings []cms.DraftEditorialMediaBinding,
-) ([]*model.EditorialMediaUsage, error) {
+) []*model.EditorialMediaUsage {
 	out := make([]*model.EditorialMediaUsage, 0, len(bindings))
 	for _, binding := range bindings {
 		var access *media.EditorialAccess
 		if binding.Media != nil && binding.Media.IsInternalEditorial() {
-			var err error
-			access, err = r.Registry.Media().IssueEditorialAccess(ctx, binding.Media.MediaID)
+			issued, err := r.Registry.Media().IssueEditorialAccess(ctx, binding.Media.MediaID)
 			if err != nil {
-				return nil, err
+				if r.Logger != nil {
+					r.Logger.Warn("failed to issue editorial media access",
+						zap.String("media_id", binding.Media.MediaID),
+						zap.Error(err))
+				}
+			} else {
+				access = issued
 			}
 		}
 		out = append(out, r.convertCMSEditorialMediaBinding(ctx, binding, true, access))
 	}
-	return out, nil
+	return out
 }
 
 func (r *Resolver) convertCMSEditorialMediaBinding(
@@ -684,7 +687,13 @@ func (r *Resolver) canViewCMSPrivateAttribution(ctx context.Context, attributedT
 	return strings.EqualFold(cmsNormalizeUsername(attributedTo), claims.Username)
 }
 
-func (r *Resolver) buildCMSDraftReview(ctx context.Context, draft *models.Draft, grant *models.DraftReviewGrant, verdicts []*models.DraftReviewVerdict) (*model.DraftReview, error) {
+func (r *Resolver) buildCMSDraftReview(
+	ctx context.Context,
+	draft *models.Draft,
+	grant *models.DraftReviewGrant,
+	verdicts []*models.DraftReviewVerdict,
+	includeMediaAccess bool,
+) (*model.DraftReview, error) {
 	if draft == nil {
 		return nil, nil
 	}
@@ -715,9 +724,9 @@ func (r *Resolver) buildCMSDraftReview(ctx context.Context, draft *models.Draft,
 	}
 	viewer := strings.TrimSpace(getUsernameFromContext(ctx))
 	mediaBindings := r.resolveCMSEditorialMediaBindings(ctx, draft)
-	editorialMedia, err := r.convertCMSEditorialMediaBindingsWithAccess(ctx, mediaBindings)
-	if err != nil {
-		return nil, err
+	editorialMedia := r.convertCMSEditorialMediaBindings(ctx, mediaBindings, false)
+	if includeMediaAccess {
+		editorialMedia = r.convertCMSEditorialMediaBindingsWithAccess(ctx, mediaBindings)
 	}
 	grants := make([]*model.DraftReviewGrant, 0, len(state.Grants))
 	activeReviewerIDs := make([]string, 0, len(state.Grants))

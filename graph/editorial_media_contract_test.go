@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/cms"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,4 +130,97 @@ func TestEditorialMediaPreviewStatesAreConspicuous(t *testing.T) {
 		},
 	}, false, nil)
 	require.Equal(t, model.EditorialMediaStateRejected, rejected.State)
+}
+
+func TestEditorialMediaMintingGranularityForListAndSingleDraftContexts(t *testing.T) {
+	resolver, drafts, state := newEditorialMediaReviewResolver(t)
+	now := time.Now().UTC()
+	hash := "sha256:" + strings.Repeat("b", 64)
+	state.seededMedia = map[string]*models.Media{
+		"ready": {
+			MediaID: "ready", UserID: "owner", Visibility: models.MediaVisibilityInternal,
+			Status: models.StatusReady, ContentType: "image/png", ContentHash: hash,
+			S3Bucket: "media-private", S3Key: "owner/ready.png",
+			Provenance: &models.MediaProvenance{
+				Origin: models.EditorialMediaOriginSupplied, ResponsibleActor: "owner",
+				RecordedAt: now, ContentIntegrity: hash,
+			},
+		},
+	}
+	draft := &models.Draft{
+		ID: "mint-granularity", AuthorID: "owner", ContentType: "Article",
+		Title: "Mint granularity", Content: "# Body", ContentFormat: "markdown", Status: "draft",
+		EditorialMedia: []models.DraftMediaUsage{
+			{MediaID: "ready", Role: models.EditorialMediaRoleHero},
+			{MediaID: "gone", Role: models.EditorialMediaRoleSocialCard},
+		},
+		CreatedAt: now, UpdatedAt: now, LastSavedAt: now,
+	}
+	require.NoError(t, drafts.CreateDraft(context.Background(), draft))
+	grant := &models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: now,
+		SK:     "GRANT#mint-granularity#REVIEWER#reviewer",
+		GSI2SK: "TIME#2026-08-23T00:00:00Z#OWNER#owner#DRAFT#mint-granularity",
+	}
+	drafts.ownedDraftReviews = []*models.DraftReviewGrant{grant}
+	drafts.sharedDraftReviews = []*models.DraftReviewGrant{grant}
+	state.presignErr = errors.New("presigner unavailable")
+
+	owned, err := resolver.Query().MyDraftReviews(round12AuthContext("owner"), nil, nil)
+	require.NoError(t, err)
+	require.Len(t, owned.Edges, 1)
+	requireEditorialMediaWithoutAccess(t, owned.Edges[0].Node.EditorialMedia)
+	require.Zero(t, state.presignCalls, "owned review lists must not mint bearer URLs")
+
+	shared, err := resolver.Query().SharedDraftReviews(round12AuthContext("reviewer"), nil, nil)
+	require.NoError(t, err)
+	require.Len(t, shared.Edges, 1)
+	requireEditorialMediaWithoutAccess(t, shared.Edges[0].Node.EditorialMedia)
+	require.Zero(t, state.presignCalls, "shared review lists must not mint bearer URLs")
+
+	single, err := resolver.Query().DraftReview(round12AuthContext("owner"), draft.ID)
+	require.NoError(t, err, "one failed binding mint must not fail a single-draft review")
+	requireEditorialMediaWithoutAccess(t, single.EditorialMedia)
+	require.Equal(t, 1, state.presignCalls, "only the present internal binding should attempt a mint")
+
+	preview, err := resolver.Query().DraftPreview(round12AuthContext("owner"), draft.ID)
+	require.NoError(t, err, "one failed binding mint must not fail a draft preview")
+	requireEditorialMediaWithoutAccess(t, preview.EditorialMedia)
+	require.Equal(t, 2, state.presignCalls)
+}
+
+func newEditorialMediaReviewResolver(
+	t *testing.T,
+) (*Resolver, *cursorRecordingDraftRepository, *round12PermissiveQueryState) {
+	t.Helper()
+
+	base, storage, _, _, state := newRound12GraphResolverWithMocks(t)
+	drafts := &cursorRecordingDraftRepository{DraftRepository: inmemory.NewDraftRepository()}
+	wrapped := &cursorResolverStorage{RepositoryStorage: storage, draft: drafts}
+	registry, err := services.NewRegistry(
+		services.WithStorage(wrapped),
+		services.WithPublisher(base.Registry.GetPublisher()),
+		services.WithLogger(base.Registry.GetLogger()),
+		services.WithMediaS3Service(round12MediaS3Service{state: state}),
+		services.WithConfig(base.Registry.GetConfig()),
+	)
+	require.NoError(t, err)
+
+	return &Resolver{
+		Registry: registry,
+		Config:   base.Config,
+		Storage:  wrapped,
+		Logger:   base.Logger,
+	}, drafts, state
+}
+
+func requireEditorialMediaWithoutAccess(t *testing.T, usages []*model.EditorialMediaUsage) {
+	t.Helper()
+	require.Len(t, usages, 2)
+	require.Equal(t, model.EditorialMediaStateReady, usages[0].State)
+	require.Nil(t, usages[0].AccessURL)
+	require.Nil(t, usages[0].AccessExpiresAt)
+	require.Equal(t, model.EditorialMediaStateMissing, usages[1].State)
+	require.Nil(t, usages[1].AccessURL)
+	require.Nil(t, usages[1].AccessExpiresAt)
 }
