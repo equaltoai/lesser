@@ -10,6 +10,7 @@ import (
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/services/cms"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -18,16 +19,30 @@ import (
 )
 
 // fakeOrphanDrafts pages failed drafts; the first page returns pageOne, the
-// second returns pageTwo, and any later page is empty.
+// second returns pageTwo, and any later page is empty. Publishing-status
+// enumeration (the stale-publishing sweep) is served from publishingPageOne /
+// publishingPageTwo so tests can distinguish the two candidate sets.
 type fakeOrphanDrafts struct {
-	pageOne []*models.Draft
-	pageTwo []*models.Draft
-	err     error
+	pageOne           []*models.Draft
+	pageTwo           []*models.Draft
+	publishingPageOne []*models.Draft
+	publishingPageTwo []*models.Draft
+	err               error
 }
 
-func (f *fakeOrphanDrafts) ListDraftsByStatusPaginated(_ context.Context, _ string, _ int, cursor string) ([]*models.Draft, string, error) {
+func (f *fakeOrphanDrafts) ListDraftsByStatusPaginated(_ context.Context, status string, _ int, cursor string) ([]*models.Draft, string, error) {
 	if f.err != nil {
 		return nil, "", f.err
+	}
+	if status == cms.DraftStatusPublishing {
+		switch cursor {
+		case "":
+			return f.publishingPageOne, "pub-1", nil
+		case "pub-1":
+			return f.publishingPageTwo, "", nil
+		default:
+			return nil, "", nil
+		}
 	}
 	switch cursor {
 	case "":
@@ -115,7 +130,11 @@ func orphanReconcilePublishedMedia(id string) *models.Media {
 }
 
 func orphanFailedDraft(id string, objectID *string, usages ...models.DraftMediaUsage) *models.Draft {
-	return &models.Draft{ID: id, AuthorID: "alice", Status: draftStatusFailed, ObjectID: objectID, EditorialMedia: usages}
+	return &models.Draft{ID: id, AuthorID: "alice", Status: cms.DraftStatusFailed, ObjectID: objectID, EditorialMedia: usages}
+}
+
+func orphanPublishingDraft(id string, updatedAt time.Time, usages ...models.DraftMediaUsage) *models.Draft {
+	return &models.Draft{ID: id, AuthorID: "alice", Status: cms.DraftStatusPublishing, UpdatedAt: updatedAt, EditorialMedia: usages}
 }
 
 func TestOrphanedPublishedMintSource(t *testing.T) {
@@ -288,6 +307,53 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.NoError(t, err)
 		require.Empty(t, ids)
+	})
+
+	t.Run("stale publishing draft with an orphaned mint is reconciled", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		stale := orphanPublishingDraft("dp-stale", time.Now().UTC().Add(-25*time.Hour), models.DraftMediaUsage{MediaID: "hero"})
+		src := newOrphanSource(
+			&fakeOrphanDrafts{publishingPageOne: []*models.Draft{stale}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, []string{"hero"}, ids,
+			"a crash-stuck publishing draft older than the horizon is a failed-draft candidate")
+	})
+
+	t.Run("fresh publishing draft is not reconciled", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		fresh := orphanPublishingDraft("dp-fresh", time.Now().UTC(), models.DraftMediaUsage{MediaID: "hero"})
+		src := newOrphanSource(
+			&fakeOrphanDrafts{publishingPageOne: []*models.Draft{fresh}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Empty(t, ids,
+			"a publishing draft still inside the horizon is an in-flight publish and must not be reconciled")
+	})
+
+	t.Run("stale publishing candidate passes the re-check", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		stale := orphanPublishingDraft("dp-stale", time.Now().UTC().Add(-25*time.Hour), models.DraftMediaUsage{MediaID: "hero"})
+		src := newOrphanSource(
+			&fakeOrphanDrafts{publishingPageOne: []*models.Draft{stale}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, []string{"hero"}, ids)
+		still, err := src.RecheckOrphanedPublishedMint(context.Background(), "hero")
+		require.NoError(t, err)
+		require.True(t, still, "the re-check must see the same stale-publishing candidate set")
 	})
 
 	t.Run("failed drafts are paged and mints are deduplicated", func(t *testing.T) {
