@@ -78,6 +78,19 @@ func TestHandler_resolveVAPIDPublicKey(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 
+	t.Run("live_missing_keys_returns_500", func(t *testing.T) {
+		cfg := round11TestConfig()
+		cfg.Stage = "live"
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{forceVapidNotFound: true})
+
+		liftCtx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/"}}
+		pub, resp, err := h.resolveVAPIDPublicKey(liftCtx, false)
+		require.Empty(t, pub)
+		require.NotNil(t, resp)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
+	})
+
 	t.Run("non_production_missing_keys_noops_when_generate_false", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, round11TestConfig(), &round10QueryState{forceVapidNotFound: true})
 

@@ -463,16 +463,12 @@ func TestDelegateToAgent_AllowsExistingAgentWhenRegistrationDisabled(t *testing.
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.AccessToken)
-	require.NotEmpty(t, result.RefreshToken)
+	require.Empty(t, result.RefreshToken)
 	require.Equal(t, "Bearer", result.TokenType)
 	require.Equal(t, "write:statuses", result.Scope)
 	require.NotNil(t, result.Agent)
 	require.Equal(t, "agent1", result.Agent.Username)
-	storedRefresh := state.refreshTokens[result.RefreshToken]
-	require.NotNil(t, storedRefresh)
-	requestedTTL := time.Duration(result.ExpiresIn) * time.Second
-	require.WithinDuration(t, storedRefresh.CreatedAt.Add(requestedTTL), storedRefresh.IdleExpiresAt, 2*time.Second)
-	require.WithinDuration(t, storedRefresh.CreatedAt.Add(requestedTTL), storedRefresh.AbsoluteExpiresAt, 2*time.Second)
+	require.Empty(t, state.refreshTokens)
 }
 
 func TestDelegateToAgent_CreatesMissingAgentWhenRegistrationEnabled(t *testing.T) {

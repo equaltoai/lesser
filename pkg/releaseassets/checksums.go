@@ -41,6 +41,7 @@ func WriteChecksums(outDir string) error {
 	}
 
 	content := strings.Join(lines, "\n") + "\n"
+	//nolint:gosec // The checksum list is an intentionally public GitHub release artifact with no secret material.
 	if err := os.WriteFile(filepath.Join(outDir, ChecksumsFileName), []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write checksums: %w", err)
 	}

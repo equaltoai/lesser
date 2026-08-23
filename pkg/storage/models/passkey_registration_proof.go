@@ -10,6 +10,7 @@ import (
 
 const (
 	// KeyPatternPasskeyRegistrationProof is the canonical PK pattern for passkey signup proofs.
+	//nolint:gosec // This is a DynamoDB partition-key format string, not credential material.
 	KeyPatternPasskeyRegistrationProof = "PASSKEY_REGISTRATION_PROOF#%s"
 	// SKPasskeyRegistrationProof is the canonical SK for passkey signup proofs.
 	SKPasskeyRegistrationProof = "PROOF"

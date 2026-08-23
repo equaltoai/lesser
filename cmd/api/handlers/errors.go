@@ -151,21 +151,6 @@ func failedToGenerateTokens() *errors.AppError {
 	return errors.TokenGenerationFailed(nil)
 }
 
-// failedToValidateRefreshToken creates an error when refresh token validation fails.
-func failedToValidateRefreshToken() *errors.AppError {
-	return errors.RefreshTokenInvalid()
-}
-
-// failedToGenerateNewTokens creates an error when new token generation fails.
-func failedToGenerateNewTokens() *errors.AppError {
-	return errors.TokenGenerationFailed(nil)
-}
-
-// failedToStoreNewRefreshToken creates an error when new refresh token storage fails.
-func failedToStoreNewRefreshToken() *errors.AppError {
-	return errors.CredentialStorageFailed(nil)
-}
-
 // VAPID key operations errors - using Auth domain functions
 
 // failedToGenerateVAPIDPrivateKey creates an error when VAPID private key generation fails.

@@ -64,6 +64,9 @@ func TestConfiguredSecretReadPolicyUsesExactConfiguredSecretARNs(t *testing.T) {
 	if !containsString(actions, "secretsmanager:GetSecretValue") || !containsString(actions, "secretsmanager:DescribeSecret") {
 		t.Fatalf("expected secretsmanager read actions, got %v", actions)
 	}
+	if containsString(actions, "secretsmanager:PutSecretValue") {
+		t.Fatalf("configured secret read policy must not grant writes to push-delivery's basic role, got %v", actions)
+	}
 
 	res := extractStatementResources(t, statement)
 	if len(res) != 3 {
@@ -78,6 +81,73 @@ func TestConfiguredSecretReadPolicyUsesExactConfiguredSecretARNs(t *testing.T) {
 	}
 	if got, ok := res[2].(string); !ok || got != "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-xyz789" {
 		t.Fatalf("unexpected third secret resource: %#v", res[2])
+	}
+}
+
+func TestVAPIDSecretReadWritePolicyUsesExactConfiguredARN(t *testing.T) {
+	outdir := t.TempDir()
+	app := awscdk.NewApp(&awscdk.AppProps{Outdir: jsii.String(outdir)})
+	stack := awscdk.NewStack(app, jsii.String("TestStack"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Account: jsii.String("123456789012"),
+			Region:  jsii.String("us-east-1"),
+		},
+	})
+
+	apiRole := awsiam.NewRole(stack, jsii.String("APIRole"), &awsiam.RoleProps{
+		AssumedBy: awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
+	})
+
+	attachVAPIDSecretReadWritePolicy(stack, "lesser", "production", apiRole, map[string]interface{}{
+		"vapidSecretArn":               " arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-xyz789 ",
+		"lesserHostInstanceKeyArn":     "arn:aws:secretsmanager:us-east-1:123456789012:secret:host-should-not-be-included",
+		"soulBindingIntegrationKeyArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:soul-should-not-be-included",
+	})
+
+	app.Synth(nil)
+
+	templatePath := filepath.Join(outdir, "TestStack.template.json")
+	data, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+
+	var tpl map[string]any
+	if err := json.Unmarshal(data, &tpl); err != nil {
+		t.Fatalf("unmarshal template: %v", err)
+	}
+
+	resources := mustResources(t, tpl)
+	policies := collectIAMPolicies(t, resources)
+	if len(policies) != 1 {
+		t.Fatalf("expected exactly one VAPID policy resource, found %d", len(policies))
+	}
+
+	doc := extractPolicyDocument(t, policies[0])
+	statements := extractPolicyStatements(t, doc)
+	if len(statements) != 1 {
+		t.Fatalf("expected exactly one VAPID policy statement, found %d", len(statements))
+	}
+	actions := extractStatementActions(t, statements[0])
+	for _, action := range []string{
+		"secretsmanager:DescribeSecret",
+		"secretsmanager:GetSecretValue",
+		"secretsmanager:PutSecretValue",
+	} {
+		if !containsString(actions, action) {
+			t.Fatalf("expected %s in VAPID policy actions, got %v", action, actions)
+		}
+	}
+	if len(actions) != 3 {
+		t.Fatalf("expected only VAPID read/write actions, got %v", actions)
+	}
+
+	res := extractStatementResources(t, statements[0])
+	if len(res) != 1 {
+		t.Fatalf("expected one exact VAPID secret resource, got %#v", res)
+	}
+	if got, ok := res[0].(string); !ok || got != "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-xyz789" {
+		t.Fatalf("unexpected VAPID secret resource: %#v", res[0])
 	}
 }
 

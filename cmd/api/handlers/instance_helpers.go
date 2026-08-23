@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
 	"go.uber.org/zap"
@@ -65,7 +66,7 @@ func (h *Handler) resolveVAPIDPublicKey(ctx *apptheory.Context, generateIfMissin
 		if h.cfg != nil {
 			env = h.cfg.Stage
 		}
-		if env == EnvProduction || env == EnvProd {
+		if naming.IsLiveEnvironment(env) {
 			if h.logger != nil {
 				h.logger.Error("VAPID keys are required in production but not found", zap.Error(err))
 			}

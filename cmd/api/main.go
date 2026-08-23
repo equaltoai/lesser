@@ -111,6 +111,9 @@ func init() {
 
 	// Use standardized Lambda initialization
 	lambdaCtx = common.MustInitializeLambda(lambdaConfig)
+	if err := configureTableTheoryEncryption(lambdaCtx.Config); err != nil {
+		lambdaCtx.Logger.Fatal("failed to configure TableTheory encryption", zap.Error(err))
+	}
 
 	if _, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
 		ServiceName:          "api",
@@ -127,6 +130,19 @@ func init() {
 
 	// Initialize API-specific services
 	initializeAPISpecificServices()
+}
+
+// configureTableTheoryEncryption bridges Lesser's established KMS_KEY_ID
+// configuration to TableTheory's fail-closed encrypted-field configuration.
+// AWS KMS accepts key IDs, ARNs, and aliases for this setting.
+func configureTableTheoryEncryption(cfg *config.Config) error {
+	if cfg == nil || strings.TrimSpace(os.Getenv("KMS_KEY_ARN")) != "" {
+		return nil
+	}
+	if keyID := strings.TrimSpace(cfg.KMSKeyID); keyID != "" {
+		return os.Setenv("KMS_KEY_ARN", keyID)
+	}
+	return nil
 }
 
 // extractStandardizedServices extracts services from standardized initialization

@@ -27,6 +27,7 @@ GET /	public		anonymous	none
 GET /.well-known/lesser-soul-agent	public		anonymous	none
 GET /.well-known/nodeinfo	public		anonymous	none
 GET /.well-known/oauth-authorization-server	public		anonymous	none
+GET /.well-known/oauth-protected-resource/mcp/{username}	public		anonymous	none
 GET /.well-known/reputation-keys	public		anonymous	none
 GET /api/oembed	public		anonymous	none
 GET /api/v1/accounts/lookup	public		anonymous	none
@@ -169,6 +170,7 @@ GET /api/v2/trends/statuses	public		anonymous	none
 GET /api/v2/trends/tags	public		anonymous	none
 GET /auth/device	public		anonymous	none
 GET /auth/wallet/list	authenticated		auth_required	requireAuth
+GET /authorize	public		anonymous	none
 GET /embed/{id}	public		anonymous	none
 GET /nodeinfo/2.0	public		anonymous	none
 GET /oauth/authorize	public		anonymous	none
@@ -301,10 +303,12 @@ POST /oauth/device/verify	public		anonymous	none
 POST /oauth/register	optional		anonymous	optionalAuth
 POST /oauth/revoke	public		anonymous	none
 POST /oauth/token	public		anonymous	none
+POST /register	optional		anonymous	optionalAuth
 POST /setup/admin	public		contract_auth/setup_bearer	none
 POST /setup/bootstrap/challenge	public		anonymous	none
 POST /setup/bootstrap/verify	public		anonymous	none
 POST /setup/finalize	public		contract_auth/bearer_required	none
+POST /token	public		anonymous	none
 PUT /api/v1/accounts/quote_permissions	authenticated		auth_required	requireAccountWrite
 PUT /api/v1/admin/agents/policy	authenticated	admin	auth_required	requireAdmin
 PUT /api/v1/admin/custom_emojis/{shortcode}	authenticated		auth_required	requireAuth

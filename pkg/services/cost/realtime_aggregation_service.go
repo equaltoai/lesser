@@ -571,7 +571,7 @@ func (s *RealtimeAggregationService) updateAggregationCache(_ context.Context) e
 }
 
 // checkAlertConditions checks if any alert conditions are triggered
-func (s *RealtimeAggregationService) checkAlertConditions(_ context.Context) error {
+func (s *RealtimeAggregationService) checkAlertConditions(ctx context.Context) error {
 	s.aggregationCache.mu.RLock()
 	defer s.aggregationCache.mu.RUnlock()
 
@@ -604,7 +604,7 @@ func (s *RealtimeAggregationService) checkAlertConditions(_ context.Context) err
 
 			// Send alert to notification system
 			if s.notificationSvc != nil {
-				go s.sendCostAlert(context.Background(), alert)
+				go s.sendCostAlert(context.WithoutCancel(ctx), alert)
 			}
 		}
 	}

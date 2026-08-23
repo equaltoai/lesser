@@ -48,7 +48,8 @@ func readAuthSecret(secretFile string) (string, error) {
 		return "", nil
 	}
 
-	data, err := os.ReadFile(secretFile) // #nosec G304 -- CLI reads an operator-provided local secret path
+	//nolint:gosec // G703: --auth-secret-file is an explicit local-operator path and this CLI must read that exact 0600-capable secret source.
+	data, err := os.ReadFile(secretFile)
 	if err != nil {
 		return "", fmt.Errorf("read secret file %s: %w", secretFile, err)
 	}
@@ -161,7 +162,7 @@ func writeAuthSession(baseURL string, key []byte, session *cliAuthSession) error
 
 	session.BaseURL = strings.TrimSpace(baseURL)
 
-	plaintext, err := json.Marshal(session)
+	plaintext, err := json.Marshal(session) //nolint:gosec // G117: the refresh token is intentionally serialized only into this in-memory plaintext, then AEAD-encrypted before the 0600 session file is written
 	if err != nil {
 		return err
 	}

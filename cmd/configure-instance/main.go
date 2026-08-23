@@ -297,7 +297,7 @@ func saveVAPIDKeys(appCtx *appContext, vapidKeys *storage.VAPIDKeys) error {
 func displayVAPIDSuccess(publicKeyBase64 string) {
 	fmt.Println("✓ VAPID keys generated successfully!")
 	fmt.Printf("Public Key: %s\n", publicKeyBase64)
-	fmt.Println("\nNOTE: The private key has been securely stored in DynamoDB.")
+	fmt.Println("\nNOTE: The private key has been securely stored in AWS Secrets Manager.")
 	fmt.Println("Use the public key in your Mastodon client configuration.")
 }
 

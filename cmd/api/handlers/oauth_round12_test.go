@@ -966,7 +966,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 	})
 
 	t.Run("authorization_code PKCE verification failed", func(t *testing.T) {
-		verifier := "good-verifier"
+		verifier := "good-verifier-rfc7636-minimum-length-43-characters"
 		sum := sha256.Sum256([]byte(verifier))
 		challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 
@@ -1458,10 +1458,14 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 				h, _, _ := round11NewHandler(t, cfg, state)
 
 				ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token="+url.QueryEscape(token.Token)+"&client_id=client-agent"))
-				resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+				wantStatus, wantError := http.StatusBadRequest, "invalid_grant"
+				if tc.revoked {
+					wantStatus, wantError = http.StatusServiceUnavailable, "temporarily_unavailable"
+				}
+				resp := requireStatus(t, wantStatus)(h.HandleOAuthTokenLift(ctx))
 				var body map[string]string
 				require.NoError(t, json.Unmarshal(resp.Body, &body))
-				require.Equal(t, "invalid_grant", body["error"])
+				require.Equal(t, wantError, body["error"])
 			})
 		}
 	})

@@ -522,30 +522,35 @@ func TestAgentRuntimeRefreshLookupReasonsDistinguishInfrastructureAndCredentials
 		clientID string
 		state    *round10QueryState
 		reason   string
+		wantErr  error
 	}{
 		{
 			name:  "storage infrastructure fault",
 			token: "rt-fault", clientID: delegatedAgentClientID,
-			state:  &round10QueryState{firstErrorByType: map[string]error{"*models.RefreshToken": errors.New("storage unavailable")}},
-			reason: oauthGrantReasonRefreshRotationInfrastructure,
+			state:   &round10QueryState{firstErrorByType: map[string]error{"*models.RefreshToken": errors.New("storage unavailable")}},
+			reason:  oauthGrantReasonRefreshRotationInfrastructure,
+			wantErr: auth.ErrOAuthTemporarilyUnavailable,
 		},
 		{
 			name:  "authoritative absence",
 			token: "rt-missing", clientID: delegatedAgentClientID,
-			state:  &round10QueryState{notFoundPKs: map[string]bool{"REFRESHTOKEN#rt-missing": true}},
-			reason: oauthGrantReasonRefreshTokenAbsent,
+			state:   &round10QueryState{notFoundPKs: map[string]bool{"REFRESHTOKEN#rt-missing": true}},
+			reason:  oauthGrantReasonRefreshTokenAbsent,
+			wantErr: auth.ErrInvalidToken,
 		},
 		{
 			name:  "wrong client",
 			token: wrongClient.Token, clientID: selfSovereignAgentClientID,
-			state:  &round10QueryState{refreshTokensByToken: map[string]storagemodels.RefreshToken{wrongClient.Token: wrongClient}},
-			reason: oauthGrantReasonRefreshRuntimeInvalid,
+			state:   &round10QueryState{refreshTokensByToken: map[string]storagemodels.RefreshToken{wrongClient.Token: wrongClient}},
+			reason:  oauthGrantReasonRefreshRuntimeInvalid,
+			wantErr: auth.ErrInvalidToken,
 		},
 		{
 			name:  "non-runtime token",
 			token: nonRuntime.Token, clientID: delegatedAgentClientID,
-			state:  &round10QueryState{refreshTokensByToken: map[string]storagemodels.RefreshToken{nonRuntime.Token: nonRuntime}},
-			reason: oauthGrantReasonRefreshRuntimeInvalid,
+			state:   &round10QueryState{refreshTokensByToken: map[string]storagemodels.RefreshToken{nonRuntime.Token: nonRuntime}},
+			reason:  oauthGrantReasonRefreshRuntimeInvalid,
+			wantErr: auth.ErrInvalidToken,
 		},
 	}
 
@@ -555,7 +560,7 @@ func TestAgentRuntimeRefreshLookupReasonsDistinguishInfrastructureAndCredentials
 			telemetry := &oauthGrantTelemetry{}
 			stored, err := h.loadAgentRuntimeRefreshTokenForExchange(context.Background(), tc.token, tc.clientID, telemetry)
 			require.Nil(t, stored)
-			require.ErrorIs(t, err, auth.ErrInvalidToken)
+			require.ErrorIs(t, err, tc.wantErr)
 			require.Equal(t, tc.reason, telemetry.DetailReason)
 		})
 	}
@@ -577,6 +582,7 @@ func TestOAuthRefreshRescueEmitsExceptionOutcome(t *testing.T) {
 		refreshTokensByToken: map[string]storagemodels.RefreshToken{stale.Token: stale, head.Token: head},
 		disableAuditRepo:     true,
 	}
+	seedOAuthRefreshReplayChain(t, state, stale, head)
 	h, _, _ := round11NewHandler(t, state)
 	var output bytes.Buffer
 	h.oauthGrantEMFWriter = &output
@@ -623,8 +629,8 @@ func TestOAuthGrantTelemetryMapsRefreshTerminalAndTransientReasons(t *testing.T)
 			},
 		},
 		{
-			name: "outside retry grace", status: http.StatusBadRequest,
-			reason: oauthGrantReasonRefreshOutsideRetryGrace, clientID: "client-1", refresh: "stale",
+			name: "replay authority unavailable", status: http.StatusServiceUnavailable,
+			reason: oauthGrantReasonTemporarilyUnavailable, clientID: "client-1", refresh: "stale",
 			configure: func(state *round10QueryState) {
 				token := oauthRefreshReliabilityToken("stale", "client-1", now)
 				token.Current = false

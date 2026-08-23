@@ -43,6 +43,7 @@ func round11TestConfig() *config.Config {
 		JWTSecret:       round11StrongJWTSecret,
 		DynamoTableName: "test-table",
 		Stage:           "development",
+		VAPIDSecretARN:  "test-vapid-secret",
 	}
 }
 
@@ -104,7 +105,15 @@ func round11NewHandler(t *testing.T, args ...any) (*Handler, *MockRepositoryStor
 	if !state.disableAuditRepo {
 		auditRepo = repositories.NewAuditRepository(harness.db, cfg.DynamoTableName, logger, nil)
 	}
-	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(harness.db, cfg.DynamoTableName, logger, nil, nil, "", "mailto:push@example.com")
+	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(
+		harness.db,
+		cfg.DynamoTableName,
+		logger,
+		nil,
+		round10NewVAPIDSecretsClient(state),
+		"test-vapid-secret",
+		"mailto:push@example.com",
+	)
 	searchRepo := repositories.NewSearchRepository(harness.db, cfg.DynamoTableName, logger, nil)
 	importRepo := repositories.NewImportRepository(harness.db, cfg.DynamoTableName, logger)
 	costRepo := repositories.NewTrackingRepository(harness.db, cfg.DynamoTableName, logger, nil)

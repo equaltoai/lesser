@@ -222,6 +222,7 @@ func (v *ProductionConfigValidator) validateEnvironmentVariables(result *Validat
 		"PRIVATE_KEY_SECRET": "Secret name for ActivityPub signing key",
 	}
 
+	//nolint:gosec // These are environment-variable names and descriptions, not credential values.
 	optionalVars := map[string]string{
 		"OAUTH_CLIENT_ID":     "OAuth client ID for authentication",
 		"OAUTH_CLIENT_SECRET": "OAuth client secret for authentication",

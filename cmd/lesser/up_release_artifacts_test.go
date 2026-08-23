@@ -14,6 +14,8 @@ import (
 )
 
 func TestRunUp_UsesVerifiedReleaseDirWithoutBuildingLambdas(t *testing.T) {
+	t.Setenv("VAPID_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-live")
+
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
 		"inbox": "inbox zip",
@@ -52,6 +54,8 @@ func TestRunUp_UsesVerifiedReleaseDirWithoutBuildingLambdas(t *testing.T) {
 }
 
 func TestRunUp_ReleaseDirErrorsDoNotFallbackToBuild(t *testing.T) {
+	t.Setenv("VAPID_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-live")
+
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
 		"inbox": "inbox zip",
@@ -85,6 +89,8 @@ func TestRunUp_ReleaseDirErrorsDoNotFallbackToBuild(t *testing.T) {
 }
 
 func TestRunUp_ReleaseDirDeploysSharedAndStageStacksViaCDK(t *testing.T) {
+	t.Setenv("VAPID_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-live")
+
 	sourceRepo := testRepoWithCanonicalLambdaArtifacts(t, map[string]string{
 		"api":   "api zip",
 		"inbox": "inbox zip",

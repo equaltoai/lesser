@@ -85,6 +85,27 @@ Source mode additionally requires:
 - `pnpm` installed
 - repo-local auth UI source at `auth-ui/package.json`
 
+### VAPID credentials for live
+
+Every `lesser up` invocation that targets `live` requires `VAPID_SECRET_ARN`. The CLI checks this before preparing
+artifacts or invoking CDK, so a missing ARN cannot first surface as an API Lambda startup failure after the live stack
+has been updated. Dev- or staging-only deploys may omit it; those stages retain their warning-and-skip behavior.
+
+Provision the stage-specific Secrets Manager value with the existing helper, then evaluate the deployment exports
+it prints before running `lesser up`:
+
+```bash
+eval "$(AWS_PROFILE=<profile> AWS_REGION=<region> \
+  scripts/ensure_vapid_credentials.sh live <base-domain>)"
+./lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> --stage live
+```
+
+The secret referenced by `VAPID_SECRET_ARN` contains the private key together with its matching `public_key` and the
+VAPID `subject`. If supplied as deploy inputs, `VAPID_PUBLIC_KEY` must be the public half of that same key pair and
+`VAPID_SUBJECT` must match the subject stored with it; do not combine values from different stage secrets. The subject
+identifies the operator to push services (the helper defaults it to a `mailto:` URI for the target domain). The helper
+creates the private key, public key, and subject in one stage-specific secret so those values stay aligned.
+
 ## What `lesser up` does
 
 At a high level, `./lesser up`:

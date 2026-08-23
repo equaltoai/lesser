@@ -152,15 +152,17 @@ ensure_secret() {
   printf '%s\n%s\n%s\n' "$secret_arn" "$public_key" "$resolved_subject"
 }
 
-read -r SECRET_ARN PUBLIC_KEY SUBJECT_RESOLVED < <(ensure_secret)
+{
+  IFS= read -r SECRET_ARN
+  IFS= read -r PUBLIC_KEY
+  IFS= read -r SUBJECT_RESOLVED
+} < <(ensure_secret)
 
 if [ -z "$SECRET_ARN" ] || [ "$SECRET_ARN" = "None" ]; then
   echo "Failed to resolve VAPID secret ARN" >&2
   exit 1
 fi
 
-cat <<EOF
-VAPID_SECRET_ARN=${SECRET_ARN}
-VAPID_PUBLIC_KEY=${PUBLIC_KEY}
-VAPID_SUBJECT=${SUBJECT_RESOLVED}
-EOF
+printf 'export VAPID_SECRET_ARN=%q\n' "$SECRET_ARN"
+printf 'export VAPID_PUBLIC_KEY=%q\n' "$PUBLIC_KEY"
+printf 'export VAPID_SUBJECT=%q\n' "$SUBJECT_RESOLVED"

@@ -215,7 +215,7 @@ func TestAgentsRound20_ResolveDelegatedAgentAccount_Branches(t *testing.T) {
 	})
 }
 
-func TestAgentsRound20_MintDelegatedAgentTokens_RequiresRefreshTokenPersistence(t *testing.T) {
+func TestAgentsRound20_MintDelegatedAgentTokens_DoesNotPersistRefreshState(t *testing.T) {
 	cfg := round10TestConfig()
 	cfg.AllowAgents = true
 
@@ -228,12 +228,12 @@ func TestAgentsRound20_MintDelegatedAgentTokens_RequiresRefreshTokenPersistence(
 	require.NoError(t, err)
 
 	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, 5*time.Minute, "", "", "", "")
-	require.Error(t, mintErr)
-	require.Empty(t, token.AccessToken)
+	require.NoError(t, mintErr)
+	require.NotEmpty(t, token.AccessToken)
 	require.Empty(t, token.RefreshToken)
 }
 
-func TestAgentsRound20_MintDelegatedAgentTokens_BoundsRefreshByRequestedTTL(t *testing.T) {
+func TestAgentsRound20_MintDelegatedAgentTokens_BoundsStatelessAccessTTL(t *testing.T) {
 	cfg := round10TestConfig()
 	cfg.AllowAgents = true
 
@@ -247,14 +247,10 @@ func TestAgentsRound20_MintDelegatedAgentTokens_BoundsRefreshByRequestedTTL(t *t
 	requestedTTL := 10 * time.Minute
 	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, requestedTTL, "test-runtime", "", "", "")
 	require.NoError(t, mintErr)
-	require.NotEmpty(t, token.RefreshToken)
-
-	stored, ok := state.refreshTokensByToken[token.RefreshToken]
-	require.True(t, ok)
-	require.Equal(t, delegatedAgentClientID, stored.ClientID)
-	require.WithinDuration(t, stored.CreatedAt.Add(requestedTTL), stored.IdleExpiresAt, 2*time.Second)
-	require.WithinDuration(t, stored.CreatedAt.Add(requestedTTL), stored.AbsoluteExpiresAt, 2*time.Second)
-	require.WithinDuration(t, stored.AbsoluteExpiresAt, stored.ExpiresAt, time.Second)
+	require.NotEmpty(t, token.AccessToken)
+	require.Empty(t, token.RefreshToken)
+	require.Equal(t, 600, token.ExpiresIn)
+	require.Empty(t, state.refreshTokensByToken)
 }
 
 func TestAgentsRound20_AgentDelegationEnvelope_EmptyMetadataCases(t *testing.T) {

@@ -560,6 +560,8 @@ func TestPrepareUpEnv_ProvidedBootstrapWalletMustMatchDeployed(t *testing.T) {
 }
 
 func TestRunUp_HappyPathWithStubs(t *testing.T) {
+	t.Setenv("VAPID_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-live")
+
 	previousRepoRoot := findRepoRootFn
 	previousHome := userHomeDirFn
 	previousLoadAWS := loadAWSConfigFromProfileFn
@@ -643,6 +645,55 @@ func TestRunUp_HappyPathWithStubs(t *testing.T) {
 	require.NotNil(t, wroteReceipt)
 	require.Contains(t, wrotePath, filepath.Join(".lesser", "app", "example.com", "state.json"))
 	require.Contains(t, wroteReceipt.Stages, "dev")
+}
+
+func TestUpEnvRun_VAPIDDeployPreflight(t *testing.T) {
+	previousTools := ensureToolsAvailableFn
+	t.Cleanup(func() { ensureToolsAvailableFn = previousTools })
+
+	toolsErr := errors.New("continued past VAPID preflight")
+
+	for _, tc := range []struct {
+		name          string
+		stage         naming.Stage
+		secretARN     string
+		wantPreflight bool
+	}{
+		{
+			name:          "live empty ARN aborts",
+			stage:         naming.Stage(" production "),
+			wantPreflight: true,
+		},
+		{
+			name:      "live configured ARN proceeds",
+			stage:     naming.StageLive,
+			secretARN: " arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-live ",
+		},
+		{
+			name:  "non-live empty ARN proceeds",
+			stage: naming.StageStaging,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("VAPID_SECRET_ARN", tc.secretARN)
+			toolsCalled := false
+			ensureToolsAvailableFn = func() error {
+				toolsCalled = true
+				return toolsErr
+			}
+
+			err := (&upEnv{stages: []naming.Stage{tc.stage}}).run(context.Background())
+			if tc.wantPreflight {
+				require.ErrorContains(t, err, "VAPID_SECRET_ARN is required before deploying the live stage")
+				require.ErrorContains(t, err, "scripts/ensure_vapid_credentials.sh")
+				require.False(t, toolsCalled, "live preflight must abort before deploy tooling or synth can run")
+				return
+			}
+
+			require.ErrorIs(t, err, toolsErr)
+			require.True(t, toolsCalled, "valid preflight must continue into deploy preparation")
+		})
+	}
 }
 
 func TestUpEnvDeployFromSource_PassesInstancePlaneContext(t *testing.T) {

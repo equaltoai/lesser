@@ -288,7 +288,7 @@ func (cb *ServerlessCircuitBreaker) GetMetrics(ctx context.Context, instanceID s
 // Helper methods
 
 // evaluateCircuitState checks if the current state is still valid and updates if needed
-func (cb *ServerlessCircuitBreaker) evaluateCircuitState(_ context.Context, state *models.CircuitBreakerState) bool {
+func (cb *ServerlessCircuitBreaker) evaluateCircuitState(ctx context.Context, state *models.CircuitBreakerState) bool {
 	now := time.Now()
 
 	switch state.Status {
@@ -304,9 +304,9 @@ func (cb *ServerlessCircuitBreaker) evaluateCircuitState(_ context.Context, stat
 		// Check for timeout in half-open state
 		if now.After(state.NextRetry) {
 			// Half-open timed out, return to open
+			updateCtx := context.WithoutCancel(ctx)
 			go func() {
-				ctx := context.Background()
-				_, err := cb.repo.UpdateCircuitState(ctx, state.InstanceID, func(s *models.CircuitBreakerState) error {
+				_, err := cb.repo.UpdateCircuitState(updateCtx, state.InstanceID, func(s *models.CircuitBreakerState) error {
 					s.Status = stateOpen
 					s.LastStateChange = now
 					s.NextRetry = now.Add(s.GetBackoffDuration())

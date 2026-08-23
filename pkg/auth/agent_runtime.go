@@ -48,7 +48,7 @@ type AgentRuntimeAuthDiagnostic struct {
 	LastSuccessAt  time.Time
 }
 
-// AgentRuntimeTokenIssueParams describes a first-class bearer + refresh runtime session.
+// AgentRuntimeTokenIssueParams describes a stateless short-lived agent bearer mint.
 type AgentRuntimeTokenIssueParams struct {
 	Username           string
 	ClientID           string
@@ -60,7 +60,9 @@ type AgentRuntimeTokenIssueParams struct {
 	Delegation         DelegationCredentialClaims
 }
 
-// AgentRuntimeTokenBundle contains the issued OAuth tokens and stored refresh-session metadata.
+// AgentRuntimeTokenBundle contains the issued access token and ephemeral mint metadata.
+// RefreshToken is retained as an empty compatibility field while clients migrate
+// to proof-based re-minting.
 type AgentRuntimeTokenBundle struct {
 	AccessToken  string
 	RefreshToken string
@@ -98,8 +100,9 @@ func CoalesceAgentRuntimeLabel(primary, fallback string) string {
 	return label
 }
 
-// IssueAgentRuntimeTokens mints an access + refresh pair backed by refresh-session metadata that can
-// be safely refreshed by long-lived local runtimes without browser state.
+// IssueAgentRuntimeTokens mints a short-lived access token without creating a
+// refresh credential or any runtime-session row. Repeating an authorized proof
+// flow is state-idempotent: it cannot fork or partially rotate persisted state.
 func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos StorageProvider, params AgentRuntimeTokenIssueParams) (*AgentRuntimeTokenBundle, error) {
 	if cfg == nil || repos == nil || repos.Account() == nil {
 		return nil, ErrSessionStorage
@@ -112,27 +115,23 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 
 	now := time.Now().UTC()
 	sessionID := common.GenerateSessionIDULID()
-	familyID := common.GenerateSessionIDULID()
 	deviceLabel := strings.TrimSpace(params.DeviceLabel)
 	if deviceLabel == "" {
 		deviceLabel = DefaultAgentRuntimeDeviceLabel
 	}
-
-	idleExpiry, absoluteExpiry := AgentRuntimeRefreshExpiries(now, params.RefreshIdleTTL, params.RefreshAbsoluteTTL)
 
 	jwtSecret, err := cfg.ResolveJWTSecret()
 	if err != nil {
 		return nil, err
 	}
 	oauthSvc := NewOAuthService(jwtSecret, cfg, repos, nil)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation(
+	accessToken, err := oauthSvc.GenerateAgentAccessTokenWithClientContextAndDelegation(
 		ctx,
 		params.Username,
 		params.ClientID,
 		"",
 		params.Scopes,
 		accessTTL,
-		ClientClassAgent,
 		sessionID,
 		params.Delegation,
 	)
@@ -140,34 +139,24 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 		return nil, err
 	}
 
-	refreshRecord := storage.RefreshToken{
-		Token:             refreshToken,
+	mintMetadata := storage.RefreshToken{
 		Username:          params.Username,
 		ClientID:          params.ClientID,
 		Scopes:            params.Scopes,
 		CreatedAt:         now,
-		ExpiresAt:         idleExpiry,
+		ExpiresAt:         now.Add(accessTTL),
 		ClientClass:       ClientClassAgent,
 		SessionID:         sessionID,
-		FamilyID:          familyID,
-		Generation:        1,
-		Current:           true,
 		DeviceLabel:       deviceLabel,
 		LastUsedAt:        now,
-		IdleExpiresAt:     idleExpiry,
-		AbsoluteExpiresAt: absoluteExpiry,
 		SessionCreatedAt:  now,
 		AccessTTLSeconds:  int(accessTTL.Seconds()),
 		LastAuthSuccessAt: now,
 	}
-	if err := repos.Account().CreateRefreshToken(ctx, &refreshRecord); err != nil {
-		return nil, err
-	}
 
 	return &AgentRuntimeTokenBundle{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		Session:      refreshRecord,
+		AccessToken: accessToken,
+		Session:     mintMetadata,
 	}, nil
 }
 

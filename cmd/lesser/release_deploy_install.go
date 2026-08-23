@@ -539,7 +539,7 @@ func writeExtractedFile(targetPath string, reader io.Reader, expectedSize int64,
 	}
 
 	tmpPath := targetPath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- target path comes from validated archive entries
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- target path comes from validated archive entries
 	if err != nil {
 		return fmt.Errorf("create extracted file %s: %w", label, err)
 	}
@@ -576,9 +576,11 @@ func resetReleaseWorkspaceDir(path string) error {
 }
 
 func finalizeReleaseWorkspaceDir(targetPath string, stagingDir string) error {
+	//nolint:gosec // G703: targetPath is the fixed deployment workspace and is validated before this atomic replacement helper is called.
 	if err := os.RemoveAll(targetPath); err != nil {
 		return fmt.Errorf("reset release workspace %s: %w", targetPath, err)
 	}
+	//nolint:gosec // G703: stagingDir is created beside the validated target specifically for this atomic workspace replacement.
 	if err := os.Rename(stagingDir, targetPath); err != nil {
 		return fmt.Errorf("finalize release workspace %s: %w", targetPath, err)
 	}

@@ -44,6 +44,7 @@ func looksLikeRepoRoot(dir string) bool {
 }
 
 func fileExists(path string) bool {
+	//nolint:gosec // G703: callers build path only from repo-discovery ancestors plus fixed repository marker filenames.
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }

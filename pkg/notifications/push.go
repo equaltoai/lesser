@@ -72,6 +72,7 @@ func (s *PushService) QueueNotification(ctx context.Context, msg *PushMessage) e
 		return nil
 	}
 
+	//nolint:gosec // The short-lived access token is intentionally carried in the IAM-confined SQS handoff consumed by push-delivery.
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrMarshalPushMessage, err)

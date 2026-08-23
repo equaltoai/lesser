@@ -958,8 +958,9 @@ func (np *NoteProcessor) broadcastNoteUpdate(ctx context.Context, note *storage.
 			failureCount++
 
 			// Handle stale connections by attempting cleanup
+			cleanupCtx := context.WithoutCancel(ctx)
 			go func(connID string) {
-				if cleanupErr := np.wsRepo.HandleDisconnect(context.Background(), connID); cleanupErr != nil {
+				if cleanupErr := np.wsRepo.HandleDisconnect(cleanupCtx, connID); cleanupErr != nil {
 					np.logger.Warn("failed to cleanup stale connection",
 						zap.String("connection_id", connID),
 						zap.Error(cleanupErr))

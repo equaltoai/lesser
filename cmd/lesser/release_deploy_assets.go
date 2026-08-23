@@ -259,6 +259,7 @@ func validateBundleManifest(bundle releaseassets.LambdaBundleManifest, releaseMa
 
 func ensureReleaseStagingDir(assetRoot string) (string, error) {
 	workspaceRoot := filepath.Dir(assetRoot)
+	//nolint:gosec // G703: assetRoot is the validated release workspace path and only its direct parent is created.
 	if err := os.MkdirAll(workspaceRoot, 0o750); err != nil {
 		return "", fmt.Errorf("create release workspace root: %w", err)
 	}
@@ -367,7 +368,7 @@ func writeVerifiedExtractedFile(targetPath string, reader io.Reader, manifestFil
 	}
 
 	tmpPath := targetPath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- staging path is derived from validated manifest entries
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- staging path is derived from validated manifest entries
 	if err != nil {
 		return fmt.Errorf("create staging file %s: %w", manifestFile.Path, err)
 	}
@@ -423,14 +424,16 @@ func installExtractedBundleFiles(assetRoot string, stagingDir string, files []re
 }
 
 func copyFile(targetPath string, sourcePath string) error {
-	sourceFile, err := os.Open(sourcePath) // #nosec G304 -- source path is derived from validated staging output
+	//nolint:gosec // G703: sourcePath was containment-checked against the checksum-verified release staging directory by the caller.
+	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
 		return fmt.Errorf("open extracted file %s: %w", sourcePath, err)
 	}
 	defer func() { _ = sourceFile.Close() }()
 
 	tmpPath := targetPath + ".tmp"
-	targetFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- target path is derived from repoRoot/bin and validated manifest entries
+	//nolint:gosec // G703: targetPath is containment-checked under repoRoot/bin and tmpPath is its fixed 0600 sibling.
+	targetFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("create target file %s: %w", targetPath, err)
 	}
@@ -438,15 +441,19 @@ func copyFile(targetPath string, sourcePath string) error {
 	_, copyErr := io.Copy(targetFile, sourceFile)
 	closeErr := targetFile.Close()
 	if copyErr != nil {
+		//nolint:gosec // G703: tmpPath is the fixed sibling of the containment-checked repoRoot/bin target.
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("copy extracted file to %s: %w", targetPath, copyErr)
 	}
 	if closeErr != nil {
+		//nolint:gosec // G703: tmpPath is the fixed sibling of the containment-checked repoRoot/bin target.
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close target file %s: %w", targetPath, closeErr)
 	}
 
+	//nolint:gosec // G703: both paths are fixed siblings beneath the containment-checked repoRoot/bin destination.
 	if err := os.Rename(tmpPath, targetPath); err != nil {
+		//nolint:gosec // G703: tmpPath is the fixed sibling of the containment-checked repoRoot/bin target.
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("finalize target file %s: %w", targetPath, err)
 	}
@@ -476,7 +483,8 @@ func verifyFileChecksum(path string, expectedSHA string, label string) error {
 }
 
 func sha256File(path string) (string, error) {
-	f, err := os.Open(path) // #nosec G304 -- caller passes a validated path under the release or staging directories
+	//nolint:gosec // G703: callers pass only containment-checked paths under checksum-verified release or staging directories.
+	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}

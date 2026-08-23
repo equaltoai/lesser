@@ -15,6 +15,9 @@ func TestOAuthOriginHelpers_Round22(t *testing.T) {
 	t.Run("oauth path detection includes oauth-sensitive surfaces", func(t *testing.T) {
 		require.False(t, isOAuthSensitivePath(""))
 		require.True(t, isOAuthSensitivePath("/oauth/token"))
+		require.True(t, isOAuthSensitivePath("/token"))
+		require.True(t, isOAuthSensitivePath("/register"))
+		require.True(t, isOAuthSensitivePath("/authorize"))
 		require.True(t, isOAuthSensitivePath("/.well-known/oauth-authorization-server"))
 		require.True(t, isOAuthSensitivePath("/api/v1/apps"))
 		require.True(t, isOAuthSensitivePath("/api/v1/apps/123/rotate_secret"))
@@ -108,6 +111,13 @@ func TestOAuthOriginRestrictionMiddleware_Round22(t *testing.T) {
 			origin:     "http://localhost:5173",
 			wantStatus: http.StatusOK,
 			wantNext:   true,
+		},
+		{
+			name:       "blocks unrelated origins on framework token endpoint",
+			path:       "/token",
+			origin:     "https://evil.example.com",
+			wantStatus: http.StatusForbidden,
+			wantNext:   false,
 		},
 		{
 			name:       "blocks unrelated origins on oauth endpoint",

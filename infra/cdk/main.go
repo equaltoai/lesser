@@ -12,6 +12,28 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
 
+var stageConfigContextKeys = []string{
+	"lambdaAssetRoot",
+	"lesserVersion",
+	"lesserHostUrl",
+	"lesserHostInstanceKeyArn",
+	"lesserHostAttestationsUrl",
+	"soulBindingIntegrationKeyArn",
+	"vapidSecretArn",
+	"vapidPublicKey",
+	"vapidSubject",
+	"bodyEnabled",
+	"soulEnabled",
+	"instancePlaneEnabled",
+	"translationEnabled",
+	"allowAgents",
+	"allowAgentRegistration",
+	"tipEnabled",
+	"tipChainId",
+	"tipContractAddress",
+	"apiCorsAllowedOrigins",
+}
+
 func main() {
 	defer jsii.Close()
 
@@ -112,24 +134,7 @@ func main() {
 			"domain":      stageDomain,
 		}
 		// Optional per-deployment config (passed via CDK context).
-		for _, key := range []string{
-			"lambdaAssetRoot",
-			"lesserVersion",
-			"lesserHostUrl",
-			"lesserHostInstanceKeyArn",
-			"lesserHostAttestationsUrl",
-			"soulBindingIntegrationKeyArn",
-			"bodyEnabled",
-			"soulEnabled",
-			"instancePlaneEnabled",
-			"translationEnabled",
-			"allowAgents",
-			"allowAgentRegistration",
-			"tipEnabled",
-			"tipChainId",
-			"tipContractAddress",
-			"apiCorsAllowedOrigins",
-		} {
+		for _, key := range stageConfigContextKeys {
 			if v := getContextString(app, key); v != "" {
 				config[key] = v
 			}

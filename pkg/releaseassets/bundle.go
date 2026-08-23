@@ -135,6 +135,7 @@ func WriteLambdaBundle(repoRoot string, outDir string) ([]BundleFile, error) {
 		return nil, err
 	}
 
+	//nolint:gosec // Release output is a publication directory whose artifacts must be readable by packaging/upload workers.
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create release dir: %w", err)
 	}
@@ -142,7 +143,8 @@ func WriteLambdaBundle(repoRoot string, outDir string) ([]BundleFile, error) {
 	bundlePath := filepath.Join(outDir, LambdaBundleArchiveName)
 	tmpPath := bundlePath + ".tmp"
 
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- file path is derived from caller-provided output dir
+	//nolint:gosec // This temporary contains only the public Lambda release archive and must retain the archive's published 0644 mode.
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("create lambda bundle: %w", err)
 	}
@@ -242,6 +244,7 @@ func WriteLambdaBundleManifest(outDir string, version string, gitSHA string, fil
 	data = append(data, '\n')
 
 	manifestPath := filepath.Join(outDir, LambdaBundleManifestName)
+	//nolint:gosec // The manifest is an intentionally public GitHub release artifact with no secret material.
 	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
 		return LambdaBundleManifest{}, fmt.Errorf("write lambda bundle manifest: %w", err)
 	}

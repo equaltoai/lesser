@@ -66,7 +66,7 @@ require github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.9
 
 require github.com/aws/aws-sdk-go-v2/service/ssm v1.60.2
 
-require github.com/theory-cloud/tabletheory/v3 v3.0.5
+require github.com/theory-cloud/tabletheory/v3 v3.0.6
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
@@ -124,7 +124,7 @@ require (
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
-	github.com/theory-cloud/apptheory/v3 v3.1.1
+	github.com/theory-cloud/apptheory/v3 v3.3.0
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.69.0 // indirect

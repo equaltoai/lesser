@@ -88,6 +88,17 @@ func configureRoutes(app *apptheory.SecureApp) {
 	app.Put("/api/v1/auth/webauthn/credentials/{credentialId}", apiHandler.HandleUpdateWebAuthnCredentialNameLift, apptheory.Authenticated())
 
 	// OAuth endpoints with native Lift implementation + rate limiting
+	// AppTheory's RFC 8414 primitive advertises the conventional root paths.
+	// Keep the historical /oauth/* paths below as compatibility aliases.
+	app.Get("/authorize", ratelimit.ApplyRateLimit(
+		apiHandler.HandleOAuthAuthorizeLift,
+		20, 5*time.Minute, logger), apptheory.Public())
+	app.Post("/register", ratelimit.ApplyOAuthRegistrationRateLimit(
+		apiHandler.HandleOAuthDynamicClientRegistrationLift,
+		20, time.Minute, logger), apptheory.Optional())
+	app.Post("/token", ratelimit.ApplyOAuthTokenRateLimit(
+		apiHandler.HandleOAuthTokenLift,
+		10, time.Minute, logger), apptheory.Public())
 	app.Get("/oauth/authorize", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthAuthorizeLift,
 		20, 5*time.Minute, logger), apptheory.Public())
@@ -113,6 +124,7 @@ func configureRoutes(app *apptheory.SecureApp) {
 		apiHandler.HandleOAuthRevokeLift,
 		10, time.Minute, logger), apptheory.Public())
 	app.Get("/.well-known/oauth-authorization-server", apiHandler.HandleOAuthAuthorizationServerMetadataLift, apptheory.Public())
+	app.Get("/.well-known/oauth-protected-resource/mcp/{username}", apiHandler.HandleOAuthProtectedResourceMetadataLift, apptheory.Public())
 
 	// NodeInfo endpoints with native Lift implementation
 	app.Get("/.well-known/nodeinfo", apiHandler.HandleNodeInfoWellKnownLift, apptheory.Public())

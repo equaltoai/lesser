@@ -193,7 +193,7 @@ func (c *PatternCacheManager) GetCompiledPattern(ctx context.Context, patternID,
 	// Store in caches
 	c.storeInMemoryCache(cacheKey, patternType, cached)
 	if c.config.EnablePersistentCache {
-		go c.storeInPersistentCache(context.Background(), cached)
+		go c.storeInPersistentCache(context.WithoutCancel(ctx), cached)
 	}
 
 	if c.config.EnableStatistics {
@@ -264,8 +264,9 @@ func (c *PatternCacheManager) getFromPersistentCache(ctx context.Context, patter
 	// Check if cache entry is still valid
 	if time.Since(cacheEntry.CreatedAt) > c.config.PersistentCacheTimeout {
 		// Expired, remove it
+		invalidateCtx := context.WithoutCancel(ctx)
 		go func() {
-			_ = c.repository.InvalidatePatternCache(context.Background(), patternID, patternType)
+			_ = c.repository.InvalidatePatternCache(invalidateCtx, patternID, patternType)
 		}()
 		return nil
 	}

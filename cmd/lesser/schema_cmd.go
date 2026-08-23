@@ -52,15 +52,17 @@ func runExportSchema(argv []string) error {
 		return err
 	}
 
-	src := filepath.Join(repoRoot, "docs", "contracts", "graphql-schema.graphql")
-	dst := filepath.Join(repoRoot, "schema.graphql")
+	repoFS, err := os.OpenRoot(repoRoot)
+	if err != nil {
+		return fmt.Errorf("open repository root: %w", err)
+	}
+	defer func() { _ = repoFS.Close() }()
 
-	data, err := os.ReadFile(src) // #nosec G304 -- file path is derived from repo root
+	data, err := repoFS.ReadFile(filepath.Join("docs", "contracts", "graphql-schema.graphql"))
 	if err != nil {
 		return fmt.Errorf("read schema: %w", err)
 	}
-	// #nosec G306 -- schema contract output is not sensitive
-	if err := os.WriteFile(dst, data, 0o644); err != nil {
+	if err := repoFS.WriteFile("schema.graphql", data, 0o644); err != nil { //nolint:gosec // G306: exported schema is a public contract artifact and must remain readable by repository tooling
 		return fmt.Errorf("write schema.graphql: %w", err)
 	}
 

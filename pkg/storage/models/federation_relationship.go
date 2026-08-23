@@ -467,13 +467,15 @@ func (mc *MetricsCompression) ToBinary() []byte {
 	// Timestamp (8 bytes - Unix timestamp)
 	timestamp := mc.CompressedAt.Unix()
 	for i := 0; i < 8; i++ {
-		data = append(data, byte(timestamp>>(i*8)))
+		//nolint:gosec // The mask proves the shifted two's-complement segment is within one byte before serialization.
+		data = append(data, byte((timestamp>>(i*8))&0xff))
 	}
 
 	// Delta values (8 bytes each)
 	for _, val := range []int64{mc.TotalAttemptsDelta, mc.SuccessCountDelta, mc.FailureCountDelta} {
 		for i := 0; i < 8; i++ {
-			data = append(data, byte(val>>(i*8)))
+			//nolint:gosec // The mask proves the shifted two's-complement segment is within one byte before serialization.
+			data = append(data, byte((val>>(i*8))&0xff))
 		}
 	}
 
@@ -490,8 +492,14 @@ func (mc *MetricsCompression) ToBinary() []byte {
 	data = append(data, byte(ap&0xFF), byte((ap>>8)&0xFF), byte((ap>>16)&0xFF), byte((ap>>24)&0xFF))
 
 	// State transitions (variable length)
-	data = append(data, byte(len(mc.StateTransitions)))
-	data = append(data, mc.StateTransitions...)
+	const maxEncodedStateTransitions = 255
+	stateTransitions := mc.StateTransitions
+	if len(stateTransitions) > maxEncodedStateTransitions {
+		stateTransitions = stateTransitions[:maxEncodedStateTransitions]
+	}
+	//nolint:gosec // stateTransitions is explicitly clamped to the one-byte wire-format maximum above.
+	data = append(data, byte(len(stateTransitions)))
+	data = append(data, stateTransitions...)
 
 	return data
 }
@@ -543,7 +551,8 @@ func compressStateHistory(currentState RelationshipState, stateChangedAt time.Ti
 	// Timestamp (8 bytes)
 	timestamp := stateChangedAt.Unix()
 	for i := 0; i < 8; i++ {
-		data = append(data, byte(timestamp>>(i*8)))
+		//nolint:gosec // The mask proves the shifted two's-complement segment is within one byte before serialization.
+		data = append(data, byte((timestamp>>(i*8))&0xff))
 	}
 
 	return data
