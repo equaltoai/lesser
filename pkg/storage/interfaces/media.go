@@ -44,6 +44,10 @@ type MediaRepository interface {
 	UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error
 	UnmarkAllMediaAsSensitive(ctx context.Context, username string) error
 
+	// Editorial lifecycle and durable published serving (M2)
+	UpdateMediaEditorialState(ctx context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string) error
+	UpdateMediaPublishedState(ctx context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time) error
+
 	// Media usage tracking
 	MarkMediaUsed(ctx context.Context, mediaID string) error
 	GetMediaUsageStats(ctx context.Context, mediaID string) (usageCount int, lastUsed *time.Time, err error)

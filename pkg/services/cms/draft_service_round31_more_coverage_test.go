@@ -317,7 +317,7 @@ func TestDraftServicePublishDraftCreateNewArticle_DeleteDraftFailurePublishesDra
 
 	now := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	objectID := "https://example.com/objects/new"
-	article, err := svc.publishDraftCreateNewArticle(context.Background(), draft.AuthorID, draft.ID, "example.com", objectID, "hello-world", draft, now, "")
+	article, err := svc.publishDraftCreateNewArticle(context.Background(), draft.AuthorID, draft.ID, "example.com", objectID, "hello-world", draft, now, "", nil)
 	require.NoError(t, err)
 	require.NotNil(t, article)
 	require.Equal(t, objectID, article.ID)

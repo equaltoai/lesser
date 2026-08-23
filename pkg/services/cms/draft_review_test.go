@@ -230,21 +230,21 @@ func TestDraftReviewContentHashUsesCanonicalReviewedFields(t *testing.T) {
 		Slug:          "first-slug",
 		MetadataJSON:  `{"version":1}`,
 	}
-	original := draftReviewContentHash(draft)
+	original := draftReviewContentHash(draft, nil)
 	require.Len(t, original, 64)
 	require.Equal(t, original, DraftReviewContentHash(draft))
 
 	draft.Slug = "renamed"
-	require.NotEqual(t, original, draftReviewContentHash(draft), "the published permalink requires re-review")
+	require.NotEqual(t, original, draftReviewContentHash(draft, nil), "the published permalink requires re-review")
 	draft.Slug = "first-slug"
 	draft.MetadataJSON = `{"version":2}`
 	draft.AutosaveVersion++
 	draft.UpdatedAt = time.Now().UTC()
-	require.Equal(t, original, draftReviewContentHash(draft))
+	require.Equal(t, original, draftReviewContentHash(draft, nil))
 
 	left := &models.Draft{ContentFormat: "a\x00b", Slug: "c"}
 	right := &models.Draft{ContentFormat: "a", Slug: "b\x00c"}
-	require.NotEqual(t, draftReviewContentHash(left), draftReviewContentHash(right),
+	require.NotEqual(t, draftReviewContentHash(left, nil), draftReviewContentHash(right, nil),
 		"length prefixes must keep control characters from crossing field boundaries")
 }
 
@@ -333,7 +333,7 @@ func TestDraftReviewStateExposesRevisionBoundEligibility(t *testing.T) {
 	require.NoError(t, err)
 	state, err := svc.DraftReviewState(ctx, "owner", "d1", draft)
 	require.NoError(t, err)
-	require.Equal(t, draftReviewContentHash(draft), state.ContentHash)
+	require.Equal(t, draftReviewContentHash(draft, nil), state.ContentHash)
 	require.Len(t, state.Grants, 1)
 	require.Contains(t, state.CurrentVerdicts, "principal")
 	require.Equal(t, verdict.ContentHash, state.CurrentVerdicts["principal"].ContentHash)
@@ -588,7 +588,7 @@ func TestDraftReviewGateApprovalsAcceptsNilDraftSnapshot(t *testing.T) {
 	require.NoError(t, err)
 
 	repo.getDraftCalls = 0
-	unanimous, principal, err := svc.draftReviewGateApprovals(ctx, "owner", "d1", nil)
+	unanimous, principal, _, err := svc.draftReviewGateApprovals(ctx, "owner", "d1", nil)
 	require.NoError(t, err)
 	require.True(t, unanimous)
 	require.True(t, principal)
@@ -644,7 +644,7 @@ func TestSubmitDraftReviewPreservesConcurrentOwnerEdit(t *testing.T) {
 	require.Equal(t, "reviewer", stored.ReviewedBy)
 	require.Equal(t, DraftReviewApproved, stored.ReviewStatus)
 	require.Equal(t, "ready", stored.EditorNotes)
-	require.NotEqual(t, verdict.ContentHash, draftReviewContentHash(stored),
+	require.NotEqual(t, verdict.ContentHash, draftReviewContentHash(stored, nil),
 		"the verdict must remain bound to the snapshot the reviewer saw")
 	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
@@ -831,7 +831,9 @@ func TestSharedDraftReviewsPaginationRoundTrip(t *testing.T) {
 	for i, draftID := range []string{"older", "middle", "newer"} {
 		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
 		require.NoError(t, svc.CreateDraft(ctx, draft))
-		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: base.Add(time.Duration(i) * time.Minute)}
+		grantedAt := base.Add(time.Duration(i) * time.Minute)
+		expiresAt := grantedAt.Add(2 * time.Hour)
+		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: grantedAt, ExpiresAt: &expiresAt}
 		require.NoError(t, repo.CreateDraftReviewGrant(ctx, grant))
 	}
 
@@ -855,10 +857,11 @@ func TestSharedDraftReviewsPaginationRoundTrip(t *testing.T) {
 func TestOwnedDraftReviewsFiltersRevokedAndOrdersAssignments(t *testing.T) {
 	svc, repo := newReviewService(t)
 	now := time.Now().UTC()
-	activeLater := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d2", Reviewer: "reviewer-b", GrantedAt: now.Add(time.Minute)}
-	activeEarlier := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d1", Reviewer: "reviewer-a", GrantedAt: now}
+	expiresAt := now.Add(2 * time.Hour)
+	activeLater := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d2", Reviewer: "reviewer-b", GrantedAt: now.Add(time.Minute), ExpiresAt: &expiresAt}
+	activeEarlier := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d1", Reviewer: "reviewer-a", GrantedAt: now, ExpiresAt: &expiresAt}
 	revokedAt := now.Add(2 * time.Minute)
-	revoked := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d3", Reviewer: "reviewer-c", GrantedAt: now, RevokedAt: &revokedAt}
+	revoked := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d3", Reviewer: "reviewer-c", GrantedAt: now, ExpiresAt: &expiresAt, RevokedAt: &revokedAt}
 	require.NoError(t, repo.storeGrant(activeLater))
 	require.NoError(t, repo.storeGrant(activeEarlier))
 	require.NoError(t, repo.storeGrant(revoked))
@@ -880,7 +883,9 @@ func TestDraftReviewForCallerPagesPastFormerTwoHundredGrantCap(t *testing.T) {
 		draftID := fmt.Sprintf("paged-%03d", i)
 		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
 		require.NoError(t, svc.CreateDraft(ctx, draft))
-		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: base.Add(time.Duration(i) * time.Second)}
+		grantedAt := base.Add(time.Duration(i) * time.Second)
+		expiresAt := grantedAt.Add(2 * time.Hour)
+		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: grantedAt, ExpiresAt: &expiresAt}
 		require.NoError(t, repo.CreateDraftReviewGrant(ctx, grant))
 	}
 

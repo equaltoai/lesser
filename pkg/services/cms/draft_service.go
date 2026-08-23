@@ -3,6 +3,7 @@ package cms
 import (
 	"context"
 	stdErrors "errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -40,21 +41,50 @@ type editorialMediaRepository interface {
 	GetMedia(ctx context.Context, mediaID string) (*models.Media, error)
 }
 
+// EditorialPublishedMedia is the durable public serving minted for one bound
+// asset at the publish transition. The URL serves the exact approved original
+// bytes without expiring presignatures or temporary generator URLs.
+type EditorialPublishedMedia struct {
+	MediaID     string
+	ContentHash string
+	ContentType string
+	FileSize    int64
+	Width       int
+	Height      int
+	URL         string
+	S3Key       string
+	PublishedAt time.Time
+}
+
+// editorialPublishMinter transitions one internal editorial asset to durable
+// public serving of its exact approved bytes. The media service implements it;
+// the CMS service verifies the minted bytes match the approved revision digest.
+type editorialPublishMinter interface {
+	PublishEditorialMedia(ctx context.Context, mediaID string) (*EditorialPublishedMedia, error)
+}
+
 // DraftService handles business logic for drafts
 type DraftService struct {
-	draftRepo         draftRepository
-	articleService    articleDraftPublisher
-	domain            string
-	scheduling        bool
-	logger            *zap.Logger
-	principalUsername func(context.Context) (string, error)
-	mediaRepo         editorialMediaRepository
+	draftRepo              draftRepository
+	articleService         articleDraftPublisher
+	domain                 string
+	scheduling             bool
+	logger                 *zap.Logger
+	principalUsername      func(context.Context) (string, error)
+	mediaRepo              editorialMediaRepository
+	editorialPublishMinter editorialPublishMinter
 }
 
 // SetEditorialMediaRepository wires the media lookup used to enforce asset
 // ownership and internal-state invariants at the CMS service boundary.
 func (s *DraftService) SetEditorialMediaRepository(repo editorialMediaRepository) {
 	s.mediaRepo = repo
+}
+
+// SetEditorialPublishMinter wires the durable published-serving transition used
+// at the publish gate. Without it, drafts with bound media cannot publish.
+func (s *DraftService) SetEditorialPublishMinter(minter editorialPublishMinter) {
+	s.editorialPublishMinter = minter
 }
 
 // NewDraftService creates a new DraftService
@@ -290,7 +320,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return err
 	}
 
-	approved, principalApproved, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
+	approved, principalApproved, _, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
 	if approvalErr != nil {
 		return approvalErr
 	}
@@ -332,7 +362,7 @@ func (s *DraftService) PublishDraftWithAttribution(ctx context.Context, authorID
 	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
 		return nil, stdErrors.New("only article drafts can be published")
 	}
-	approved, principalApproved, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
+	approved, principalApproved, approval, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
 	if approvalErr != nil {
 		return nil, approvalErr
 	}
@@ -341,6 +371,16 @@ func (s *DraftService) PublishDraftWithAttribution(ctx context.Context, authorID
 	}
 	if !principalApproved {
 		return nil, ErrDraftReviewPrincipalApprovalRequired
+	}
+	// Required bound media must serve the exact approved bytes: missing,
+	// not-ready, withdrawn, superseded, and unavailable assets block publish
+	// with an explicit reason until the draft is re-reviewed and re-authorized.
+	if err := requireBoundMediaReady(approval); err != nil {
+		return nil, err
+	}
+	mints, err := s.mintDraftBoundMedia(ctx, draft, approval.mediaDigests)
+	if err != nil {
+		return nil, err
 	}
 
 	if s.isPublishedDraftCleanup(draft) {
@@ -359,10 +399,49 @@ func (s *DraftService) PublishDraftWithAttribution(ctx context.Context, authorID
 
 	actedBy = cmsNormalizeAttributionActorID(actedBy)
 	if draft.ObjectID != nil && strings.TrimSpace(*draft.ObjectID) != "" {
-		return s.publishDraftUpdateExistingArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy)
+		return s.publishDraftUpdateExistingArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy, mints)
 	}
 
-	return s.publishDraftCreateNewArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy)
+	return s.publishDraftCreateNewArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy, mints)
+}
+
+// requireBoundMediaReady blocks publication when any required bound asset cannot
+// serve the exact approved bytes. The reasons were derived from the same media
+// resolution instant that produced the approval hash.
+func requireBoundMediaReady(approval *draftReviewApprovalState) error {
+	if approval == nil || len(approval.mediaReasons) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrDraftReviewMediaRequired, strings.Join(approval.mediaReasons, ", "))
+}
+
+// mintDraftBoundMedia transitions every bound asset to durable published
+// serving, verifying that the exact bytes minted match the digest bound into
+// the approved revision hash. A mismatch (the media record changed between
+// approval resolution and mint) fails closed.
+func (s *DraftService) mintDraftBoundMedia(ctx context.Context, draft *models.Draft, approvedDigests map[string]string) (map[string]EditorialPublishedMedia, error) {
+	if len(draft.EditorialMedia) == 0 {
+		return nil, nil
+	}
+	if s.editorialPublishMinter == nil {
+		return nil, stdErrors.New("editorial media publish transition is unavailable")
+	}
+	mints := make(map[string]EditorialPublishedMedia, len(draft.EditorialMedia))
+	for _, usage := range draft.EditorialMedia {
+		minted, err := s.editorialPublishMinter.PublishEditorialMedia(ctx, usage.MediaID)
+		if err != nil {
+			return nil, err
+		}
+		if minted == nil {
+			return nil, fmt.Errorf("%w: media %q returned no published serving", ErrDraftReviewMediaRequired, usage.MediaID)
+		}
+		expected := approvedDigests[usage.MediaID]
+		if strings.TrimSpace(expected) == "" || strings.TrimSpace(minted.ContentHash) != expected {
+			return nil, fmt.Errorf("%w: media %q bytes changed after approval", ErrDraftReviewMediaRequired, usage.MediaID)
+		}
+		mints[usage.MediaID] = *minted
+	}
+	return mints, nil
 }
 
 func (s *DraftService) isPublishedDraftCleanup(draft *models.Draft) bool {
@@ -436,7 +515,7 @@ func (s *DraftService) transitionDraftToPublishing(ctx context.Context, authorID
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
-func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string) (*models.Article, error) {
+func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string, mints map[string]EditorialPublishedMedia) (*models.Article, error) {
 	article, err := s.articleService.GetArticle(ctx, objectID)
 	if err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
@@ -461,6 +540,7 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 		article.ContentFormat = format
 	}
 	cmsApplyDraftAttributionToArticle(article, draft, domain, authorID, true)
+	applyPublishedDraftMedia(article, draft, mints)
 	if actedBy != "" {
 		article.ActedBy = actedBy
 	}
@@ -474,6 +554,62 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 
 	s.deleteDraftAfterPublish(ctx, draft, authorID, draftID, objectID)
 	return article, nil
+}
+
+// applyPublishedDraftMedia wires the hero binding into Article.featuredImage and
+// the social card binding into Article.ogImage using the durable published
+// serving minted from the exact approved bytes. Inline positions remain
+// structured (M1 contract); their assets are durably served at the media-record
+// level so any future reference resolves to the approved bytes.
+func applyPublishedDraftMedia(article *models.Article, draft *models.Draft, mints map[string]EditorialPublishedMedia) {
+	if article == nil || draft == nil {
+		return
+	}
+	for _, usage := range draft.EditorialMedia {
+		mint, ok := mints[usage.MediaID]
+		if !ok {
+			continue
+		}
+		switch usage.Role {
+		case models.EditorialMediaRoleHero:
+			article.FeaturedImage = cmsFeaturedImageSnapshot(draft.AuthorID, usage, mint)
+		case models.EditorialMediaRoleSocialCard:
+			if url := strings.TrimSpace(mint.URL); url != "" {
+				article.OGImage = url
+			}
+		}
+	}
+}
+
+// cmsFeaturedImageSnapshot builds the published article's featured-image
+// reference from the durable published serving. It is a serving snapshot, not
+// the internal record: it carries the minted public URL and never re-enters the
+// internal-media contract.
+func cmsFeaturedImageSnapshot(owner string, usage models.DraftMediaUsage, mint EditorialPublishedMedia) *models.Media {
+	now := time.Now().UTC()
+	snapshot := &models.Media{
+		MediaID:       mint.MediaID,
+		Version:       "original",
+		UserID:        strings.TrimSpace(owner),
+		ContentType:   mint.ContentType,
+		FileSize:      mint.FileSize,
+		ContentHash:   mint.ContentHash,
+		S3Key:         mint.S3Key,
+		CDNUrl:        mint.URL,
+		Width:         mint.Width,
+		Height:        mint.Height,
+		Visibility:    models.MediaVisibilityPublic,
+		Status:        "ready",
+		UploadedAt:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		Description:   usage.AltText,
+		MediaCategory: models.DetermineMediaCategory(mint.ContentType),
+	}
+	if snapshot.MediaCategory == models.MediaCategoryUnknown {
+		snapshot.MediaCategory = models.MediaCategoryImage
+	}
+	return snapshot
 }
 
 func cmsCloneArticleForDraftMutation(article *models.Article) *models.Article {
@@ -506,7 +642,7 @@ func cmsCloneArticleForDraftMutation(article *models.Article) *models.Article {
 	return &cp
 }
 
-func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string) (*models.Article, error) {
+func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string, mints map[string]EditorialPublishedMedia) (*models.Article, error) {
 	article := &models.Article{
 		Object: models.Object{
 			ID:           objectID,
@@ -523,6 +659,7 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 		UpdatedAt:     now,
 	}
 	cmsApplyDraftAttributionToArticle(article, draft, domain, authorID, false)
+	applyPublishedDraftMedia(article, draft, mints)
 	if actedBy != "" {
 		article.ActedBy = actedBy
 	}

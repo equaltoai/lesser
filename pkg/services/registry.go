@@ -60,6 +60,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -992,6 +993,10 @@ func (r *Registry) Articles() *cms.ArticleService {
 
 // Drafts returns the draft service, initializing it if necessary
 func (r *Registry) Drafts() *cms.DraftService {
+	// Resolve the media service before taking the registry lock: Media() lazily
+	// initializes under the same mutex and would deadlock if called here.
+	mediaService := r.Media()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -1027,6 +1032,9 @@ func (r *Registry) Drafts() *cms.DraftService {
 		r.logger,
 	)
 	r.draftService.SetEditorialMediaRepository(r.storage.Media())
+	if mediaService != nil {
+		r.draftService.SetEditorialPublishMinter(cmsEditorialPublishMinter{svc: mediaService})
+	}
 	r.draftService.SetPrincipalUsernameProvider(func(ctx context.Context) (string, error) {
 		state, err := r.storage.Instance().GetInstanceState(ctx)
 		if err != nil {
@@ -1037,6 +1045,38 @@ func (r *Registry) Drafts() *cms.DraftService {
 	r.initialized["Drafts"] = true
 
 	return r.draftService
+}
+
+// cmsEditorialPublishMinter adapts the media service's durable publish mint to
+// the CMS publish gate's minter interface.
+type cmsEditorialPublishMinter struct {
+	svc *media.Service
+}
+
+// PublishEditorialMedia transitions one internal asset to durable public
+// serving of its exact approved bytes.
+func (a cmsEditorialPublishMinter) PublishEditorialMedia(ctx context.Context, mediaID string) (*cms.EditorialPublishedMedia, error) {
+	if a.svc == nil {
+		return nil, errors.New("editorial media publish service is unavailable")
+	}
+	published, err := a.svc.PublishMediaDurably(ctx, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	if published == nil {
+		return nil, errors.New("editorial media publish returned no durable serving")
+	}
+	return &cms.EditorialPublishedMedia{
+		MediaID:     published.MediaID,
+		ContentHash: published.ContentHash,
+		ContentType: published.ContentType,
+		FileSize:    published.FileSize,
+		Width:       published.Width,
+		Height:      published.Height,
+		URL:         published.URL,
+		S3Key:       published.S3Key,
+		PublishedAt: published.PublishedAt,
+	}, nil
 }
 
 // Series returns the series service, initializing it if necessary
@@ -1458,6 +1498,7 @@ func (r *Registry) Media() *media.Service {
 type mediaS3API interface {
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	CopyObject(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
 }
 
 type mediaS3PresignAPI interface {
@@ -1522,6 +1563,35 @@ func (s *mediaS3ObjectStore) UploadInternalFile(
 		return "", err
 	}
 	return fmt.Sprintf("s3://%s/%s", bucket, key), nil
+}
+
+func (s *mediaS3ObjectStore) CopyFileToPublished(
+	ctx context.Context,
+	bucket string,
+	sourceKey string,
+	destinationKey string,
+	contentType string,
+) (string, error) {
+	if s == nil || s.client == nil {
+		return "", errors.New("media S3 client is unavailable")
+	}
+	if strings.TrimSpace(bucket) == "" || strings.TrimSpace(sourceKey) == "" || strings.TrimSpace(destinationKey) == "" {
+		return "", errors.New("published copy requires a bucket, source key, and destination key")
+	}
+	// The source is SSE-KMS under the instance key; the durable published copy
+	// is SSE-S3 so the unsigned CloudFront origin can serve the exact bytes.
+	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:               aws.String(strings.TrimSpace(bucket)),
+		Key:                  aws.String(strings.TrimSpace(destinationKey)),
+		CopySource:           aws.String(url.PathEscape(strings.TrimSpace(bucket)) + "/" + url.PathEscape(strings.TrimSpace(sourceKey))),
+		ContentType:          aws.String(strings.TrimSpace(contentType)),
+		ServerSideEncryption: s3types.ServerSideEncryptionAes256,
+		MetadataDirective:    s3types.MetadataDirectiveReplace,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("s3://%s/%s", strings.TrimSpace(bucket), strings.TrimSpace(destinationKey)), nil
 }
 
 func (s *mediaS3ObjectStore) DeleteFile(ctx context.Context, bucket, key string) error {

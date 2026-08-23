@@ -20,34 +20,110 @@ const (
 	DraftReviewApproved         = "APPROVED"
 	DraftReviewChangesRequested = "CHANGES_REQUESTED"
 	maxDraftReviewReadGrants    = 200
+
+	// DraftReviewGrantLifetime bounds every review grant. Grants are cheap,
+	// ephemeral assignments refreshed on re-share; the bound prevents a stale
+	// grant from authorizing reviewer reads, URL minting, or approval forever.
+	DraftReviewGrantLifetime = 7 * 24 * time.Hour
+
+	// Bound-media blocking reasons exposed through the review state surface.
+	DraftReviewMediaReasonMissing     = "BOUND_MEDIA_MISSING"
+	DraftReviewMediaReasonNotReady    = "BOUND_MEDIA_NOT_READY"
+	DraftReviewMediaReasonWithdrawn   = "BOUND_MEDIA_WITHDRAWN"
+	DraftReviewMediaReasonSuperseded  = "BOUND_MEDIA_SUPERSEDED"
+	DraftReviewMediaReasonUnavailable = "BOUND_MEDIA_UNAVAILABLE"
 )
 
 // draftReviewContentHash binds every field that changes the published article's
-// reviewed content or permalink. Each field is length-prefixed so field
-// boundaries remain unambiguous even when values contain control characters.
-// Metadata, autosave state, and timestamps do not reach the published article
-// and are intentionally excluded. GeneratedBy is also excluded because
+// reviewed content or permalink, including the ordered bound media set. Each
+// field is length-prefixed so field boundaries remain unambiguous even when
+// values contain control characters. Media usages hash their canonical content
+// digest (Media.ContentHash / provenance ContentIntegrity), not just the
+// MediaID, so the review hash is bound to bytes even if a future path mutates
+// records. Metadata, autosave state, and timestamps do not reach the published
+// article and are intentionally excluded. GeneratedBy is also excluded because
 // cmsApplyDraftRequestAttribution in graph/mutation_resolvers_cms.go only sets
 // and never clears it; that invariant is load-bearing because GeneratedBy
 // enables the principal-approval gate.
-func draftReviewContentHash(d *models.Draft) string {
+func draftReviewContentHash(d *models.Draft, mediaDigests map[string]string) string {
 	h := sha256.New()
 	var length [8]byte
-	for _, field := range []string{d.ContentFormat, d.Slug, d.Title, d.Content} {
-		binary.BigEndian.PutUint64(length[:], uint64(len(field)))
+	write := func(value string) {
+		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
 		_, _ = h.Write(length[:])
-		_, _ = h.Write([]byte(field))
+		_, _ = h.Write([]byte(value))
+	}
+	for _, field := range []string{d.ContentFormat, d.Slug, d.Title, d.Content} {
+		write(field)
+	}
+	// Canonical media order: hero, then inline by InlinePosition, then social
+	// card. A usage whose digest cannot be resolved hashes as an empty digest;
+	// the binding still contributes role, position, caption, credit, alt, and
+	// focus, so replace/remove/reorder/recaption all change the revision hash.
+	for _, usage := range canonicalDraftMediaOrder(d.EditorialMedia) {
+		write(mediaDigests[usage.MediaID])
+		write(string(usage.Role))
+		position := int64(-1)
+		if usage.InlinePosition != nil {
+			position = int64(*usage.InlinePosition)
+		}
+		var positionBytes [8]byte
+		binary.BigEndian.PutUint64(positionBytes[:], uint64(position))
+		_, _ = h.Write(positionBytes[:])
+		write(usage.Caption)
+		write(usage.CreditLine)
+		write(usage.AltText)
+		write(usage.Focus)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// DraftReviewContentHash returns the canonical digest used to bind review
-// verdicts to the exact publishable draft content.
+// canonicalDraftMediaOrder returns the ordered media set used by the revision
+// hash: hero, inline by ascending InlinePosition, then social card.
+func canonicalDraftMediaOrder(usages []models.DraftMediaUsage) []models.DraftMediaUsage {
+	out := make([]models.DraftMediaUsage, 0, len(usages))
+	inline := make([]models.DraftMediaUsage, 0, len(usages))
+	for _, usage := range usages {
+		switch usage.Role {
+		case models.EditorialMediaRoleHero, models.EditorialMediaRoleSocialCard:
+			out = append(out, usage)
+		case models.EditorialMediaRoleInline:
+			inline = append(inline, usage)
+		}
+	}
+	sort.SliceStable(inline, func(i, j int) bool {
+		left, right := -1, -1
+		if inline[i].InlinePosition != nil {
+			left = *inline[i].InlinePosition
+		}
+		if inline[j].InlinePosition != nil {
+			right = *inline[j].InlinePosition
+		}
+		return left < right
+	})
+	out = append(out, inline...)
+	return out
+}
+
+// DraftReviewContentHash returns the canonical text hash used to bind review
+// verdicts to draft content when no media digest resolution is available
+// (equivalent to a draft with no bound media).
 func DraftReviewContentHash(d *models.Draft) string {
 	if d == nil {
 		return ""
 	}
-	return draftReviewContentHash(d)
+	return draftReviewContentHash(d, nil)
+}
+
+// DraftReviewContentHashWithMedia binds review verdicts to the exact bound
+// media bytes. mediaDigests maps each bound MediaID to its canonical
+// sha256:<hex> digest; callers resolve digests through the editorial media
+// repository (bounded at 100 usages per draft).
+func DraftReviewContentHashWithMedia(d *models.Draft, mediaDigests map[string]string) string {
+	if d == nil {
+		return ""
+	}
+	return draftReviewContentHash(d, mediaDigests)
 }
 
 var (
@@ -55,6 +131,10 @@ var (
 	ErrDraftReviewApprovalRequired = errors.New("draft requires approval from every active reviewer")
 	// ErrDraftReviewPrincipalApprovalRequired means the designated principal is missing a current approval.
 	ErrDraftReviewPrincipalApprovalRequired = errors.New("generated draft requires an active approval from the instance principal")
+	// ErrDraftReviewMediaRequired means a required bound asset cannot serve the
+	// exact approved bytes (missing, not ready, withdrawn, superseded, or
+	// unavailable). The wrapped message names the blocking reasons.
+	ErrDraftReviewMediaRequired = errors.New("draft requires its bound media to be ready and available")
 	// ErrInstancePrincipalUnavailable means the principal provider could not be used.
 	ErrInstancePrincipalUnavailable = errors.New("instance principal is unavailable")
 	// ErrInstancePrincipalNotConfigured means the provider returned no principal username.
@@ -81,6 +161,80 @@ type draftReviewFieldUpdater interface {
 
 type ownedDraftReviewRepository interface {
 	ListDraftReviewGrantsByOwner(context.Context, string) ([]*models.DraftReviewGrant, error)
+}
+
+// resolveDraftMediaBindings resolves every bound usage to its canonical content
+// digest (bounded at 100 usages per draft) and reports, in canonical order,
+// which assets cannot serve the exact approved bytes at the review or publish
+// boundary. A resolution failure (including an unwired media repository on a
+// draft that has bound media) is returned as an error so the review and publish
+// gates fail closed instead of approving against unresolvable bytes.
+func (s *DraftService) resolveDraftMediaBindings(ctx context.Context, draft *models.Draft) (map[string]string, []string, error) {
+	digests := make(map[string]string, len(draft.EditorialMedia))
+	if len(draft.EditorialMedia) == 0 {
+		return digests, nil, nil
+	}
+	if s.mediaRepo == nil {
+		return nil, nil, errors.New("editorial media repository is unavailable")
+	}
+	var reasons []string
+	for _, usage := range draft.EditorialMedia {
+		media, getErr := s.mediaRepo.GetMedia(ctx, usage.MediaID)
+		if getErr != nil && (errors.Is(getErr, storage.ErrNotFound) || apperrors.HasCode(getErr, apperrors.CodeNotFound)) {
+			reasons = append(reasons, DraftReviewMediaReasonMissing)
+			continue
+		}
+		if getErr != nil {
+			return nil, nil, getErr
+		}
+		if media == nil || !strings.EqualFold(strings.TrimSpace(media.UserID), strings.TrimSpace(draft.AuthorID)) {
+			reasons = append(reasons, DraftReviewMediaReasonMissing)
+			continue
+		}
+		if reason := draftMediaLifecycleReason(media); reason != "" {
+			reasons = append(reasons, reason)
+			continue
+		}
+		if !media.IsInternalEditorial() || media.Provenance == nil || media.Provenance.ContentIntegrity != media.ContentHash {
+			reasons = append(reasons, DraftReviewMediaReasonUnavailable)
+			continue
+		}
+		if !media.IsReady() {
+			reasons = append(reasons, DraftReviewMediaReasonNotReady)
+			continue
+		}
+		digests[usage.MediaID] = media.ContentHash
+	}
+	return digests, reasons, nil
+}
+
+// draftMediaLifecycleReason maps the explicit editorial lifecycle onto the
+// blocking-reason vocabulary. The empty/available lifecycle is servable.
+func draftMediaLifecycleReason(media *models.Media) string {
+	if media == nil {
+		return DraftReviewMediaReasonMissing
+	}
+	switch models.EditorialLifecycle(strings.ToLower(strings.TrimSpace(string(media.EditorialState)))) {
+	case "", models.EditorialLifecycleAvailable:
+		return ""
+	case models.EditorialLifecycleWithdrawn:
+		return DraftReviewMediaReasonWithdrawn
+	case models.EditorialLifecycleSuperseded:
+		return DraftReviewMediaReasonSuperseded
+	default:
+		return DraftReviewMediaReasonUnavailable
+	}
+}
+
+// draftContentHash resolves the current text-and-media digest for a draft.
+// Review verdicts, the read state, and the publish/schedule gates all use this
+// exact digest so media binding changes stale prior approvals end-to-end.
+func (s *DraftService) draftContentHash(ctx context.Context, draft *models.Draft) (string, error) {
+	digests, _, err := s.resolveDraftMediaBindings(ctx, draft)
+	if err != nil {
+		return "", err
+	}
+	return draftReviewContentHash(draft, digests), nil
 }
 
 // DraftEditorialMediaBinding resolves one modeled usage without hiding a
@@ -121,7 +275,8 @@ func (s *DraftService) ShareDraftForReview(ctx context.Context, owner, draftID, 
 		return nil, err
 	}
 	now := time.Now().UTC()
-	g := &models.DraftReviewGrant{OwnerID: owner, DraftID: draftID, Reviewer: reviewer, GrantedAt: now}
+	expiresAt := now.Add(DraftReviewGrantLifetime)
+	g := &models.DraftReviewGrant{OwnerID: owner, DraftID: draftID, Reviewer: reviewer, GrantedAt: now, ExpiresAt: &expiresAt}
 	existing, getErr := repo.GetDraftReviewGrant(ctx, owner, draftID, reviewer)
 	if getErr == nil && existing != nil {
 		g.Version = existing.Version
@@ -154,7 +309,9 @@ func (s *DraftService) RevokeDraftReview(ctx context.Context, owner, draftID, re
 	return repo.RevokeDraftReviewGrant(ctx, g)
 }
 
-// ActiveDraftReviewGrant returns a non-revoked grant for one reviewer.
+// ActiveDraftReviewGrant returns a non-revoked, non-expired grant for one reviewer.
+// Expired grants fail closed: they authorize neither reviewer reads/URL minting
+// nor the approval gate.
 func (s *DraftService) ActiveDraftReviewGrant(ctx context.Context, owner, draftID, reviewer string) (*models.DraftReviewGrant, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {
@@ -164,13 +321,14 @@ func (s *DraftService) ActiveDraftReviewGrant(ctx context.Context, owner, draftI
 	if err != nil {
 		return nil, err
 	}
-	if g.RevokedAt != nil {
+	if !g.IsActive(time.Now().UTC()) {
 		return nil, errors.New("draft review grant is not active")
 	}
 	return g, nil
 }
 
 // SharedDraftReviews lists one cursor page of active review queue grants.
+// Expired grants are excluded so a stale assignment cannot appear actionable.
 func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, limit int, cursor string) ([]*models.DraftReviewGrant, string, error) {
 	repo, err := s.reviewRepository()
 	if err != nil {
@@ -180,9 +338,10 @@ func (s *DraftService) SharedDraftReviews(ctx context.Context, reviewer string, 
 	if err != nil {
 		return nil, "", err
 	}
+	now := time.Now().UTC()
 	active := make([]*models.DraftReviewGrant, 0, len(grants))
 	for _, grant := range grants {
-		if grant != nil && grant.RevokedAt == nil {
+		if grant != nil && grant.IsActive(now) {
 			active = append(active, grant)
 		}
 	}
@@ -209,9 +368,10 @@ func (s *DraftService) OwnedDraftReviews(ctx context.Context, owner string) ([]*
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
 	active := make([]*models.DraftReviewGrant, 0, len(grants))
 	for _, grant := range grants {
-		if grant != nil && grant.RevokedAt == nil {
+		if grant != nil && grant.IsActive(now) {
 			active = append(active, grant)
 		}
 	}
@@ -332,13 +492,17 @@ func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, dra
 	if err != nil {
 		return nil, err
 	}
+	contentHash, err := s.draftContentHash(ctx, d)
+	if err != nil {
+		return nil, err
+	}
 	v := &models.DraftReviewVerdict{
 		OwnerID:     owner,
 		DraftID:     strings.TrimSpace(draftID),
 		Reviewer:    caller,
 		Verdict:     verdict,
 		Notes:       strings.TrimSpace(notes),
-		ContentHash: draftReviewContentHash(d),
+		ContentHash: contentHash,
 		RecordedAt:  time.Now().UTC(),
 	}
 	if err := repo.CreateDraftReviewVerdict(ctx, v); err != nil {
@@ -377,8 +541,11 @@ func (s *DraftService) instancePrincipal(ctx context.Context) (string, error) {
 }
 
 type draftReviewApprovalState struct {
-	active map[string]*models.DraftReviewGrant
-	latest map[string]*models.DraftReviewVerdict
+	active       map[string]*models.DraftReviewGrant
+	latest       map[string]*models.DraftReviewVerdict
+	contentHash  string
+	mediaDigests map[string]string
+	mediaReasons []string
 }
 
 // DraftReviewReadState is the complete, revision-bound review state exposed to
@@ -450,7 +617,7 @@ func (s *DraftService) DraftReviewState(ctx context.Context, owner, draftID stri
 		}
 	}
 
-	blockingReasons := make([]string, 0, 2)
+	blockingReasons := make([]string, 0, 4)
 	if !reviewersApproved {
 		blockingReasons = append(blockingReasons, "REVIEW_APPROVAL_REQUIRED")
 	}
@@ -459,8 +626,9 @@ func (s *DraftService) DraftReviewState(ctx context.Context, owner, draftID stri
 	} else if principalRequired && !principalApproved {
 		blockingReasons = append(blockingReasons, "PRINCIPAL_APPROVAL_REQUIRED")
 	}
+	blockingReasons = append(blockingReasons, approval.mediaReasons...)
 	return &DraftReviewReadState{
-		ContentHash:               draftReviewContentHash(draft),
+		ContentHash:               approval.contentHash,
 		Grants:                    grants,
 		GrantCount:                grantCount,
 		GrantsTruncated:           grantsTruncated,
@@ -482,28 +650,47 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
 	active := make(map[string]*models.DraftReviewGrant, len(grants))
 	for _, grant := range grants {
-		if grant != nil && grant.RevokedAt == nil {
+		if grant != nil && grant.IsActive(now) {
 			active[grant.Reviewer] = grant
 		}
 	}
 	if len(active) == 0 {
-		return &draftReviewApprovalState{active: active, latest: map[string]*models.DraftReviewVerdict{}}, nil
+		// Public approval helpers may not already have the draft snapshot. Fetch
+		// only when the caller supplied one: with no grants the approval answer
+		// is vacuously true and the hash is only relevant to read-state callers.
+		if draft == nil {
+			return &draftReviewApprovalState{active: active, latest: map[string]*models.DraftReviewVerdict{}}, nil
+		}
+		digests, reasons, resolveErr := s.resolveDraftMediaBindings(ctx, draft)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		return &draftReviewApprovalState{
+			active:       active,
+			latest:       map[string]*models.DraftReviewVerdict{},
+			contentHash:  draftReviewContentHash(draft, digests),
+			mediaDigests: digests,
+			mediaReasons: reasons,
+		}, nil
 	}
 	verdicts, err := repo.ListDraftReviewVerdicts(ctx, owner, draftID)
 	if err != nil {
 		return nil, err
 	}
 	if draft == nil {
-		// Public approval helpers may not already have the draft snapshot. Fetch
-		// exactly once, and only when an active grant makes the hash relevant.
 		draft, err = s.draftRepo.GetDraft(ctx, owner, draftID)
 		if err != nil {
 			return nil, err
 		}
 	}
-	currentHash := draftReviewContentHash(draft)
+	digests, reasons, resolveErr := s.resolveDraftMediaBindings(ctx, draft)
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
+	currentHash := draftReviewContentHash(draft, digests)
 	latest := make(map[string]*models.DraftReviewVerdict, len(active))
 	for _, verdict := range verdicts {
 		if verdict == nil {
@@ -520,7 +707,7 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 			}
 		}
 	}
-	return &draftReviewApprovalState{active: active, latest: latest}, nil
+	return &draftReviewApprovalState{active: active, latest: latest, contentHash: currentHash, mediaDigests: digests, mediaReasons: reasons}, nil
 }
 
 func allActiveReviewersApproved(state *draftReviewApprovalState) bool {
@@ -537,47 +724,61 @@ func allActiveReviewersApproved(state *draftReviewApprovalState) bool {
 
 // draftReviewGateApprovals derives the approval snapshot once for the publish
 // and schedule gates, then answers both the unanimous-reviewer and conditional
-// principal requirements from that same snapshot.
-func (s *DraftService) draftReviewGateApprovals(ctx context.Context, owner, draftID string, draft *models.Draft) (bool, bool, error) {
+// principal requirements from that same snapshot. The derived state carries the
+// exact text-and-media hash the approvals were matched against, so the publish
+// path can mint durable serving for exactly those bytes.
+func (s *DraftService) draftReviewGateApprovals(ctx context.Context, owner, draftID string, draft *models.Draft) (bool, bool, *draftReviewApprovalState, error) {
 	if draft == nil {
 		// Callers without a snapshot fetch it exactly once before deriving both
 		// approval answers from that same content.
 		var err error
 		draft, err = s.draftRepo.GetDraft(ctx, owner, draftID)
 		if err != nil {
-			return false, false, err
+			return false, false, nil, err
 		}
 	}
 	state, err := s.draftReviewApprovalState(ctx, owner, draftID, draft)
 	if err != nil {
 		if !errors.Is(err, errDraftReviewStorageUnavailable) {
-			return false, false, err
+			return false, false, nil, err
 		}
 		if strings.TrimSpace(draft.GeneratedBy) == "" {
 			// A repository without review support cannot contain active grants;
-			// preserve the pre-review behavior for human-authored drafts.
-			return true, true, nil
+			// preserve the pre-review behavior for human-authored drafts while
+			// still deriving the media surface for the publish gate.
+			digests, reasons, mediaErr := s.resolveDraftMediaBindings(ctx, draft)
+			if mediaErr != nil {
+				return false, false, nil, mediaErr
+			}
+			emptyState := &draftReviewApprovalState{
+				active:       map[string]*models.DraftReviewGrant{},
+				latest:       map[string]*models.DraftReviewVerdict{},
+				contentHash:  draftReviewContentHash(draft, digests),
+				mediaDigests: digests,
+				mediaReasons: reasons,
+			}
+			return true, true, emptyState, nil
 		}
 		// Preserve the generated-draft error ordering: principal resolution ran
 		// before its independent approval-state derivation on the former path.
 		if _, principalErr := s.instancePrincipal(ctx); principalErr != nil {
-			return false, false, principalErr
+			return false, false, nil, principalErr
 		}
-		return false, false, err
+		return false, false, nil, err
 	}
 	if !allActiveReviewersApproved(state) {
-		return false, false, nil
+		return false, false, state, nil
 	}
 	if strings.TrimSpace(draft.GeneratedBy) == "" {
-		return true, true, nil
+		return true, true, state, nil
 	}
 	principal, err := s.instancePrincipal(ctx)
 	if err != nil {
-		return false, false, err
+		return false, false, state, err
 	}
 	grant := state.active[principal]
 	verdict := state.latest[principal]
-	return true, grant != nil && verdict != nil && verdict.Verdict == DraftReviewApproved, nil
+	return true, grant != nil && verdict != nil && verdict.Verdict == DraftReviewApproved, state, nil
 }
 
 // HasUnanimousActiveApproval applies the all-invited-reviewers rule. With no

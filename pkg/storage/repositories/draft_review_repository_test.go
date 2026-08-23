@@ -338,6 +338,7 @@ func TestDraftRepositoryRegrantDraftReviewGrantClearsRevocation(t *testing.T) {
 	query.On("Where", "SK", "=", "GRANT#draft-1#REVIEWER#reviewer").Return(query).Once()
 	query.On("UpdateBuilder").Return(update).Once()
 	update.On("Set", "GrantedAt", grantedAt).Return(update).Once()
+	update.On("Remove", "ExpiresAt").Return(update).Once()
 	update.On("Set", "GSI2PK", "DRAFT#REVIEWER#reviewer").Return(update).Once()
 	update.On("Set", "GSI2SK", grant.GSI2SK).Return(update).Once()
 	update.On("Remove", "RevokedAt").Return(update).Once()
@@ -351,6 +352,47 @@ func TestDraftRepositoryRegrantDraftReviewGrantClearsRevocation(t *testing.T) {
 	require.Nil(t, grant.RevokedAt)
 	require.NotEmpty(t, grant.GSI2PK)
 	require.NotEmpty(t, grant.GSI2SK)
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
+	update.AssertExpectations(t)
+}
+
+func TestDraftRepositoryRegrantDraftReviewGrantRefreshesExpiry(t *testing.T) {
+	ctx := context.Background()
+	grantedAt := time.Now().UTC()
+	expiresAt := grantedAt.Add(time.Hour)
+	grant := &models.DraftReviewGrant{
+		OwnerID:   "owner",
+		DraftID:   "draft-1",
+		Reviewer:  "reviewer",
+		GrantedAt: grantedAt,
+		ExpiresAt: &expiresAt,
+		Version:   4,
+	}
+	require.NoError(t, grant.UpdateKeys())
+
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
+	update := new(mocks.MockUpdateBuilder)
+	db.On("WithContext", mock.Anything).Return(db).Once()
+	db.On("Model", grant).Return(query).Once()
+	query.On("Where", "PK", "=", "USER#owner#DRAFT#REVIEW").Return(query).Once()
+	query.On("Where", "SK", "=", "GRANT#draft-1#REVIEWER#reviewer").Return(query).Once()
+	query.On("UpdateBuilder").Return(update).Once()
+	update.On("Set", "GrantedAt", grantedAt).Return(update).Once()
+	update.On("Set", "ExpiresAt", expiresAt).Return(update).Once()
+	update.On("Set", "GSI2PK", "DRAFT#REVIEWER#reviewer").Return(update).Once()
+	update.On("Set", "GSI2SK", grant.GSI2SK).Return(update).Once()
+	update.On("Remove", "RevokedAt").Return(update).Once()
+	update.On("ConditionVersion", int64(4)).Return(update).Once()
+	update.On("Set", "Version", 5).Return(update).Once()
+	update.On("Execute").Return(nil).Once()
+
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	require.NoError(t, repo.RegrantDraftReviewGrant(ctx, grant))
+	require.Equal(t, 5, grant.Version)
+	require.Equal(t, expiresAt, *grant.ExpiresAt)
 
 	db.AssertExpectations(t)
 	query.AssertExpectations(t)

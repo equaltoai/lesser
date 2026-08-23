@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -148,6 +149,52 @@ func (r *MediaRepository) UpdateMedia(_ context.Context, media *models.Media) er
 	media.UpdatedAt = time.Now()
 	r.media[media.MediaID] = media
 
+	return nil
+}
+
+// UpdateMediaPublishedState models the production field-scoped writer: only the
+// durable published-serving attributes change, other metadata is untouched.
+func (r *MediaRepository) UpdateMediaPublishedState(_ context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	existing, exists := r.media[mediaID]
+	if !exists {
+		return storage.ErrNotFound
+	}
+	stored := *existing
+	stored.PublishedS3Key = strings.TrimSpace(publishedS3Key)
+	stored.PublishedURL = strings.TrimSpace(publishedURL)
+	stored.PublishedAt = &publishedAt
+	stored.UpdatedAt = time.Now()
+	r.media[mediaID] = &stored
+	return nil
+}
+
+// UpdateMediaEditorialState models the production field-scoped writer: only the
+// lifecycle attributes change, other metadata is untouched.
+func (r *MediaRepository) UpdateMediaEditorialState(_ context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	existing, exists := r.media[mediaID]
+	if !exists {
+		return storage.ErrNotFound
+	}
+	state = models.EditorialLifecycle(strings.TrimSpace(string(state)))
+	supersededByMediaID = strings.TrimSpace(supersededByMediaID)
+	if state == models.EditorialLifecycleSuperseded && supersededByMediaID == "" {
+		return fmt.Errorf("superseded editorial media must name the superseding asset")
+	}
+	stored := *existing
+	if state == "" || state == models.EditorialLifecycleAvailable {
+		stored.EditorialState = ""
+	} else {
+		stored.EditorialState = state
+	}
+	stored.SupersededByMediaID = supersededByMediaID
+	stored.UpdatedAt = time.Now()
+	r.media[mediaID] = &stored
 	return nil
 }
 

@@ -22,6 +22,8 @@ import (
 // Media field constants
 const (
 	FieldDescription = "description"
+	// mediaOriginalVersionSK is the sort key of the original media record.
+	mediaOriginalVersionSK = "version#original"
 )
 
 // MediaRepository handles media and media job operations using enhanced DynamORM patterns
@@ -197,7 +199,7 @@ func (r *MediaRepository) GetMedia(ctx context.Context, mediaID string) (*models
 
 	var media models.Media
 	pk := fmt.Sprintf("media#%s", mediaID)
-	sk := "version#original"
+	sk := mediaOriginalVersionSK
 
 	err := r.Get(ctx, pk, sk, &media)
 	if err != nil {
@@ -305,7 +307,7 @@ func (r *MediaRepository) DeleteMedia(ctx context.Context, mediaID string) error
 	r.logger.Debug("deleting media", zap.String("media_id", mediaID))
 
 	pk := fmt.Sprintf("media#%s", mediaID)
-	sk := "version#original"
+	sk := mediaOriginalVersionSK
 
 	return r.Delete(ctx, pk, sk)
 }
@@ -394,6 +396,79 @@ func (r *MediaRepository) UnmarkAllMediaAsSensitive(ctx context.Context, usernam
 		}
 	}
 
+	return nil
+}
+
+// UpdateMediaPublishedState persists the durable published-serving mint for one
+// internal asset. Field-scoped so the publish transition cannot clobber other
+// media metadata, and conditioned on existence so a concurrent deletion fails
+// closed instead of recreating a row.
+func (r *MediaRepository) UpdateMediaPublishedState(ctx context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time) error {
+	r.logger.Debug("persisting durable published serving",
+		zap.String("media_id", mediaID),
+		zap.String("published_key", publishedS3Key),
+		zap.String("published_url", publishedURL))
+
+	pk := fmt.Sprintf("media#%s", mediaID)
+	sk := mediaOriginalVersionSK
+	builder := r.db.WithContext(ctx).
+		Model(&models.Media{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder()
+	builder.Set("PublishedS3Key", strings.TrimSpace(publishedS3Key))
+	builder.Set("PublishedURL", strings.TrimSpace(publishedURL))
+	builder.Set("PublishedAt", publishedAt.UTC())
+	builder.ConditionExists("PK")
+	if err := builder.Execute(); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.ItemNotFoundWithID("media", mediaID).
+				WithInternalError(errors.Join(err, storage.ErrNotFound))
+		}
+		return ErrorHandler.HandleUpdateError(err, EntityMedia, mediaID)
+	}
+	return nil
+}
+
+// UpdateMediaEditorialState persists the explicit editorial lifecycle of an
+// internal asset (withdrawn / superseded / unavailable / available). The
+// available state removes the attribute; superseded requires the successor ID.
+func (r *MediaRepository) UpdateMediaEditorialState(ctx context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string) error {
+	r.logger.Debug("updating editorial lifecycle",
+		zap.String("media_id", mediaID),
+		zap.String("editorial_state", string(state)))
+
+	state = models.EditorialLifecycle(strings.TrimSpace(string(state)))
+	supersededByMediaID = strings.TrimSpace(supersededByMediaID)
+	if state == models.EditorialLifecycleSuperseded && supersededByMediaID == "" {
+		return errors.New("superseded editorial media must name the superseding asset")
+	}
+
+	pk := fmt.Sprintf("media#%s", mediaID)
+	sk := mediaOriginalVersionSK
+	builder := r.db.WithContext(ctx).
+		Model(&models.Media{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder()
+	if state == "" || state == models.EditorialLifecycleAvailable {
+		builder.Remove("EditorialState")
+	} else {
+		builder.Set("EditorialState", state)
+	}
+	if supersededByMediaID == "" {
+		builder.Remove("SupersededByMediaID")
+	} else {
+		builder.Set("SupersededByMediaID", supersededByMediaID)
+	}
+	builder.ConditionExists("PK")
+	if err := builder.Execute(); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.ItemNotFoundWithID("media", mediaID).
+				WithInternalError(errors.Join(err, storage.ErrNotFound))
+		}
+		return ErrorHandler.HandleUpdateError(err, EntityMedia, mediaID)
+	}
 	return nil
 }
 

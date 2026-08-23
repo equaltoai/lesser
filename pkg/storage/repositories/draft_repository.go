@@ -269,6 +269,12 @@ func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *mo
 		Where("SK", "=", grant.SK).
 		UpdateBuilder()
 	builder.Set("GrantedAt", grant.GrantedAt.UTC())
+	if grant.ExpiresAt != nil {
+		expiresAt := grant.ExpiresAt.UTC()
+		builder.Set("ExpiresAt", expiresAt)
+	} else {
+		builder.Remove("ExpiresAt")
+	}
 	builder.Set("GSI2PK", grant.GSI2PK)
 	builder.Set("GSI2SK", grant.GSI2SK)
 	builder.Remove("RevokedAt")

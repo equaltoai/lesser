@@ -95,6 +95,14 @@ type S3Presigner interface {
 	GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error)
 }
 
+// PublishedMediaCopier copies the exact original bytes of an internal editorial
+// asset to the durable unsigned serving surface at the publish transition. The
+// destination object is SSE-S3 (the CloudFront origin can serve it) while the
+// source remains SSE-KMS under the instance key.
+type PublishedMediaCopier interface {
+	CopyFileToPublished(ctx context.Context, bucket, sourceKey, destinationKey, contentType string) (string, error)
+}
+
 // ProcessingQueue defines the interface for async media processing
 type ProcessingQueue interface {
 	QueueMediaProcessing(ctx context.Context, mediaID string, processingType string) error
@@ -252,6 +260,22 @@ type EditorialAccess struct {
 	URL         string
 	ExpiresAt   time.Time
 	ContentHash string
+}
+
+// PublishedMedia is the durable public serving minted for one internal
+// editorial asset at the publish transition. The URL serves the exact approved
+// original bytes indefinitely: no expiring presignature, no temporary
+// generator URL, no dependence on the internal KMS-read posture.
+type PublishedMedia struct {
+	MediaID     string
+	ContentHash string
+	ContentType string
+	FileSize    int64
+	Width       int
+	Height      int
+	URL         string
+	S3Key       string
+	PublishedAt time.Time
 }
 
 // UpdateResult contains updated media and events
@@ -603,6 +627,127 @@ func (s *Service) IssueEditorialAccess(ctx context.Context, mediaID string) (*Ed
 		return nil, errors.Join(ErrMediaStorageFailed, err)
 	}
 	return &EditorialAccess{URL: url, ExpiresAt: time.Now().UTC().Add(ttl), ContentHash: media.ContentHash}, nil
+}
+
+// PublishMediaDurably transitions one internal editorial asset to durable
+// public serving of its exact approved bytes. The publish transition is the
+// single point where durable public serving is minted: before it, internal
+// assets expose no unsigned URL through the application contract.
+func (s *Service) PublishMediaDurably(ctx context.Context, mediaID string) (*PublishedMedia, error) {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("media ID is required"))
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil {
+		return nil, ErrMediaUnauthorizedAccess
+	}
+	if !media.IsInternalEditorial() {
+		return nil, errors.Join(ErrMediaUnauthorizedAccess, errors.New("durable published serving is minted only for internal editorial assets"))
+	}
+	if media.Provenance == nil || media.Provenance.ContentIntegrity != media.ContentHash {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial media integrity is unavailable"))
+	}
+	if !media.EditorialLifecycleAvailableForPublish() {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial media lifecycle does not allow publication"))
+	}
+	if !media.IsReady() {
+		return nil, ErrMediaNotReady
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	sourceKey := strings.TrimSpace(media.S3Key)
+	if bucket == "" || sourceKey == "" {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("internal media storage location is unavailable"))
+	}
+	copier, ok := s.s3Service.(PublishedMediaCopier)
+	if !ok || copier == nil {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("durable published copy capability is unavailable"))
+	}
+	if strings.TrimSpace(s.cdnDomain) == "" {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("CDN domain is required to mint durable published serving"))
+	}
+	destinationKey := "published/" + sourceKey
+	location, err := copier.CopyFileToPublished(ctx, bucket, sourceKey, destinationKey, media.ContentType)
+	if err != nil {
+		return nil, errors.Join(ErrMediaStorageFailed, err)
+	}
+	_ = location
+	publishedURL := fmt.Sprintf("https://%s/%s", s.cdnDomain, destinationKey)
+	publishedAt := time.Now().UTC()
+	if s.mediaRepo != nil {
+		if err := s.mediaRepo.UpdateMediaPublishedState(ctx, mediaID, destinationKey, publishedURL, publishedAt); err != nil {
+			return nil, errors.Join(ErrMediaUpdateFailed, err)
+		}
+	}
+	s.logger.Info("minted durable published serving",
+		zap.String("media_id", mediaID),
+		zap.String("published_key", destinationKey),
+		zap.String("published_url", publishedURL))
+	return &PublishedMedia{
+		MediaID:     media.MediaID,
+		ContentHash: media.ContentHash,
+		ContentType: media.ContentType,
+		FileSize:    media.FileSize,
+		Width:       media.Width,
+		Height:      media.Height,
+		URL:         publishedURL,
+		S3Key:       destinationKey,
+		PublishedAt: publishedAt,
+	}, nil
+}
+
+// UpdateEditorialLifecycleCommand identifies the asset and the owner requesting
+// an explicit editorial lifecycle change.
+type UpdateEditorialLifecycleCommand struct {
+	MediaID             string
+	UserID              string
+	Lifecycle           models.EditorialLifecycle
+	SupersededByMediaID string
+}
+
+// UpdateEditorialLifecycle applies an explicit editorial lifecycle change to an
+// internal asset. Withdrawn, superseded, and unavailable states are inspectable
+// through the draft preview surface and block publication until re-review.
+func (s *Service) UpdateEditorialLifecycle(ctx context.Context, cmd *UpdateEditorialLifecycleCommand) (*models.Media, error) {
+	if cmd == nil {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("update editorial lifecycle command cannot be nil"))
+	}
+	cmd.MediaID = strings.TrimSpace(cmd.MediaID)
+	cmd.UserID = strings.TrimSpace(cmd.UserID)
+	if cmd.MediaID == "" || cmd.UserID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("media ID and owner are required"))
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, cmd.MediaID)
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil || media.UserID != cmd.UserID {
+		return nil, ErrMediaUnauthorizedAccess
+	}
+	if !media.IsInternalEditorial() {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial lifecycle applies only to internal editorial media"))
+	}
+	lifecycle := models.EditorialLifecycle(strings.ToLower(strings.TrimSpace(string(cmd.Lifecycle))))
+	if lifecycle == "" || lifecycle == models.EditorialLifecycleAvailable {
+		lifecycle = ""
+	} else {
+		switch lifecycle {
+		case models.EditorialLifecycleWithdrawn, models.EditorialLifecycleSuperseded, models.EditorialLifecycleUnavailable:
+		default:
+			return nil, errors.Join(ErrMediaValidationFailed, fmt.Errorf("invalid editorial lifecycle %q", lifecycle))
+		}
+	}
+	cmd.SupersededByMediaID = strings.TrimSpace(cmd.SupersededByMediaID)
+	if lifecycle == models.EditorialLifecycleSuperseded && cmd.SupersededByMediaID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded editorial media must name the superseding asset"))
+	}
+	if err := s.mediaRepo.UpdateMediaEditorialState(ctx, cmd.MediaID, lifecycle, cmd.SupersededByMediaID); err != nil {
+		return nil, errors.Join(ErrMediaUpdateFailed, err)
+	}
+	return s.mediaRepo.GetMedia(ctx, cmd.MediaID)
 }
 
 // ListMedia returns paginated media filtered by owner and type

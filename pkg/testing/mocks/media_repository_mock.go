@@ -153,6 +153,18 @@ func (m *MockMediaRepository) UnmarkAllMediaAsSensitive(ctx context.Context, use
 	return args.Error(0)
 }
 
+// UpdateMediaEditorialState mocks the UpdateMediaEditorialState method
+func (m *MockMediaRepository) UpdateMediaEditorialState(ctx context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string) error {
+	args := m.Called(ctx, mediaID, state, supersededByMediaID)
+	return args.Error(0)
+}
+
+// UpdateMediaPublishedState mocks the UpdateMediaPublishedState method
+func (m *MockMediaRepository) UpdateMediaPublishedState(ctx context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time) error {
+	args := m.Called(ctx, mediaID, publishedS3Key, publishedURL, publishedAt)
+	return args.Error(0)
+}
+
 // CreateMediaJob mocks the CreateMediaJob method
 func (m *MockMediaRepository) CreateMediaJob(ctx context.Context, job *models.MediaJob) error {
 	args := m.Called(ctx, job)
