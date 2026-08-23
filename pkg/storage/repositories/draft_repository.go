@@ -238,6 +238,49 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 	return result, nextCursor, nil
 }
 
+// ListDraftsByStatusPaginated lists drafts in one status, paginated by GSI4SK
+// cursor values. It powers orphan reconciliation over terminally failed drafts
+// whose bound media mints may have survived a best-effort rollback.
+func (r *DraftRepository) ListDraftsByStatusPaginated(ctx context.Context, status string, limit int, cursor string) ([]*models.Draft, string, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		return nil, "", common.ValidateRequiredParam("status", status)
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
+	query := r.db.WithContext(ctx).Model(&models.Draft{}).
+		Index("gsi4").
+		Where("gsi4PK", "=", "DRAFT#STATUS#"+status).
+		OrderBy("gsi4SK", "ASC")
+
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		query = query.Where("gsi4SK", ">", cursor)
+	}
+
+	query = query.Limit(limit + 1)
+
+	var draftModels []models.Draft
+	if err := query.All(&draftModels); err != nil {
+		return nil, "", err
+	}
+
+	nextCursor := ""
+	if len(draftModels) > limit {
+		nextCursor = draftModels[limit-1].GSI4SK
+		draftModels = draftModels[:limit]
+	}
+
+	result := make([]*models.Draft, len(draftModels))
+	for i := range draftModels {
+		result[i] = &draftModels[i]
+	}
+
+	return result, nextCursor, nil
+}
+
 // CreateDraftReviewGrant creates a first-time review grant.
 func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
 	if err := grant.UpdateKeys(); err != nil {

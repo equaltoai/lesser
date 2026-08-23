@@ -60,6 +60,14 @@ func TestRound10_DraftRepository_CRUDAndPagination(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, scheduled, 1)
 	require.NotEmpty(t, nextScheduled)
+
+	byStatus, nextByStatus, err := repo.ListDraftsByStatusPaginated(ctx, "failed", 1, "cursor")
+	require.NoError(t, err)
+	require.Len(t, byStatus, 1)
+	require.NotEmpty(t, nextByStatus)
+
+	_, _, err = repo.ListDraftsByStatusPaginated(ctx, "   ", 1, "")
+	require.Error(t, err)
 }
 
 func TestRound10_DraftRepository_MorePaginationBranches(t *testing.T) {

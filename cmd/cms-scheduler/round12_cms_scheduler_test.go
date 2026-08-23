@@ -111,6 +111,10 @@ func (f *fakeDraftRepo) ListScheduledDraftsDuePaginated(ctx context.Context, due
 	return nil, "", nil
 }
 
+func (f *fakeDraftRepo) ListDraftsByStatusPaginated(context.Context, string, int, string) ([]*models.Draft, string, error) {
+	return nil, "", nil
+}
+
 func TestFakeDraftRepoUpdateDraftEditorialMediaIsFieldScoped(t *testing.T) {
 	stored := &models.Draft{
 		AuthorID: "owner", ID: "draft-1", Content: "concurrent content",

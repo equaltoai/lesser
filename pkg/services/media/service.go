@@ -44,6 +44,7 @@ type Service struct {
 	metadataDeleter   MetadataDeleter
 	s3Service         S3Service
 	editorialKMSKeyID string
+	orphanSource      OrphanedPublishedMintSource
 }
 
 type transcoderService interface {
@@ -101,6 +102,14 @@ type S3Presigner interface {
 // source remains SSE-KMS under the instance key.
 type PublishedMediaCopier interface {
 	CopyFileToPublished(ctx context.Context, bucket, sourceKey, destinationKey, contentType string) (string, error)
+}
+
+// OrphanedPublishedMintSource enumerates durable published mints that no live
+// article references: assets minted by a publish whose draft is terminally
+// failed and whose compensating rollback never ran or failed. The registry
+// wires it from the CMS side; reconciliation is a no-op without it.
+type OrphanedPublishedMintSource interface {
+	ListOrphanedPublishedMintIDs(ctx context.Context) ([]string, error)
 }
 
 // ProcessingQueue defines the interface for async media processing
@@ -175,6 +184,13 @@ func (s *Service) SetDeletionDependencies(objectDeleter ObjectDeleter, metadataD
 // SetS3Service wires the object-storage client used for original media bytes.
 func (s *Service) SetS3Service(s3Service S3Service) {
 	s.s3Service = s3Service
+}
+
+// SetOrphanPublishedMintSource wires the enumeration of orphaned durable
+// published mints used by ReconcileOrphanedPublishedMedia. Leaving it unwired
+// makes reconciliation a no-op; the registry wires it from the CMS side.
+func (s *Service) SetOrphanPublishedMintSource(source OrphanedPublishedMintSource) {
+	s.orphanSource = source
 }
 
 // SetEditorialKMSKeyID configures the instance key used to keep internal
@@ -766,6 +782,37 @@ func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) err
 		return nil
 	}
 	s.deletePublishedObject(ctx, bucket, publishedKey)
+	return nil
+}
+
+// ReconcileOrphanedPublishedMedia re-runs the best-effort unpublish for every
+// durable published mint the wired OrphanedPublishedMintSource reports as
+// orphaned (owning draft terminally failed, no live article reference). It is
+// idempotent: UnpublishMediaDurably is a no-op once the record is unpublished
+// and version-guarded against concurrent re-mints, so repeated reconciliation
+// is safe and a live published asset is never touched.
+func (s *Service) ReconcileOrphanedPublishedMedia(ctx context.Context) error {
+	if s.orphanSource == nil {
+		return nil
+	}
+	orphanedIDs, err := s.orphanSource.ListOrphanedPublishedMintIDs(ctx)
+	if err != nil {
+		return errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	for _, mediaID := range orphanedIDs {
+		mediaID = strings.TrimSpace(mediaID)
+		if mediaID == "" {
+			continue
+		}
+		s.logger.Info("reconciling orphaned published media mint",
+			zap.String("media_id", mediaID))
+		if err := s.UnpublishMediaDurably(ctx, mediaID); err != nil {
+			// UnpublishMediaDurably is best-effort and reports failures at error
+			// level; keep reconciling the remaining candidates.
+			s.logger.Warn("orphan reconciliation unpublish failed",
+				zap.String("media_id", mediaID), zap.Error(err))
+		}
+	}
 	return nil
 }
 

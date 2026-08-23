@@ -261,6 +261,54 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(_ context.Context, due
 	return result, nextCursor, nil
 }
 
+// ListDraftsByStatusPaginated lists drafts in one status, paginated by GSI4SK
+// cursor values. It powers orphan reconciliation over terminally failed drafts
+// whose bound media mints may have survived a best-effort rollback.
+func (r *DraftRepository) ListDraftsByStatusPaginated(_ context.Context, status string, limit int, cursor string) ([]*models.Draft, string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 25
+	}
+
+	keys := r.draftsByStatus[strings.ToLower(strings.TrimSpace(status))]
+	drafts := make([]*models.Draft, 0, len(keys))
+	for _, key := range keys {
+		if draft, exists := r.drafts[key]; exists {
+			drafts = append(drafts, draft)
+		}
+	}
+
+	sort.Slice(drafts, func(i, j int) bool {
+		return drafts[i].GSI4SK < drafts[j].GSI4SK
+	})
+
+	startIdx := 0
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		for i, draft := range drafts {
+			if draft.GSI4SK > cursor {
+				startIdx = i
+				break
+			}
+		}
+	}
+
+	endIdx := startIdx + limit
+	if endIdx > len(drafts) {
+		endIdx = len(drafts)
+	}
+
+	result := drafts[startIdx:endIdx]
+	nextCursor := ""
+	if endIdx < len(drafts) && len(result) > 0 {
+		nextCursor = result[len(result)-1].GSI4SK
+	}
+
+	return result, nextCursor, nil
+}
+
 // Clear clears all data (test helper)
 func (r *DraftRepository) Clear() {
 	r.mu.Lock()

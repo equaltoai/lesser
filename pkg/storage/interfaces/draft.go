@@ -40,4 +40,9 @@ type DraftRepository interface {
 
 	// ListScheduledDraftsDuePaginated lists drafts scheduled to publish at or before the provided time
 	ListScheduledDraftsDuePaginated(ctx context.Context, dueBefore time.Time, limit int, cursor string) ([]*models.Draft, string, error)
+
+	// ListDraftsByStatusPaginated lists drafts in one status (for example the
+	// terminally failed drafts whose bound media mints orphan reconciliation
+	// re-examines), paginated by GSI4SK cursor values.
+	ListDraftsByStatusPaginated(ctx context.Context, status string, limit int, cursor string) ([]*models.Draft, string, error)
 }
