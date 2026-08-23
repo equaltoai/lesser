@@ -17,22 +17,22 @@ import (
 func m2ReadyInternalMedia(id, owner, digest string) *models.Media {
 	now := time.Now().UTC()
 	return &models.Media{
-		MediaID:     id,
-		UserID:      owner,
-		FileName:    id + ".png",
-		ContentType: "image/png",
-		FileSize:    12,
-		ContentHash: digest,
-		S3Bucket:    "media-private",
-		S3Key:       "media/2026/08/23/" + id + ".png",
-		Status:      "ready",
-		Width:       120,
-		Height:      80,
-		Visibility:  models.MediaVisibilityInternal,
+		MediaID:      id,
+		UserID:       owner,
+		FileName:     id + ".png",
+		ContentType:  "image/png",
+		FileSize:     12,
+		ContentHash:  digest,
+		S3Bucket:     "media-private",
+		S3Key:        "media/2026/08/23/" + id + ".png",
+		Status:       "ready",
+		Width:        120,
+		Height:       80,
+		Visibility:   models.MediaVisibilityInternal,
 		ModelVersion: 1,
-		UploadedAt:  now,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		UploadedAt:   now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 		Provenance: &models.MediaProvenance{
 			Origin:           models.EditorialMediaOriginSupplied,
 			ResponsibleActor: owner,
@@ -215,3 +215,104 @@ func TestServiceUpdateEditorialLifecycleEnforcesOwnerAndState(t *testing.T) {
 var _ = errors.New
 var _ = transcoding.TranscodeRequest{}
 var _ = zap.NewNop
+
+func TestServicePublishMediaDurablyCompensatesRecordWriteFailure(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("e", 64)
+	internalReady := m2ReadyInternalMedia("m1", "alice", digest)
+
+	t.Run("record write failure deletes the orphaned published object", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		objectStore := newFakeMediaS3Service()
+		service.SetS3Service(objectStore)
+		service.cdnDomain = "cdn.example.test"
+		objectStore.objects["media-private/media/2026/08/23/m1.png"] = []byte("exact bytes")
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
+		mediaRepo.On("UpdateMediaPublishedState", mock.Anything, "m1",
+			"published/media/2026/08/23/m1.png",
+			mock.MatchedBy(func(url string) bool { return strings.HasPrefix(url, "https://cdn.example.test/published/") }),
+			mock.MatchedBy(func(at time.Time) bool { return !at.IsZero() }),
+			1,
+		).Return(errors.New("record write failed")).Once()
+
+		_, err := service.PublishMediaDurably(context.Background(), "m1")
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrMediaUpdateFailed)
+		require.Len(t, objectStore.deleteCalls, 1, "the orphaned published object must be deleted exactly once")
+		require.Equal(t, "media-private", objectStore.deleteCalls[0].bucket)
+		require.Equal(t, "published/media/2026/08/23/m1.png", objectStore.deleteCalls[0].key)
+		_, ok := objectStore.objects["media-private/published/media/2026/08/23/m1.png"]
+		require.False(t, ok, "no world-readable orphan may survive a failed publish")
+	})
+
+	t.Run("cleanup failure does not mask the record error", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		objectStore := newFakeMediaS3Service()
+		objectStore.deleteErr = errors.New("cleanup failed")
+		service.SetS3Service(objectStore)
+		service.cdnDomain = "cdn.example.test"
+		objectStore.objects["media-private/media/2026/08/23/m1.png"] = []byte("exact bytes")
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
+		mediaRepo.On("UpdateMediaPublishedState", mock.Anything, "m1",
+			"published/media/2026/08/23/m1.png",
+			mock.MatchedBy(func(url string) bool { return strings.HasPrefix(url, "https://cdn.example.test/published/") }),
+			mock.MatchedBy(func(at time.Time) bool { return !at.IsZero() }),
+			1,
+		).Return(errors.New("record write failed")).Once()
+
+		_, err := service.PublishMediaDurably(context.Background(), "m1")
+		require.ErrorIs(t, err, ErrMediaUpdateFailed)
+		require.NotContains(t, err.Error(), "cleanup failed", "cleanup failure must not be surfaced")
+		require.Len(t, objectStore.deleteCalls, 1)
+	})
+}
+
+func TestServiceUnpublishMediaDurablyClearsRecordAndDeletesObject(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("f", 64)
+	now := time.Now().UTC()
+	publishedAt := now.Add(-time.Minute)
+	published := m2ReadyInternalMedia("m1", "alice", digest)
+	published.ModelVersion = 2
+	published.PublishedS3Key = "published/media/2026/08/23/m1.png"
+	published.PublishedURL = "https://cdn.example.test/published/media/2026/08/23/m1.png"
+	published.PublishedAt = &publishedAt
+
+	t.Run("clears record then deletes object", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		objectStore := newFakeMediaS3Service()
+		service.SetS3Service(objectStore)
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(published, nil).Once()
+		mediaRepo.On("ClearMediaPublishedState", mock.Anything, "m1", 2).Return(nil).Once()
+		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
+		require.Len(t, objectStore.deleteCalls, 1)
+		require.Equal(t, "media-private", objectStore.deleteCalls[0].bucket)
+		require.Equal(t, "published/media/2026/08/23/m1.png", objectStore.deleteCalls[0].key)
+	})
+
+	t.Run("stale version skips the object delete", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		objectStore := newFakeMediaS3Service()
+		service.SetS3Service(objectStore)
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(published, nil).Once()
+		mediaRepo.On("ClearMediaPublishedState", mock.Anything, "m1", 2).Return(errors.New("conditional check failed")).Once()
+		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
+		require.Empty(t, objectStore.deleteCalls, "a stale rollback must not delete a concurrently re-minted serving")
+	})
+
+	t.Run("unpublished asset is a no-op", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		objectStore := newFakeMediaS3Service()
+		service.SetS3Service(objectStore)
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(m2ReadyInternalMedia("m1", "alice", digest), nil).Once()
+		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
+		require.Empty(t, objectStore.deleteCalls)
+	})
+
+	t.Run("missing media is a no-op", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		objectStore := newFakeMediaS3Service()
+		service.SetS3Service(objectStore)
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(nil, errors.New("not found")).Once()
+		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
+		require.Empty(t, objectStore.deleteCalls)
+	})
+}

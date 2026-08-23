@@ -30,6 +30,9 @@ func (m *MockMediaRepository) CreateMedia(ctx context.Context, media *models.Med
 
 func (m *MockMediaRepository) GetMedia(ctx context.Context, mediaID string) (*models.Media, error) {
 	args := m.Called(ctx, mediaID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*models.Media), args.Error(1)
 }
 

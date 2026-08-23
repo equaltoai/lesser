@@ -677,10 +677,13 @@ func (s *Service) PublishMediaDurably(ctx context.Context, mediaID string) (*Pub
 	_ = location
 	publishedURL := fmt.Sprintf("https://%s/%s", s.cdnDomain, destinationKey)
 	publishedAt := time.Now().UTC()
-	if s.mediaRepo != nil {
-		if err := s.mediaRepo.UpdateMediaPublishedState(ctx, mediaID, destinationKey, publishedURL, publishedAt, media.ModelVersion); err != nil {
-			return nil, errors.Join(ErrMediaUpdateFailed, err)
-		}
+	if err := s.mediaRepo.UpdateMediaPublishedState(ctx, mediaID, destinationKey, publishedURL, publishedAt, media.ModelVersion); err != nil {
+		// The copy is already live on the unsigned CDN surface but no record
+		// references it. Compensate with a best-effort delete of the
+		// deterministic published key; a cleanup failure is logged, never
+		// surfaced, so the caller still sees the record-write error.
+		s.deletePublishedObject(ctx, bucket, destinationKey)
+		return nil, errors.Join(ErrMediaUpdateFailed, err)
 	}
 	s.logger.Info("minted durable published serving",
 		zap.String("media_id", mediaID),
@@ -697,6 +700,53 @@ func (s *Service) PublishMediaDurably(ctx context.Context, mediaID string) (*Pub
 		S3Key:       destinationKey,
 		PublishedAt: publishedAt,
 	}, nil
+}
+
+// deletePublishedObject best-effort removes one durable published object. The
+// deterministic published key makes the compensating delete idempotent, and the
+// original error is preserved: cleanup failures are logged, never surfaced.
+func (s *Service) deletePublishedObject(ctx context.Context, bucket, destinationKey string) {
+	if strings.TrimSpace(bucket) == "" || strings.TrimSpace(destinationKey) == "" {
+		return
+	}
+	if err := s.s3Service.DeleteFile(ctx, bucket, destinationKey); err != nil {
+		s.logger.Warn("failed to compensate orphaned durable published serving",
+			zap.String("bucket", bucket),
+			zap.String("published_key", destinationKey),
+			zap.Error(err))
+	}
+}
+
+// UnpublishMediaDurably best-effort removes durable public serving minted for
+// one internal asset. It clears the record state first under the observed model
+// version (a concurrent re-mint advances the version and is left intact) and
+// only then deletes the deterministic published object. Assets without
+// published state are a no-op, so repeated rollback is idempotent.
+func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) error {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		// Unreadable or missing media means there is nothing durable to roll
+		// back; compensation is best-effort.
+		s.logger.Debug("unpublish rollback skipped for unreadable media",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	if media == nil || !media.IsInternalEditorial() || !media.IsPublished() {
+		return nil
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	publishedKey := strings.TrimSpace(media.PublishedS3Key)
+	if err := s.mediaRepo.ClearMediaPublishedState(ctx, mediaID, media.ModelVersion); err != nil {
+		s.logger.Warn("failed to clear published serving on rollback",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	s.deletePublishedObject(ctx, bucket, publishedKey)
+	return nil
 }
 
 // UpdateEditorialLifecycleCommand identifies the asset and the owner requesting
