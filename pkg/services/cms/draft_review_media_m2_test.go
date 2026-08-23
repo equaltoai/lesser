@@ -367,6 +367,86 @@ func mustDraft(t *testing.T, svc *DraftService, owner, draftID string) *models.D
 	return draft
 }
 
+// TestDraftReviewPublishFailureNeverUnpublishesPreexistingServing proves the
+// "a live published asset is never unpublished" invariant for the mint batch:
+// a failed publish rolls back only the mints this attempt created. An asset
+// that was already durably published by an earlier successful draft is re-minted
+// idempotently by a later draft, and when that later publish fails the rollback
+// must leave the first article's live serving untouched.
+func TestDraftReviewPublishFailureNeverUnpublishesPreexistingServing(t *testing.T) {
+	digestA := m2Digest("a")
+	digestB := m2Digest("b")
+	ctx := context.Background()
+
+	seedApprovedDraft := func(t *testing.T, svc *DraftService, repo *reviewMemRepo, draftID string, usages ...models.DraftMediaUsage) {
+		t.Helper()
+		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
+		require.NoError(t, svc.CreateDraft(ctx, draft))
+		_, err := svc.SetEditorialMedia(ctx, "owner", draft.ID, usages)
+		require.NoError(t, err)
+		require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+			OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: time.Now().UTC(),
+			ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
+		}))
+		_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+		require.NoError(t, err)
+	}
+
+	markPublished := func(media *memMediaRepo, id string) {
+		t.Helper()
+		published := *media.byID[id]
+		now := time.Now().UTC()
+		published.PublishedS3Key = "published/owner/" + id + ".png"
+		published.PublishedURL = "https://cdn.example.test/published/" + id + ".png"
+		published.PublishedAt = &now
+		published.ModelVersion = 2
+		media.byID[id] = &published
+	}
+
+	t.Run("failed second draft keeps the first draft's live serving", func(t *testing.T) {
+		svc, repo, media, minter := m2ReviewService(t)
+		media.byID["hero"] = m2ReadyMedia("hero", "owner", digestA)
+		minter.seedFromMedia(media)
+
+		// Draft A publishes: hero becomes durably published and the article is live.
+		seedApprovedDraft(t, svc, repo, "draft-a", models.DraftMediaUsage{MediaID: "hero", Role: models.EditorialMediaRoleHero})
+		article, err := svc.PublishDraft(ctx, "owner", "draft-a")
+		require.NoError(t, err)
+		require.NotNil(t, article.FeaturedImage)
+		markPublished(media, "hero")
+
+		// Draft B re-mints the same shared asset; its publish fails after minting.
+		seedApprovedDraft(t, svc, repo, "draft-b", models.DraftMediaUsage{MediaID: "hero", Role: models.EditorialMediaRoleHero})
+		svc.articleService = &memArticleServiceWithErrors{base: newMemArticleService(), createErr: errors.New("article create failed")}
+		_, err = svc.PublishDraft(ctx, "owner", "draft-b")
+		require.Error(t, err)
+		require.Empty(t, minter.unpublishCalls,
+			"a failed publish must never unpublish an asset that was already live before this mint")
+	})
+
+	t.Run("mixed batch rolls back only the newly minted asset", func(t *testing.T) {
+		svc, repo, media, minter := m2ReviewService(t)
+		media.byID["hero"] = m2ReadyMedia("hero", "owner", digestA)
+		media.byID["card"] = m2ReadyMedia("card", "owner", digestB)
+		minter.seedFromMedia(media)
+
+		seedApprovedDraft(t, svc, repo, "draft-a", models.DraftMediaUsage{MediaID: "hero", Role: models.EditorialMediaRoleHero})
+		article, err := svc.PublishDraft(ctx, "owner", "draft-a")
+		require.NoError(t, err)
+		require.NotNil(t, article.FeaturedImage)
+		markPublished(media, "hero")
+
+		seedApprovedDraft(t, svc, repo, "draft-b",
+			models.DraftMediaUsage{MediaID: "hero", Role: models.EditorialMediaRoleHero},
+			models.DraftMediaUsage{MediaID: "card", Role: models.EditorialMediaRoleSocialCard})
+		svc.articleService = &memArticleServiceWithErrors{base: newMemArticleService(), createErr: errors.New("article create failed")}
+		_, err = svc.PublishDraft(ctx, "owner", "draft-b")
+		require.Error(t, err)
+		require.Equal(t, []string{"card"}, minter.unpublishCalls,
+			"only the freshly minted card may be rolled back; the pre-published hero keeps its serving")
+	})
+}
+
 func ptrTime(value time.Time) *time.Time {
 	return &value
 }

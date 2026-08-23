@@ -77,6 +77,32 @@ type editorialPublishMinter interface {
 	UnpublishEditorialMedia(ctx context.Context, mediaID string) error
 }
 
+// draftMintBatch tracks the assets minted in one publish attempt together with
+// their pre-mint published state, so a compensating rollback never unpublishes
+// an asset that was already live before this mint. A shared asset may already
+// be durably published by an earlier successful publish (the update-existing-
+// article path re-mints the same assets idempotently); rolling it back would
+// kill the earlier article's live serving, which is exactly what the
+// "a live published asset is never unpublished" invariant forbids.
+type draftMintBatch struct {
+	// minted lists the assets this batch minted, in mint order.
+	minted []string
+	// wasPublished records, for each minted asset, whether it was already
+	// durably published when this batch began minting it.
+	wasPublished map[string]bool
+}
+
+func (b *draftMintBatch) record(mediaID string, wasPublished bool) {
+	if b == nil {
+		return
+	}
+	b.minted = append(b.minted, mediaID)
+	if b.wasPublished == nil {
+		b.wasPublished = map[string]bool{}
+	}
+	b.wasPublished[mediaID] = wasPublished
+}
+
 // DraftService handles business logic for drafts
 type DraftService struct {
 	draftRepo              draftRepository
@@ -423,7 +449,7 @@ func (s *DraftService) PublishDraftWithAttribution(ctx context.Context, authorID
 	// level and left for ReconcileOrphanedPublishedMedia, so a failed publish
 	// should not leave an orphaned IsPublished record or world-readable bytes
 	// but the invariant is reconciled rather than guaranteed.
-	mints, err := s.mintDraftBoundMedia(ctx, draft, approval.mediaDigests)
+	mints, batch, err := s.mintDraftBoundMedia(ctx, draft, approval.mediaDigests)
 	if err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		return nil, err
@@ -431,10 +457,10 @@ func (s *DraftService) PublishDraftWithAttribution(ctx context.Context, authorID
 
 	actedBy = cmsNormalizeAttributionActorID(actedBy)
 	if draft.ObjectID != nil && strings.TrimSpace(*draft.ObjectID) != "" {
-		return s.publishDraftUpdateExistingArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy, mints)
+		return s.publishDraftUpdateExistingArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy, mints, batch)
 	}
 
-	return s.publishDraftCreateNewArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy, mints)
+	return s.publishDraftCreateNewArticle(ctx, authorID, draftID, domain, objectID, slug, draft, now, actedBy, mints, batch)
 }
 
 // requireBoundMediaReady blocks publication when any required bound asset cannot
@@ -454,57 +480,75 @@ func requireBoundMediaReady(approval *draftReviewApprovalState) error {
 // the previously minted assets are rolled back best-effort so a failed publish
 // should not leave an orphaned IsPublished record or world-readable bytes
 // behind; a rollback that itself fails is logged at error level inside the
-// media service and reconciled by ReconcileOrphanedPublishedMedia.
-func (s *DraftService) mintDraftBoundMedia(ctx context.Context, draft *models.Draft, approvedDigests map[string]string) (map[string]EditorialPublishedMedia, error) {
+// media service and reconciled by ReconcileOrphanedPublishedMedia. An asset
+// that was already durably published before this mint (a shared asset re-minted
+// idempotently) is recorded as such and is never rolled back, so a failed
+// publish cannot unpublish a serving that an earlier successful publish lives
+// on. The pre-mint published state is read immediately before each mint, under
+// the same repository the publish gate resolved, so a concurrent re-mint by
+// another draft is still bounded to the reconcile path's documented window.
+func (s *DraftService) mintDraftBoundMedia(ctx context.Context, draft *models.Draft, approvedDigests map[string]string) (map[string]EditorialPublishedMedia, *draftMintBatch, error) {
 	if len(draft.EditorialMedia) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if s.editorialPublishMinter == nil {
-		return nil, stdErrors.New("editorial media publish transition is unavailable")
+		return nil, nil, stdErrors.New("editorial media publish transition is unavailable")
+	}
+	if s.mediaRepo == nil {
+		return nil, nil, stdErrors.New("editorial media repository is unavailable")
 	}
 	mints := make(map[string]EditorialPublishedMedia, len(draft.EditorialMedia))
-	mintedIDs := make([]string, 0, len(draft.EditorialMedia))
+	batch := &draftMintBatch{}
 	for _, usage := range draft.EditorialMedia {
+		// Capture the asset's pre-mint published state before the mint so the
+		// batch rollback can never unpublish serving that predates this publish.
+		media, getErr := s.mediaRepo.GetMedia(ctx, usage.MediaID)
+		if getErr != nil {
+			s.rollbackDraftMints(ctx, batch)
+			return nil, nil, getErr
+		}
+		wasPublished := media != nil && media.IsPublished()
 		mint, err := s.editorialPublishMinter.PublishEditorialMedia(ctx, usage.MediaID)
 		if err != nil {
-			s.rollbackDraftMints(ctx, mintedIDs)
-			return nil, err
+			s.rollbackDraftMints(ctx, batch)
+			return nil, nil, err
 		}
 		if mint == nil {
-			s.rollbackDraftMints(ctx, mintedIDs)
-			return nil, fmt.Errorf("%w: media %q returned no published serving", ErrDraftReviewMediaRequired, usage.MediaID)
+			s.rollbackDraftMints(ctx, batch)
+			return nil, nil, fmt.Errorf("%w: media %q returned no published serving", ErrDraftReviewMediaRequired, usage.MediaID)
 		}
 		expected := approvedDigests[usage.MediaID]
 		if strings.TrimSpace(expected) == "" || strings.TrimSpace(mint.ContentHash) != expected {
-			s.rollbackDraftMints(ctx, mintedIDs)
-			return nil, fmt.Errorf("%w: media %q bytes changed after approval", ErrDraftReviewMediaRequired, usage.MediaID)
+			s.rollbackDraftMints(ctx, batch)
+			return nil, nil, fmt.Errorf("%w: media %q bytes changed after approval", ErrDraftReviewMediaRequired, usage.MediaID)
 		}
 		mints[usage.MediaID] = *mint
-		mintedIDs = append(mintedIDs, usage.MediaID)
+		batch.record(usage.MediaID, wasPublished)
 	}
-	return mints, nil
+	return mints, batch, nil
 }
 
 // rollbackDraftMints best-effort removes durable published serving minted for
-// the assets of a publish that failed before the article was committed. The
-// deterministic published keys make the compensating deletes idempotent; a
-// rollback failure is logged and never surfaced over the original publish error.
-func (s *DraftService) rollbackDraftMints(ctx context.Context, mintedIDs []string) {
-	for i := len(mintedIDs) - 1; i >= 0; i-- {
-		if err := s.editorialPublishMinter.UnpublishEditorialMedia(ctx, mintedIDs[i]); err != nil {
+// the assets of a publish that failed before the article was committed. Assets
+// that were already durably published before this batch's mint are skipped:
+// their serving belongs to an earlier successful publish and must survive this
+// rollback. The deterministic published keys make the compensating deletes
+// idempotent; a rollback failure is logged and never surfaced over the original
+// publish error.
+func (s *DraftService) rollbackDraftMints(ctx context.Context, batch *draftMintBatch) {
+	if batch == nil {
+		return
+	}
+	for i := len(batch.minted) - 1; i >= 0; i-- {
+		mediaID := batch.minted[i]
+		if batch.wasPublished[mediaID] {
+			continue
+		}
+		if err := s.editorialPublishMinter.UnpublishEditorialMedia(ctx, mediaID); err != nil {
 			s.logger.Warn("failed to roll back editorial published serving",
-				zap.String("media_id", mintedIDs[i]), zap.Error(err))
+				zap.String("media_id", mediaID), zap.Error(err))
 		}
 	}
-}
-
-// mintedMediaIDs returns the media IDs of a mint batch for compensating rollback.
-func mintedMediaIDs(mints map[string]EditorialPublishedMedia) []string {
-	ids := make([]string, 0, len(mints))
-	for id := range mints {
-		ids = append(ids, id)
-	}
-	return ids
 }
 
 func (s *DraftService) isPublishedDraftCleanup(draft *models.Draft) bool {
@@ -578,18 +622,18 @@ func (s *DraftService) transitionDraftToPublishing(ctx context.Context, authorID
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
 
-func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string, mints map[string]EditorialPublishedMedia) (*models.Article, error) {
+func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string, mints map[string]EditorialPublishedMedia, batch *draftMintBatch) (*models.Article, error) {
 	article, err := s.articleService.GetArticle(ctx, objectID)
 	if err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
-		s.rollbackDraftMints(ctx, mintedMediaIDs(mints))
+		s.rollbackDraftMints(ctx, batch)
 		return nil, err
 	}
 
 	if strings.TrimSpace(article.AttributedTo) != common.GenerateActorID(domain, authorID) {
 		err := stdErrors.New("draft does not have permission to update this article")
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
-		s.rollbackDraftMints(ctx, mintedMediaIDs(mints))
+		s.rollbackDraftMints(ctx, batch)
 		return nil, err
 	}
 
@@ -614,7 +658,7 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 
 	if err := s.articleService.UpdateArticle(ctx, article); err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
-		s.rollbackDraftMints(ctx, mintedMediaIDs(mints))
+		s.rollbackDraftMints(ctx, batch)
 		return nil, err
 	}
 
@@ -708,7 +752,7 @@ func cmsCloneArticleForDraftMutation(article *models.Article) *models.Article {
 	return &cp
 }
 
-func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string, mints map[string]EditorialPublishedMedia) (*models.Article, error) {
+func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string, mints map[string]EditorialPublishedMedia, batch *draftMintBatch) (*models.Article, error) {
 	article := &models.Article{
 		Object: models.Object{
 			ID:           objectID,
@@ -732,7 +776,7 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 
 	if err := s.articleService.CreateArticle(ctx, article); err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
-		s.rollbackDraftMints(ctx, mintedMediaIDs(mints))
+		s.rollbackDraftMints(ctx, batch)
 		return nil, err
 	}
 
