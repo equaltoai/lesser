@@ -418,8 +418,11 @@ func (s *DraftService) PublishDraftWithAttribution(ctx context.Context, authorID
 	// Minting runs only after the draft is committed to the publishing
 	// transition, so a failed transition cannot leave minted state behind. A
 	// mint failure rolls back the batch and marks the draft failed; a later
-	// article-write failure rolls the batch back the same way, so no failed
-	// publish leaves an orphaned IsPublished record or world-readable bytes.
+	// article-write failure rolls the batch back the same way. Both rollbacks
+	// are best-effort: a compensating delete that fails is logged at error
+	// level and left for ReconcileOrphanedPublishedMedia, so a failed publish
+	// should not leave an orphaned IsPublished record or world-readable bytes
+	// but the invariant is reconciled rather than guaranteed.
 	mints, err := s.mintDraftBoundMedia(ctx, draft, approval.mediaDigests)
 	if err != nil {
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
@@ -448,8 +451,10 @@ func requireBoundMediaReady(approval *draftReviewApprovalState) error {
 // serving, verifying that the exact bytes minted match the digest bound into
 // the approved revision hash. A mismatch (the media record changed between
 // approval resolution and mint) fails closed. If any asset in the batch fails,
-// the previously minted assets are rolled back so no failed publish leaves an
-// orphaned IsPublished record or world-readable bytes behind.
+// the previously minted assets are rolled back best-effort so a failed publish
+// should not leave an orphaned IsPublished record or world-readable bytes
+// behind; a rollback that itself fails is logged at error level inside the
+// media service and reconciled by ReconcileOrphanedPublishedMedia.
 func (s *DraftService) mintDraftBoundMedia(ctx context.Context, draft *models.Draft, approvedDigests map[string]string) (map[string]EditorialPublishedMedia, error) {
 	if len(draft.EditorialMedia) == 0 {
 		return nil, nil
@@ -772,7 +777,14 @@ func (s *DraftService) markDraftFailed(ctx context.Context, authorID string, dra
 	draft.Status = draftStatusFailed
 	draft.PublishFailureReason = classifyDraftPublishFailureReason(err)
 	draft.UpdatedAt = time.Now()
-	_ = s.draftRepo.UpdateDraft(ctx, authorID, draft)
+	if updateErr := s.draftRepo.UpdateDraft(ctx, authorID, draft); updateErr != nil {
+		// The failed status is best-effort: if the marker write itself fails,
+		// the failure is logged and the original publish error still surfaces.
+		s.logger.Warn("failed to mark draft failed",
+			zap.String("draft_id", draftID),
+			zap.String("author_id", authorID),
+			zap.Error(updateErr))
+	}
 }
 
 // CancelScheduledDraft cancels a scheduled draft publish.

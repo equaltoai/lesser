@@ -9,10 +9,32 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/services/media/transcoding"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
+
+// observedTestService builds the media service with a caller-provided logger
+// core so tests can assert on emitted log entries.
+func observedTestService(t *testing.T, core zapcore.Core) (*Service, *MockMediaRepository) {
+	t.Helper()
+	mediaRepo := new(MockMediaRepository)
+	service := NewService(
+		mediaRepo,
+		nil,
+		streaming.NewMockPublisher(),
+		new(MockJobQueueService),
+		zap.New(core),
+		"test-bucket",
+		"cdn.example.com",
+	)
+	service.SetDeletionDependencies(&recordingMediaObjectDeleter{}, &recordingMediaMetadataDeleter{})
+	service.SetS3Service(newFakeMediaS3Service())
+	return service, mediaRepo
+}
 
 func m2ReadyInternalMedia(id, owner, digest string) *models.Media {
 	now := time.Now().UTC()
@@ -347,6 +369,57 @@ func TestServiceUnpublishMediaDurablyClearsRecordAndDeletesObject(t *testing.T) 
 		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(nil, errors.New("not found")).Once()
 		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
 		require.Empty(t, objectStore.deleteCalls)
+	})
+}
+
+// TestServiceUnpublishMediaDurablyCompensationFailuresAreErrorLogged proves the
+// two compensation-failure sites emit error-level logs so an orphaned serving
+// stays alarmable even though the rollback contract remains best-effort.
+func TestServiceUnpublishMediaDurablyCompensationFailuresAreErrorLogged(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("k", 64)
+	now := time.Now().UTC()
+	publishedAt := now.Add(-time.Minute)
+	published := m2ReadyInternalMedia("m1", "alice", digest)
+	published.ModelVersion = 2
+	published.PublishedS3Key = "published/media/2026/08/23/m1.png"
+	published.PublishedURL = "https://cdn.example.test/published/media/2026/08/23/m1.png"
+	published.PublishedAt = &publishedAt
+
+	t.Run("clear failure is error-logged and the record stays published", func(t *testing.T) {
+		core, observed := observer.New(zap.DebugLevel)
+		service, mediaRepo := observedTestService(t, core)
+		objectStore := newFakeMediaS3Service()
+		service.SetS3Service(objectStore)
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(published, nil).Once()
+		mediaRepo.On("ClearMediaPublishedState", mock.Anything, "m1", 2).Return(errors.New("clear failed")).Once()
+		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
+
+		entries := observed.FilterMessage("failed to clear published serving on rollback").All()
+		require.Len(t, entries, 1, "a failed clear must emit exactly one compensation-failure log")
+		require.Equal(t, zap.ErrorLevel, entries[0].Level)
+		require.Equal(t, "m1", entries[0].ContextMap()["media_id"])
+		require.Empty(t, objectStore.deleteCalls)
+	})
+
+	t.Run("delete failure is error-logged", func(t *testing.T) {
+		core, observed := observer.New(zap.DebugLevel)
+		service, mediaRepo := observedTestService(t, core)
+		objectStore := newFakeMediaS3Service()
+		objectStore.deleteErr = errors.New("delete failed")
+		service.SetS3Service(objectStore)
+		cleared := *published
+		cleared.PublishedS3Key = ""
+		cleared.PublishedURL = ""
+		cleared.PublishedAt = nil
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(published, nil).Once()
+		mediaRepo.On("ClearMediaPublishedState", mock.Anything, "m1", 2).Return(nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(&cleared, nil).Once()
+		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
+
+		entries := observed.FilterMessage("failed to compensate orphaned durable published serving").All()
+		require.Len(t, entries, 1, "a failed compensating delete must emit exactly one compensation-failure log")
+		require.Equal(t, zap.ErrorLevel, entries[0].Level)
+		require.Equal(t, "published/media/2026/08/23/m1.png", entries[0].ContextMap()["published_key"])
 	})
 }
 

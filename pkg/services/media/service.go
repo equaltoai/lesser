@@ -704,13 +704,14 @@ func (s *Service) PublishMediaDurably(ctx context.Context, mediaID string) (*Pub
 
 // deletePublishedObject best-effort removes one durable published object. The
 // deterministic published key makes the compensating delete idempotent, and the
-// original error is preserved: cleanup failures are logged, never surfaced.
+// original error is preserved: cleanup failures are logged at error level so an
+// orphaned object stays alarmable, but never surfaced over the original error.
 func (s *Service) deletePublishedObject(ctx context.Context, bucket, destinationKey string) {
 	if strings.TrimSpace(bucket) == "" || strings.TrimSpace(destinationKey) == "" {
 		return
 	}
 	if err := s.s3Service.DeleteFile(ctx, bucket, destinationKey); err != nil {
-		s.logger.Warn("failed to compensate orphaned durable published serving",
+		s.logger.Error("failed to compensate orphaned durable published serving",
 			zap.String("bucket", bucket),
 			zap.String("published_key", destinationKey),
 			zap.Error(err))
@@ -743,7 +744,10 @@ func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) err
 	bucket := strings.TrimSpace(media.S3Bucket)
 	publishedKey := strings.TrimSpace(media.PublishedS3Key)
 	if err := s.mediaRepo.ClearMediaPublishedState(ctx, mediaID, media.ModelVersion); err != nil {
-		s.logger.Warn("failed to clear published serving on rollback",
+		// A failed clear leaves the record published. The failure is logged at
+		// error level so the orphan stays alarmable, then swallowed to preserve
+		// the best-effort contract; ReconcileOrphanedPublishedMedia can retry it.
+		s.logger.Error("failed to clear published serving on rollback",
 			zap.String("media_id", mediaID), zap.Error(err))
 		return nil
 	}
