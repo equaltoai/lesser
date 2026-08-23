@@ -71,23 +71,91 @@ type cmsOrphanedPublishedMintSource struct {
 // closed): an orphan left behind stays alarmable and can be retried, while a
 // live published asset is never unpublished.
 func (src *cmsOrphanedPublishedMintSource) ListOrphanedPublishedMintIDs(ctx context.Context) ([]string, error) {
-	cursor := ""
 	seen := map[string]struct{}{}
 	var orphaned []string
+	err := src.forEachOrphanCandidateDraft(ctx, func(draft *models.Draft) error {
+		orphaned = append(orphaned, src.classifyDraftMints(ctx, draft, seen)...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return orphaned, nil
+}
+
+// forEachOrphanCandidateDraft pages every draft whose mints are reconciliation
+// candidates (terminally failed, plus crash-stuck publishing drafts older than
+// the stale horizon) and invokes fn for each. Listing and the per-candidate
+// re-check share this enumeration so both see the same candidate set.
+func (src *cmsOrphanedPublishedMintSource) forEachOrphanCandidateDraft(ctx context.Context, fn func(draft *models.Draft) error) error {
+	cursor := ""
 	for {
 		drafts, next, err := src.drafts.ListDraftsByStatusPaginated(ctx, draftStatusFailed, orphanReconcilePageSize, cursor)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for _, draft := range drafts {
-			orphaned = append(orphaned, src.classifyDraftMints(ctx, draft, seen)...)
+			if err := fn(draft); err != nil {
+				return err
+			}
 		}
 		cursor = next
 		if cursor == "" {
 			break
 		}
 	}
-	return orphaned, nil
+	return nil
+}
+
+// RecheckOrphanedPublishedMint re-verifies one candidate's orphan premise at
+// unpublish time, closing the enumerate-then-unpublish TOCTOU window: the
+// owning draft may have been republished (a retry succeeded and re-minted) or a
+// live article may have appeared since the enumeration. It re-runs the same
+// candidate enumeration and classification against the current state. Any
+// doubt aborts the candidate (fail closed): an unverifiable media record, a
+// reference-check error, or a media no longer bound by a failed draft all
+// report false so a live published asset is never unpublished.
+func (src *cmsOrphanedPublishedMintSource) RecheckOrphanedPublishedMint(ctx context.Context, mediaID string) (bool, error) {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return false, nil
+	}
+	media, err := src.media.GetMedia(ctx, mediaID)
+	if err != nil {
+		return false, err
+	}
+	if media == nil || !media.IsPublished() {
+		// Already cleared (or never minted): nothing to unpublish.
+		return false, nil
+	}
+	stillOrphaned := false
+	err = src.forEachOrphanCandidateDraft(ctx, func(draft *models.Draft) error {
+		if !draftBindsMedia(draft, mediaID) {
+			return nil
+		}
+		if src.isOrphanedMint(ctx, draft, mediaID) {
+			stillOrphaned = true
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return stillOrphaned, nil
+}
+
+// draftBindsMedia reports whether one draft's editorial-media binding includes
+// the media ID.
+func draftBindsMedia(draft *models.Draft, mediaID string) bool {
+	if draft == nil {
+		return false
+	}
+	for _, usage := range draft.EditorialMedia {
+		if strings.TrimSpace(usage.MediaID) == mediaID {
+			return true
+		}
+	}
+	return false
 }
 
 // classifyDraftMints reports which of one failed draft's bound media mints are
@@ -158,13 +226,10 @@ func (src *cmsOrphanedPublishedMintSource) referencesLiveArticle(ctx context.Con
 		objectID := strings.TrimSpace(*draft.ObjectID)
 		if objectID != "" {
 			article, err := src.articles.GetArticle(ctx, objectID)
-			if err != nil {
-				if errors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound) {
-					// Target article gone: nothing referenced there.
-				} else {
-					return false, err
-				}
-			} else if article != nil && articleReferencesMedia(article, mediaID, publishedURL) {
+			if err != nil && !errors.Is(err, storage.ErrNotFound) && !apperrors.HasCode(err, apperrors.CodeNotFound) {
+				return false, err
+			}
+			if article != nil && articleReferencesMedia(article, mediaID, publishedURL) {
 				return true, nil
 			}
 		}

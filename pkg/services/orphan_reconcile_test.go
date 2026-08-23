@@ -29,13 +29,14 @@ func (f *fakeOrphanDrafts) ListDraftsByStatusPaginated(_ context.Context, _ stri
 	if f.err != nil {
 		return nil, "", f.err
 	}
-	if cursor == "" {
+	switch cursor {
+	case "":
 		return f.pageOne, "page-1", nil
-	}
-	if cursor == "page-1" {
+	case "page-1":
 		return f.pageTwo, "", nil
+	default:
+		return nil, "", nil
 	}
-	return nil, "", nil
 }
 
 type fakeOrphanMedia struct {
@@ -336,6 +337,95 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 		)
 		_, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.Error(t, err)
+	})
+}
+
+// TestOrphanedPublishedMintRecheckClosesEnumerationTOCTOU proves the re-check
+// run at unpublish time re-verifies the orphan premise against current state:
+// a draft that transitions failed -> published (an author retry succeeded)
+// between the enumeration and the unpublish aborts the candidate.
+func TestOrphanedPublishedMintRecheckClosesEnumerationTOCTOU(t *testing.T) {
+	hero := orphanReconcilePublishedMedia("hero")
+	ctx := context.Background()
+
+	t.Run("draft republished between enumeration and re-check aborts the candidate", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		drafts := &fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}}
+		src := newOrphanSource(
+			drafts,
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
+
+		ids, err := src.ListOrphanedPublishedMintIDs(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"hero"}, ids, "the failed draft's orphan mint is a candidate")
+
+		// The author's retry succeeds between enumeration and unpublish. A
+		// republished draft leaves the failed status index, which is what the
+		// enumeration fake models by no longer yielding it.
+		drafts.pageOne = nil
+		still, err := src.RecheckOrphanedPublishedMint(ctx, "hero")
+		require.NoError(t, err)
+		require.False(t, still, "a republished draft's just-minted serving must not be unpublished")
+	})
+
+	t.Run("still-failed candidate passes the re-check", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		drafts := &fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}}
+		src := newOrphanSource(
+			drafts,
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"hero"}, ids)
+		still, err := src.RecheckOrphanedPublishedMint(ctx, "hero")
+		require.NoError(t, err)
+		require.True(t, still)
+	})
+
+	t.Run("live article appearing between enumeration and re-check aborts the candidate", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		objectID := "https://example.test/articles/existing"
+		article := &models.Article{Object: models.Object{ID: objectID}}
+		article.FeaturedImage = &models.Media{MediaID: "hero", S3Key: "published/alice/hero.png"}
+		articles := &fakeOrphanArticles{byID: map[string]*models.Article{objectID: article}}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			articles,
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"hero"}, ids, "no live article existed at enumeration time")
+
+		// The article appears after enumeration: the re-check must abort.
+		articles.byAuthor = map[string][]*models.Article{common.GenerateActorID("example.test", "alice"): {article}}
+		still, err := src.RecheckOrphanedPublishedMint(ctx, "hero")
+		require.NoError(t, err)
+		require.False(t, still, "a live article referencing the asset must abort the unpublish")
+	})
+
+	t.Run("unpublished media is not an orphan at re-check time", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		cleared := *hero
+		cleared.PublishedS3Key = ""
+		cleared.PublishedURL = ""
+		cleared.PublishedAt = nil
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": &cleared}},
+			nil,
+			zap.New(core),
+		)
+		still, err := src.RecheckOrphanedPublishedMint(ctx, "hero")
+		require.NoError(t, err)
+		require.False(t, still)
 	})
 }
 

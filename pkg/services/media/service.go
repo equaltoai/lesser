@@ -108,8 +108,12 @@ type PublishedMediaCopier interface {
 // article references: assets minted by a publish whose draft is terminally
 // failed and whose compensating rollback never ran or failed. The registry
 // wires it from the CMS side; reconciliation is a no-op without it.
+// RecheckOrphanedPublishedMint re-verifies one candidate's orphan premise at
+// unpublish time so the enumerate-then-unpublish window cannot clear an asset a
+// concurrent republish just made live.
 type OrphanedPublishedMintSource interface {
 	ListOrphanedPublishedMintIDs(ctx context.Context) ([]string, error)
+	RecheckOrphanedPublishedMint(ctx context.Context, mediaID string) (bool, error)
 }
 
 // ProcessingQueue defines the interface for async media processing
@@ -790,7 +794,10 @@ func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) err
 // orphaned (owning draft terminally failed, no live article reference). It is
 // idempotent: UnpublishMediaDurably is a no-op once the record is unpublished
 // and version-guarded against concurrent re-mints, so repeated reconciliation
-// is safe and a live published asset is never touched.
+// is safe and a live published asset is never touched. Before each unpublish
+// the source re-verifies the candidate's orphan premise at the current state,
+// so a draft that was republished (or an article that appeared) between the
+// enumeration and the unpublish aborts that candidate.
 func (s *Service) ReconcileOrphanedPublishedMedia(ctx context.Context) error {
 	if s.orphanSource == nil {
 		return nil
@@ -802,6 +809,20 @@ func (s *Service) ReconcileOrphanedPublishedMedia(ctx context.Context) error {
 	for _, mediaID := range orphanedIDs {
 		mediaID = strings.TrimSpace(mediaID)
 		if mediaID == "" {
+			continue
+		}
+		// Re-verify the orphan premise at unpublish time. Unverifiable or
+		// changed candidates are skipped fail closed: a live published asset is
+		// never unpublished on a stale enumeration.
+		stillOrphaned, err := s.orphanSource.RecheckOrphanedPublishedMint(ctx, mediaID)
+		if err != nil {
+			s.logger.Warn("orphan reconciliation re-check failed; skipping candidate",
+				zap.String("media_id", mediaID), zap.Error(err))
+			continue
+		}
+		if !stillOrphaned {
+			s.logger.Info("orphan reconciliation candidate no longer orphaned; skipping",
+				zap.String("media_id", mediaID))
 			continue
 		}
 		s.logger.Info("reconciling orphaned published media mint",
