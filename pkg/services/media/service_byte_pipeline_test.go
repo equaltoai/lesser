@@ -18,6 +18,13 @@ type fakeMediaS3Service struct {
 	objects      map[string][]byte
 	contentTypes map[string]string
 	uploadErr    error
+	deleteErr    error
+	deleteCalls  []mediaS3DeleteCall
+}
+
+type mediaS3DeleteCall struct {
+	bucket string
+	key    string
 }
 
 func newFakeMediaS3Service() *fakeMediaS3Service {
@@ -44,6 +51,10 @@ func (f *fakeMediaS3Service) UploadFile(
 }
 
 func (f *fakeMediaS3Service) DeleteFile(_ context.Context, bucket, key string) error {
+	f.deleteCalls = append(f.deleteCalls, mediaS3DeleteCall{bucket: bucket, key: key})
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
 	delete(f.objects, bucket+"/"+key)
 	return nil
 }

@@ -2834,9 +2834,12 @@ func (r *Registry) getJobQueue() JobQueueServiceInterface {
 	}
 	// Try to create a real SQS-based job queue service
 	if r.config != nil && r.config.Config != nil {
-		if jobQueue, err := NewJobQueueService(r.config.Config, r.logger); err == nil {
+		jobQueue, err := NewJobQueueService(r.config.Config, r.logger)
+		if err == nil {
 			return jobQueue
 		}
+		r.logger.Warn("failed to initialize SQS job queue; falling back to simple log-only queue",
+			zap.Error(err))
 	}
 
 	// Fall back to simple job queue if SQS is not available

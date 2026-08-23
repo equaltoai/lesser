@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type fakeMediaS3API struct {
@@ -121,4 +124,24 @@ func TestRegistryMediaWiresObjectStoreAndProcessingQueue(t *testing.T) {
 	require.Equal(t, result.Media.MediaID, queued.MediaID)
 	require.Equal(t, "alice", queued.Username)
 	require.Equal(t, fileData, objectStore.objects[result.Media.S3Bucket+"/"+result.Media.S3Key])
+}
+
+func TestRegistryJobQueueFallbackWarnsWhenSQSInitializationFails(t *testing.T) {
+	missingConfig := filepath.Join(t.TempDir(), "missing-aws-config")
+	t.Setenv("AWS_PROFILE", "missing-media-queue-profile")
+	t.Setenv("AWS_CONFIG_FILE", missingConfig)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", missingConfig)
+
+	core, observed := observer.New(zapcore.WarnLevel)
+	registry := &Registry{
+		logger: zap.New(core),
+		config: &ServiceConfig{Config: &pkgconfig.Config{}},
+	}
+
+	queue := registry.getJobQueue()
+
+	require.IsType(t, &simpleJobQueue{}, queue)
+	entries := observed.FilterMessage("failed to initialize SQS job queue; falling back to simple log-only queue").All()
+	require.Len(t, entries, 1)
+	require.Equal(t, ErrAWSConfigLoad.Error(), entries[0].ContextMap()["error"])
 }

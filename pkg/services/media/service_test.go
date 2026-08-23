@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -673,23 +675,51 @@ func TestService_UploadMedia_ValidationErrors(t *testing.T) {
 }
 
 func TestService_UploadMedia_RepositoryError(t *testing.T) {
-	service, mediaRepo, _, _ := createTestService(t)
-	cmd := createValidUploadCommand()
-	ctx := context.Background()
+	tests := []struct {
+		name      string
+		deleteErr error
+	}{
+		{name: "cleanup succeeds"},
+		{name: "cleanup failure does not mask persistence error", deleteErr: errors.New("delete object failed")},
+	}
 
-	// Mock repository error
-	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(ErrDatabaseOperation)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, mediaRepo, jobQueue, _ := createTestService(t)
+			objectStore, ok := service.s3Service.(*fakeMediaS3Service)
+			require.True(t, ok)
+			objectStore.deleteErr = tt.deleteErr
+			cmd := createValidUploadCommand()
+			ctx := context.Background()
+			var persistedMedia *models.Media
 
-	// Execute
-	result, err := service.UploadMedia(ctx, cmd)
+			mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).
+				Run(func(args mock.Arguments) {
+					persistedMedia = args.Get(1).(*models.Media)
+				}).
+				Return(ErrDatabaseOperation).
+				Once()
 
-	// Assertions
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "Failed to store media record")
-	assert.Contains(t, err.Error(), "database error")
+			result, err := service.UploadMedia(ctx, cmd)
 
-	mediaRepo.AssertExpectations(t)
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.ErrorIs(t, err, ErrMediaStorageFailed)
+			require.ErrorIs(t, err, ErrDatabaseOperation)
+			if tt.deleteErr != nil {
+				require.NotErrorIs(t, err, tt.deleteErr)
+			}
+			require.Contains(t, err.Error(), "Failed to store media record")
+			require.Contains(t, err.Error(), "database error")
+			require.NotNil(t, persistedMedia)
+			require.Equal(t, []mediaS3DeleteCall{{
+				bucket: "test-bucket",
+				key:    persistedMedia.S3Key,
+			}}, objectStore.deleteCalls)
+			jobQueue.AssertNotCalled(t, "QueueMediaJob", mock.Anything, mock.Anything)
+			mediaRepo.AssertExpectations(t)
+		})
+	}
 }
 
 // Test UpdateMedia method
