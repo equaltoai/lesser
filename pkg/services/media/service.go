@@ -678,7 +678,7 @@ func (s *Service) PublishMediaDurably(ctx context.Context, mediaID string) (*Pub
 	publishedURL := fmt.Sprintf("https://%s/%s", s.cdnDomain, destinationKey)
 	publishedAt := time.Now().UTC()
 	if s.mediaRepo != nil {
-		if err := s.mediaRepo.UpdateMediaPublishedState(ctx, mediaID, destinationKey, publishedURL, publishedAt); err != nil {
+		if err := s.mediaRepo.UpdateMediaPublishedState(ctx, mediaID, destinationKey, publishedURL, publishedAt, media.ModelVersion); err != nil {
 			return nil, errors.Join(ErrMediaUpdateFailed, err)
 		}
 	}
@@ -744,7 +744,7 @@ func (s *Service) UpdateEditorialLifecycle(ctx context.Context, cmd *UpdateEdito
 	if lifecycle == models.EditorialLifecycleSuperseded && cmd.SupersededByMediaID == "" {
 		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded editorial media must name the superseding asset"))
 	}
-	if err := s.mediaRepo.UpdateMediaEditorialState(ctx, cmd.MediaID, lifecycle, cmd.SupersededByMediaID); err != nil {
+	if err := s.mediaRepo.UpdateMediaEditorialState(ctx, cmd.MediaID, lifecycle, cmd.SupersededByMediaID, media.ModelVersion); err != nil {
 		return nil, errors.Join(ErrMediaUpdateFailed, err)
 	}
 	return s.mediaRepo.GetMedia(ctx, cmd.MediaID)

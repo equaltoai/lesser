@@ -29,6 +29,7 @@ func m2ReadyInternalMedia(id, owner, digest string) *models.Media {
 		Width:       120,
 		Height:      80,
 		Visibility:  models.MediaVisibilityInternal,
+		ModelVersion: 1,
 		UploadedAt:  now,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -65,6 +66,7 @@ func TestServicePublishMediaDurablyMintsExactBytes(t *testing.T) {
 			return strings.HasPrefix(url, "https://cdn.example.test/published/")
 		}),
 		mock.MatchedBy(func(at time.Time) bool { storedAt = at; return !at.IsZero() }),
+		mock.MatchedBy(func(version int) bool { return version == 1 }),
 	).Return(nil).Once()
 
 	published, err := service.PublishMediaDurably(ctx, "m1")
@@ -169,7 +171,7 @@ func TestServiceUpdateEditorialLifecycleEnforcesOwnerAndState(t *testing.T) {
 		updated := *internalReady
 		updated.EditorialState = models.EditorialLifecycleWithdrawn
 		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
-		mediaRepo.On("UpdateMediaEditorialState", mock.Anything, "m1", models.EditorialLifecycleWithdrawn, "").Return(nil).Once()
+		mediaRepo.On("UpdateMediaEditorialState", mock.Anything, "m1", models.EditorialLifecycleWithdrawn, "", 1).Return(nil).Once()
 		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(&updated, nil).Once()
 		result, err := service.UpdateEditorialLifecycle(context.Background(), &UpdateEditorialLifecycleCommand{
 			MediaID: "m1", UserID: "alice", Lifecycle: models.EditorialLifecycleWithdrawn,

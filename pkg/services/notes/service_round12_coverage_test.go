@@ -222,13 +222,18 @@ func (m *MockMediaRepository) UnmarkAllMediaAsSensitive(ctx context.Context, use
 	return args.Error(0)
 }
 
-func (m *MockMediaRepository) UpdateMediaEditorialState(ctx context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string) error {
-	args := m.Called(ctx, mediaID, state, supersededByMediaID)
+func (m *MockMediaRepository) UpdateMediaEditorialState(ctx context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string, expectedVersion int) error {
+	args := m.Called(ctx, mediaID, state, supersededByMediaID, expectedVersion)
 	return args.Error(0)
 }
 
-func (m *MockMediaRepository) UpdateMediaPublishedState(ctx context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time) error {
-	args := m.Called(ctx, mediaID, publishedS3Key, publishedURL, publishedAt)
+func (m *MockMediaRepository) UpdateMediaPublishedState(ctx context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time, expectedVersion int) error {
+	args := m.Called(ctx, mediaID, publishedS3Key, publishedURL, publishedAt, expectedVersion)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) ClearMediaPublishedState(ctx context.Context, mediaID string, expectedVersion int) error {
+	args := m.Called(ctx, mediaID, expectedVersion)
 	return args.Error(0)
 }
 
