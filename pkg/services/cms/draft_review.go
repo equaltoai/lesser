@@ -79,16 +79,23 @@ func draftReviewContentHash(d *models.Draft, mediaDigests map[string]string) str
 }
 
 // canonicalDraftMediaOrder returns the ordered media set used by the revision
-// hash: hero, inline by ascending InlinePosition, then social card.
+// hash: hero first, inline by ascending InlinePosition, then social card. The
+// role partition, not the caller's list order, decides, so [social, hero] and
+// [hero, social] bindings hash identically and reordering the list cannot
+// stale a prior approval.
 func canonicalDraftMediaOrder(usages []models.DraftMediaUsage) []models.DraftMediaUsage {
 	out := make([]models.DraftMediaUsage, 0, len(usages))
+	heroes := make([]models.DraftMediaUsage, 0, len(usages))
 	inline := make([]models.DraftMediaUsage, 0, len(usages))
+	social := make([]models.DraftMediaUsage, 0, len(usages))
 	for _, usage := range usages {
 		switch usage.Role {
-		case models.EditorialMediaRoleHero, models.EditorialMediaRoleSocialCard:
-			out = append(out, usage)
+		case models.EditorialMediaRoleHero:
+			heroes = append(heroes, usage)
 		case models.EditorialMediaRoleInline:
 			inline = append(inline, usage)
+		case models.EditorialMediaRoleSocialCard:
+			social = append(social, usage)
 		}
 	}
 	sort.SliceStable(inline, func(i, j int) bool {
@@ -101,7 +108,9 @@ func canonicalDraftMediaOrder(usages []models.DraftMediaUsage) []models.DraftMed
 		}
 		return left < right
 	})
+	out = append(out, heroes...)
 	out = append(out, inline...)
+	out = append(out, social...)
 	return out
 }
 

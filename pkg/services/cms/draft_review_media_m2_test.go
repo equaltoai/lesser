@@ -488,3 +488,45 @@ func TestDraftReviewPublishArticleFailureRollsBackMints(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, draftStatusFailed, got.Status)
 }
+
+func TestCanonicalDraftMediaOrderPartitionsHeroInlineSocial(t *testing.T) {
+	position0 := 0
+	position1 := 1
+	hero := models.DraftMediaUsage{MediaID: "hero", Role: models.EditorialMediaRoleHero}
+	inline0 := models.DraftMediaUsage{MediaID: "i0", Role: models.EditorialMediaRoleInline, InlinePosition: &position0}
+	inline1 := models.DraftMediaUsage{MediaID: "i1", Role: models.EditorialMediaRoleInline, InlinePosition: &position1}
+	social := models.DraftMediaUsage{MediaID: "card", Role: models.EditorialMediaRoleSocialCard}
+
+	ordered := canonicalDraftMediaOrder([]models.DraftMediaUsage{social, inline1, hero, inline0})
+	require.Equal(t, []string{"hero", "i0", "i1", "card"}, draftMediaUsageIDs(ordered),
+		"canonical order must be hero, inline by position, then social card")
+
+	// [social, hero] and [hero, social] usage orders must hash identically:
+	// the role partition, not the caller's list order, decides the revision
+	// hash, so reordering the list cannot stale a prior approval.
+	digests := map[string]string{"hero": m2Digest("a"), "card": m2Digest("b")}
+	base := &models.Draft{ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c",
+		EditorialMedia: []models.DraftMediaUsage{hero, social}}
+	reversed := &models.Draft{ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c",
+		EditorialMedia: []models.DraftMediaUsage{social, hero}}
+	require.Equal(t, draftReviewContentHash(base, digests), draftReviewContentHash(reversed, digests),
+		"hero/social encounter order must not change the revision hash")
+
+	// A role change still changes the hash: hero and social_card with identical
+	// bytes hash differently.
+	heroAsCard := models.DraftMediaUsage{MediaID: "card", Role: models.EditorialMediaRoleHero}
+	cardAsHero := models.DraftMediaUsage{MediaID: "card", Role: models.EditorialMediaRoleSocialCard}
+	require.NotEqual(t, draftReviewContentHash(
+		&models.Draft{ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c", EditorialMedia: []models.DraftMediaUsage{heroAsCard}}, digests),
+		draftReviewContentHash(
+			&models.Draft{ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c", EditorialMedia: []models.DraftMediaUsage{cardAsHero}}, digests),
+		"role must stay part of the revision binding")
+}
+
+func draftMediaUsageIDs(usages []models.DraftMediaUsage) []string {
+	ids := make([]string, 0, len(usages))
+	for _, usage := range usages {
+		ids = append(ids, usage.MediaID)
+	}
+	return ids
+}
