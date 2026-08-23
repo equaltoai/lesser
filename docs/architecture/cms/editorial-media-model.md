@@ -1,11 +1,12 @@
 # Editorial media model
 
-Status: M1 contract for issue #1444
+Status: M2 contract for issues #1444 (M1) and #1445 (M2)
 
 This contract adds first-class media to unpublished CMS drafts. It builds on
-M0's exact-byte S3 upload and canonical `sha256:<hex>` digest. It does not bind
-media into review hashes or publication eligibility; that byte-bound approval
-work belongs to M2.
+M0's exact-byte S3 upload and canonical `sha256:<hex>` digest. M1 models the
+association, provenance, and grant-scoped reviewer reads; M2 binds media bytes
+into review hashes and publication eligibility and mints durable published
+serving at the publish transition.
 
 ## Draft association
 
@@ -99,8 +100,75 @@ preview preserves association order and returns:
 
 `HERO` is the preview representation of the future featured image. `INLINE`
 positions remain structured instead of being synthesized into raw draft source.
-M1 does not copy the hero into a published `Article`, promote an object to the
-public CDN posture, extend `DraftReviewContentHash`, or change publish gates.
+
+## M2: byte-bound revision integrity
+
+M2 binds review verdicts and publication to the exact media bytes.
+
+### Revision hash
+
+`draftReviewContentHash` now covers the ordered bound media set in canonical
+order (hero, inline by `InlinePosition`, social card). Each usage contributes
+its canonical content digest (`Media.ContentHash`, bound to provenance
+`contentIntegrity`), role, inline position, caption, credit line, alt text, and
+focus — all length-prefixed so boundaries stay unambiguous. The digest is
+resolved per usage at verdict submit, review-state read, and the publish/schedule
+gates (bounded at 100 usages per draft); an unresolvable asset contributes an
+empty digest deterministically. Replacing, removing, reordering, re-cropping,
+re-captioning, or re-crediting bound media therefore changes the hash and makes
+prior verdicts and principal authorization stale through the existing
+verdict-vs-hash comparison — publication stays blocked until the changed
+revision is re-reviewed and re-authorized.
+
+### Explicit editorial lifecycle
+
+`Media.editorialState` is an editorial lifecycle distinct from the
+processing-pipeline `Status` enum: `available` (default), `withdrawn`,
+`superseded` (must name `supersededByMediaID`), and `unavailable`. The draft
+preview/review surface exposes these as conspicuous states (`WITHDRAWN`,
+`SUPERSEDED`, `UNAVAILABLE`) alongside the existing `MISSING` / `PROCESSING` /
+`READY` / `REJECTED` flags, and the review state reports blocking reasons
+(`BOUND_MEDIA_MISSING`, `BOUND_MEDIA_NOT_READY`, `BOUND_MEDIA_WITHDRAWN`,
+`BOUND_MEDIA_SUPERSEDED`, `BOUND_MEDIA_UNAVAILABLE`). The publish gate requires
+every required bound asset to be ready, internal, integrity-bound, and
+lifecycle-available; otherwise publish fails with an explicit reason
+(`ErrDraftReviewMediaRequired`).
+
+### Durable published serving
+
+The publish transition is the single point where durable public serving is
+minted. For each bound asset, `PublishMediaDurably` copies the exact original
+bytes (SSE-KMS internal source) to a `published/` key with SSE-S3 so the
+unsigned CloudFront origin can serve them, records `publishedS3Key`,
+`publishedURL`, and `publishedAt` on the media record, and the CMS service
+verifies the minted digest equals the digest bound into the approved revision
+hash — the exact bytes hashed at review are the bytes served at publish. The
+published article's hero binding flows into `Article.featuredImage` (a durable
+serving snapshot) and the social card into `Article.ogImage`; inline positions
+remain structured while their assets are durably served at the media-record
+level. Published article history cannot silently change from an external URL
+swap because the URLs are minted once from the approved bytes. Pre-publish,
+internal assets still expose no unsigned URL through the application contract.
+
+### Bounded grant expiry
+
+`DraftReviewGrant.expiresAt` bounds every grant (7 days, refreshed on
+re-share). Expired grants fail closed: they authorize no reviewer reads, URL
+minting, or approval, and are surfaced with status `EXPIRED` in the review
+surface. Grants recorded without an expiry are treated as expired so pre-M2
+rows cannot authorize indefinitely.
+
+### Schema impact
+
+Additive TableTheory attributes only: `Media.editorialState`,
+`Media.supersededByMediaID`, `Media.publishedS3Key`, `Media.publishedURL`,
+`Media.publishedAt`, and `DraftReviewGrant.expiresAt`. No PK, SK, GSI,
+projection, version, TTL, table, or stream-routing changes; no migration or
+backfill is required. GraphQL changes are additive (new lifecycle enum, state
+values, `publishedUrl`/`publishedAt`/`expiresAt` fields, and the
+`updateEditorialMediaLifecycle` mutation). Mastodon REST, OpenAPI, ActivityPub
+actor and object shapes, JSON-LD, WebFinger, federation signing, and streaming
+contracts are unchanged.
 
 ## GraphQL exercise
 
