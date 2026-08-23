@@ -71,6 +71,10 @@ func (f *fakeDraftRepo) UpdateDraft(ctx context.Context, authorID string, draft 
 	return nil
 }
 
+func (f *fakeDraftRepo) UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error {
+	return f.UpdateDraft(ctx, authorID, draft)
+}
+
 func (f *fakeDraftRepo) DeleteDraft(context.Context, string, string) error { return nil }
 
 func (f *fakeDraftRepo) ListDraftsByAuthor(context.Context, string, int) ([]*models.Draft, error) {
