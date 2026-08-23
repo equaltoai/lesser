@@ -15,12 +15,16 @@ import (
 	"go.uber.org/zap"
 )
 
+// Draft status values. They are exported as a single source of truth: the CMS
+// publish lifecycle writes them and the media-side orphan reconciliation
+// enumerates failed and stale-publishing drafts, so a duplicated constant in
+// pkg/services would drift.
 const (
-	draftStatusDraft      = "draft"
-	draftStatusScheduled  = "scheduled"
-	draftStatusPublishing = "publishing"
-	draftStatusPublished  = "published"
-	draftStatusFailed     = "failed"
+	DraftStatusDraft      = "draft"
+	DraftStatusScheduled  = "scheduled"
+	DraftStatusPublishing = "publishing"
+	DraftStatusPublished  = "published"
+	DraftStatusFailed     = "failed"
 )
 
 // PublishFailureReason values recorded by markDraftFailed on the interactive
@@ -379,7 +383,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return err
 	}
 	draft.ScheduledAt = &scheduledAt
-	draft.Status = draftStatusScheduled
+	draft.Status = DraftStatusScheduled
 	draft.PublishFailureReason = ""
 	draft.UpdatedAt = time.Now()
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
@@ -555,7 +559,7 @@ func (s *DraftService) isPublishedDraftCleanup(draft *models.Draft) bool {
 	if draft == nil {
 		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(draft.Status), draftStatusPublished) {
+	if !strings.EqualFold(strings.TrimSpace(draft.Status), DraftStatusPublished) {
 		return false
 	}
 	return draft.ObjectID != nil && strings.TrimSpace(*draft.ObjectID) != ""
@@ -616,7 +620,7 @@ func (s *DraftService) transitionDraftToPublishing(ctx context.Context, authorID
 	if err := validateDraftWriteAuthor(authorID, draft); err != nil {
 		return err
 	}
-	draft.Status = draftStatusPublishing
+	draft.Status = DraftStatusPublishing
 	draft.ScheduledAt = nil
 	draft.UpdatedAt = now
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
@@ -790,7 +794,7 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 func (s *DraftService) deleteDraftAfterPublish(ctx context.Context, draft *models.Draft, authorID, draftID, objectID string) {
 	if err := s.draftRepo.DeleteDraft(ctx, authorID, draftID); err != nil {
 		s.logger.Warn("failed to delete draft after publish", zap.Error(err))
-		draft.Status = draftStatusPublished
+		draft.Status = DraftStatusPublished
 		draft.ObjectID = &objectID
 		draft.UpdatedAt = time.Now()
 		_ = s.draftRepo.UpdateDraft(ctx, authorID, draft)
@@ -837,7 +841,7 @@ func classifyDraftPublishFailureReason(err error) string {
 
 func (s *DraftService) markDraftFailed(ctx context.Context, authorID string, draft *models.Draft, draftID string, err error) {
 	s.logger.Warn("draft publish failed", zap.String("draft_id", draftID), zap.Error(err))
-	draft.Status = draftStatusFailed
+	draft.Status = DraftStatusFailed
 	draft.PublishFailureReason = classifyDraftPublishFailureReason(err)
 	draft.UpdatedAt = time.Now()
 	if updateErr := s.draftRepo.UpdateDraft(ctx, authorID, draft); updateErr != nil {
@@ -858,7 +862,7 @@ func (s *DraftService) CancelScheduledDraft(ctx context.Context, authorID, draft
 	}
 
 	draft.ScheduledAt = nil
-	draft.Status = draftStatusDraft
+	draft.Status = DraftStatusDraft
 	draft.UpdatedAt = time.Now()
 
 	return s.draftRepo.UpdateDraft(ctx, authorID, draft)

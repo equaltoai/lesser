@@ -498,7 +498,7 @@ func TestDraftReviewPublishRollsBackPriorMintsOnMultiAssetFailure(t *testing.T) 
 
 	got, err := svc.GetDraft(ctx, "owner", draft.ID)
 	require.NoError(t, err)
-	require.Equal(t, draftStatusFailed, got.Status, "a mint failure after the transition must mark the draft failed")
+	require.Equal(t, DraftStatusFailed, got.Status, "a mint failure after the transition must mark the draft failed")
 }
 
 func TestDraftReviewPublishTransitionFailureMintsNothing(t *testing.T) {
@@ -537,7 +537,7 @@ func TestDraftReviewPublishTransitionFailureMintsNothing(t *testing.T) {
 
 	got, err := svc.GetDraft(ctx, "owner", draft.ID)
 	require.NoError(t, err)
-	require.NotEqual(t, draftStatusPublishing, got.Status, "the rejected transition write must not commit the publishing status")
+	require.NotEqual(t, DraftStatusPublishing, got.Status, "the rejected transition write must not commit the publishing status")
 }
 
 func TestDraftReviewPublishArticleFailureRollsBackMints(t *testing.T) {
@@ -566,7 +566,7 @@ func TestDraftReviewPublishArticleFailureRollsBackMints(t *testing.T) {
 
 	got, err := svc.GetDraft(ctx, "owner", draft.ID)
 	require.NoError(t, err)
-	require.Equal(t, draftStatusFailed, got.Status)
+	require.Equal(t, DraftStatusFailed, got.Status)
 }
 
 func TestCanonicalDraftMediaOrderPartitionsHeroInlineSocial(t *testing.T) {

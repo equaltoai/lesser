@@ -60,7 +60,7 @@ func TestDraftReviewPublishUpdateArticleFailurePathsCompensate(t *testing.T) {
 		t.Helper()
 		got, getErr := svc.GetDraft(context.Background(), "owner", draftID)
 		require.NoError(t, getErr)
-		require.Equal(t, draftStatusFailed, got.Status, "the update-path failure must mark the draft failed")
+		require.Equal(t, DraftStatusFailed, got.Status, "the update-path failure must mark the draft failed")
 		require.NotEmpty(t, got.PublishFailureReason, "the update-path failure must record a classified reason")
 		require.Equal(t, []string{"hero"}, minter.unpublishCalls,
 			"the update-path failure must roll back the batch's mints so no minted state remains")

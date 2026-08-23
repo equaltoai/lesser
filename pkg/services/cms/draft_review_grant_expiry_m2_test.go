@@ -86,7 +86,7 @@ func TestScheduleDraftBlocksUnreadyBoundMediaWithExplicitReason(t *testing.T) {
 	scheduled, err := svc.GetDraft(ctx, "owner", draft.ID)
 	require.NoError(t, err)
 	require.Nil(t, scheduled.ScheduledAt, "a media-blocked draft must not be scheduled")
-	require.NotEqual(t, draftStatusScheduled, scheduled.Status)
+	require.NotEqual(t, DraftStatusScheduled, scheduled.Status)
 
 	// A missing bound asset blocks at schedule time with the missing reason.
 	delete(media.byID, "hero")
@@ -107,7 +107,7 @@ func TestScheduleDraftBlocksUnreadyBoundMediaWithExplicitReason(t *testing.T) {
 	require.NoError(t, svc.ScheduleDraft(ctx, "owner", draft.ID, time.Now().UTC().Add(time.Hour)))
 	scheduled, err = svc.GetDraft(ctx, "owner", draft.ID)
 	require.NoError(t, err)
-	require.Equal(t, draftStatusScheduled, scheduled.Status)
+	require.Equal(t, DraftStatusScheduled, scheduled.Status)
 	require.NotNil(t, scheduled.ScheduledAt)
 }
 

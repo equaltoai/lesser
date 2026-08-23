@@ -71,7 +71,7 @@ func TestInteractivePublishFailureRecordsClassifiedReason(t *testing.T) {
 
 		got, getErr := svc.GetDraft(context.Background(), "owner", "reason-storage")
 		require.NoError(t, getErr)
-		require.Equal(t, draftStatusFailed, got.Status)
+		require.Equal(t, DraftStatusFailed, got.Status)
 		require.Equal(t, draftPublishFailureStorage, got.PublishFailureReason)
 	})
 
@@ -92,7 +92,7 @@ func TestInteractivePublishFailureRecordsClassifiedReason(t *testing.T) {
 
 		got, getErr := svc.GetDraft(context.Background(), "owner", "reason-storage-plain")
 		require.NoError(t, getErr)
-		require.Equal(t, draftStatusFailed, got.Status)
+		require.Equal(t, DraftStatusFailed, got.Status)
 		require.Equal(t, draftPublishFailureStorage, got.PublishFailureReason)
 	})
 
@@ -135,7 +135,7 @@ func TestInteractivePublishFailureRecordsClassifiedReason(t *testing.T) {
 
 		got, getErr := svc.GetDraft(ctx, "owner", draft.ID)
 		require.NoError(t, getErr)
-		require.Equal(t, draftStatusFailed, got.Status)
+		require.Equal(t, DraftStatusFailed, got.Status)
 		require.Equal(t, draftPublishFailureStorage, got.PublishFailureReason)
 	})
 
@@ -151,7 +151,7 @@ func TestInteractivePublishFailureRecordsClassifiedReason(t *testing.T) {
 
 		got, getErr := svc.GetDraft(context.Background(), "owner", "reason-media")
 		require.NoError(t, getErr)
-		require.Equal(t, draftStatusFailed, got.Status)
+		require.Equal(t, DraftStatusFailed, got.Status)
 		require.Equal(t, draftPublishFailureMedia, got.PublishFailureReason)
 	})
 }
