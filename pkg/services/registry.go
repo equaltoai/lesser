@@ -257,6 +257,17 @@ func WithConfig(config *ServiceConfig) RegistryOption {
 	}
 }
 
+// WithMediaS3Service configures the media object-storage seam.
+func WithMediaS3Service(s3Service media.S3Service) RegistryOption {
+	return func(r *Registry) error {
+		if s3Service == nil {
+			return errors.New("media S3 service cannot be nil")
+		}
+		r.mediaS3 = s3Service
+		return nil
+	}
+}
+
 // validate ensures all required dependencies are provided and sets defaults
 func (r *Registry) validate() error {
 	if r.storage == nil {
