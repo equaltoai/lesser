@@ -42,6 +42,10 @@ type Draft struct {
 	// Metadata snapshot (full object metadata for preview)
 	MetadataJSON string `theorydb:"attr:metadataJSON" json:"metadata_json,omitempty"`
 
+	// EditorialMedia is an ordered, modeled association with internal media.
+	// M2 will bind these usages into revision integrity and publication state.
+	EditorialMedia []DraftMediaUsage `theorydb:"attr:editorialMedia,omitempty" json:"editorial_media,omitempty"`
+
 	// Authoring attribution
 	GeneratedBy  string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
 	ReviewedBy   string `theorydb:"attr:reviewedBy,omitempty" json:"reviewed_by,omitempty"`
