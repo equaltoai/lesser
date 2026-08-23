@@ -16,6 +16,7 @@ type memArticleServiceWithErrors struct {
 	base      *memArticleService
 	getErr    error
 	updateErr error
+	createErr error
 }
 
 func (s *memArticleServiceWithErrors) GetArticle(ctx context.Context, articleID string) (*models.Article, error) {
@@ -30,6 +31,9 @@ func (s *memArticleServiceWithErrors) GetArticleBySlug(ctx context.Context, slug
 }
 
 func (s *memArticleServiceWithErrors) CreateArticle(ctx context.Context, article *models.Article) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
 	return s.base.CreateArticle(ctx, article)
 }
 

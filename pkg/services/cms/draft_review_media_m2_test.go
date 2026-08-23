@@ -77,10 +77,12 @@ func m2ReviewService(t *testing.T) (*DraftService, *reviewMemRepo, *memMediaRepo
 }
 
 type recordingPublishMinter struct {
-	mints   map[string]EditorialPublishedMedia
-	calls   []string
-	err     error
-	missErr error
+	mints          map[string]EditorialPublishedMedia
+	calls          []string
+	unpublishCalls []string
+	err            error
+	missErr        error
+	unpublishErr   error
 }
 
 func (m *recordingPublishMinter) PublishEditorialMedia(_ context.Context, mediaID string) (*EditorialPublishedMedia, error) {
@@ -96,6 +98,11 @@ func (m *recordingPublishMinter) PublishEditorialMedia(_ context.Context, mediaI
 		return nil, fmt.Errorf("no mint recorded for %s", mediaID)
 	}
 	return &mint, nil
+}
+
+func (m *recordingPublishMinter) UnpublishEditorialMedia(_ context.Context, mediaID string) error {
+	m.unpublishCalls = append(m.unpublishCalls, mediaID)
+	return m.unpublishErr
 }
 
 func (m *recordingPublishMinter) seedFromMedia(media *memMediaRepo) {
@@ -362,4 +369,122 @@ func mustDraft(t *testing.T, svc *DraftService, owner, draftID string) *models.D
 
 func ptrTime(value time.Time) *time.Time {
 	return &value
+}
+
+// transitionFailingReviewRepo fails the draft write that commits the
+// publishing transition, so tests can prove a failed transition mints nothing.
+type transitionFailingReviewRepo struct {
+	*reviewMemRepo
+	failOnStatus string
+	failErr      error
+}
+
+func (r *transitionFailingReviewRepo) UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error {
+	if r.failOnStatus != "" && draft != nil && strings.EqualFold(strings.TrimSpace(draft.Status), r.failOnStatus) {
+		return r.failErr
+	}
+	return r.reviewMemRepo.UpdateDraft(ctx, authorID, draft)
+}
+
+func TestDraftReviewPublishRollsBackPriorMintsOnMultiAssetFailure(t *testing.T) {
+	svc, repo, media, minter := m2ReviewService(t)
+	ctx := context.Background()
+	digestA := m2Digest("a")
+	digestB := m2Digest("b")
+	media.byID["hero"] = m2ReadyMedia("hero", "owner", digestA)
+	media.byID["card"] = m2ReadyMedia("card", "owner", digestB)
+	minter.seedFromMedia(media)
+	minter.missErr = errors.New("card")
+
+	draft := &models.Draft{ID: "rollback-batch", AuthorID: "owner", ContentType: activitypub.ArticleType, Title: "Rollback", Slug: "rollback", Content: "draft", ContentFormat: "markdown"}
+	require.NoError(t, svc.CreateDraft(ctx, draft))
+	_, err := svc.SetEditorialMedia(ctx, "owner", draft.ID, []models.DraftMediaUsage{
+		{MediaID: "hero", Role: models.EditorialMediaRoleHero},
+		{MediaID: "card", Role: models.EditorialMediaRoleSocialCard},
+	})
+	require.NoError(t, err)
+	require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: time.Now().UTC(),
+		ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
+	}))
+	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+	require.NoError(t, err)
+
+	_, err = svc.PublishDraft(ctx, "owner", draft.ID)
+	require.ErrorContains(t, err, "durable copy failed for card")
+	require.Equal(t, []string{"hero", "card"}, minter.calls)
+	require.Equal(t, []string{"hero"}, minter.unpublishCalls,
+		"the successfully minted hero must be rolled back when the card mint fails")
+
+	got, err := svc.GetDraft(ctx, "owner", draft.ID)
+	require.NoError(t, err)
+	require.Equal(t, draftStatusFailed, got.Status, "a mint failure after the transition must mark the draft failed")
+}
+
+func TestDraftReviewPublishTransitionFailureMintsNothing(t *testing.T) {
+	ctx := context.Background()
+	digestA := m2Digest("a")
+	repo := &transitionFailingReviewRepo{reviewMemRepo: newReviewMemRepo(), failOnStatus: "publishing", failErr: errors.New("transition write failed")}
+	media := &memMediaRepo{byID: map[string]*models.Media{"hero": m2ReadyMedia("hero", "owner", digestA)}}
+	minter := &recordingPublishMinter{mints: map[string]EditorialPublishedMedia{}}
+	minter.seedFromMedia(media)
+	svc := &DraftService{
+		draftRepo:      repo,
+		articleService: newMemArticleService(),
+		domain:         "example.test",
+		scheduling:     true,
+		logger:         zap.NewNop(),
+	}
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "principal", nil })
+	svc.SetEditorialMediaRepository(media)
+	svc.SetEditorialPublishMinter(minter)
+
+	draft := &models.Draft{ID: "transition-fail", AuthorID: "owner", ContentType: activitypub.ArticleType, Title: "Transition", Slug: "transition", Content: "draft", ContentFormat: "markdown"}
+	require.NoError(t, svc.CreateDraft(ctx, draft))
+	_, err := svc.SetEditorialMedia(ctx, "owner", draft.ID, []models.DraftMediaUsage{{MediaID: "hero", Role: models.EditorialMediaRoleHero}})
+	require.NoError(t, err)
+	require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: time.Now().UTC(),
+		ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
+	}))
+	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+	require.NoError(t, err)
+
+	_, err = svc.PublishDraft(ctx, "owner", draft.ID)
+	require.ErrorContains(t, err, "transition write failed")
+	require.Empty(t, minter.calls, "a failed transition must not mint any asset")
+	require.Empty(t, minter.unpublishCalls)
+
+	got, err := svc.GetDraft(ctx, "owner", draft.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, draftStatusPublishing, got.Status, "the rejected transition write must not commit the publishing status")
+}
+
+func TestDraftReviewPublishArticleFailureRollsBackMints(t *testing.T) {
+	svc, repo, media, minter := m2ReviewService(t)
+	ctx := context.Background()
+	digestA := m2Digest("a")
+	media.byID["hero"] = m2ReadyMedia("hero", "owner", digestA)
+	minter.seedFromMedia(media)
+	svc.articleService = &memArticleServiceWithErrors{base: newMemArticleService(), createErr: errors.New("article create failed")}
+
+	draft := &models.Draft{ID: "article-fail", AuthorID: "owner", ContentType: activitypub.ArticleType, Title: "ArticleFail", Slug: "article-fail", Content: "draft", ContentFormat: "markdown"}
+	require.NoError(t, svc.CreateDraft(ctx, draft))
+	_, err := svc.SetEditorialMedia(ctx, "owner", draft.ID, []models.DraftMediaUsage{{MediaID: "hero", Role: models.EditorialMediaRoleHero}})
+	require.NoError(t, err)
+	require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: time.Now().UTC(),
+		ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
+	}))
+	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+	require.NoError(t, err)
+
+	_, err = svc.PublishDraft(ctx, "owner", draft.ID)
+	require.ErrorContains(t, err, "article create failed")
+	require.Equal(t, []string{"hero"}, minter.unpublishCalls,
+		"an article-write failure must roll back the batch's mints")
+
+	got, err := svc.GetDraft(ctx, "owner", draft.ID)
+	require.NoError(t, err)
+	require.Equal(t, draftStatusFailed, got.Status)
 }

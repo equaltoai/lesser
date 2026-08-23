@@ -1079,6 +1079,15 @@ func (a cmsEditorialPublishMinter) PublishEditorialMedia(ctx context.Context, me
 	}, nil
 }
 
+// UnpublishEditorialMedia best-effort removes durable public serving minted for
+// one internal asset when a publish fails before the article is committed.
+func (a cmsEditorialPublishMinter) UnpublishEditorialMedia(ctx context.Context, mediaID string) error {
+	if a.svc == nil {
+		return errors.New("editorial media publish service is unavailable")
+	}
+	return a.svc.UnpublishMediaDurably(ctx, mediaID)
+}
+
 // Series returns the series service, initializing it if necessary
 func (r *Registry) Series() *cms.SeriesService {
 	r.mu.Lock()
