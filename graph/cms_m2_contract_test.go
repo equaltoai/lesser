@@ -1,0 +1,123 @@
+package graph
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/services/cms"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/require"
+)
+
+func TestEditorialMediaLifecycleStatesAreConspicuous(t *testing.T) {
+	resolver := &Resolver{}
+	position := 0
+	hash := "sha256:" + strings.Repeat("a", 64)
+	usage := models.DraftMediaUsage{MediaID: "inline", Role: models.EditorialMediaRoleInline, InlinePosition: &position}
+	media := func(lifecycle models.EditorialLifecycle) *models.Media {
+		return &models.Media{
+			MediaID: "inline", UserID: "alice", Visibility: models.MediaVisibilityInternal,
+			Status: models.StatusReady, ContentHash: hash,
+			Provenance: &models.MediaProvenance{
+				Origin: models.EditorialMediaOriginSupplied, ResponsibleActor: "alice",
+				RecordedAt: time.Now(), ContentIntegrity: hash,
+			},
+			EditorialState: lifecycle,
+		}
+	}
+
+	cases := []struct {
+		lifecycle models.EditorialLifecycle
+		state     model.EditorialMediaState
+	}{
+		{models.EditorialLifecycleWithdrawn, model.EditorialMediaStateWithdrawn},
+		{models.EditorialLifecycleSuperseded, model.EditorialMediaStateSuperseded},
+		{models.EditorialLifecycleUnavailable, model.EditorialMediaStateUnavailable},
+	}
+	for _, tc := range cases {
+		converted := resolver.convertCMSEditorialMediaBinding(context.Background(), cms.DraftEditorialMediaBinding{
+			Usage: usage,
+			Media: media(tc.lifecycle),
+		}, false, nil)
+		require.Equal(t, tc.state, converted.State, "lifecycle %q must be inspectable", tc.lifecycle)
+	}
+
+	// The durable published serving is exposed on the usage once minted.
+	published := media("")
+	publishedAt := time.Now().UTC()
+	published.PublishedURL = "https://cdn.example.test/published/media/inline.png"
+	published.PublishedS3Key = "published/media/inline.png"
+	published.PublishedAt = &publishedAt
+	converted := resolver.convertCMSEditorialMediaBinding(context.Background(), cms.DraftEditorialMediaBinding{Usage: usage, Media: published}, false, nil)
+	require.Equal(t, model.EditorialMediaStateReady, converted.State)
+	require.NotNil(t, converted.PublishedURL)
+	require.Equal(t, published.PublishedURL, *converted.PublishedURL)
+	require.NotNil(t, converted.PublishedAt)
+}
+
+func TestDraftReviewGrantExpirySurface(t *testing.T) {
+	resolver := &Resolver{}
+	now := time.Now().UTC()
+	future := now.Add(time.Hour)
+	past := now.Add(-time.Hour)
+
+	active := resolver.convertCMSDraftReviewGrant(context.Background(), &models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: "d", Reviewer: "reviewer", GrantedAt: now, ExpiresAt: &future,
+	})
+	require.Equal(t, model.DraftReviewGrantStatusActive, active.Status)
+	require.NotNil(t, active.ExpiresAt)
+
+	expired := resolver.convertCMSDraftReviewGrant(context.Background(), &models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: "d", Reviewer: "reviewer", GrantedAt: now, ExpiresAt: &past,
+	})
+	require.Equal(t, model.DraftReviewGrantStatusExpired, expired.Status)
+	require.NotNil(t, expired.ExpiresAt)
+
+	revokedAt := now.Add(-time.Minute)
+	revoked := resolver.convertCMSDraftReviewGrant(context.Background(), &models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: "d", Reviewer: "reviewer", GrantedAt: now, ExpiresAt: &future, RevokedAt: &revokedAt,
+	})
+	require.Equal(t, model.DraftReviewGrantStatusRevoked, revoked.Status, "revocation dominates expiry classification")
+}
+
+// m2FutureExpiry returns an expiry safely in the future for seeded review
+// grants, keeping fail-closed expiry semantics honest in fixtures.
+func m2FutureExpiry() *time.Time {
+	value := time.Now().UTC().Add(2 * time.Hour)
+	return &value
+}
+
+func TestUpdateEditorialMediaLifecycleMutationWiresFieldScopedWrite(t *testing.T) {
+	resolver, _, _, _, state := newRound12GraphResolverWithMocks(t)
+	now := time.Now().UTC()
+	digest := "sha256:" + strings.Repeat("e", 64)
+	state.seededMedia = map[string]*models.Media{
+		"m1": {
+			MediaID: "m1", UserID: "alice", ContentType: "image/png", FileSize: 12,
+			ContentHash: digest, Status: "ready", Visibility: models.MediaVisibilityInternal,
+			S3Bucket: "media-private", S3Key: "alice/m1.png",
+			Provenance: &models.MediaProvenance{
+				Origin: models.EditorialMediaOriginSupplied, ResponsibleActor: "alice",
+				RecordedAt: now, ContentIntegrity: digest,
+			},
+		},
+	}
+
+	payload, err := resolver.Mutation().UpdateEditorialMediaLifecycle(
+		round12AuthContext("alice"), "m1", model.EditorialMediaLifecycleWithdrawn, nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, payload)
+	require.Equal(t, "m1", payload.MediaID)
+	require.Equal(t, model.EditorialMediaLifecycleWithdrawn, payload.Lifecycle,
+		"the mutation must drive the field-scoped lifecycle writer and read the state back")
+
+	// A non-owner cannot withdraw an asset.
+	_, err = resolver.Mutation().UpdateEditorialMediaLifecycle(
+		round12AuthContext("mallory"), "m1", model.EditorialMediaLifecycleWithdrawn, nil,
+	)
+	require.Error(t, err)
+}
