@@ -40,6 +40,10 @@ Internal `Media.provenance` records:
 - optional source creation/update timestamps and the server recording time;
 - `contentIntegrity`, copied from M0's canonical SHA-256 identifier.
 
+The provenance `createdAt` and `updatedAt` values are caller-supplied claims;
+Lesser validates only their ordering. `recordedAt` is set by the server when it
+records the provenance.
+
 Provenance is private editorial evidence. It is not reader-facing attribution
 and is exposed only on authorized draft/review representations. The usage's
 `creditLine` is the reader-facing attribution surface. Neither field is added
@@ -71,8 +75,10 @@ Owners and active `DraftReviewGrant` holders receive five-minute S3 URLs only
 after `draftEditorialMediaAccess(draftId:, mediaId:)` proves that the exact
 asset is bound to that exact authorized draft. A grant never authorizes a media
 library listing or an unbound media ID. Revocation takes effect on the next
-access request. The ordinary `media(id:)` path rejects internal media for every
-non-owner, including unauthenticated readers.
+access request. A URL already issued before revocation remains a bearer
+credential for at most five minutes; S3 access logs are the audit control for
+use during that residual window. The ordinary `media(id:)` path rejects
+internal media for every non-owner, including unauthenticated readers.
 
 ## Preview contract
 
