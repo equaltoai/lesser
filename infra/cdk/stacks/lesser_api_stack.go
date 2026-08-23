@@ -49,6 +49,7 @@ type LesserApiStack struct {
 	StreamingBucket        awss3.Bucket
 	TrainingBucket         awss3.Bucket
 	MediaDistribution      awscloudfront.Distribution
+	MediaDomain            string
 	FrontendDistribution   awscloudfront.Distribution
 	ClientBucket           awss3.Bucket
 	ClientArtifactBucket   awss3.Bucket
@@ -646,6 +647,7 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 	if mediaDomain == "" {
 		mediaDomain = fmt.Sprintf("media.%s", domain)
 	}
+	s.MediaDomain = mediaDomain
 
 	if s.HostedZone == nil {
 		panic("Media infrastructure requires HostedZone")
@@ -965,6 +967,7 @@ func (s *LesserApiStack) lambdaFunctionsProps() *localconstructs.LambdaFunctions
 		RateLimitTable:      s.RateLimitTable,
 		StreamEventsTable:   s.StreamEventsTable,
 		MediaBucket:         s.MediaBucket,
+		MediaDomain:         s.MediaDomain,
 		StreamingBucket:     s.StreamingBucket,
 		TrainingBucket:      s.TrainingBucket,
 		Queues:              s.Queues,
