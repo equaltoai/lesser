@@ -234,10 +234,14 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(_ context.Context, due
 		return drafts[i].GSI4SK < drafts[j].GSI4SK
 	})
 
-	// Apply cursor
+	// Apply cursor. A cursor past the last key (no key exceeds it) must yield an
+	// empty page with an empty next cursor so the caller terminates; defaulting
+	// startIdx to len(drafts) does that, matching the production repository's
+	// past-end behavior instead of re-emitting page one forever.
 	startIdx := 0
 	cursor = strings.TrimSpace(cursor)
 	if cursor != "" {
+		startIdx = len(drafts)
 		for i, draft := range drafts {
 			if draft.GSI4SK > cursor {
 				startIdx = i
@@ -287,6 +291,7 @@ func (r *DraftRepository) ListDraftsByStatusPaginated(_ context.Context, status 
 	startIdx := 0
 	cursor = strings.TrimSpace(cursor)
 	if cursor != "" {
+		startIdx = len(drafts)
 		for i, draft := range drafts {
 			if draft.GSI4SK > cursor {
 				startIdx = i
