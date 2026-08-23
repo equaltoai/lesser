@@ -8,20 +8,51 @@ import (
 
 // DraftReviewGrant authorizes one local account to review an owner's draft.
 type DraftReviewGrant struct {
-	PK        string     `theorydb:"pk,attr:PK"`
-	SK        string     `theorydb:"sk,attr:SK"`
-	GSI2PK    string     `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
-	GSI2SK    string     `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
-	OwnerID   string     `theorydb:"attr:ownerID"`
-	DraftID   string     `theorydb:"attr:draftID"`
-	Reviewer  string     `theorydb:"attr:reviewer"`
-	GrantedAt time.Time  `theorydb:"attr:grantedAt"`
+	PK        string    `theorydb:"pk,attr:PK"`
+	SK        string    `theorydb:"sk,attr:SK"`
+	GSI2PK    string    `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
+	GSI2SK    string    `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
+	OwnerID   string    `theorydb:"attr:ownerID"`
+	DraftID   string    `theorydb:"attr:draftID"`
+	Reviewer  string    `theorydb:"attr:reviewer"`
+	GrantedAt time.Time `theorydb:"attr:grantedAt"`
+	// ExpiresAt bounds the grant. Grants are cheap and explicitly re-shared, so
+	// an unbounded grant would let a stale reviewer assignment authorize reads,
+	// URL minting, and approval forever. Expired grants fail closed everywhere.
+	ExpiresAt *time.Time `theorydb:"attr:expiresAt,omitempty"`
 	RevokedAt *time.Time `theorydb:"attr:revokedAt,omitempty"`
 	Version   int        `theorydb:"version,attr:version"`
 }
 
 // TableName returns the table for a review grant.
 func (DraftReviewGrant) TableName() string { return MainTableName }
+
+// IsActive reports whether the grant is currently usable: not revoked and not
+// past its bounded expiry. A grant without an expiry is deliberately treated as
+// expired (fail-closed) so rows created before the M2 expiry surface cannot
+// authorize reads or approval indefinitely; re-sharing refreshes the grant.
+func (g *DraftReviewGrant) IsActive(now time.Time) bool {
+	if g == nil || g.RevokedAt != nil {
+		return false
+	}
+	if g.ExpiresAt == nil {
+		return false
+	}
+	return g.ExpiresAt.After(now)
+}
+
+// Expired reports whether a bounded grant has passed its expiry. Revocation is
+// reported separately by the active checks; this predicate only classifies
+// un-revoked grants that can no longer authorize anything.
+func (g *DraftReviewGrant) Expired(now time.Time) bool {
+	if g == nil || g.RevokedAt != nil {
+		return false
+	}
+	if g.ExpiresAt == nil {
+		return true
+	}
+	return !g.ExpiresAt.After(now)
+}
 
 // UpdateKeys derives grant primary and sparse reviewer-queue keys.
 func (g *DraftReviewGrant) UpdateKeys() error {

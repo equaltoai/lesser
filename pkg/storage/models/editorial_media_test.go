@@ -45,6 +45,69 @@ func TestMediaInternalEditorialValidationRejectsMissingProvenance(t *testing.T) 
 	require.ErrorContains(t, media.BeforeCreate(), "requires provenance")
 }
 
+func TestMediaEditorialLifecycleValidation(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	internal := func() *Media {
+		return &Media{
+			MediaID: "media-1", UserID: "alice", FileName: "hero.png", ContentType: "image/png", FileSize: 12,
+			ContentHash: digest, Visibility: MediaVisibilityInternal,
+			Provenance: &MediaProvenance{Origin: EditorialMediaOriginSupplied, ContentIntegrity: digest},
+		}
+	}
+
+	available := internal()
+	available.EditorialState = EditorialLifecycleAvailable
+	require.NoError(t, available.BeforeCreate())
+	require.True(t, available.EditorialLifecycleAvailableForPublish())
+
+	withdrawn := internal()
+	withdrawn.EditorialState = "  WITHDRAWN "
+	require.NoError(t, withdrawn.BeforeCreate())
+	require.Equal(t, EditorialLifecycleWithdrawn, withdrawn.EditorialState)
+	require.False(t, withdrawn.EditorialLifecycleAvailableForPublish())
+
+	superseded := internal()
+	superseded.EditorialState = EditorialLifecycleSuperseded
+	require.ErrorContains(t, superseded.BeforeCreate(), "must name the superseding asset")
+	superseded.SupersededByMediaID = "media-2"
+	require.NoError(t, superseded.BeforeCreate())
+	require.False(t, superseded.EditorialLifecycleAvailableForPublish())
+
+	unavailable := internal()
+	unavailable.EditorialState = EditorialLifecycleUnavailable
+	require.NoError(t, unavailable.BeforeCreate())
+	require.False(t, unavailable.EditorialLifecycleAvailableForPublish())
+
+	unknown := internal()
+	unknown.EditorialState = EditorialLifecycle("hidden")
+	require.ErrorContains(t, unknown.BeforeCreate(), "invalid editorial lifecycle")
+
+	orphan := internal()
+	orphan.SupersededByMediaID = "media-2"
+	require.ErrorContains(t, orphan.BeforeCreate(), "requires the superseded lifecycle")
+
+	publicWithLifecycle := internal()
+	publicWithLifecycle.Visibility = MediaVisibilityPublic
+	publicWithLifecycle.EditorialState = EditorialLifecycleWithdrawn
+	require.ErrorContains(t, publicWithLifecycle.BeforeCreate(), "require internal editorial media")
+
+	publishedOnPublic := internal()
+	publishedOnPublic.Visibility = MediaVisibilityPublic
+	publishedAt := time.Now().UTC()
+	publishedOnPublic.PublishedURL = "https://cdn.example/published.png"
+	publishedOnPublic.PublishedAt = &publishedAt
+	require.ErrorContains(t, publishedOnPublic.BeforeCreate(), "require internal editorial media")
+
+	published := internal()
+	publishedAt = time.Now().UTC()
+	published.PublishedURL = "https://cdn.example/published.png"
+	published.PublishedS3Key = "published/media/hero.png"
+	published.PublishedAt = &publishedAt
+	require.NoError(t, published.BeforeCreate())
+	require.True(t, published.IsPublished())
+	require.False(t, internal().IsPublished(), "pre-publish internal assets are not durably served")
+}
+
 func TestNormalizeDraftMediaUsagesEnforcesModeledRoles(t *testing.T) {
 	position := 2
 	got, err := NormalizeDraftMediaUsages([]DraftMediaUsage{
