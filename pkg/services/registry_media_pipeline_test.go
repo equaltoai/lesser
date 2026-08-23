@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -64,9 +65,24 @@ func (f *fakeRegistryMediaStore) UploadFile(
 	return "s3://" + bucket + "/" + key, nil
 }
 
+func (f *fakeRegistryMediaStore) UploadInternalFile(
+	ctx context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+	_ string,
+) (string, error) {
+	return f.UploadFile(ctx, bucket, key, data, contentType)
+}
+
 func (f *fakeRegistryMediaStore) DeleteFile(_ context.Context, bucket, key string) error {
 	delete(f.objects, bucket+"/"+key)
 	return nil
+}
+
+func (f *fakeRegistryMediaStore) GeneratePresignedURL(_ context.Context, bucket, key string, _ time.Duration) (string, error) {
+	return "https://signed.invalid/" + bucket + "/" + key, nil
 }
 
 func TestMediaS3ObjectStoreUsesPutObjectWithExactBytesAndContentType(t *testing.T) {
@@ -84,6 +100,23 @@ func TestMediaS3ObjectStoreUsesPutObjectWithExactBytesAndContentType(t *testing.
 	require.Equal(t, int64(len(want)), aws.ToInt64(fakeClient.putInput.ContentLength))
 }
 
+func TestMediaS3ObjectStoreUsesKMSForInternalEditorialBytes(t *testing.T) {
+	fakeClient := &fakeMediaS3API{}
+	store := &mediaS3ObjectStore{client: fakeClient}
+
+	_, err := store.UploadInternalFile(
+		context.Background(),
+		"media-bucket",
+		"media/internal.png",
+		[]byte("internal-editorial-bytes"),
+		"image/png",
+		"alias/lesser-shared-encryption",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "aws:kms", string(fakeClient.putInput.ServerSideEncryption))
+	require.Equal(t, "alias/lesser-shared-encryption", aws.ToString(fakeClient.putInput.SSEKMSKeyId))
+}
+
 func TestRegistryMediaWiresObjectStoreAndProcessingQueue(t *testing.T) {
 	logger := zap.NewNop()
 	storage := newPermissiveRegistryStorage(t, "example.com", logger)
@@ -98,6 +131,7 @@ func TestRegistryMediaWiresObjectStoreAndProcessingQueue(t *testing.T) {
 				S3BucketName:          "dev-media-bucket",
 				CloudFrontDomain:      "media.dev.example.com",
 				MediaSourceBucketName: "dev-media-bucket",
+				KMSKeyID:              "alias/lesser-shared-encryption",
 			},
 		}),
 	)

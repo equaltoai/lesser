@@ -35,6 +35,10 @@ type articleDraftPublisher interface {
 	UpdateArticle(ctx context.Context, article *models.Article) error
 }
 
+type editorialMediaRepository interface {
+	GetMedia(ctx context.Context, mediaID string) (*models.Media, error)
+}
+
 // DraftService handles business logic for drafts
 type DraftService struct {
 	draftRepo         draftRepository
@@ -43,6 +47,13 @@ type DraftService struct {
 	scheduling        bool
 	logger            *zap.Logger
 	principalUsername func(context.Context) (string, error)
+	mediaRepo         editorialMediaRepository
+}
+
+// SetEditorialMediaRepository wires the media lookup used to enforce asset
+// ownership and internal-state invariants at the CMS service boundary.
+func (s *DraftService) SetEditorialMediaRepository(repo editorialMediaRepository) {
+	s.mediaRepo = repo
 }
 
 // NewDraftService creates a new DraftService
@@ -164,6 +175,46 @@ func invalidateDraftReviewSummary(draft *models.Draft) {
 // GetDraft retrieves a draft
 func (s *DraftService) GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error) {
 	return s.draftRepo.GetDraft(ctx, authorID, draftID)
+}
+
+// SetEditorialMedia replaces the complete ordered media binding for a draft.
+// Media changes deliberately do not extend the review content hash in M1; M2
+// owns byte-bound approval and publish-gate semantics.
+func (s *DraftService) SetEditorialMedia(ctx context.Context, authorID, draftID string, usages []models.DraftMediaUsage) (*models.Draft, error) {
+	authorID = strings.TrimSpace(authorID)
+	draftID = strings.TrimSpace(draftID)
+	if s.mediaRepo == nil {
+		return nil, stdErrors.New("editorial media repository is unavailable")
+	}
+	draft, err := s.draftRepo.GetDraft(ctx, authorID, draftID)
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := models.NormalizeDraftMediaUsages(usages)
+	if err != nil {
+		return nil, err
+	}
+	for _, usage := range normalized {
+		media, getErr := s.mediaRepo.GetMedia(ctx, usage.MediaID)
+		if getErr != nil {
+			return nil, getErr
+		}
+		if media == nil || !strings.EqualFold(strings.TrimSpace(media.UserID), authorID) {
+			return nil, stdErrors.New("editorial media does not belong to draft author")
+		}
+		if !media.IsInternalEditorial() || media.Provenance == nil || media.Provenance.ContentIntegrity != media.ContentHash {
+			return nil, stdErrors.New("editorial media is not an integrity-bound internal asset")
+		}
+	}
+	draft.EditorialMedia = normalized
+	// M1 persists the association without changing the content revision, review
+	// summary, or current content hash. M2 owns binding media bytes into those
+	// approval and publication invariants.
+	draft.UpdatedAt = time.Now().UTC()
+	if err := s.draftRepo.UpdateDraft(ctx, authorID, draft); err != nil {
+		return nil, err
+	}
+	return draft, nil
 }
 
 // PreviewDraft renders a draft through the same Article publication renderer used for ActivityPub and public HTML.

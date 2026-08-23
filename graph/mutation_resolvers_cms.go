@@ -117,6 +117,47 @@ func (r *mutationResolver) UpdateDraft(ctx context.Context, id string, input mod
 	return r.convertCMSDraft(ctx, draft), nil
 }
 
+// SetDraftEditorialMedia is the resolver for the setDraftEditorialMedia field.
+func (r *mutationResolver) SetDraftEditorialMedia(ctx context.Context, draftID string, inputs []*model.EditorialMediaUsageInput) (*model.Draft, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	owner, acting, err := r.requireActingIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	service := r.Registry.Drafts()
+	if service == nil {
+		return nil, errors.New("draft service is not available")
+	}
+	usages := make([]models.DraftMediaUsage, 0, len(inputs))
+	for _, input := range inputs {
+		if input == nil {
+			return nil, errors.New("editorial media usage cannot be null")
+		}
+		var inlinePosition *int
+		if input.InlinePosition != nil {
+			value := *input.InlinePosition
+			inlinePosition = &value
+		}
+		usages = append(usages, models.DraftMediaUsage{
+			MediaID:        input.MediaID,
+			Role:           models.EditorialMediaRole(strings.ToLower(string(input.Role))),
+			InlinePosition: inlinePosition,
+			Caption:        trimStringPtr(input.Caption),
+			CreditLine:     trimStringPtr(input.CreditLine),
+			AltText:        trimStringPtr(input.AltText),
+			Focus:          trimStringPtr(input.Focus),
+		})
+	}
+	draft, err := service.SetEditorialMedia(ctx, owner, strings.TrimSpace(draftID), usages)
+	if err != nil {
+		return nil, err
+	}
+	r.auditActAs(ctx, acting, "cms.draft.media_set", draft.ID, map[string]any{"media_count": len(usages)})
+	return r.convertCMSDraft(ctx, draft), nil
+}
+
 func (r *mutationResolver) AutosaveDraft(ctx context.Context, id string, content string) (*model.Draft, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err

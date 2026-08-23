@@ -362,13 +362,43 @@ func (r *queryResolver) DraftPreview(ctx context.Context, id string) (*model.Dra
 		return nil, errors.New("draft service is not available")
 	}
 
-	draft, _, err := drafts.DraftReviewForCaller(ctx, username, strings.TrimSpace(id))
+	draft, bindings, err := drafts.DraftEditorialMediaForCaller(ctx, username, strings.TrimSpace(id))
 	if err != nil {
 		return nil, err
 	}
 
 	rendered, renderErr := cms.RenderDraftPreview(draft)
-	return r.convertCMSDraftPreview(draft, rendered, renderErr), nil
+	return r.convertCMSDraftPreview(ctx, draft, bindings, rendered, renderErr)
+}
+
+// DraftEditorialMediaAccess is the resolver for the draftEditorialMediaAccess field.
+func (r *queryResolver) DraftEditorialMediaAccess(ctx context.Context, draftID string, mediaID string) (*model.EditorialMediaAccess, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	caller, _, err := r.requireActingIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	drafts := r.Registry.Drafts()
+	mediaService := r.Registry.Media()
+	if drafts == nil || mediaService == nil {
+		return nil, errors.New("editorial media services are unavailable")
+	}
+	bound, err := drafts.BoundEditorialMediaForCaller(ctx, caller, strings.TrimSpace(draftID), strings.TrimSpace(mediaID))
+	if err != nil {
+		return nil, err
+	}
+	access, err := mediaService.IssueEditorialAccess(ctx, bound.MediaID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.EditorialMediaAccess{
+		MediaID:     bound.MediaID,
+		URL:         access.URL,
+		ExpiresAt:   model.Time(access.ExpiresAt),
+		ContentHash: access.ContentHash,
+	}, nil
 }
 
 func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) (*model.DraftConnection, error) {

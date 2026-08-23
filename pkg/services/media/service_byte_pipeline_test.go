@@ -20,11 +20,18 @@ type fakeMediaS3Service struct {
 	uploadErr    error
 	deleteErr    error
 	deleteCalls  []mediaS3DeleteCall
+	presignCalls []mediaS3PresignCall
 }
 
 type mediaS3DeleteCall struct {
 	bucket string
 	key    string
+}
+
+type mediaS3PresignCall struct {
+	bucket string
+	key    string
+	expiry time.Duration
 }
 
 func newFakeMediaS3Service() *fakeMediaS3Service {
@@ -50,6 +57,17 @@ func (f *fakeMediaS3Service) UploadFile(
 	return "s3://" + objectKey, nil
 }
 
+func (f *fakeMediaS3Service) UploadInternalFile(
+	ctx context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+	_ string,
+) (string, error) {
+	return f.UploadFile(ctx, bucket, key, data, contentType)
+}
+
 func (f *fakeMediaS3Service) DeleteFile(_ context.Context, bucket, key string) error {
 	f.deleteCalls = append(f.deleteCalls, mediaS3DeleteCall{bucket: bucket, key: key})
 	if f.deleteErr != nil {
@@ -63,9 +81,64 @@ func (f *fakeMediaS3Service) GeneratePresignedURL(
 	_ context.Context,
 	bucket string,
 	key string,
-	_ time.Duration,
+	expiry time.Duration,
 ) (string, error) {
+	f.presignCalls = append(f.presignCalls, mediaS3PresignCall{bucket: bucket, key: key, expiry: expiry})
 	return fmt.Sprintf("https://example.invalid/%s/%s", bucket, key), nil
+}
+
+func TestServiceEditorialUploadIsInternalAndAccessIsExact(t *testing.T) {
+	service, mediaRepo, jobQueue, _ := createTestService(t)
+	objectStore := newFakeMediaS3Service()
+	service.SetS3Service(objectStore)
+	service.SetEditorialKMSKeyID("alias/lesser-test")
+	ctx := context.Background()
+
+	var stored *models.Media
+	mediaRepo.On("CreateMedia", mock.Anything, mock.MatchedBy(func(media *models.Media) bool {
+		stored = media
+		return media.IsInternalEditorial() && media.CDNUrl == "" && media.Provenance != nil &&
+			media.Provenance.ContentIntegrity == media.ContentHash
+	})).Return(nil).Once()
+	result, err := service.UploadMedia(ctx, &UploadMediaCommand{
+		UserID: "alice", FileName: "hero.png", ContentType: "image/png", FileData: []byte("editorial bytes"),
+		MediaCategory: models.MediaCategoryImage, Editorial: true,
+		Provenance: &models.MediaProvenance{Origin: models.EditorialMediaOriginIllustrated, Tool: "brush", ResponsibleActor: "alice"},
+	})
+	require.NoError(t, err)
+	require.Same(t, stored, result.Media)
+	require.Empty(t, result.Media.CDNUrl)
+
+	mediaRepo.On("GetMedia", ctx, stored.MediaID).Return(stored, nil).Twice()
+	_, err = service.GetMedia(ctx, &GetMediaQuery{MediaID: stored.MediaID})
+	require.ErrorIs(t, err, ErrMediaUnauthorizedAccess)
+
+	access, err := service.IssueEditorialAccess(ctx, stored.MediaID)
+	require.NoError(t, err)
+	require.Equal(t, stored.ContentHash, access.ContentHash)
+	require.Equal(t, "https://example.invalid/"+stored.S3Bucket+"/"+stored.S3Key, access.URL)
+	require.Len(t, objectStore.presignCalls, 1)
+	require.Equal(t, mediaS3PresignCall{bucket: stored.S3Bucket, key: stored.S3Key, expiry: 5 * time.Minute}, objectStore.presignCalls[0])
+	mediaRepo.AssertNotCalled(t, "CreateMediaJob", mock.Anything, mock.Anything)
+	jobQueue.AssertNotCalled(t, "QueueMediaJob", mock.Anything, mock.Anything)
+}
+
+func TestServiceEditorialUploadFailsClosedWithoutKMSKey(t *testing.T) {
+	service, mediaRepo, jobQueue, _ := createTestService(t)
+	service.SetS3Service(newFakeMediaS3Service())
+
+	result, err := service.UploadMedia(context.Background(), &UploadMediaCommand{
+		UserID: "alice", FileName: "hero.png", ContentType: "image/png", FileData: []byte("editorial bytes"),
+		MediaCategory: models.MediaCategoryImage, Editorial: true,
+		Provenance: &models.MediaProvenance{Origin: models.EditorialMediaOriginSupplied, ResponsibleActor: "alice"},
+	})
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrMediaStorageFailed)
+	require.Contains(t, err.Error(), "KMS key")
+	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+	mediaRepo.AssertNotCalled(t, "CreateMediaJob", mock.Anything, mock.Anything)
+	jobQueue.AssertNotCalled(t, "QueueMediaJob", mock.Anything, mock.Anything)
 }
 
 func TestServiceUploadMediaPersistsExactBytesHashAndProcessingJob(t *testing.T) {

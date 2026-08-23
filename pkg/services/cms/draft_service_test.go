@@ -84,6 +84,13 @@ func cloneDraft(d *models.Draft) *models.Draft {
 		v := *d.ScheduledAt
 		cp.ScheduledAt = &v
 	}
+	cp.EditorialMedia = append([]models.DraftMediaUsage(nil), d.EditorialMedia...)
+	for i := range cp.EditorialMedia {
+		if d.EditorialMedia[i].InlinePosition != nil {
+			position := *d.EditorialMedia[i].InlinePosition
+			cp.EditorialMedia[i].InlinePosition = &position
+		}
+	}
 	return &cp
 }
 

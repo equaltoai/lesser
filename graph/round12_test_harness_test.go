@@ -47,7 +47,22 @@ func (round12MediaS3Service) UploadFile(
 	return "s3://" + bucket + "/" + key, nil
 }
 
+func (s round12MediaS3Service) UploadInternalFile(
+	ctx context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+	_ string,
+) (string, error) {
+	return s.UploadFile(ctx, bucket, key, data, contentType)
+}
+
 func (round12MediaS3Service) DeleteFile(context.Context, string, string) error { return nil }
+
+func (round12MediaS3Service) GeneratePresignedURL(_ context.Context, bucket, key string, _ time.Duration) (string, error) {
+	return "https://signed.example/" + bucket + "/" + key + "?signature=review", nil
+}
 
 type round12VAPIDSecretsClient struct {
 	secret string
@@ -104,6 +119,8 @@ type round12PermissiveQueryState struct {
 	seededImportBudgets    map[string]*models.ImportBudget
 	seededQuotePermissions map[string]*models.QuotePermissions
 	seededAgentShareGrants map[string]*models.AgentShareGrant
+	seededMedia            map[string]*models.Media
+	persistMedia           bool
 	pendingUpdateSets      map[string]any
 	pendingUpdateRemovals  map[string]struct{}
 }
@@ -148,7 +165,9 @@ func setupRound12PermissiveDynamormMocks(t *testing.T) (*dynamormmocks.MockDB, *
 	mockQuery.On("Select", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
 	mockQuery.On("IfExists").Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("Create").Run(func(mock.Arguments) {
+		round12ApplyDirectModelCreate(state)
+	}).Return(nil).Maybe()
 	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Update").Run(func(mock.Arguments) {
 		round12ApplyDirectModelUpdate(state)
@@ -504,6 +523,12 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 		mediaID := strings.TrimPrefix(state.lastPK, "media#")
 		if strings.TrimSpace(mediaID) == "" {
 			mediaID = "m1"
+		}
+		if state != nil && state.seededMedia != nil {
+			if seeded := state.seededMedia[mediaID]; seeded != nil {
+				*v = *round12CloneMedia(seeded)
+				return
+			}
 		}
 		v.MediaID = mediaID
 		v.UserID = "alice"
@@ -939,7 +964,52 @@ func round12ApplyDirectModelUpdate(state *round12PermissiveQueryState) {
 	case models.User:
 		modelCopy := model
 		round12StoreUpdatedUserModel(state, &modelCopy)
+	case *models.Media:
+		round12StoreMediaModel(state, model)
+	case models.Media:
+		modelCopy := model
+		round12StoreMediaModel(state, &modelCopy)
 	}
+}
+
+func round12ApplyDirectModelCreate(state *round12PermissiveQueryState) {
+	if state == nil {
+		return
+	}
+	switch model := state.currentModel.(type) {
+	case *models.Media:
+		round12StoreMediaModel(state, model)
+	case models.Media:
+		modelCopy := model
+		round12StoreMediaModel(state, &modelCopy)
+	}
+}
+
+func round12StoreMediaModel(state *round12PermissiveQueryState, media *models.Media) {
+	if state == nil || !state.persistMedia || media == nil || strings.TrimSpace(media.MediaID) == "" {
+		return
+	}
+	if state.seededMedia == nil {
+		state.seededMedia = make(map[string]*models.Media)
+	}
+	state.seededMedia[media.MediaID] = round12CloneMedia(media)
+}
+
+func round12CloneMedia(media *models.Media) *models.Media {
+	if media == nil {
+		return nil
+	}
+	clone := *media
+	clone.Variants = make(map[string]models.MediaVariant, len(media.Variants))
+	for name, variant := range media.Variants {
+		clone.Variants[name] = variant
+	}
+	if media.Provenance != nil {
+		provenance := *media.Provenance
+		provenance.SourceReferences = append([]string(nil), media.Provenance.SourceReferences...)
+		clone.Provenance = &provenance
+	}
+	return &clone
 }
 
 func round12StoreUpdatedUserModel(state *round12PermissiveQueryState, model *models.User) {
@@ -1547,6 +1617,7 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 		CMSScheduledPublishingEnabled: true,
 		CMSSeriesEnabled:              true,
 		CMSCategoriesEnabled:          true,
+		KMSKeyID:                      "alias/lesser-test",
 	}
 
 	articleRepo := &round12ArticleRepoWithDB{ArticleRepository: inmemory.NewArticleRepository(), db: mockDB}
