@@ -8,6 +8,7 @@ import (
 	"time"
 
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -54,8 +55,11 @@ func (f *fakeOrphanMedia) GetMedia(_ context.Context, mediaID string) (*models.M
 }
 
 type fakeOrphanArticles struct {
-	byID map[string]*models.Article
-	err  error
+	byID         map[string]*models.Article
+	byAuthor     map[string][]*models.Article
+	err          error
+	listErr      error
+	infiniteNext string // when set, the author enumeration never terminates (scan-budget test)
 }
 
 func (f *fakeOrphanArticles) GetArticle(_ context.Context, articleID string) (*models.Article, error) {
@@ -67,6 +71,33 @@ func (f *fakeOrphanArticles) GetArticle(_ context.Context, articleID string) (*m
 		return nil, apperrors.ItemNotFoundWithID("article", articleID)
 	}
 	return a, nil
+}
+
+func (f *fakeOrphanArticles) ListArticlesByAuthorPaginated(_ context.Context, authorActorID string, _ int, _ string) ([]*models.Article, string, error) {
+	if f.listErr != nil {
+		return nil, "", f.listErr
+	}
+	return f.byAuthor[authorActorID], f.infiniteNext, nil
+}
+
+// newOrphanSource wires a fully provisioned orphan source: the article fake
+// serves both the direct target lookup and the owning-author cross-article
+// scan, and the domain is fixed so author actor IDs resolve deterministically.
+func newOrphanSource(drafts *fakeOrphanDrafts, media *fakeOrphanMedia, articles *fakeOrphanArticles, logger *zap.Logger) *cmsOrphanedPublishedMintSource {
+	if articles == nil {
+		articles = &fakeOrphanArticles{
+			byID:     map[string]*models.Article{},
+			byAuthor: map[string][]*models.Article{},
+		}
+	}
+	return &cmsOrphanedPublishedMintSource{
+		drafts:           drafts,
+		media:            media,
+		articles:         articles,
+		articlesByAuthor: articles,
+		domain:           "example.test",
+		logger:           logger,
+	}
 }
 
 func orphanReconcilePublishedMedia(id string) *models.Media {
@@ -90,29 +121,122 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 	hero := orphanReconcilePublishedMedia("hero")
 	objectID := "https://example.test/articles/existing"
 
+	aliceActor := common.GenerateActorID("example.test", "alice")
+
 	t.Run("create-path orphan mint is returned", func(t *testing.T) {
 		core, _ := observer.New(zap.DebugLevel)
-		src := &cmsOrphanedPublishedMintSource{
-			drafts:   &fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
-			media:    &fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
-			articles: &fakeOrphanArticles{byID: map[string]*models.Article{}},
-			logger:   zap.New(core),
-		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
 		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, []string{"hero"}, ids)
+	})
+
+	t.Run("create-path orphan referenced by a different live article is untouched", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		other := &models.Article{Object: models.Object{ID: "https://example.test/articles/other"}}
+		other.FeaturedImage = &models.Media{MediaID: "hero", S3Key: "published/alice/hero.png"}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			&fakeOrphanArticles{
+				byID:     map[string]*models.Article{},
+				byAuthor: map[string][]*models.Article{aliceActor: {other}},
+			},
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Empty(t, ids, "a create-path failed draft must not orphan an asset a different live article references")
+	})
+
+	t.Run("cross-article reference by published URL is untouched", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		other := &models.Article{
+			Object:  models.Object{ID: "https://example.test/articles/other"},
+			OGImage: "https://cdn.example.test/published/alice/hero.png",
+		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			&fakeOrphanArticles{
+				byID:     map[string]*models.Article{},
+				byAuthor: map[string][]*models.Article{aliceActor: {other}},
+			},
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Empty(t, ids)
+	})
+
+	t.Run("cross-article inline content reference is untouched", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		other := &models.Article{
+			Object: models.Object{
+				ID:      "https://example.test/articles/other",
+				Content: "see <img src=\"https://cdn.example.test/published/alice/hero.png\">",
+			},
+		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			&fakeOrphanArticles{
+				byID:     map[string]*models.Article{},
+				byAuthor: map[string][]*models.Article{aliceActor: {other}},
+			},
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Empty(t, ids)
+	})
+
+	t.Run("unwired author enumerator fails closed", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
+		src.articlesByAuthor = nil
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Empty(t, ids, "an unverifiable cross-article reference state must never be unpublished")
+	})
+
+	t.Run("cross-article scan budget exceeded fails closed", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			&fakeOrphanArticles{
+				byID:         map[string]*models.Article{},
+				byAuthor:     map[string][]*models.Article{aliceActor: {}},
+				infiniteNext: "still-more",
+			},
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Empty(t, ids, "a candidate whose reference scan cannot terminate must be skipped")
 	})
 
 	t.Run("live article referencing by featured image is untouched", func(t *testing.T) {
 		core, _ := observer.New(zap.DebugLevel)
 		article := &models.Article{Object: models.Object{ID: objectID}}
 		article.FeaturedImage = &models.Media{MediaID: "hero", S3Key: "published/alice/hero.png"}
-		src := &cmsOrphanedPublishedMintSource{
-			drafts:   &fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", &objectID, models.DraftMediaUsage{MediaID: "hero"})}},
-			media:    &fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
-			articles: &fakeOrphanArticles{byID: map[string]*models.Article{objectID: article}},
-			logger:   zap.New(core),
-		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", &objectID, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			&fakeOrphanArticles{byID: map[string]*models.Article{objectID: article}},
+			zap.New(core),
+		)
 		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.NoError(t, err)
 		require.Empty(t, ids, "a published asset referenced by a live article must never be unpublished")
@@ -124,12 +248,12 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 			Object:  models.Object{ID: objectID},
 			OGImage: "https://cdn.example.test/published/alice/hero.png",
 		}
-		src := &cmsOrphanedPublishedMintSource{
-			drafts:   &fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", &objectID, models.DraftMediaUsage{MediaID: "hero"})}},
-			media:    &fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
-			articles: &fakeOrphanArticles{byID: map[string]*models.Article{objectID: article}},
-			logger:   zap.New(core),
-		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", &objectID, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			&fakeOrphanArticles{byID: map[string]*models.Article{objectID: article}},
+			zap.New(core),
+		)
 		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.NoError(t, err)
 		require.Empty(t, ids)
@@ -137,12 +261,12 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 
 	t.Run("update-path orphan without a surviving reference is returned", func(t *testing.T) {
 		core, _ := observer.New(zap.DebugLevel)
-		src := &cmsOrphanedPublishedMintSource{
-			drafts:   &fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", &objectID, models.DraftMediaUsage{MediaID: "hero"})}},
-			media:    &fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
-			articles: &fakeOrphanArticles{byID: map[string]*models.Article{}},
-			logger:   zap.New(core),
-		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", &objectID, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			&fakeOrphanArticles{byID: map[string]*models.Article{}},
+			zap.New(core),
+		)
 		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, []string{"hero"}, ids)
@@ -154,12 +278,12 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 		unpublished.PublishedS3Key = ""
 		unpublished.PublishedURL = ""
 		unpublished.PublishedAt = nil
-		src := &cmsOrphanedPublishedMintSource{
-			drafts:   &fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
-			media:    &fakeOrphanMedia{byID: map[string]*models.Media{"hero": &unpublished}},
-			articles: &fakeOrphanArticles{byID: map[string]*models.Article{}},
-			logger:   zap.New(core),
-		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": &unpublished}},
+			nil,
+			zap.New(core),
+		)
 		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.NoError(t, err)
 		require.Empty(t, ids)
@@ -167,8 +291,8 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 
 	t.Run("failed drafts are paged and mints are deduplicated", func(t *testing.T) {
 		core, _ := observer.New(zap.DebugLevel)
-		src := &cmsOrphanedPublishedMintSource{
-			drafts: &fakeOrphanDrafts{
+		src := newOrphanSource(
+			&fakeOrphanDrafts{
 				pageOne: []*models.Draft{
 					orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"}, models.DraftMediaUsage{MediaID: "card"}),
 					orphanFailedDraft("d2", nil, models.DraftMediaUsage{MediaID: "hero"}),
@@ -177,12 +301,12 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 					orphanFailedDraft("d3", nil, models.DraftMediaUsage{MediaID: "inline-1"}),
 				},
 			},
-			media: &fakeOrphanMedia{byID: map[string]*models.Media{
+			&fakeOrphanMedia{byID: map[string]*models.Media{
 				"hero": hero, "card": orphanReconcilePublishedMedia("card"), "inline-1": orphanReconcilePublishedMedia("inline-1"),
 			}},
-			articles: &fakeOrphanArticles{byID: map[string]*models.Article{}},
-			logger:   zap.New(core),
-		}
+			nil,
+			zap.New(core),
+		)
 		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"hero", "card", "inline-1"}, ids)
@@ -190,12 +314,12 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 
 	t.Run("unverifiable media is skipped fail-closed", func(t *testing.T) {
 		core, observed := observer.New(zap.DebugLevel)
-		src := &cmsOrphanedPublishedMintSource{
-			drafts:   &fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
-			media:    &fakeOrphanMedia{err: errors.New("media lookup failed")},
-			articles: &fakeOrphanArticles{byID: map[string]*models.Article{}},
-			logger:   zap.New(core),
-		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{pageOne: []*models.Draft{orphanFailedDraft("d1", nil, models.DraftMediaUsage{MediaID: "hero"})}},
+			&fakeOrphanMedia{err: errors.New("media lookup failed")},
+			nil,
+			zap.New(core),
+		)
 		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.NoError(t, err)
 		require.Empty(t, ids, "an unverifiable candidate must not be unpublished")
@@ -204,12 +328,12 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 
 	t.Run("enumeration failure is surfaced", func(t *testing.T) {
 		core, _ := observer.New(zap.DebugLevel)
-		src := &cmsOrphanedPublishedMintSource{
-			drafts:   &fakeOrphanDrafts{err: errors.New("draft enumeration failed")},
-			media:    &fakeOrphanMedia{byID: map[string]*models.Media{}},
-			articles: &fakeOrphanArticles{byID: map[string]*models.Article{}},
-			logger:   zap.New(core),
-		}
+		src := newOrphanSource(
+			&fakeOrphanDrafts{err: errors.New("draft enumeration failed")},
+			&fakeOrphanMedia{byID: map[string]*models.Media{}},
+			nil,
+			zap.New(core),
+		)
 		_, err := src.ListOrphanedPublishedMintIDs(context.Background())
 		require.Error(t, err)
 	})

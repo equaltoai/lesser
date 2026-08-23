@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/cms"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -19,6 +20,16 @@ const draftStatusFailed = "failed"
 
 // orphanReconcilePageSize bounds each failed-draft enumeration page.
 const orphanReconcilePageSize = 100
+
+// orphanReconcileAuthorScanPageSize bounds each page of the cross-article
+// reference scan over the owning author's live articles.
+const orphanReconcileAuthorScanPageSize = 100
+
+// orphanReconcileAuthorScanMaxPages bounds the cross-article reference scan so
+// reconciliation stays bounded even for an author with a very large article
+// set. A candidate whose reference state cannot be verified within the budget
+// fails closed (treated as referenced) and is never unpublished.
+const orphanReconcileAuthorScanMaxPages = 10
 
 // orphanDraftEnumerator pages drafts in one status by GSI4SK cursor values.
 type orphanDraftEnumerator interface {
@@ -35,14 +46,23 @@ type orphanArticleLookup interface {
 	GetArticle(ctx context.Context, articleID string) (*models.Article, error)
 }
 
+// orphanArticleEnumerator pages an author's live articles (CMS author index) so
+// the cross-article reference check can reach an asset's serving even when the
+// failed draft was a create-path publish with no target article.
+type orphanArticleEnumerator interface {
+	ListArticlesByAuthorPaginated(ctx context.Context, authorActorID string, limit int, cursor string) ([]*models.Article, string, error)
+}
+
 // cmsOrphanedPublishedMintSource enumerates durable published mints whose
 // owning draft is terminally failed and no live article references them. It is
 // the registry's wiring for media.Service.ReconcileOrphanedPublishedMedia.
 type cmsOrphanedPublishedMintSource struct {
-	drafts   orphanDraftEnumerator
-	media    orphanMediaLookup
-	articles orphanArticleLookup
-	logger   *zap.Logger
+	drafts          orphanDraftEnumerator
+	media           orphanMediaLookup
+	articles        orphanArticleLookup
+	articlesByAuthor orphanArticleEnumerator
+	domain          string
+	logger          *zap.Logger
 }
 
 // ListOrphanedPublishedMintIDs returns the deduplicated media IDs minted by
@@ -117,36 +137,86 @@ func (src *cmsOrphanedPublishedMintSource) isOrphanedMint(ctx context.Context, d
 	return !live
 }
 
-// referencesLiveArticle reports whether the draft's publish target article
-// still references the minted asset by ID (featured image snapshot) or by its
-// deterministic published URL (og image or inline content). Drafts without a
-// publish target (the create-new-article path) never have a live reference.
+// referencesLiveArticle reports whether any live article references the minted
+// asset by ID (featured image snapshot) or by its deterministic published URL
+// (og image or inline content). The check covers the failed draft's own publish
+// target (the update-existing-article path) and, when an article enumerator and
+// domain are wired, the owning author's live article set: only the owning
+// author's drafts can bind the asset, so the first successful publish that
+// lives on the asset is reachable through that author's article index even when
+// the failed draft was a create-path publish with no target article. The ACTUAL
+// guarantee is that an asset referenced by the failed draft's own target
+// article or by any live article of the owning author is never unpublished;
+// candidates whose reference state cannot be verified (enumerator or domain
+// unwired, scan budget exceeded, lookup error) fail closed and are treated as
+// referenced so a live published asset is never unpublished.
 func (src *cmsOrphanedPublishedMintSource) referencesLiveArticle(ctx context.Context, draft *models.Draft, mediaID string, media *models.Media) (bool, error) {
-	objectID := ""
-	if draft.ObjectID != nil {
-		objectID = strings.TrimSpace(*draft.ObjectID)
-	}
-	if objectID == "" {
-		return false, nil
-	}
-	article, err := src.articles.GetArticle(ctx, objectID)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound) {
-			return false, nil
+	publishedURL := strings.TrimSpace(media.PublishedURL)
+	// Fast path: the update-existing-article draft's own target article. A
+	// missing target falls through to the cross-article scan below.
+	if draft != nil && draft.ObjectID != nil {
+		objectID := strings.TrimSpace(*draft.ObjectID)
+		if objectID != "" {
+			article, err := src.articles.GetArticle(ctx, objectID)
+			if err != nil {
+				if errors.Is(err, storage.ErrNotFound) || apperrors.HasCode(err, apperrors.CodeNotFound) {
+					// Target article gone: nothing referenced there.
+				} else {
+					return false, err
+				}
+			} else if article != nil && articleReferencesMedia(article, mediaID, publishedURL) {
+				return true, nil
+			}
 		}
-		return false, err
 	}
-	if article == nil {
-		return false, nil
-	}
-	if article.FeaturedImage != nil && strings.TrimSpace(article.FeaturedImage.MediaID) == mediaID {
+	// Cross-article check: a bounded scan of the owning author's live articles.
+	// Without the enumerator or the domain the reference state cannot be
+	// verified, so fail closed rather than risk unpublishing a live asset.
+	if src.articlesByAuthor == nil || strings.TrimSpace(src.domain) == "" {
 		return true, nil
 	}
-	publishedURL := strings.TrimSpace(media.PublishedURL)
-	if publishedURL == "" {
-		return false, nil
+	actorID := common.GenerateActorID(strings.TrimSpace(src.domain), strings.TrimSpace(draft.AuthorID))
+	if actorID == "" {
+		return true, nil
 	}
-	return strings.Contains(article.OGImage, publishedURL) || strings.Contains(article.Content, publishedURL), nil
+	cursor := ""
+	for page := 0; page < orphanReconcileAuthorScanMaxPages; page++ {
+		articles, next, err := src.articlesByAuthor.ListArticlesByAuthorPaginated(ctx, actorID, orphanReconcileAuthorScanPageSize, cursor)
+		if err != nil {
+			return false, err
+		}
+		for _, article := range articles {
+			if articleReferencesMedia(article, mediaID, publishedURL) {
+				return true, nil
+			}
+		}
+		cursor = next
+		if cursor == "" {
+			break
+		}
+	}
+	if cursor != "" {
+		// The author's article set exceeds the scan budget: the reference state
+		// cannot be verified within the bound. Fail closed.
+		return true, nil
+	}
+	return false, nil
+}
+
+// articleReferencesMedia reports whether one article references a minted asset
+// by its featured-image snapshot ID or by its durable published URL (og image
+// or inline content).
+func articleReferencesMedia(article *models.Article, mediaID, publishedURL string) bool {
+	if article == nil {
+		return false
+	}
+	if article.FeaturedImage != nil && strings.TrimSpace(article.FeaturedImage.MediaID) == mediaID {
+		return true
+	}
+	if publishedURL == "" {
+		return false
+	}
+	return strings.Contains(article.OGImage, publishedURL) || strings.Contains(article.Content, publishedURL)
 }
 
 // ReconcileOrphanedPublishedMedia re-runs the best-effort unpublish for every
@@ -174,15 +244,21 @@ func (r *Registry) ReconcileOrphanedPublishedMedia(ctx context.Context) error {
 	if articles == nil {
 		return errors.New("article service is unavailable")
 	}
+	articleRepo := r.storage.Article()
+	if articleRepo == nil {
+		return errors.New("article repository is unavailable")
+	}
 	logger := r.logger
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 	service.SetOrphanPublishedMintSource(&cmsOrphanedPublishedMintSource{
-		drafts:   drafts,
-		media:    mediaRepo,
-		articles: articles,
-		logger:   logger,
+		drafts:           drafts,
+		media:            mediaRepo,
+		articles:         articles,
+		articlesByAuthor: articleRepo,
+		domain:           r.getCMSDomainName(),
+		logger:           logger,
 	})
 	return service.ReconcileOrphanedPublishedMedia(ctx)
 }
