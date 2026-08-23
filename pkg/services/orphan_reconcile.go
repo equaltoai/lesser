@@ -17,17 +17,23 @@ import (
 // draftStatusFailed is the shared failed-status constant exported by the CMS
 // package. A failed draft is the terminal state markDraftFailed writes after a
 // publish error; its bound media mints may have survived a best-effort rollback.
-// Reconciliation also sweeps crash-stuck publishing drafts older than
+// Reconciliation also sweeps publishing drafts whose publish attempt predates
 // stalePublishingHorizon, treating their mints as failed-draft candidates.
 
-// stalePublishingHorizon is how old a publishing-status draft must be before
-// reconciliation treats it as a failed-draft candidate. An interactive publish
-// is a single short-lived request whose mint and article-write work completes
-// in seconds, and every transitionDraftToPublishing write re-arms the horizon
-// by touching UpdatedAt, so a draft still in publishing after 24h is provably
-// crash-stuck rather than in flight. The horizon bounds reconciliation lag to
-// one day while keeping the false-positive risk (unpublishing an in-flight
-// publish's mint) at zero.
+// stalePublishingHorizon is how old a publishing draft's publish attempt must
+// be before reconciliation treats it as a crash-stuck candidate. The horizon
+// keys on the publish-attempt timestamp that transitionDraftToPublishing alone
+// writes (PublishAttemptedAt; UpdatedAt for legacy rows that predate the
+// attribute), never on UpdatedAt: ordinary content writes — autosave, update,
+// editorial-media set — advance UpdatedAt while a crash-stuck draft keeps its
+// old attempt stamp, so the stamp stays fresh only while the draft is actually
+// being published. An interactive publish is a single short-lived request whose
+// mint and article-write work completes in seconds, so a publishing draft whose
+// attempt predates the horizon is treated as crash-stuck: reconciliation sweeps
+// its mints while the draft stays publishing for the author to retry. The
+// horizon bounds reconciliation lag to one day while keeping the
+// false-positive risk (unpublishing an in-flight publish's mint) at zero — an
+// in-flight publish always carries a fresh attempt stamp.
 const stalePublishingHorizon = 24 * time.Hour
 
 // orphanReconcilePageSize bounds each failed-draft enumeration page.
@@ -69,12 +75,12 @@ type orphanArticleEnumerator interface {
 // owning draft is terminally failed and no live article references them. It is
 // the registry's wiring for media.Service.ReconcileOrphanedPublishedMedia.
 type cmsOrphanedPublishedMintSource struct {
-	drafts          orphanDraftEnumerator
-	media           orphanMediaLookup
-	articles        orphanArticleLookup
+	drafts           orphanDraftEnumerator
+	media            orphanMediaLookup
+	articles         orphanArticleLookup
 	articlesByAuthor orphanArticleEnumerator
-	domain          string
-	logger          *zap.Logger
+	domain           string
+	logger           *zap.Logger
 }
 
 // ListOrphanedPublishedMintIDs returns the deduplicated media IDs minted by
@@ -96,13 +102,13 @@ func (src *cmsOrphanedPublishedMintSource) ListOrphanedPublishedMintIDs(ctx cont
 }
 
 // forEachOrphanCandidateDraft pages every draft whose mints are reconciliation
-// candidates — terminally failed drafts, plus crash-stuck publishing drafts
-// older than stalePublishingHorizon — and invokes fn for each. Stale publishing
-// drafts are candidates for mint reconciliation ONLY: this enumeration never
-// mutates a draft's status, so a crash-stuck publishing draft stays publishing
-// for its author to retry, and a retry re-arms the horizon via the transition's
-// UpdatedAt write. Listing and the per-candidate re-check share this
-// enumeration so both see the same candidate set.
+// candidates — terminally failed drafts, plus publishing drafts whose publish
+// attempt predates stalePublishingHorizon — and invokes fn for each. Stale
+// publishing drafts are candidates for mint reconciliation ONLY: this
+// enumeration never mutates a draft's status, so a crash-stuck publishing draft
+// stays publishing for its author to retry, and a retry re-arms the horizon via
+// the transition's PublishAttemptedAt stamp. Listing and the per-candidate
+// re-check share this enumeration so both see the same candidate set.
 func (src *cmsOrphanedPublishedMintSource) forEachOrphanCandidateDraft(ctx context.Context, fn func(draft *models.Draft) error) error {
 	now := time.Now().UTC()
 	for _, status := range []string{cms.DraftStatusFailed, cms.DraftStatusPublishing} {
@@ -131,12 +137,20 @@ func (src *cmsOrphanedPublishedMintSource) forEachOrphanCandidateDraft(ctx conte
 
 // isStalePublishingDraft reports whether a publishing-status draft predates the
 // stale horizon and is therefore a crash-stuck candidate rather than a publish
-// still in flight.
+// still in flight. The horizon keys on the publish-attempt timestamp written
+// ONLY by the publish transition (PublishAttemptedAt), so an author editing a
+// crash-stuck draft cannot re-arm the sweep by advancing UpdatedAt; a legacy
+// publishing row without the attribute falls back to UpdatedAt so pre-existing
+// stuck drafts are still swept.
 func isStalePublishingDraft(draft *models.Draft, now time.Time) bool {
 	if draft == nil {
 		return false
 	}
-	return !draft.UpdatedAt.IsZero() && draft.UpdatedAt.Before(now.Add(-stalePublishingHorizon))
+	stamp := draft.UpdatedAt
+	if draft.PublishAttemptedAt != nil && !draft.PublishAttemptedAt.IsZero() {
+		stamp = *draft.PublishAttemptedAt
+	}
+	return !stamp.IsZero() && stamp.Before(now.Add(-stalePublishingHorizon))
 }
 
 // RecheckOrphanedPublishedMint re-verifies one candidate's orphan premise at

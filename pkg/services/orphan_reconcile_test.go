@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/cms"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -135,6 +135,77 @@ func orphanFailedDraft(id string, objectID *string, usages ...models.DraftMediaU
 
 func orphanPublishingDraft(id string, updatedAt time.Time, usages ...models.DraftMediaUsage) *models.Draft {
 	return &models.Draft{ID: id, AuthorID: "alice", Status: cms.DraftStatusPublishing, UpdatedAt: updatedAt, EditorialMedia: usages}
+}
+
+// orphanPublishingDraftWithAttempt builds a publishing draft carrying an
+// explicit publish-attempt stamp (PublishAttemptedAt); nil models a legacy row
+// that predates the attribute.
+func orphanPublishingDraftWithAttempt(id string, updatedAt time.Time, attemptedAt *time.Time, usages ...models.DraftMediaUsage) *models.Draft {
+	return &models.Draft{ID: id, AuthorID: "alice", Status: cms.DraftStatusPublishing, UpdatedAt: updatedAt, PublishAttemptedAt: attemptedAt, EditorialMedia: usages}
+}
+
+// TestIsStalePublishingDraftHorizon proves the sweep horizon keys on the
+// publish-attempt stamp (PublishAttemptedAt) written only by the transition,
+// with an explicit UpdatedAt fallback for legacy rows, so content writes that
+// advance UpdatedAt cannot re-arm a crash-stuck publishing draft's sweep.
+func TestIsStalePublishingDraftHorizon(t *testing.T) {
+	now := time.Now().UTC()
+	old := now.Add(-25 * time.Hour)
+	fresh := now.Add(-time.Hour)
+	cases := []struct {
+		name        string
+		draft       *models.Draft
+		wantStale   bool
+		description string
+	}{
+		{
+			name:        "legacy row without the attribute falls back to a stale UpdatedAt",
+			draft:       orphanPublishingDraftWithAttempt("d1", old, nil),
+			wantStale:   true,
+			description: "a pre-attribute publishing row older than the horizon is still swept",
+		},
+		{
+			name:        "legacy row without the attribute falls back to a fresh UpdatedAt",
+			draft:       orphanPublishingDraftWithAttempt("d2", fresh, nil),
+			wantStale:   false,
+			description: "a legacy row freshly updated is treated as in flight",
+		},
+		{
+			name:        "stale attempt with fresh UpdatedAt is still stale (content writes cannot re-arm)",
+			draft:       orphanPublishingDraftWithAttempt("d3", fresh, &old),
+			wantStale:   true,
+			description: "autosave/update/editorial-media-set advance UpdatedAt; the attempt stamp stays old, so the draft is still swept",
+		},
+		{
+			name:        "fresh attempt with stale UpdatedAt is not stale (a fresh transition re-arms)",
+			draft:       orphanPublishingDraftWithAttempt("d4", old, &fresh),
+			wantStale:   false,
+			description: "a retry transition writes a fresh attempt stamp; the draft is in flight regardless of UpdatedAt age",
+		},
+		{
+			name:        "stale attempt with stale UpdatedAt is stale",
+			draft:       orphanPublishingDraftWithAttempt("d5", old, &old),
+			wantStale:   true,
+			description: "the common crash-stuck case",
+		},
+		{
+			name:        "nil draft is never stale",
+			draft:       nil,
+			wantStale:   false,
+			description: "guard",
+		},
+		{
+			name:        "legacy row with zero UpdatedAt is never stale",
+			draft:       orphanPublishingDraftWithAttempt("d6", time.Time{}, nil),
+			wantStale:   false,
+			description: "a zero fallback timestamp cannot be swept",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantStale, isStalePublishingDraft(tc.draft, now), "%s", tc.description)
+		})
+	}
 }
 
 func TestOrphanedPublishedMintSource(t *testing.T) {
@@ -311,6 +382,8 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 
 	t.Run("stale publishing draft with an orphaned mint is reconciled", func(t *testing.T) {
 		core, _ := observer.New(zap.DebugLevel)
+		// Legacy row: no publish-attempt stamp, stale UpdatedAt — swept via the
+		// explicit UpdatedAt fallback.
 		stale := orphanPublishingDraft("dp-stale", time.Now().UTC().Add(-25*time.Hour), models.DraftMediaUsage{MediaID: "hero"})
 		src := newOrphanSource(
 			&fakeOrphanDrafts{publishingPageOne: []*models.Draft{stale}},
@@ -326,6 +399,8 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 
 	t.Run("fresh publishing draft is not reconciled", func(t *testing.T) {
 		core, _ := observer.New(zap.DebugLevel)
+		// Legacy row: no publish-attempt stamp, fresh UpdatedAt — in flight via
+		// the UpdatedAt fallback.
 		fresh := orphanPublishingDraft("dp-fresh", time.Now().UTC(), models.DraftMediaUsage{MediaID: "hero"})
 		src := newOrphanSource(
 			&fakeOrphanDrafts{publishingPageOne: []*models.Draft{fresh}},
@@ -337,6 +412,46 @@ func TestOrphanedPublishedMintSource(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, ids,
 			"a publishing draft still inside the horizon is an in-flight publish and must not be reconciled")
+	})
+
+	t.Run("publishing draft re-armed by content writes is still reconciled", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		// F1 regression: an author who keeps editing a crash-stuck publishing
+		// draft advances UpdatedAt but never the publish-attempt stamp, so the
+		// sweep must still treat the draft as stale.
+		now := time.Now().UTC()
+		attempt := now.Add(-25 * time.Hour)
+		edited := orphanPublishingDraftWithAttempt("dp-edited", now, &attempt, models.DraftMediaUsage{MediaID: "hero"})
+		src := newOrphanSource(
+			&fakeOrphanDrafts{publishingPageOne: []*models.Draft{edited}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, []string{"hero"}, ids,
+			"a stale publish attempt must keep the draft a candidate no matter how recently it was edited")
+	})
+
+	t.Run("fresh publish attempt is not reconciled even with a stale UpdatedAt", func(t *testing.T) {
+		core, _ := observer.New(zap.DebugLevel)
+		// A fresh transition re-arms the horizon: the attempt stamp is new, so
+		// the publish is in flight even if the row's UpdatedAt is old (the
+		// author may have left the draft untouched before retrying).
+		now := time.Now().UTC()
+		attempt := now.Add(-time.Minute)
+		retried := orphanPublishingDraftWithAttempt("dp-retried", now.Add(-25*time.Hour), &attempt, models.DraftMediaUsage{MediaID: "hero"})
+		src := newOrphanSource(
+			&fakeOrphanDrafts{publishingPageOne: []*models.Draft{retried}},
+			&fakeOrphanMedia{byID: map[string]*models.Media{"hero": hero}},
+			nil,
+			zap.New(core),
+		)
+		ids, err := src.ListOrphanedPublishedMintIDs(context.Background())
+		require.NoError(t, err)
+		require.Empty(t, ids,
+			"a fresh publish attempt must not be swept as crash-stuck")
 	})
 
 	t.Run("stale publishing candidate passes the re-check", func(t *testing.T) {
