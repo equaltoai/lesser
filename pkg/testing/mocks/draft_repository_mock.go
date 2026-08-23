@@ -44,6 +44,12 @@ func (m *MockDraftRepository) UpdateDraft(ctx context.Context, authorID string, 
 	return args.Error(0)
 }
 
+// UpdateDraftEditorialMedia mocks the field-scoped editorial-media update method.
+func (m *MockDraftRepository) UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error {
+	args := m.Called(ctx, authorID, draft)
+	return args.Error(0)
+}
+
 // DeleteDraft mocks the DeleteDraft method
 func (m *MockDraftRepository) DeleteDraft(ctx context.Context, authorID, draftID string) error {
 	args := m.Called(ctx, authorID, draftID)

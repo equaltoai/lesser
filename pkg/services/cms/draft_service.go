@@ -24,6 +24,7 @@ const (
 type draftRepository interface {
 	CreateDraft(ctx context.Context, draft *models.Draft) error
 	UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error
+	UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error
 	GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error)
 	DeleteDraft(ctx context.Context, authorID, draftID string) error
 }
@@ -207,11 +208,12 @@ func (s *DraftService) SetEditorialMedia(ctx context.Context, authorID, draftID 
 		}
 	}
 	draft.EditorialMedia = normalized
-	// M1 persists the association without changing the content revision, review
-	// summary, or current content hash. M2 owns binding media bytes into those
-	// approval and publication invariants.
+	// M1 persists only the association and update timestamp so a concurrent
+	// content writer cannot be overwritten by this stale draft snapshot. It does
+	// not change the content revision, review summary, or current content hash;
+	// M2 owns binding media bytes into those approval and publication invariants.
 	draft.UpdatedAt = time.Now().UTC()
-	if err := s.draftRepo.UpdateDraft(ctx, authorID, draft); err != nil {
+	if err := s.draftRepo.UpdateDraftEditorialMedia(ctx, authorID, draft); err != nil {
 		return nil, err
 	}
 	return draft, nil

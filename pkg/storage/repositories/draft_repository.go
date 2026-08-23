@@ -85,6 +85,39 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, authorID string, draf
 	return r.db.WithContext(ctx).Model(draft).Update()
 }
 
+// UpdateDraftEditorialMedia atomically replaces only the editorial-media
+// association and its update timestamp. An empty association removes the
+// sparse attribute explicitly instead of relying on omitempty update behavior.
+func (r *DraftRepository) UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error {
+	if err := validateDraftWriteOwner(authorID, draft); err != nil {
+		return err
+	}
+	if err := draft.UpdateKeys(); err != nil {
+		return err
+	}
+
+	builder := r.db.WithContext(ctx).
+		Model(draft).
+		Where("PK", "=", draft.PK).
+		Where("SK", "=", draft.SK).
+		UpdateBuilder()
+	if len(draft.EditorialMedia) == 0 {
+		builder.Remove("EditorialMedia")
+	} else {
+		builder.Set("EditorialMedia", draft.EditorialMedia)
+	}
+	builder.Set("UpdatedAt", draft.UpdatedAt)
+	builder.ConditionExists("PK")
+	if err := builder.Execute(); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.ItemNotFoundWithID("draft", draft.ID).
+				WithInternalError(errors.Join(err, storage.ErrNotFound))
+		}
+		return ErrorHandler.HandleUpdateError(err, "draft", draft.ID)
+	}
+	return nil
+}
+
 // UpdateDraftReviewFields atomically updates only the mutable review summary.
 // Content and other owner-controlled fields are deliberately excluded so a
 // concurrent owner edit cannot be overwritten by review submission.

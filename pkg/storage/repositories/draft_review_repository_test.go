@@ -76,6 +76,54 @@ func TestDraftRepositoryUpdateDraftReviewFieldsDoesNotClobberOwnerContent(t *tes
 	require.ErrorIs(t, repo.UpdateDraftReviewFields(ctx, "owner", &missing), storage.ErrNotFound)
 }
 
+func TestDraftRepositoryUpdateDraftEditorialMediaUsesFieldScopedTableTheoryUpdate(t *testing.T) {
+	ctx := context.Background()
+	client := &draftReviewRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.Draft{}))
+
+	position := 2
+	persisted := &models.Draft{
+		AuthorID: "owner", ID: "draft-media", ContentType: "Article",
+		Content: "owner concurrent edit", ContentFormat: "markdown", Status: "draft",
+		EditorialMedia: []models.DraftMediaUsage{{MediaID: "old", Role: models.EditorialMediaRoleInline, InlinePosition: &position}},
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	require.NoError(t, persisted.UpdateKeys())
+	require.NoError(t, db.WithContext(ctx).Model(persisted).Create())
+
+	stale := *persisted
+	stale.Content = "stale content that must not be written"
+	stale.EditorialMedia = []models.DraftMediaUsage{{MediaID: "replacement", Role: models.EditorialMediaRoleHero}}
+	stale.UpdatedAt = persisted.UpdatedAt.Add(time.Minute)
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	require.NoError(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &stale))
+
+	got, err := repo.GetDraft(ctx, "owner", persisted.ID)
+	require.NoError(t, err)
+	require.Equal(t, "owner concurrent edit", got.Content)
+	require.Equal(t, stale.EditorialMedia, got.EditorialMedia)
+	require.True(t, stale.UpdatedAt.Equal(got.UpdatedAt))
+
+	stale.EditorialMedia = []models.DraftMediaUsage{}
+	stale.UpdatedAt = stale.UpdatedAt.Add(time.Minute)
+	require.NoError(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &stale))
+
+	cleared, err := repo.GetDraft(ctx, "owner", persisted.ID)
+	require.NoError(t, err)
+	require.Empty(t, cleared.EditorialMedia,
+		"the real TableTheory update expression must remove an omitempty slice when the replacement is empty")
+	require.Equal(t, "owner concurrent edit", cleared.Content)
+	require.Len(t, client.updateInputs, 2)
+	require.Contains(t, aws.ToString(client.updateInputs[1].UpdateExpression), "REMOVE")
+	require.Contains(t, aws.ToString(client.updateInputs[1].ConditionExpression), "attribute_exists")
+
+	missing := stale
+	missing.ID = "missing"
+	require.ErrorIs(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &missing), storage.ErrNotFound)
+}
+
 func (d *draftReviewRecordingDynamo) PutItem(ctx context.Context, input *dynamodb.PutItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
 	d.putInputs = append(d.putInputs, input)
 	return d.Fake.PutItem(ctx, input, opts...)

@@ -55,6 +55,19 @@ func (r *memDraftRepo) UpdateDraft(ctx context.Context, authorID string, draft *
 	return nil
 }
 
+func (r *memDraftRepo) UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error {
+	if draft == nil || strings.TrimSpace(authorID) == "" {
+		return apperrors.ValidationFailedWithField("draft")
+	}
+	stored, ok := r.items[r.key(authorID, draft.ID)]
+	if !ok || strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
+		return apperrors.NotFound("draft")
+	}
+	stored.EditorialMedia = append([]models.DraftMediaUsage(nil), draft.EditorialMedia...)
+	stored.UpdatedAt = draft.UpdatedAt
+	return nil
+}
+
 func (r *memDraftRepo) GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error) {
 	item, ok := r.items[r.key(authorID, draftID)]
 	if !ok {
