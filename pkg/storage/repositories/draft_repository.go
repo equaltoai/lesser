@@ -82,7 +82,11 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, authorID string, draf
 		return err
 	}
 
-	return r.db.WithContext(ctx).Model(draft).Update()
+	// EditorialMedia has its own field-scoped writer; content updates must not
+	// replay a binding list carried by a stale full-model snapshot.
+	sparse := *draft
+	sparse.EditorialMedia = nil
+	return r.db.WithContext(ctx).Model(&sparse).Update()
 }
 
 // UpdateDraftEditorialMedia atomically replaces only the editorial-media

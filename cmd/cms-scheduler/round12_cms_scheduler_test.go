@@ -72,7 +72,25 @@ func (f *fakeDraftRepo) UpdateDraft(ctx context.Context, authorID string, draft 
 }
 
 func (f *fakeDraftRepo) UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error {
-	return f.UpdateDraft(ctx, authorID, draft)
+	f.updateCalls++
+	if f.getFn == nil {
+		return errors.New("not implemented")
+	}
+	stored, err := f.getFn(ctx, authorID, draft.ID)
+	if err != nil {
+		return err
+	}
+	if len(draft.EditorialMedia) == 0 {
+		stored.EditorialMedia = nil
+	} else {
+		stored.EditorialMedia = append([]models.DraftMediaUsage(nil), draft.EditorialMedia...)
+	}
+	stored.UpdatedAt = draft.UpdatedAt
+	f.lastUpdated = stored
+	if f.updateFn != nil {
+		return f.updateFn(ctx, authorID, stored)
+	}
+	return nil
 }
 
 func (f *fakeDraftRepo) DeleteDraft(context.Context, string, string) error { return nil }
@@ -91,6 +109,29 @@ func (f *fakeDraftRepo) ListScheduledDraftsDuePaginated(ctx context.Context, due
 		return f.listFn(ctx, dueBefore, limit, cursor)
 	}
 	return nil, "", nil
+}
+
+func TestFakeDraftRepoUpdateDraftEditorialMediaIsFieldScoped(t *testing.T) {
+	stored := &models.Draft{
+		AuthorID: "owner", ID: "draft-1", Content: "concurrent content",
+		EditorialMedia: []models.DraftMediaUsage{{MediaID: "old", Role: models.EditorialMediaRoleHero}},
+	}
+	repo := &fakeDraftRepo{
+		getFn: func(context.Context, string, string) (*models.Draft, error) { return stored, nil },
+	}
+	updatedAt := time.Now().UTC()
+	incoming := &models.Draft{
+		AuthorID: "owner", ID: "draft-1", Content: "stale content", UpdatedAt: updatedAt,
+		EditorialMedia: []models.DraftMediaUsage{{MediaID: "replacement", Role: models.EditorialMediaRoleSocialCard}},
+	}
+	require.NoError(t, repo.UpdateDraftEditorialMedia(context.Background(), "owner", incoming))
+	require.Equal(t, "concurrent content", stored.Content)
+	require.Equal(t, incoming.EditorialMedia, stored.EditorialMedia)
+	require.Equal(t, updatedAt, stored.UpdatedAt)
+
+	incoming.EditorialMedia = nil
+	require.NoError(t, repo.UpdateDraftEditorialMedia(context.Background(), "owner", incoming))
+	require.Empty(t, stored.EditorialMedia, "an empty field-scoped update must clear the association")
 }
 
 type fakeDraftPublisher struct {

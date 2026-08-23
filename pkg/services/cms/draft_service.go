@@ -208,10 +208,11 @@ func (s *DraftService) SetEditorialMedia(ctx context.Context, authorID, draftID 
 		}
 	}
 	draft.EditorialMedia = normalized
-	// M1 persists only the association and update timestamp so a concurrent
-	// content writer cannot be overwritten by this stale draft snapshot. It does
-	// not change the content revision, review summary, or current content hash;
-	// M2 owns binding media bytes into those approval and publication invariants.
+	// M1 gives the association and content independent field-scoped write lanes:
+	// content writers cannot write EditorialMedia, and this association writer
+	// cannot write content from its stale draft snapshot. Media changes do not
+	// change the content revision, review summary, or current content hash; M2
+	// owns binding media bytes into those approval and publication invariants.
 	draft.UpdatedAt = time.Now().UTC()
 	if err := s.draftRepo.UpdateDraftEditorialMedia(ctx, authorID, draft); err != nil {
 		return nil, err

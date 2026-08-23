@@ -28,6 +28,11 @@ asset must exist, be owned by the draft author, be internal, and have provenance
 bound to its media content hash. Associations can later resolve as `MISSING` if
 an asset disappears; preview does not silently drop them.
 
+The editorial-media association is written exclusively by its field-scoped
+writer. Full-model content writers, including update, autosave, publish, and
+schedule paths, never write the association in either direction; they cannot
+restore a stale binding list or clear a concurrently replaced one.
+
 ## Provenance and attribution
 
 Internal `Media.provenance` records:
