@@ -323,7 +323,7 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return err
 	}
 
-	approved, principalApproved, _, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
+	approved, principalApproved, approval, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
 	if approvalErr != nil {
 		return approvalErr
 	}
@@ -332,6 +332,14 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 	}
 	if !principalApproved {
 		return ErrDraftReviewPrincipalApprovalRequired
+	}
+	// Bound media must serve the exact approved bytes before the draft is
+	// scheduled. A withdrawal changes EditorialState, not the content digest,
+	// so a hash-current approval would otherwise sail through scheduling and
+	// the scheduler would later burn attempts and fail the draft with no
+	// media reason. Fail closed here with the explicit media reason.
+	if err := requireBoundMediaReady(approval); err != nil {
+		return err
 	}
 	draft.ScheduledAt = &scheduledAt
 	draft.Status = draftStatusScheduled
