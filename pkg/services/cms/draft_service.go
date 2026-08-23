@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
@@ -20,6 +21,16 @@ const (
 	draftStatusPublishing = "publishing"
 	draftStatusPublished  = "published"
 	draftStatusFailed     = "failed"
+)
+
+// PublishFailureReason values recorded by markDraftFailed on the interactive
+// publish path. They are deliberately distinct from the scheduler's scheduled
+// publish reason strings; both surfaces are alarmable by reason text.
+const (
+	draftPublishFailureApproval = "draft publish failed: approval required"
+	draftPublishFailureMedia    = "draft publish failed: bound media unavailable"
+	draftPublishFailureStorage  = "draft publish failed: storage unavailable"
+	draftPublishFailureGeneric  = "draft publish failed"
 )
 
 type draftRepository interface {
@@ -734,9 +745,32 @@ func (s *DraftService) deleteDraftAfterPublish(ctx context.Context, draft *model
 	}
 }
 
+// classifyDraftPublishFailureReason buckets a failed interactive publish into a
+// reason operators can alarm on: approval (review gate), media (a required
+// bound asset cannot serve the exact approved bytes), or storage (durable
+// write/read failure). The scheduler's scheduled-path classification is
+// intentionally unchanged.
+func classifyDraftPublishFailureReason(err error) string {
+	if err == nil {
+		return draftPublishFailureGeneric
+	}
+	if stdErrors.Is(err, ErrDraftReviewApprovalRequired) ||
+		stdErrors.Is(err, ErrDraftReviewPrincipalApprovalRequired) {
+		return draftPublishFailureApproval
+	}
+	if stdErrors.Is(err, ErrDraftReviewMediaRequired) || apperrors.HasCategory(err, apperrors.CategoryMedia) {
+		return draftPublishFailureMedia
+	}
+	if apperrors.HasCategory(err, apperrors.CategoryStorage) {
+		return draftPublishFailureStorage
+	}
+	return draftPublishFailureGeneric
+}
+
 func (s *DraftService) markDraftFailed(ctx context.Context, authorID string, draft *models.Draft, draftID string, err error) {
 	s.logger.Warn("draft publish failed", zap.String("draft_id", draftID), zap.Error(err))
 	draft.Status = draftStatusFailed
+	draft.PublishFailureReason = classifyDraftPublishFailureReason(err)
 	draft.UpdatedAt = time.Now()
 	_ = s.draftRepo.UpdateDraft(ctx, authorID, draft)
 }
