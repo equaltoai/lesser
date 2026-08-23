@@ -453,3 +453,67 @@ func TestDraftRepositoryListsReviewAssignmentsByOwner(t *testing.T) {
 	db.AssertExpectations(t)
 	query.AssertExpectations(t)
 }
+
+func TestDraftRepositoryRegrantDraftReviewGrantExpiresAtRealExpression(t *testing.T) {
+	ctx := context.Background()
+	client := &draftReviewRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.DraftReviewGrant{}))
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+
+	grantedAt := time.Now().UTC()
+	first := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "draft-1", Reviewer: "reviewer", GrantedAt: grantedAt}
+	require.NoError(t, repo.CreateDraftReviewGrant(ctx, first))
+
+	// Re-grant with a fresh expiry: the real expression must SET ExpiresAt and
+	// the read-back must carry it.
+	expiresAt := grantedAt.Add(time.Hour)
+	regrant := &models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: "draft-1", Reviewer: "reviewer",
+		GrantedAt: grantedAt, ExpiresAt: &expiresAt, Version: first.Version,
+	}
+	require.NoError(t, repo.RegrantDraftReviewGrant(ctx, regrant))
+
+	persisted, err := repo.GetDraftReviewGrant(ctx, "owner", "draft-1", "reviewer")
+	require.NoError(t, err)
+	require.NotNil(t, persisted.ExpiresAt)
+	require.True(t, persisted.ExpiresAt.Equal(expiresAt))
+	require.True(t, persisted.IsActive(time.Now().UTC()), "the re-granted expiry must make the grant active again")
+
+	setInput := client.updateInputs[len(client.updateInputs)-1]
+	require.True(t, updateExpressionReferencesAttribute(setInput, "ExpiresAt"),
+		"the regrant must SET ExpiresAt through the real expression")
+
+	// Re-grant without an expiry: the real expression must REMOVE ExpiresAt so
+	// the attribute does not linger in the persisted row.
+	noExpiry := &models.DraftReviewGrant{
+		OwnerID: "owner", DraftID: "draft-1", Reviewer: "reviewer",
+		GrantedAt: grantedAt, Version: persisted.Version,
+	}
+	require.NoError(t, repo.RegrantDraftReviewGrant(ctx, noExpiry))
+
+	cleared, err := repo.GetDraftReviewGrant(ctx, "owner", "draft-1", "reviewer")
+	require.NoError(t, err)
+	require.Nil(t, cleared.ExpiresAt, "regrant without expiry must remove the ExpiresAt attribute")
+
+	clearInput := client.updateInputs[len(client.updateInputs)-1]
+	require.Contains(t, aws.ToString(clearInput.UpdateExpression), "REMOVE")
+	require.True(t, updateExpressionReferencesAttribute(clearInput, "ExpiresAt"),
+		"the removal must target ExpiresAt through the real expression")
+}
+
+// updateExpressionReferencesAttribute reports whether the compiled update
+// expression references the named attribute through its placeholder mapping.
+func updateExpressionReferencesAttribute(input *dynamodb.UpdateItemInput, attribute string) bool {
+	if input == nil || input.UpdateExpression == nil {
+		return false
+	}
+	expression := aws.ToString(input.UpdateExpression)
+	for placeholder, name := range input.ExpressionAttributeNames {
+		if strings.EqualFold(name, attribute) && strings.Contains(expression, placeholder) {
+			return true
+		}
+	}
+	return false
+}
