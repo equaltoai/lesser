@@ -58,6 +58,7 @@ type Media struct {
 	FileName    string `theorydb:"attr:fileName" json:"file_name"`       // Original filename
 	ContentType string `theorydb:"attr:contentType" json:"content_type"` // MIME type
 	FileSize    int64  `theorydb:"attr:fileSize" json:"file_size"`       // Size in bytes
+	ContentHash string `theorydb:"attr:contentHash,omitempty" json:"-"`  // Canonical sha256:<hex> digest of original bytes
 
 	// Storage details
 	S3Bucket string `theorydb:"attr:s3Bucket" json:"s3_bucket"`

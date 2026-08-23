@@ -35,6 +35,20 @@ type round12TestClaims struct {
 	username string
 }
 
+type round12MediaS3Service struct{}
+
+func (round12MediaS3Service) UploadFile(
+	_ context.Context,
+	bucket string,
+	key string,
+	_ []byte,
+	_ string,
+) (string, error) {
+	return "s3://" + bucket + "/" + key, nil
+}
+
+func (round12MediaS3Service) DeleteFile(context.Context, string, string) error { return nil }
+
 type round12VAPIDSecretsClient struct {
 	secret string
 }
@@ -1621,6 +1635,7 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 		services.WithStorage(storage),
 		services.WithPublisher(streaming.NewMockPublisher()),
 		services.WithLogger(zap.NewNop()),
+		services.WithMediaS3Service(round12MediaS3Service{}),
 		services.WithConfig(&services.ServiceConfig{
 			BaseURL:   "https://localhost",
 			JWTSecret: strings.Repeat("x", 32),

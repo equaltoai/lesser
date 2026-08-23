@@ -55,6 +55,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,6 +70,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
@@ -128,6 +130,8 @@ type Registry struct {
 	publisher streaming.Publisher
 	logger    *zap.Logger
 	config    *ServiceConfig
+	jobQueue  JobQueueServiceInterface
+	mediaS3   media.S3Service
 
 	// Service instances (lazily initialized)
 	businessLogic  BusinessLogicService
@@ -249,6 +253,17 @@ func WithConfig(config *ServiceConfig) RegistryOption {
 			return ErrConfigCannotBeNil
 		}
 		r.config = config
+		return nil
+	}
+}
+
+// WithMediaS3Service configures the media object-storage seam.
+func WithMediaS3Service(s3Service media.S3Service) RegistryOption {
+	return func(r *Registry) error {
+		if s3Service == nil {
+			return errors.New("media S3 service cannot be nil")
+		}
+		r.mediaS3 = s3Service
 		return nil
 	}
 }
@@ -1400,9 +1415,7 @@ func (r *Registry) Media() *media.Service {
 
 		// Check if repositories are available
 		if mediaRepo != nil && accountRepo != nil {
-			// Create a simple job queue service if not available
-			// In production, this would be a proper SQS-based implementation
-			jobQueue := &simpleJobQueue{logger: r.logger}
+			jobQueue := r.getJobQueue()
 
 			// Create an adapter for the media service's job queue interface
 			mediaJobQueue := &mediaJobQueueAdapter{jobQueue: jobQueue}
@@ -1420,7 +1433,7 @@ func (r *Registry) Media() *media.Service {
 				sourceBucket,
 				cdnDomain,
 			)
-			r.wireMediaDeletionDependencies(r.mediaService)
+			r.wireMediaStorageDependencies(r.mediaService)
 
 			// Wire up optional streaming services if config is available
 			r.wireMediaStreamingServices(r.mediaService)
@@ -1440,25 +1453,62 @@ func (r *Registry) Media() *media.Service {
 	return r.mediaService
 }
 
-type mediaS3ObjectDeleter struct {
-	client *s3.Client
+type mediaS3API interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 }
 
-func (d *mediaS3ObjectDeleter) DeleteMediaObject(ctx context.Context, bucket, key string) error {
-	if d == nil || d.client == nil {
+type mediaS3ObjectStore struct {
+	client mediaS3API
+}
+
+func (s *mediaS3ObjectStore) UploadFile(
+	ctx context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+) (string, error) {
+	if s == nil || s.client == nil {
+		return "", errors.New("media S3 client is unavailable")
+	}
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 bytes.NewReader(data),
+		ContentLength:        aws.Int64(int64(len(data))),
+		ContentType:          aws.String(contentType),
+		ChecksumAlgorithm:    s3types.ChecksumAlgorithmSha256,
+		ServerSideEncryption: s3types.ServerSideEncryptionAes256,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("s3://%s/%s", bucket, key), nil
+}
+
+func (s *mediaS3ObjectStore) DeleteFile(ctx context.Context, bucket, key string) error {
+	return s.DeleteMediaObject(ctx, bucket, key)
+}
+
+func (s *mediaS3ObjectStore) DeleteMediaObject(ctx context.Context, bucket, key string) error {
+	if s == nil || s.client == nil {
 		return errors.New("media S3 client is unavailable")
 	}
-	_, err := d.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
 	return err
 }
 
-func (r *Registry) wireMediaDeletionDependencies(mediaService *media.Service) {
+func (r *Registry) wireMediaStorageDependencies(mediaService *media.Service) {
 	if mediaService == nil || r.storage == nil {
 		return
 	}
 	var metadata media.MetadataDeleter
 	if repository := r.storage.MediaMetadata(); repository != nil {
 		metadata = repository
+	}
+	if r.mediaS3 != nil {
+		mediaService.SetS3Service(r.mediaS3)
 	}
 	if r.config == nil || r.config.Config == nil || r.config.Config.IntegrationTestMode {
 		mediaService.SetDeletionDependencies(nil, metadata)
@@ -1470,7 +1520,9 @@ func (r *Registry) wireMediaDeletionDependencies(mediaService *media.Service) {
 		mediaService.SetDeletionDependencies(nil, metadata)
 		return
 	}
-	mediaService.SetDeletionDependencies(&mediaS3ObjectDeleter{client: s3.NewFromConfig(*awsCfg)}, metadata)
+	objectStore := &mediaS3ObjectStore{client: s3.NewFromConfig(*awsCfg)}
+	mediaService.SetS3Service(objectStore)
+	mediaService.SetDeletionDependencies(objectStore, metadata)
 }
 
 // wireMediaStreamingServices wires up the optional transcoding, manifest, and CloudFront services
@@ -2777,11 +2829,17 @@ func (a *queueFederationAdapter) extractUsernameFromActorURI(actorURI string) st
 
 // getJobQueue returns the job queue service, creating it if necessary
 func (r *Registry) getJobQueue() JobQueueServiceInterface {
+	if r.jobQueue != nil {
+		return r.jobQueue
+	}
 	// Try to create a real SQS-based job queue service
 	if r.config != nil && r.config.Config != nil {
-		if jobQueue, err := NewJobQueueService(r.config.Config, r.logger); err == nil {
+		jobQueue, err := NewJobQueueService(r.config.Config, r.logger)
+		if err == nil {
 			return jobQueue
 		}
+		r.logger.Warn("failed to initialize SQS job queue; falling back to simple log-only queue",
+			zap.Error(err))
 	}
 
 	// Fall back to simple job queue if SQS is not available

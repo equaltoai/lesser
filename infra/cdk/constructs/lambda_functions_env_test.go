@@ -59,6 +59,7 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 		RateLimitTable:      rateTable,
 		StreamEventsTable:   streamEventsTable,
 		MediaBucket:         mediaBucket,
+		MediaDomain:         "media.dev.example.com",
 		StreamingBucket:     streamingBucket,
 		TrainingBucket:      trainingBucket,
 		Queues:              map[string]QueuePair{},
@@ -91,7 +92,7 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 		"RATE_LIMIT_TABLE_NAME", "LIMITED_TABLE_NAME",
 		"CONNECTIONS_TABLE", "SUBSCRIPTIONS_TABLE",
 		"STREAM_EVENTS_TABLE_NAME",
-		"S3_BUCKET_NAME",
+		"S3_BUCKET_NAME", "CLOUDFRONT_DOMAIN",
 		"PRIVATE_KEY_SECRET", "JWT_SECRET_ARN", "KMS_KEY_ID",
 		"WEBSOCKET_ENDPOINT",
 		"GRAPHQL_WEBSOCKET_ENDPOINT",
@@ -111,6 +112,9 @@ func TestLambdaEnvironmentsIncludeBaselineAndInventoryVars(t *testing.T) {
 			if !present || val == "" {
 				t.Fatalf("baseline env var %s missing for %s", key, fnName)
 			}
+		}
+		if got := env["CLOUDFRONT_DOMAIN"]; got != "media.dev.example.com" {
+			t.Fatalf("CLOUDFRONT_DOMAIN mismatch for %s: got %q", fnName, got)
 		}
 
 		for _, key := range spec.RequiredEnvVars {

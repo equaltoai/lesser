@@ -6,6 +6,8 @@ package media
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"mime"
@@ -40,6 +42,7 @@ type Service struct {
 	cloudfrontService cloudfrontService
 	objectDeleter     ObjectDeleter
 	metadataDeleter   MetadataDeleter
+	s3Service         S3Service
 }
 
 type transcoderService interface {
@@ -76,7 +79,6 @@ var (
 type S3Service interface {
 	UploadFile(ctx context.Context, bucket, key string, data []byte, contentType string) (string, error)
 	DeleteFile(ctx context.Context, bucket, key string) error
-	GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error)
 }
 
 // ProcessingQueue defines the interface for async media processing
@@ -146,6 +148,11 @@ func (s *Service) SetCloudFrontService(cloudfrontService cloudfrontService) {
 func (s *Service) SetDeletionDependencies(objectDeleter ObjectDeleter, metadataDeleter MetadataDeleter) {
 	s.objectDeleter = objectDeleter
 	s.metadataDeleter = metadataDeleter
+}
+
+// SetS3Service wires the object-storage client used for original media bytes.
+func (s *Service) SetS3Service(s3Service S3Service) {
+	s.s3Service = s3Service
 }
 
 // SetMaxFileSize sets the maximum allowed file size
@@ -243,6 +250,7 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 		FileName:      cmd.FileName,
 		ContentType:   cmd.ContentType,
 		FileSize:      int64(len(cmd.FileData)),
+		ContentHash:   contentHash(cmd.FileData),
 		Description:   cmd.Description,
 		Focus:         cmd.Focus,
 		IsNSFW:        cmd.Sensitive,
@@ -251,10 +259,16 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 		Status:        models.StatusPending,
 	}
 
-	// Generate S3 key and simulate upload
+	// Persist the original bytes before publishing a media record that points at them.
 	s3Key := s.generateS3Key(media.MediaID, cmd.FileName)
 	media.S3Bucket = s.s3Bucket
 	media.S3Key = s3Key
+	if s.s3Service == nil {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("media S3 service is unavailable"))
+	}
+	if _, err := s.s3Service.UploadFile(ctx, s.s3Bucket, s3Key, cmd.FileData, cmd.ContentType); err != nil {
+		return nil, errors.Join(ErrMediaStorageFailed, err)
+	}
 
 	// Generate CDN URL
 	if s.cdnDomain != "" {
@@ -290,6 +304,12 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 
 	// Store the media record
 	if err := s.mediaRepo.CreateMedia(ctx, media); err != nil {
+		if cleanupErr := s.s3Service.DeleteFile(ctx, s.s3Bucket, s3Key); cleanupErr != nil {
+			s.logger.Warn("failed to clean up media object after record failure",
+				zap.String("bucket", s.s3Bucket),
+				zap.String("key", s3Key),
+				zap.Error(cleanupErr))
+		}
 		return nil, errors.Join(ErrMediaStorageFailed, err)
 	}
 
@@ -312,6 +332,11 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 		Media:  media,
 		Events: events,
 	}, nil
+}
+
+func contentHash(data []byte) string {
+	digest := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(digest[:])
 }
 
 // UpdateMedia updates media metadata (alt text, focus points) and emits events
@@ -882,6 +907,19 @@ func (s *Service) emitMediaFailedEvents(ctx context.Context, media *models.Media
 func (s *Service) queueMediaProcessing(ctx context.Context, media *models.Media) error {
 	// Generate a unique job ID for tracking
 	jobID := uuid.New().String()
+	job := &models.MediaJob{
+		JobID:    jobID,
+		MediaID:  media.MediaID,
+		Username: media.UserID,
+		Status:   models.StatusPending,
+		S3Key:    media.S3Key,
+		MimeType: media.ContentType,
+		FileHash: media.ContentHash,
+		FileSize: media.FileSize,
+	}
+	if err := s.mediaRepo.CreateMediaJob(ctx, job); err != nil {
+		return errors.Join(ErrMediaProcessingQueueFailed, err)
+	}
 
 	// Create media job message
 	msg := JobMessage{
