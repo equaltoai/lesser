@@ -720,8 +720,10 @@ func (s *Service) deletePublishedObject(ctx context.Context, bucket, destination
 // UnpublishMediaDurably best-effort removes durable public serving minted for
 // one internal asset. It clears the record state first under the observed model
 // version (a concurrent re-mint advances the version and is left intact) and
-// only then deletes the deterministic published object. Assets without
-// published state are a no-op, so repeated rollback is idempotent.
+// only then deletes the deterministic published object, re-reading the record
+// after the clear so a re-mint that lands between the two steps keeps its
+// serving. Assets without published state are a no-op, so repeated rollback is
+// idempotent.
 func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) error {
 	mediaID = strings.TrimSpace(mediaID)
 	if mediaID == "" {
@@ -743,6 +745,20 @@ func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) err
 	if err := s.mediaRepo.ClearMediaPublishedState(ctx, mediaID, media.ModelVersion); err != nil {
 		s.logger.Warn("failed to clear published serving on rollback",
 			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	// Re-read the record after the clear. A concurrent re-mint between the two
+	// steps advances the model version and re-publishes; deleting the
+	// deterministic object then would remove a legitimate concurrent mint's
+	// serving. Only delete when the record still shows no published state.
+	fresh, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		s.logger.Warn("failed to re-read media after clearing published serving",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	if fresh == nil || fresh.IsPublished() {
+		// A concurrent re-mint re-published the record; leave its serving intact.
 		return nil
 	}
 	s.deletePublishedObject(ctx, bucket, publishedKey)

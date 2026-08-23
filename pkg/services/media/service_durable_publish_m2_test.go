@@ -280,8 +280,13 @@ func TestServiceUnpublishMediaDurablyClearsRecordAndDeletesObject(t *testing.T) 
 		service, mediaRepo, _, _ := createTestService(t)
 		objectStore := newFakeMediaS3Service()
 		service.SetS3Service(objectStore)
+		cleared := *published
+		cleared.PublishedS3Key = ""
+		cleared.PublishedURL = ""
+		cleared.PublishedAt = nil
 		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(published, nil).Once()
 		mediaRepo.On("ClearMediaPublishedState", mock.Anything, "m1", 2).Return(nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(&cleared, nil).Once()
 		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
 		require.Len(t, objectStore.deleteCalls, 1)
 		require.Equal(t, "media-private", objectStore.deleteCalls[0].bucket)
@@ -296,6 +301,34 @@ func TestServiceUnpublishMediaDurablyClearsRecordAndDeletesObject(t *testing.T) 
 		mediaRepo.On("ClearMediaPublishedState", mock.Anything, "m1", 2).Return(errors.New("conditional check failed")).Once()
 		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
 		require.Empty(t, objectStore.deleteCalls, "a stale rollback must not delete a concurrently re-minted serving")
+	})
+
+	t.Run("concurrent re-mint between clear and delete keeps its serving", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		objectStore := newFakeMediaS3Service()
+		service.SetS3Service(objectStore)
+		reminted := *published
+		reminted.ModelVersion = 3
+		reMintedAt := time.Now().UTC()
+		reminted.PublishedAt = &reMintedAt
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(published, nil).Once()
+		mediaRepo.On("ClearMediaPublishedState", mock.Anything, "m1", 2).Return(nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(&reminted, nil).Once()
+		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
+		require.Empty(t, objectStore.deleteCalls,
+			"a re-mint that re-publishes after the clear must keep its published object")
+	})
+
+	t.Run("re-read failure skips the object delete", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		objectStore := newFakeMediaS3Service()
+		service.SetS3Service(objectStore)
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(published, nil).Once()
+		mediaRepo.On("ClearMediaPublishedState", mock.Anything, "m1", 2).Return(nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(nil, errors.New("re-read failed")).Once()
+		require.NoError(t, service.UnpublishMediaDurably(context.Background(), "m1"))
+		require.Empty(t, objectStore.deleteCalls,
+			"an unverifiable record must not delete the published object")
 	})
 
 	t.Run("unpublished asset is a no-op", func(t *testing.T) {
