@@ -791,6 +791,13 @@ func (s *Service) UpdateEditorialLifecycle(ctx context.Context, cmd *UpdateEdito
 		}
 	}
 	cmd.SupersededByMediaID = strings.TrimSpace(cmd.SupersededByMediaID)
+	if cmd.SupersededByMediaID != "" && lifecycle != models.EditorialLifecycleSuperseded {
+		// Mirror the model's whole-write validation: the successor attribute is
+		// meaningful only under the superseded lifecycle. Rejecting it here keeps
+		// the field-scoped writer from persisting a model-invalid state that
+		// would later block unrelated metadata updates.
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded-by media ID requires the superseded lifecycle"))
+	}
 	if lifecycle == models.EditorialLifecycleSuperseded && cmd.SupersededByMediaID == "" {
 		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded editorial media must name the superseding asset"))
 	}

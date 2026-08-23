@@ -375,3 +375,51 @@ func TestServiceUpdateEditorialLifecycleValidatesSupersedingAsset(t *testing.T) 
 		require.Equal(t, "m2", result.SupersededByMediaID)
 	})
 }
+
+func TestServiceUpdateEditorialLifecycleRejectsSuccessorOutsideSuperseded(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("i", 64)
+	internalReady := m2ReadyInternalMedia("m1", "alice", digest)
+
+	for _, lifecycle := range []models.EditorialLifecycle{
+		models.EditorialLifecycleWithdrawn,
+		models.EditorialLifecycleUnavailable,
+		models.EditorialLifecycleAvailable,
+	} {
+		name := strings.ToLower(string(lifecycle))
+		t.Run(name+" rejects a successor", func(t *testing.T) {
+			service, mediaRepo, _, _ := createTestService(t)
+			mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
+			_, err := service.UpdateEditorialLifecycle(context.Background(), &UpdateEditorialLifecycleCommand{
+				MediaID: "m1", UserID: "alice", Lifecycle: lifecycle, SupersededByMediaID: "m2",
+			})
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrMediaValidationFailed)
+			require.ErrorContains(t, err, "superseded-by media ID requires the superseded lifecycle")
+		})
+	}
+
+	t.Run("plain metadata updates keep working after a withdrawn state", func(t *testing.T) {
+		service, mediaRepo, _, _ := createTestService(t)
+		withdrawn := *internalReady
+		withdrawn.EditorialState = models.EditorialLifecycleWithdrawn
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(internalReady, nil).Once()
+		mediaRepo.On("UpdateMediaEditorialState", mock.Anything, "m1", models.EditorialLifecycleWithdrawn, "", 1).Return(nil).Once()
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(&withdrawn, nil).Once()
+		result, err := service.UpdateEditorialLifecycle(context.Background(), &UpdateEditorialLifecycleCommand{
+			MediaID: "m1", UserID: "alice", Lifecycle: models.EditorialLifecycleWithdrawn,
+		})
+		require.NoError(t, err)
+		require.Equal(t, models.EditorialLifecycleWithdrawn, result.EditorialState)
+
+		mediaRepo.On("GetMedia", mock.Anything, "m1").Return(&withdrawn, nil).Once()
+		mediaRepo.On("UpdateMedia", mock.Anything, mock.MatchedBy(func(m *models.Media) bool {
+			return m.MediaID == "m1" && m.Description == "alt text" && m.Focus == "0.1,0.2"
+		})).Return(nil).Once()
+		updated, err := service.UpdateMedia(context.Background(), &UpdateMediaCommand{
+			MediaID: "m1", UserID: "alice", Description: "alt text", Focus: "0.1,0.2",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, updated)
+		require.Equal(t, "alt text", updated.Media.Description)
+	})
+}

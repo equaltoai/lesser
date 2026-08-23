@@ -186,3 +186,49 @@ func TestUpdateEditorialMediaLifecycleMutationValidatesSupersedingAsset(t *testi
 	require.NotNil(t, payload.SupersededByMediaID)
 	require.Equal(t, "m2", *payload.SupersededByMediaID)
 }
+
+func TestUpdateEditorialMediaLifecycleMutationRejectsSuccessorOutsideSuperseded(t *testing.T) {
+	resolver, _, _, _, state := newRound12GraphResolverWithMocks(t)
+	now := time.Now().UTC()
+	digest := "sha256:" + strings.Repeat("j", 64)
+	internal := func(id string) *models.Media {
+		return &models.Media{
+			MediaID: id, UserID: "alice", ContentType: "image/png", FileSize: 12,
+			ContentHash: digest, Status: "ready", Visibility: models.MediaVisibilityInternal,
+			S3Bucket: "media-private", S3Key: "alice/" + id + ".png", ModelVersion: 1,
+			Provenance: &models.MediaProvenance{
+				Origin: models.EditorialMediaOriginSupplied, ResponsibleActor: "alice",
+				RecordedAt: now, ContentIntegrity: digest,
+			},
+		}
+	}
+	state.seededMedia = map[string]*models.Media{
+		"m1": internal("m1"),
+		"m2": internal("m2"),
+	}
+
+	for _, tc := range []struct {
+		name      string
+		lifecycle model.EditorialMediaLifecycle
+	}{
+		{name: "withdrawn", lifecycle: model.EditorialMediaLifecycleWithdrawn},
+		{name: "unavailable", lifecycle: model.EditorialMediaLifecycleUnavailable},
+	} {
+		t.Run(tc.name+" with a successor is rejected at the mutation surface", func(t *testing.T) {
+			_, err := resolver.Mutation().UpdateEditorialMediaLifecycle(
+				round12AuthContext("alice"), "m1", tc.lifecycle, ptrString("m2"),
+			)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "superseded-by media ID requires the superseded lifecycle")
+		})
+	}
+
+	// The same non-superseded lifecycle without a successor remains writable, so
+	// a withdrawn asset can still receive plain metadata updates afterwards.
+	payload, err := resolver.Mutation().UpdateEditorialMediaLifecycle(
+		round12AuthContext("alice"), "m1", model.EditorialMediaLifecycleWithdrawn, nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, model.EditorialMediaLifecycleWithdrawn, payload.Lifecycle)
+	require.Nil(t, payload.SupersededByMediaID)
+}
