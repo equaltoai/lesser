@@ -25,6 +25,12 @@ type DraftRepository interface {
 	// UpdateDraftEditorialMedia replaces only the draft's editorial-media association and update timestamp.
 	UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error
 
+	// TransitionDraftToPublishing atomically applies only the fields that enter
+	// the publishing status, including the PublishAttemptedAt stamp. It is the
+	// only writer of that stamp; content writers cannot re-arm the
+	// stale-publishing sweep horizon.
+	TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error
+
 	// DeleteDraft deletes a draft
 	DeleteDraft(ctx context.Context, authorID, draftID string) error
 

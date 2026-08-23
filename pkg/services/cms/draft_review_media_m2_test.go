@@ -466,6 +466,16 @@ func (r *transitionFailingReviewRepo) UpdateDraft(ctx context.Context, authorID 
 	return r.reviewMemRepo.UpdateDraft(ctx, authorID, draft)
 }
 
+// TransitionDraftToPublishing is the lane that now commits the publishing
+// transition (the service enters publishing exclusively through it), so the
+// fail-on-status injection applies here as well.
+func (r *transitionFailingReviewRepo) TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error {
+	if r.failOnStatus != "" && draft != nil && strings.EqualFold(strings.TrimSpace(draft.Status), r.failOnStatus) {
+		return r.failErr
+	}
+	return r.reviewMemRepo.TransitionDraftToPublishing(ctx, authorID, draft)
+}
+
 func TestDraftReviewPublishRollsBackPriorMintsOnMultiAssetFailure(t *testing.T) {
 	svc, repo, media, minter := m2ReviewService(t)
 	ctx := context.Background()

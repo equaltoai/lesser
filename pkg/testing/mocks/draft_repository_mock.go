@@ -50,6 +50,13 @@ func (m *MockDraftRepository) UpdateDraftEditorialMedia(ctx context.Context, aut
 	return args.Error(0)
 }
 
+// TransitionDraftToPublishing mocks the field-scoped publish-transition method,
+// the only writer of the PublishAttemptedAt stamp.
+func (m *MockDraftRepository) TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error {
+	args := m.Called(ctx, authorID, draft)
+	return args.Error(0)
+}
+
 // DeleteDraft mocks the DeleteDraft method
 func (m *MockDraftRepository) DeleteDraft(ctx context.Context, authorID, draftID string) error {
 	args := m.Called(ctx, authorID, draftID)

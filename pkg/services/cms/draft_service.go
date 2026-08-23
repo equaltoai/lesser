@@ -41,6 +41,10 @@ type draftRepository interface {
 	CreateDraft(ctx context.Context, draft *models.Draft) error
 	UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error
 	UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error
+	// TransitionDraftToPublishing is the field-scoped lane that enters the
+	// publishing status and stamps PublishAttemptedAt — the only writer of the
+	// stamp the orphan reconciliation stale-publishing horizon keys on.
+	TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error
 	GetDraft(ctx context.Context, authorID, draftID string) (*models.Draft, error)
 	DeleteDraft(ctx context.Context, authorID, draftID string) error
 }
@@ -616,6 +620,12 @@ func (s *DraftService) cleanupPublishedDraft(ctx context.Context, authorID, draf
 	return article, nil
 }
 
+// transitionDraftToPublishing enters the publishing status through the
+// field-scoped transition lane, stamping PublishAttemptedAt with the attempt
+// time. The stamp is written here and nowhere else: it is what the orphan
+// reconciliation stale-publishing horizon keys on, so an author editing a
+// crash-stuck publishing draft (autosave, update, editorial-media set) advances
+// UpdatedAt without re-arming the sweep.
 func (s *DraftService) transitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft, now time.Time) error {
 	if err := validateDraftWriteAuthor(authorID, draft); err != nil {
 		return err
@@ -623,7 +633,9 @@ func (s *DraftService) transitionDraftToPublishing(ctx context.Context, authorID
 	draft.Status = DraftStatusPublishing
 	draft.ScheduledAt = nil
 	draft.UpdatedAt = now
-	return s.draftRepo.UpdateDraft(ctx, authorID, draft)
+	attempted := now
+	draft.PublishAttemptedAt = &attempted
+	return s.draftRepo.TransitionDraftToPublishing(ctx, authorID, draft)
 }
 
 func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string, mints map[string]EditorialPublishedMedia, batch *draftMintBatch) (*models.Article, error) {

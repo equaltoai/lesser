@@ -98,7 +98,29 @@ func (r *DraftRepository) GetDraft(_ context.Context, authorID, draftID string) 
 func (r *DraftRepository) UpdateDraft(_ context.Context, authorID string, draft *models.Draft) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Content writers never write PublishAttemptedAt (the transition lane is its
+	// only writer), so preserve the stored publish-attempt stamp: an author
+	// editing a crash-stuck publishing draft must not re-arm the sweep.
+	return r.storeDraftLocked(authorID, draft, true)
+}
 
+// TransitionDraftToPublishing applies the publish transition: the status,
+// cleared schedule, transition timestamps, the publish-attempt stamp, and the
+// status-index move. It models the production field-scoped lane, which is the
+// only writer of PublishAttemptedAt (it stamps the incoming attempt time).
+func (r *DraftRepository) TransitionDraftToPublishing(_ context.Context, authorID string, draft *models.Draft) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.storeDraftLocked(authorID, draft, false)
+}
+
+// storeDraftLocked validates and stores one draft under the held lock, moving
+// the status index when the status changes and preserving the stored
+// editorial-media binding (it has its own field-scoped writer).
+// preserveStoredStamp selects which publish-attempt stamp to keep: content
+// writers preserve the stored stamp (nil stays nil), while the transition lane
+// takes the incoming stamp.
+func (r *DraftRepository) storeDraftLocked(authorID string, draft *models.Draft, preserveStoredStamp bool) error {
 	if draft == nil || strings.TrimSpace(authorID) == "" || draft.AuthorID == "" || draft.ID == "" {
 		return storage.ErrInvalidInput
 	}
@@ -127,8 +149,18 @@ func (r *DraftRepository) UpdateDraft(_ context.Context, authorID string, draft 
 		r.draftsByStatus[newStatus] = append(r.draftsByStatus[newStatus], key)
 	}
 
+	stamp := draft.PublishAttemptedAt
+	if preserveStoredStamp {
+		stamp = oldDraft.PublishAttemptedAt
+	}
 	updatedDraft := *draft
 	updatedDraft.EditorialMedia = append([]models.DraftMediaUsage(nil), oldDraft.EditorialMedia...)
+	if stamp != nil {
+		cloned := *stamp
+		updatedDraft.PublishAttemptedAt = &cloned
+	} else {
+		updatedDraft.PublishAttemptedAt = nil
+	}
 	r.drafts[key] = &updatedDraft
 	return nil
 }

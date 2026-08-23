@@ -83,10 +83,61 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, authorID string, draf
 	}
 
 	// EditorialMedia has its own field-scoped writer; content updates must not
-	// replay a binding list carried by a stale full-model snapshot.
+	// replay a binding list carried by a stale full-model snapshot. The
+	// publish-attempt stamp likewise has its own field-scoped writer (the
+	// publishing transition); content updates must not advance or clear it, or
+	// an author could re-arm the stale-publishing sweep by editing a
+	// crash-stuck draft. A nil omitempty field is unselected by the sparse
+	// update, so the stored attribute is left untouched.
 	sparse := *draft
 	sparse.EditorialMedia = nil
+	sparse.PublishAttemptedAt = nil
 	return r.db.WithContext(ctx).Model(&sparse).Update()
+}
+
+// TransitionDraftToPublishing atomically applies only the fields that enter the
+// publishing status: the status, the cleared schedule, the transition
+// timestamp, the publish-attempt stamp, and the derived index keys. It is the
+// ONLY writer of PublishAttemptedAt; content writers and the editorial-media
+// lane run through UpdateDraft / UpdateDraftEditorialMedia, which never select
+// the attribute, so a crash-stuck publishing draft cannot be re-armed by an
+// author editing it. The index keys are written here because the status change
+// must move the row between GSI4 status partitions (and refresh the object
+// index) exactly as the full-model UpdateKeys derivation would.
+func (r *DraftRepository) TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error {
+	if err := validateDraftWriteOwner(authorID, draft); err != nil {
+		return err
+	}
+	if err := draft.UpdateKeys(); err != nil {
+		return err
+	}
+
+	builder := r.db.WithContext(ctx).
+		Model(draft).
+		Where("PK", "=", draft.PK).
+		Where("SK", "=", draft.SK).
+		UpdateBuilder()
+	builder.Set("Status", draft.Status)
+	builder.Set("UpdatedAt", draft.UpdatedAt)
+	if draft.PublishAttemptedAt != nil {
+		builder.Set("PublishAttemptedAt", draft.PublishAttemptedAt)
+	} else {
+		builder.Remove("PublishAttemptedAt")
+	}
+	builder.Set("GSI1PK", draft.GSI1PK)
+	builder.Set("GSI1SK", draft.GSI1SK)
+	builder.Set("GSI4PK", draft.GSI4PK)
+	builder.Set("GSI4SK", draft.GSI4SK)
+	builder.Remove("ScheduledAt")
+	builder.ConditionExists("PK")
+	if err := builder.Execute(); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.ItemNotFoundWithID("draft", draft.ID).
+				WithInternalError(errors.Join(err, storage.ErrNotFound))
+		}
+		return ErrorHandler.HandleUpdateError(err, "draft", draft.ID)
+	}
+	return nil
 }
 
 // UpdateDraftEditorialMedia atomically replaces only the editorial-media
