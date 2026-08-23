@@ -1175,6 +1175,7 @@ type ComplexityRoot struct {
 		ContentHash     func(childComplexity int) int
 		ContentType     func(childComplexity int) int
 		CreatedAt       func(childComplexity int) int
+		EditorialMedia  func(childComplexity int) int
 		GeneratedBy     func(childComplexity int) int
 		ID              func(childComplexity int) int
 		LastSavedAt     func(childComplexity int) int
@@ -1201,13 +1202,14 @@ type ComplexityRoot struct {
 	}
 
 	DraftPreview struct {
-		DraftID       func(childComplexity int) int
-		Errors        func(childComplexity int) int
-		RenderedBytes func(childComplexity int) int
-		RenderedHTML  func(childComplexity int) int
-		SourceBytes   func(childComplexity int) int
-		SourceFormat  func(childComplexity int) int
-		Success       func(childComplexity int) int
+		DraftID        func(childComplexity int) int
+		EditorialMedia func(childComplexity int) int
+		Errors         func(childComplexity int) int
+		RenderedBytes  func(childComplexity int) int
+		RenderedHTML   func(childComplexity int) int
+		SourceBytes    func(childComplexity int) int
+		SourceFormat   func(childComplexity int) int
+		Success        func(childComplexity int) int
 	}
 
 	DraftPublishEligibility struct {
@@ -1226,6 +1228,7 @@ type ComplexityRoot struct {
 		CreatedAt                 func(childComplexity int) int
 		DraftID                   func(childComplexity int) int
 		EditorNotes               func(childComplexity int) int
+		EditorialMedia            func(childComplexity int) int
 		Excerpt                   func(childComplexity int) int
 		GeneratedBy               func(childComplexity int) int
 		Grant                     func(childComplexity int) int
@@ -1294,6 +1297,45 @@ type ComplexityRoot struct {
 	DroneWorkflowMutationPayload struct {
 		Agent    func(childComplexity int) int
 		Workflow func(childComplexity int) int
+	}
+
+	EditorialMediaAccess struct {
+		ContentHash func(childComplexity int) int
+		ExpiresAt   func(childComplexity int) int
+		MediaID     func(childComplexity int) int
+		URL         func(childComplexity int) int
+	}
+
+	EditorialMediaProvenance struct {
+		ContentIntegrity   func(childComplexity int) int
+		CreatedAt          func(childComplexity int) int
+		Origin             func(childComplexity int) int
+		RecordedAt         func(childComplexity int) int
+		ResponsibleActor   func(childComplexity int) int
+		ResponsibleActorID func(childComplexity int) int
+		RightsLicenseNotes func(childComplexity int) int
+		SourceReferences   func(childComplexity int) int
+		Tool               func(childComplexity int) int
+		UpdatedAt          func(childComplexity int) int
+	}
+
+	EditorialMediaUsage struct {
+		AccessExpiresAt  func(childComplexity int) int
+		AccessURL        func(childComplexity int) int
+		AltText          func(childComplexity int) int
+		Caption          func(childComplexity int) int
+		ContentHash      func(childComplexity int) int
+		CreditLine       func(childComplexity int) int
+		EffectiveAltText func(childComplexity int) int
+		Focus            func(childComplexity int) int
+		Height           func(childComplexity int) int
+		InlinePosition   func(childComplexity int) int
+		MediaID          func(childComplexity int) int
+		MimeType         func(childComplexity int) int
+		Provenance       func(childComplexity int) int
+		Role             func(childComplexity int) int
+		State            func(childComplexity int) int
+		Width            func(childComplexity int) int
 	}
 
 	Entity struct {
@@ -2238,6 +2280,7 @@ type ComplexityRoot struct {
 		SendHostedSoulGenesisMessage              func(childComplexity int, input model.SendHostedSoulGenesisMessageInput) int
 		SendMessage                               func(childComplexity int, conversationID string, content string, mediaIds []string, sensitive *bool, spoilerText *string, language *string, inReplyToID *string, agentAttribution *model.AgentPostAttributionInput) int
 		SendSoulBootstrapConversationMessage      func(childComplexity int, input model.SendSoulBootstrapConversationMessageInput) int
+		SetDraftEditorialMedia                    func(childComplexity int, draftID string, media []*model.EditorialMediaUsageInput) int
 		SetFederationLimit                        func(childComplexity int, domain string, limit model.FederationLimitInput) int
 		SetInstanceBudget                         func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
 		ShareDraftForReview                       func(childComplexity int, draftID string, reviewer string) int
@@ -2614,6 +2657,7 @@ type ComplexityRoot struct {
 		CustomEmojis                   func(childComplexity int) int
 		DomainBlocks                   func(childComplexity int, first *int, after *model.Cursor) int
 		Draft                          func(childComplexity int, id string) int
+		DraftEditorialMediaAccess      func(childComplexity int, draftID string, mediaID string) int
 		DraftPreview                   func(childComplexity int, id string) int
 		DraftReview                    func(childComplexity int, id string) int
 		DroneWorkflow                  func(childComplexity int, username string) int
@@ -3768,6 +3812,7 @@ type MutationResolver interface {
 	AttemptReconnection(ctx context.Context, id string) (*model.ReconnectionPayload, error)
 	CreateDraft(ctx context.Context, input model.CreateDraftInput) (*model.Draft, error)
 	UpdateDraft(ctx context.Context, id string, input model.UpdateDraftInput) (*model.Draft, error)
+	SetDraftEditorialMedia(ctx context.Context, draftID string, media []*model.EditorialMediaUsageInput) (*model.Draft, error)
 	AutosaveDraft(ctx context.Context, id string, content string) (*model.Draft, error)
 	DeleteDraft(ctx context.Context, id string) (bool, error)
 	PublishDraft(ctx context.Context, id string) (*model.Article, error)
@@ -3960,6 +4005,7 @@ type QueryResolver interface {
 	MyDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
 	SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
 	DraftReview(ctx context.Context, id string) (*model.DraftReview, error)
+	DraftEditorialMediaAccess(ctx context.Context, draftID string, mediaID string) (*model.EditorialMediaAccess, error)
 	Revisions(ctx context.Context, objectID string, first *int, after *model.Cursor) (*model.RevisionConnection, error)
 	Revision(ctx context.Context, objectID string, version int) (*model.Revision, error)
 	Article(ctx context.Context, id string) (*model.Article, error)
@@ -9285,6 +9331,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Draft.CreatedAt(childComplexity), true
 
+	case "Draft.editorialMedia":
+		if e.complexity.Draft.EditorialMedia == nil {
+			break
+		}
+
+		return e.complexity.Draft.EditorialMedia(childComplexity), true
+
 	case "Draft.generatedBy":
 		if e.complexity.Draft.GeneratedBy == nil {
 			break
@@ -9411,6 +9464,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.DraftPreview.DraftID(childComplexity), true
 
+	case "DraftPreview.editorialMedia":
+		if e.complexity.DraftPreview.EditorialMedia == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.EditorialMedia(childComplexity), true
+
 	case "DraftPreview.errors":
 		if e.complexity.DraftPreview.Errors == nil {
 			break
@@ -9536,6 +9596,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DraftReview.EditorNotes(childComplexity), true
+
+	case "DraftReview.editorialMedia":
+		if e.complexity.DraftReview.EditorialMedia == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.EditorialMedia(childComplexity), true
 
 	case "DraftReview.excerpt":
 		if e.complexity.DraftReview.Excerpt == nil {
@@ -9886,6 +9953,216 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DroneWorkflowMutationPayload.Workflow(childComplexity), true
+
+	case "EditorialMediaAccess.contentHash":
+		if e.complexity.EditorialMediaAccess.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaAccess.ContentHash(childComplexity), true
+
+	case "EditorialMediaAccess.expiresAt":
+		if e.complexity.EditorialMediaAccess.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaAccess.ExpiresAt(childComplexity), true
+
+	case "EditorialMediaAccess.mediaId":
+		if e.complexity.EditorialMediaAccess.MediaID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaAccess.MediaID(childComplexity), true
+
+	case "EditorialMediaAccess.url":
+		if e.complexity.EditorialMediaAccess.URL == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaAccess.URL(childComplexity), true
+
+	case "EditorialMediaProvenance.contentIntegrity":
+		if e.complexity.EditorialMediaProvenance.ContentIntegrity == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.ContentIntegrity(childComplexity), true
+
+	case "EditorialMediaProvenance.createdAt":
+		if e.complexity.EditorialMediaProvenance.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.CreatedAt(childComplexity), true
+
+	case "EditorialMediaProvenance.origin":
+		if e.complexity.EditorialMediaProvenance.Origin == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.Origin(childComplexity), true
+
+	case "EditorialMediaProvenance.recordedAt":
+		if e.complexity.EditorialMediaProvenance.RecordedAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.RecordedAt(childComplexity), true
+
+	case "EditorialMediaProvenance.responsibleActor":
+		if e.complexity.EditorialMediaProvenance.ResponsibleActor == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.ResponsibleActor(childComplexity), true
+
+	case "EditorialMediaProvenance.responsibleActorId":
+		if e.complexity.EditorialMediaProvenance.ResponsibleActorID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.ResponsibleActorID(childComplexity), true
+
+	case "EditorialMediaProvenance.rightsLicenseNotes":
+		if e.complexity.EditorialMediaProvenance.RightsLicenseNotes == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.RightsLicenseNotes(childComplexity), true
+
+	case "EditorialMediaProvenance.sourceReferences":
+		if e.complexity.EditorialMediaProvenance.SourceReferences == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.SourceReferences(childComplexity), true
+
+	case "EditorialMediaProvenance.tool":
+		if e.complexity.EditorialMediaProvenance.Tool == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.Tool(childComplexity), true
+
+	case "EditorialMediaProvenance.updatedAt":
+		if e.complexity.EditorialMediaProvenance.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.UpdatedAt(childComplexity), true
+
+	case "EditorialMediaUsage.accessExpiresAt":
+		if e.complexity.EditorialMediaUsage.AccessExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.AccessExpiresAt(childComplexity), true
+
+	case "EditorialMediaUsage.accessUrl":
+		if e.complexity.EditorialMediaUsage.AccessURL == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.AccessURL(childComplexity), true
+
+	case "EditorialMediaUsage.altText":
+		if e.complexity.EditorialMediaUsage.AltText == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.AltText(childComplexity), true
+
+	case "EditorialMediaUsage.caption":
+		if e.complexity.EditorialMediaUsage.Caption == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Caption(childComplexity), true
+
+	case "EditorialMediaUsage.contentHash":
+		if e.complexity.EditorialMediaUsage.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.ContentHash(childComplexity), true
+
+	case "EditorialMediaUsage.creditLine":
+		if e.complexity.EditorialMediaUsage.CreditLine == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.CreditLine(childComplexity), true
+
+	case "EditorialMediaUsage.effectiveAltText":
+		if e.complexity.EditorialMediaUsage.EffectiveAltText == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.EffectiveAltText(childComplexity), true
+
+	case "EditorialMediaUsage.focus":
+		if e.complexity.EditorialMediaUsage.Focus == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Focus(childComplexity), true
+
+	case "EditorialMediaUsage.height":
+		if e.complexity.EditorialMediaUsage.Height == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Height(childComplexity), true
+
+	case "EditorialMediaUsage.inlinePosition":
+		if e.complexity.EditorialMediaUsage.InlinePosition == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.InlinePosition(childComplexity), true
+
+	case "EditorialMediaUsage.mediaId":
+		if e.complexity.EditorialMediaUsage.MediaID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.MediaID(childComplexity), true
+
+	case "EditorialMediaUsage.mimeType":
+		if e.complexity.EditorialMediaUsage.MimeType == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.MimeType(childComplexity), true
+
+	case "EditorialMediaUsage.provenance":
+		if e.complexity.EditorialMediaUsage.Provenance == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Provenance(childComplexity), true
+
+	case "EditorialMediaUsage.role":
+		if e.complexity.EditorialMediaUsage.Role == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Role(childComplexity), true
+
+	case "EditorialMediaUsage.state":
+		if e.complexity.EditorialMediaUsage.State == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.State(childComplexity), true
+
+	case "EditorialMediaUsage.width":
+		if e.complexity.EditorialMediaUsage.Width == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Width(childComplexity), true
 
 	case "Entity.score":
 		if e.complexity.Entity.Score == nil {
@@ -15300,6 +15577,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.SendSoulBootstrapConversationMessage(childComplexity, args["input"].(model.SendSoulBootstrapConversationMessageInput)), true
 
+	case "Mutation.setDraftEditorialMedia":
+		if e.complexity.Mutation.SetDraftEditorialMedia == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setDraftEditorialMedia_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.SetDraftEditorialMedia(childComplexity, args["draftId"].(string), args["media"].([]*model.EditorialMediaUsageInput)), true
+
 	case "Mutation.setFederationLimit":
 		if e.complexity.Mutation.SetFederationLimit == nil {
 			break
@@ -17749,6 +18038,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Draft(childComplexity, args["id"].(string)), true
+
+	case "Query.draftEditorialMediaAccess":
+		if e.complexity.Query.DraftEditorialMediaAccess == nil {
+			break
+		}
+
+		args, err := ec.field_Query_draftEditorialMediaAccess_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.DraftEditorialMediaAccess(childComplexity, args["draftId"].(string), args["mediaId"].(string)), true
 
 	case "Query.draftPreview":
 		if e.complexity.Query.DraftPreview == nil {
@@ -23146,6 +23447,8 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputDateRangeInput,
 		ec.unmarshalInputDelegateToAgentInput,
 		ec.unmarshalInputDirectoryFiltersInput,
+		ec.unmarshalInputEditorialMediaProvenanceInput,
+		ec.unmarshalInputEditorialMediaUsageInput,
 		ec.unmarshalInputExchangeAgentAccessLeaseTokenInput,
 		ec.unmarshalInputFederationLimitInput,
 		ec.unmarshalInputFilterTestInput,
@@ -25201,6 +25504,22 @@ func (ec *executionContext) field_Mutation_sendSoulBootstrapConversationMessage_
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_setDraftEditorialMedia_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "draftId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["draftId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "media", ec.unmarshalNEditorialMediaUsageInput2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageInputᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["media"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_setFederationLimit_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -26631,6 +26950,22 @@ func (ec *executionContext) field_Query_domainBlocks_args(ctx context.Context, r
 		return nil, err
 	}
 	args["after"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_draftEditorialMediaAccess_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "draftId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["draftId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "mediaId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaId"] = arg1
 	return args, nil
 }
 
@@ -63683,6 +64018,84 @@ func (ec *executionContext) fieldContext_Draft_reviewVerdict(_ context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _Draft_editorialMedia(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Draft_editorialMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EditorialMedia, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.EditorialMediaUsage)
+	fc.Result = res
+	return ec.marshalNEditorialMediaUsage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Draft_editorialMedia(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Draft",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaUsage_mediaId(ctx, field)
+			case "role":
+				return ec.fieldContext_EditorialMediaUsage_role(ctx, field)
+			case "inlinePosition":
+				return ec.fieldContext_EditorialMediaUsage_inlinePosition(ctx, field)
+			case "caption":
+				return ec.fieldContext_EditorialMediaUsage_caption(ctx, field)
+			case "creditLine":
+				return ec.fieldContext_EditorialMediaUsage_creditLine(ctx, field)
+			case "altText":
+				return ec.fieldContext_EditorialMediaUsage_altText(ctx, field)
+			case "effectiveAltText":
+				return ec.fieldContext_EditorialMediaUsage_effectiveAltText(ctx, field)
+			case "focus":
+				return ec.fieldContext_EditorialMediaUsage_focus(ctx, field)
+			case "state":
+				return ec.fieldContext_EditorialMediaUsage_state(ctx, field)
+			case "width":
+				return ec.fieldContext_EditorialMediaUsage_width(ctx, field)
+			case "height":
+				return ec.fieldContext_EditorialMediaUsage_height(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "accessUrl":
+				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
+			case "accessExpiresAt":
+				return ec.fieldContext_EditorialMediaUsage_accessExpiresAt(ctx, field)
+			case "provenance":
+				return ec.fieldContext_EditorialMediaUsage_provenance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaUsage", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Draft_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Draft_contentHash(ctx, field)
 	if err != nil {
@@ -64164,6 +64577,8 @@ func (ec *executionContext) fieldContext_DraftEdge_node(_ context.Context, field
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -64527,6 +64942,84 @@ func (ec *executionContext) fieldContext_DraftPreview_errors(_ context.Context, 
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_editorialMedia(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_editorialMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EditorialMedia, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.EditorialMediaUsage)
+	fc.Result = res
+	return ec.marshalNEditorialMediaUsage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_editorialMedia(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaUsage_mediaId(ctx, field)
+			case "role":
+				return ec.fieldContext_EditorialMediaUsage_role(ctx, field)
+			case "inlinePosition":
+				return ec.fieldContext_EditorialMediaUsage_inlinePosition(ctx, field)
+			case "caption":
+				return ec.fieldContext_EditorialMediaUsage_caption(ctx, field)
+			case "creditLine":
+				return ec.fieldContext_EditorialMediaUsage_creditLine(ctx, field)
+			case "altText":
+				return ec.fieldContext_EditorialMediaUsage_altText(ctx, field)
+			case "effectiveAltText":
+				return ec.fieldContext_EditorialMediaUsage_effectiveAltText(ctx, field)
+			case "focus":
+				return ec.fieldContext_EditorialMediaUsage_focus(ctx, field)
+			case "state":
+				return ec.fieldContext_EditorialMediaUsage_state(ctx, field)
+			case "width":
+				return ec.fieldContext_EditorialMediaUsage_width(ctx, field)
+			case "height":
+				return ec.fieldContext_EditorialMediaUsage_height(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "accessUrl":
+				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
+			case "accessExpiresAt":
+				return ec.fieldContext_EditorialMediaUsage_accessExpiresAt(ctx, field)
+			case "provenance":
+				return ec.fieldContext_EditorialMediaUsage_provenance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaUsage", field.Name)
 		},
 	}
 	return fc, nil
@@ -65650,6 +66143,84 @@ func (ec *executionContext) fieldContext_DraftReview_contentHash(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _DraftReview_editorialMedia(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_editorialMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EditorialMedia, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.EditorialMediaUsage)
+	fc.Result = res
+	return ec.marshalNEditorialMediaUsage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_editorialMedia(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaUsage_mediaId(ctx, field)
+			case "role":
+				return ec.fieldContext_EditorialMediaUsage_role(ctx, field)
+			case "inlinePosition":
+				return ec.fieldContext_EditorialMediaUsage_inlinePosition(ctx, field)
+			case "caption":
+				return ec.fieldContext_EditorialMediaUsage_caption(ctx, field)
+			case "creditLine":
+				return ec.fieldContext_EditorialMediaUsage_creditLine(ctx, field)
+			case "altText":
+				return ec.fieldContext_EditorialMediaUsage_altText(ctx, field)
+			case "effectiveAltText":
+				return ec.fieldContext_EditorialMediaUsage_effectiveAltText(ctx, field)
+			case "focus":
+				return ec.fieldContext_EditorialMediaUsage_focus(ctx, field)
+			case "state":
+				return ec.fieldContext_EditorialMediaUsage_state(ctx, field)
+			case "width":
+				return ec.fieldContext_EditorialMediaUsage_width(ctx, field)
+			case "height":
+				return ec.fieldContext_EditorialMediaUsage_height(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "accessUrl":
+				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
+			case "accessExpiresAt":
+				return ec.fieldContext_EditorialMediaUsage_accessExpiresAt(ctx, field)
+			case "provenance":
+				return ec.fieldContext_EditorialMediaUsage_provenance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaUsage", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _DraftReview_revision(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_DraftReview_revision(ctx, field)
 	if err != nil {
@@ -66498,6 +67069,8 @@ func (ec *executionContext) fieldContext_DraftReviewEdge_node(_ context.Context,
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftReview_editorialMedia(ctx, field)
 			case "revision":
 				return ec.fieldContext_DraftReview_revision(ctx, field)
 			case "activeReviewerIds":
@@ -67620,6 +68193,1340 @@ func (ec *executionContext) fieldContext_DroneWorkflowMutationPayload_workflow(_
 				return ec.fieldContext_AgentWorkflowSurface_identitySemantics(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type AgentWorkflowSurface", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaAccess_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaAccess_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaAccess_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaAccess_url(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaAccess_url(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.URL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaAccess_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaAccess_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaAccess_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaAccess_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaAccess_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaAccess_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaAccess_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_origin(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_origin(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Origin, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.EditorialMediaOrigin)
+	fc.Result = res
+	return ec.marshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_origin(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EditorialMediaOrigin does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_tool(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_tool(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Tool, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_tool(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_responsibleActorId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_responsibleActorId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ResponsibleActorID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_responsibleActorId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_responsibleActor(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_responsibleActor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ResponsibleActor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.Actor)
+	fc.Result = res
+	return ec.marshalOActor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_responsibleActor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Actor_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Actor_username(ctx, field)
+			case "domain":
+				return ec.fieldContext_Actor_domain(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Actor_displayName(ctx, field)
+			case "summary":
+				return ec.fieldContext_Actor_summary(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Actor_avatar(ctx, field)
+			case "header":
+				return ec.fieldContext_Actor_header(ctx, field)
+			case "followers":
+				return ec.fieldContext_Actor_followers(ctx, field)
+			case "following":
+				return ec.fieldContext_Actor_following(ctx, field)
+			case "statusesCount":
+				return ec.fieldContext_Actor_statusesCount(ctx, field)
+			case "bot":
+				return ec.fieldContext_Actor_bot(ctx, field)
+			case "locked":
+				return ec.fieldContext_Actor_locked(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Actor_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Actor_updatedAt(ctx, field)
+			case "fields":
+				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
+			case "tipAddress":
+				return ec.fieldContext_Actor_tipAddress(ctx, field)
+			case "tipChainId":
+				return ec.fieldContext_Actor_tipChainId(ctx, field)
+			case "trustScore":
+				return ec.fieldContext_Actor_trustScore(ctx, field)
+			case "reputation":
+				return ec.fieldContext_Actor_reputation(ctx, field)
+			case "vouches":
+				return ec.fieldContext_Actor_vouches(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_sourceReferences(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_sourceReferences(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SourceReferences, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_sourceReferences(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_rightsLicenseNotes(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_rightsLicenseNotes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RightsLicenseNotes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_rightsLicenseNotes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_createdAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_recordedAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_recordedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RecordedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_recordedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_contentIntegrity(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_contentIntegrity(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentIntegrity, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_contentIntegrity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_role(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_role(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Role, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.EditorialMediaRole)
+	fc.Result = res
+	return ec.marshalNEditorialMediaRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaRole(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_role(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EditorialMediaRole does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_inlinePosition(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_inlinePosition(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.InlinePosition, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_inlinePosition(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_caption(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_caption(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Caption, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_caption(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_creditLine(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_creditLine(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreditLine, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_creditLine(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_altText(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_altText(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AltText, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_altText(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_effectiveAltText(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_effectiveAltText(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EffectiveAltText, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_effectiveAltText(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_focus(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_focus(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Focus, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_focus(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_state(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_state(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.State, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.EditorialMediaState)
+	fc.Result = res
+	return ec.marshalNEditorialMediaState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaState(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_state(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EditorialMediaState does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_width(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_width(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Width, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_width(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_height(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_height(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Height, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_height(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_mimeType(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MimeType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_mimeType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_accessUrl(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AccessURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_accessUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_accessExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_accessExpiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AccessExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_accessExpiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_provenance(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_provenance(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Provenance, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.EditorialMediaProvenance)
+	fc.Result = res
+	return ec.marshalOEditorialMediaProvenance2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenance(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_provenance(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "origin":
+				return ec.fieldContext_EditorialMediaProvenance_origin(ctx, field)
+			case "tool":
+				return ec.fieldContext_EditorialMediaProvenance_tool(ctx, field)
+			case "responsibleActorId":
+				return ec.fieldContext_EditorialMediaProvenance_responsibleActorId(ctx, field)
+			case "responsibleActor":
+				return ec.fieldContext_EditorialMediaProvenance_responsibleActor(ctx, field)
+			case "sourceReferences":
+				return ec.fieldContext_EditorialMediaProvenance_sourceReferences(ctx, field)
+			case "rightsLicenseNotes":
+				return ec.fieldContext_EditorialMediaProvenance_rightsLicenseNotes(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_EditorialMediaProvenance_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_EditorialMediaProvenance_updatedAt(ctx, field)
+			case "recordedAt":
+				return ec.fieldContext_EditorialMediaProvenance_recordedAt(ctx, field)
+			case "contentIntegrity":
+				return ec.fieldContext_EditorialMediaProvenance_contentIntegrity(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaProvenance", field.Name)
 		},
 	}
 	return fc, nil
@@ -99136,6 +101043,8 @@ func (ec *executionContext) fieldContext_Mutation_createDraft(ctx context.Contex
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99235,6 +101144,8 @@ func (ec *executionContext) fieldContext_Mutation_updateDraft(ctx context.Contex
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99259,6 +101170,107 @@ func (ec *executionContext) fieldContext_Mutation_updateDraft(ctx context.Contex
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_updateDraft_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setDraftEditorialMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_setDraftEditorialMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().SetDraftEditorialMedia(rctx, fc.Args["draftId"].(string), fc.Args["media"].([]*model.EditorialMediaUsageInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Draft)
+	fc.Result = res
+	return ec.marshalNDraft2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraft(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_setDraftEditorialMedia(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
+			case "author":
+				return ec.fieldContext_Draft_author(ctx, field)
+			case "contentType":
+				return ec.fieldContext_Draft_contentType(ctx, field)
+			case "title":
+				return ec.fieldContext_Draft_title(ctx, field)
+			case "slug":
+				return ec.fieldContext_Draft_slug(ctx, field)
+			case "content":
+				return ec.fieldContext_Draft_content(ctx, field)
+			case "contentFormat":
+				return ec.fieldContext_Draft_contentFormat(ctx, field)
+			case "status":
+				return ec.fieldContext_Draft_status(ctx, field)
+			case "scheduledAt":
+				return ec.fieldContext_Draft_scheduledAt(ctx, field)
+			case "objectId":
+				return ec.fieldContext_Draft_objectId(ctx, field)
+			case "generatedBy":
+				return ec.fieldContext_Draft_generatedBy(ctx, field)
+			case "reviewedBy":
+				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
+			case "autosaveVersion":
+				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
+			case "lastSavedAt":
+				return ec.fieldContext_Draft_lastSavedAt(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Draft_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Draft_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Draft", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setDraftEditorialMedia_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -99334,6 +101346,8 @@ func (ec *executionContext) fieldContext_Mutation_autosaveDraft(ctx context.Cont
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99607,6 +101621,8 @@ func (ec *executionContext) fieldContext_Mutation_scheduleDraft(ctx context.Cont
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99706,6 +101722,8 @@ func (ec *executionContext) fieldContext_Mutation_cancelScheduledDraft(ctx conte
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99813,6 +101831,8 @@ func (ec *executionContext) fieldContext_Mutation_shareDraftForReview(ctx contex
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftReview_editorialMedia(ctx, field)
 			case "revision":
 				return ec.fieldContext_DraftReview_revision(ctx, field)
 			case "activeReviewerIds":
@@ -99989,6 +102009,8 @@ func (ec *executionContext) fieldContext_Mutation_submitDraftReview(ctx context.
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftReview_editorialMedia(ctx, field)
 			case "revision":
 				return ec.fieldContext_DraftReview_revision(ctx, field)
 			case "activeReviewerIds":
@@ -121252,6 +123274,8 @@ func (ec *executionContext) fieldContext_Query_draft(ctx context.Context, field 
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -121335,6 +123359,8 @@ func (ec *executionContext) fieldContext_Query_draftPreview(ctx context.Context,
 				return ec.fieldContext_DraftPreview_renderedBytes(ctx, field)
 			case "errors":
 				return ec.fieldContext_DraftPreview_errors(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftPreview_editorialMedia(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DraftPreview", field.Name)
 		},
@@ -121616,6 +123642,8 @@ func (ec *executionContext) fieldContext_Query_draftReview(ctx context.Context, 
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftReview_editorialMedia(ctx, field)
 			case "revision":
 				return ec.fieldContext_DraftReview_revision(ctx, field)
 			case "activeReviewerIds":
@@ -121654,6 +123682,71 @@ func (ec *executionContext) fieldContext_Query_draftReview(ctx context.Context, 
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_draftReview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_draftEditorialMediaAccess(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_draftEditorialMediaAccess(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().DraftEditorialMediaAccess(rctx, fc.Args["draftId"].(string), fc.Args["mediaId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.EditorialMediaAccess)
+	fc.Result = res
+	return ec.marshalNEditorialMediaAccess2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaAccess(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_draftEditorialMediaAccess(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaAccess_mediaId(ctx, field)
+			case "url":
+				return ec.fieldContext_EditorialMediaAccess_url(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_EditorialMediaAccess_expiresAt(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_EditorialMediaAccess_contentHash(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaAccess", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_draftEditorialMediaAccess_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -159838,6 +161931,144 @@ func (ec *executionContext) unmarshalInputDirectoryFiltersInput(ctx context.Cont
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputEditorialMediaProvenanceInput(ctx context.Context, obj any) (model.EditorialMediaProvenanceInput, error) {
+	var it model.EditorialMediaProvenanceInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"origin", "tool", "responsibleActorId", "sourceReferences", "rightsLicenseNotes", "createdAt", "updatedAt"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "origin":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("origin"))
+			data, err := ec.unmarshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Origin = data
+		case "tool":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("tool"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Tool = data
+		case "responsibleActorId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("responsibleActorId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ResponsibleActorID = data
+		case "sourceReferences":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceReferences"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceReferences = data
+		case "rightsLicenseNotes":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("rightsLicenseNotes"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RightsLicenseNotes = data
+		case "createdAt":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("createdAt"))
+			data, err := ec.unmarshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CreatedAt = data
+		case "updatedAt":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("updatedAt"))
+			data, err := ec.unmarshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UpdatedAt = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputEditorialMediaUsageInput(ctx context.Context, obj any) (model.EditorialMediaUsageInput, error) {
+	var it model.EditorialMediaUsageInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"mediaId", "role", "inlinePosition", "caption", "creditLine", "altText", "focus"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "mediaId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("mediaId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MediaID = data
+		case "role":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("role"))
+			data, err := ec.unmarshalNEditorialMediaRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaRole(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Role = data
+		case "inlinePosition":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("inlinePosition"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.InlinePosition = data
+		case "caption":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("caption"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Caption = data
+		case "creditLine":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("creditLine"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CreditLine = data
+		case "altText":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("altText"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AltText = data
+		case "focus":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("focus"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Focus = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputExchangeAgentAccessLeaseTokenInput(ctx context.Context, obj any) (model.ExchangeAgentAccessLeaseTokenInput, error) {
 	var it model.ExchangeAgentAccessLeaseTokenInput
 	asMap := map[string]any{}
@@ -163348,7 +165579,7 @@ func (ec *executionContext) unmarshalInputUploadMediaInput(ctx context.Context, 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"file", "filename", "description", "focus", "sensitive", "spoilerText", "mediaType"}
+	fieldsInOrder := [...]string{"file", "filename", "description", "focus", "sensitive", "spoilerText", "mediaType", "editorialProvenance"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -163404,6 +165635,13 @@ func (ec *executionContext) unmarshalInputUploadMediaInput(ctx context.Context, 
 				return it, err
 			}
 			it.MediaType = data
+		case "editorialProvenance":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("editorialProvenance"))
+			data, err := ec.unmarshalOEditorialMediaProvenanceInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenanceInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.EditorialProvenance = data
 		}
 	}
 
@@ -171886,6 +174124,11 @@ func (ec *executionContext) _Draft(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Draft_actedBy(ctx, field, obj)
 		case "reviewVerdict":
 			out.Values[i] = ec._Draft_reviewVerdict(ctx, field, obj)
+		case "editorialMedia":
+			out.Values[i] = ec._Draft_editorialMedia(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "contentHash":
 			out.Values[i] = ec._Draft_contentHash(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -172075,6 +174318,11 @@ func (ec *executionContext) _DraftPreview(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "editorialMedia":
+			out.Values[i] = ec._DraftPreview_editorialMedia(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -172230,6 +174478,11 @@ func (ec *executionContext) _DraftReview(ctx context.Context, sel ast.SelectionS
 			out.Values[i] = ec._DraftReview_editorNotes(ctx, field, obj)
 		case "contentHash":
 			out.Values[i] = ec._DraftReview_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "editorialMedia":
+			out.Values[i] = ec._DraftReview_editorialMedia(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -172767,6 +175020,204 @@ func (ec *executionContext) _DroneWorkflowMutationPayload(ctx context.Context, s
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var editorialMediaAccessImplementors = []string{"EditorialMediaAccess"}
+
+func (ec *executionContext) _EditorialMediaAccess(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaAccess) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, editorialMediaAccessImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EditorialMediaAccess")
+		case "mediaId":
+			out.Values[i] = ec._EditorialMediaAccess_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "url":
+			out.Values[i] = ec._EditorialMediaAccess_url(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._EditorialMediaAccess_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentHash":
+			out.Values[i] = ec._EditorialMediaAccess_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var editorialMediaProvenanceImplementors = []string{"EditorialMediaProvenance"}
+
+func (ec *executionContext) _EditorialMediaProvenance(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaProvenance) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, editorialMediaProvenanceImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EditorialMediaProvenance")
+		case "origin":
+			out.Values[i] = ec._EditorialMediaProvenance_origin(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tool":
+			out.Values[i] = ec._EditorialMediaProvenance_tool(ctx, field, obj)
+		case "responsibleActorId":
+			out.Values[i] = ec._EditorialMediaProvenance_responsibleActorId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "responsibleActor":
+			out.Values[i] = ec._EditorialMediaProvenance_responsibleActor(ctx, field, obj)
+		case "sourceReferences":
+			out.Values[i] = ec._EditorialMediaProvenance_sourceReferences(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "rightsLicenseNotes":
+			out.Values[i] = ec._EditorialMediaProvenance_rightsLicenseNotes(ctx, field, obj)
+		case "createdAt":
+			out.Values[i] = ec._EditorialMediaProvenance_createdAt(ctx, field, obj)
+		case "updatedAt":
+			out.Values[i] = ec._EditorialMediaProvenance_updatedAt(ctx, field, obj)
+		case "recordedAt":
+			out.Values[i] = ec._EditorialMediaProvenance_recordedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentIntegrity":
+			out.Values[i] = ec._EditorialMediaProvenance_contentIntegrity(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var editorialMediaUsageImplementors = []string{"EditorialMediaUsage"}
+
+func (ec *executionContext) _EditorialMediaUsage(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaUsage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, editorialMediaUsageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EditorialMediaUsage")
+		case "mediaId":
+			out.Values[i] = ec._EditorialMediaUsage_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "role":
+			out.Values[i] = ec._EditorialMediaUsage_role(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "inlinePosition":
+			out.Values[i] = ec._EditorialMediaUsage_inlinePosition(ctx, field, obj)
+		case "caption":
+			out.Values[i] = ec._EditorialMediaUsage_caption(ctx, field, obj)
+		case "creditLine":
+			out.Values[i] = ec._EditorialMediaUsage_creditLine(ctx, field, obj)
+		case "altText":
+			out.Values[i] = ec._EditorialMediaUsage_altText(ctx, field, obj)
+		case "effectiveAltText":
+			out.Values[i] = ec._EditorialMediaUsage_effectiveAltText(ctx, field, obj)
+		case "focus":
+			out.Values[i] = ec._EditorialMediaUsage_focus(ctx, field, obj)
+		case "state":
+			out.Values[i] = ec._EditorialMediaUsage_state(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "width":
+			out.Values[i] = ec._EditorialMediaUsage_width(ctx, field, obj)
+		case "height":
+			out.Values[i] = ec._EditorialMediaUsage_height(ctx, field, obj)
+		case "mimeType":
+			out.Values[i] = ec._EditorialMediaUsage_mimeType(ctx, field, obj)
+		case "contentHash":
+			out.Values[i] = ec._EditorialMediaUsage_contentHash(ctx, field, obj)
+		case "accessUrl":
+			out.Values[i] = ec._EditorialMediaUsage_accessUrl(ctx, field, obj)
+		case "accessExpiresAt":
+			out.Values[i] = ec._EditorialMediaUsage_accessExpiresAt(ctx, field, obj)
+		case "provenance":
+			out.Values[i] = ec._EditorialMediaUsage_provenance(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -179599,6 +182050,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setDraftEditorialMedia":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setDraftEditorialMedia(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "autosaveDraft":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_autosaveDraft(ctx, field)
@@ -184162,6 +186620,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_draftReview(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "draftEditorialMediaAccess":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_draftEditorialMediaAccess(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
 				return res
 			}
 
@@ -195753,6 +198233,124 @@ func (ec *executionContext) marshalNDuration2githubᚗcomᚋequaltoaiᚋlesser�
 	return v
 }
 
+func (ec *executionContext) marshalNEditorialMediaAccess2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaAccess(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaAccess) graphql.Marshaler {
+	return ec._EditorialMediaAccess(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNEditorialMediaAccess2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaAccess(ctx context.Context, sel ast.SelectionSet, v *model.EditorialMediaAccess) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EditorialMediaAccess(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx context.Context, v any) (model.EditorialMediaOrigin, error) {
+	var res model.EditorialMediaOrigin
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaOrigin) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaRole(ctx context.Context, v any) (model.EditorialMediaRole, error) {
+	var res model.EditorialMediaRole
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEditorialMediaRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaRole(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaRole) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaState(ctx context.Context, v any) (model.EditorialMediaState, error) {
+	var res model.EditorialMediaState
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEditorialMediaState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaState(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaState) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNEditorialMediaUsage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.EditorialMediaUsage) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNEditorialMediaUsage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsage(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNEditorialMediaUsage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsage(ctx context.Context, sel ast.SelectionSet, v *model.EditorialMediaUsage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EditorialMediaUsage(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaUsageInput2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageInputᚄ(ctx context.Context, v any) ([]*model.EditorialMediaUsageInput, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*model.EditorialMediaUsageInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNEditorialMediaUsageInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaUsageInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageInput(ctx context.Context, v any) (*model.EditorialMediaUsageInput, error) {
+	res, err := ec.unmarshalInputEditorialMediaUsageInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) marshalNEntity2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEntityᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Entity) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -203917,6 +206515,21 @@ func (ec *executionContext) marshalODraftStatus2ᚖgithubᚗcomᚋequaltoaiᚋle
 	_ = ctx
 	res := graphql.MarshalString(string(*v))
 	return res
+}
+
+func (ec *executionContext) marshalOEditorialMediaProvenance2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenance(ctx context.Context, sel ast.SelectionSet, v *model.EditorialMediaProvenance) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._EditorialMediaProvenance(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOEditorialMediaProvenanceInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenanceInput(ctx context.Context, v any) (*model.EditorialMediaProvenanceInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputEditorialMediaProvenanceInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalOExpandMediaPreference2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐExpandMediaPreference(ctx context.Context, v any) (*model.ExpandMediaPreference, error) {

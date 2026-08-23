@@ -1033,6 +1033,8 @@ input UploadMediaInput {
   sensitive: Boolean
   spoilerText: String
   mediaType: MediaCategory
+  """When supplied, bytes begin internal and provenance is integrity-bound to their SHA-256 digest."""
+  editorialProvenance: EditorialMediaProvenanceInput
 }
 
 input UpdateMediaInput {

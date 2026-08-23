@@ -110,6 +110,9 @@ type Draft {
   """Latest review verdict for the current draft content, or null when it has not been reviewed."""
   reviewVerdict: DraftReviewVerdict
 
+  """Modeled editorial assets associated with this unpublished draft."""
+  editorialMedia: [EditorialMediaUsage!]!
+
   """Canonical digest used to bind review verdicts to this exact draft content."""
   contentHash: String!
   """Monotonic draft revision; increments for updates and autosaves."""
@@ -192,6 +195,8 @@ type DraftReview {
   reviewStatus: String
   editorNotes: String
   contentHash: String!
+  """Exact draft-bound media visible to this owner or active reviewer."""
+  editorialMedia: [EditorialMediaUsage!]!
   revision: Int!
   activeReviewerIds: [ID!]!
   publishEligible: Boolean!
@@ -219,6 +224,72 @@ type DraftPreview {
   sourceBytes: Int!
   renderedBytes: Int!
   errors: [String!]!
+  """Canonical structured media preview, including missing/processing/rejected placeholders."""
+  editorialMedia: [EditorialMediaUsage!]!
+}
+
+enum EditorialMediaRole {
+  HERO
+  INLINE
+  SOCIAL_CARD
+}
+
+enum EditorialMediaOrigin {
+  AI_GENERATED
+  AI_EDITED
+  PHOTOGRAPHED
+  ILLUSTRATED
+  SUPPLIED
+}
+
+enum EditorialMediaState {
+  MISSING
+  PROCESSING
+  READY
+  REJECTED
+}
+
+type EditorialMediaProvenance {
+  origin: EditorialMediaOrigin!
+  tool: String
+  responsibleActorId: ID!
+  responsibleActor: Actor
+  sourceReferences: [String!]!
+  rightsLicenseNotes: String
+  createdAt: Time
+  updatedAt: Time
+  recordedAt: Time!
+  contentIntegrity: String!
+}
+
+type EditorialMediaUsage {
+  mediaId: ID!
+  role: EditorialMediaRole!
+  """Zero-based insertion point for INLINE media; null for other roles."""
+  inlinePosition: Int
+  caption: String
+  """Reader-facing attribution, distinct from internal provenance."""
+  creditLine: String
+  """Per-usage override; effectiveAltText falls back to the media-global description."""
+  altText: String
+  effectiveAltText: String
+  focus: String
+  state: EditorialMediaState!
+  width: Int
+  height: Int
+  mimeType: String
+  contentHash: String
+  """Short-lived exact-asset URL, only issued to an owner or active reviewer."""
+  accessUrl: String
+  accessExpiresAt: Time
+  provenance: EditorialMediaProvenance
+}
+
+type EditorialMediaAccess {
+  mediaId: ID!
+  url: String!
+  expiresAt: Time!
+  contentHash: String!
 }
 
 type Revision {
@@ -325,6 +396,8 @@ extend type Query {
   myDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   draftReview(id: ID!): DraftReview
+  """Issue a short-lived read for one exact asset bound to an authorized draft."""
+  draftEditorialMediaAccess(draftId: ID!, mediaId: ID!): EditorialMediaAccess!
 
   # Revision history
   revisions(objectId: ID!, first: Int, after: Cursor): RevisionConnection!
@@ -357,6 +430,8 @@ extend type Mutation {
   # Draft lifecycle
   createDraft(input: CreateDraftInput!): Draft!
   updateDraft(id: ID!, input: UpdateDraftInput!): Draft!
+  """Replace the complete ordered editorial-media association for a draft."""
+  setDraftEditorialMedia(draftId: ID!, media: [EditorialMediaUsageInput!]!): Draft!
   autosaveDraft(id: ID!, content: String!): Draft!
   deleteDraft(id: ID!): Boolean!
 
@@ -413,6 +488,26 @@ input UpdateDraftInput {
   slug: String
   content: String
   contentFormat: ContentFormat
+}
+
+input EditorialMediaUsageInput {
+  mediaId: ID!
+  role: EditorialMediaRole!
+  inlinePosition: Int
+  caption: String
+  creditLine: String
+  altText: String
+  focus: String
+}
+
+input EditorialMediaProvenanceInput {
+  origin: EditorialMediaOrigin!
+  tool: String
+  responsibleActorId: ID
+  sourceReferences: [String!]
+  rightsLicenseNotes: String
+  createdAt: Time
+  updatedAt: Time
 }
 
 input CreateArticleInput {

@@ -22,6 +22,9 @@ type DraftRepository interface {
 	// UpdateDraft updates an existing draft owned by authorID
 	UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error
 
+	// UpdateDraftEditorialMedia replaces only the draft's editorial-media association and update timestamp.
+	UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error
+
 	// DeleteDraft deletes a draft
 	DeleteDraft(ctx context.Context, authorID, draftID string) error
 

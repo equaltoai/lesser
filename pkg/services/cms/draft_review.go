@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -80,6 +81,14 @@ type draftReviewFieldUpdater interface {
 
 type ownedDraftReviewRepository interface {
 	ListDraftReviewGrantsByOwner(context.Context, string) ([]*models.DraftReviewGrant, error)
+}
+
+// DraftEditorialMediaBinding resolves one modeled usage without hiding a
+// missing asset. Preview clients need the nil Media value to render a
+// conspicuous missing placeholder instead of silently dropping the binding.
+type DraftEditorialMediaBinding struct {
+	Usage models.DraftMediaUsage
+	Media *models.Media
 }
 
 func (s *DraftService) reviewRepository() (draftReviewRepository, error) {
@@ -243,6 +252,55 @@ func (s *DraftService) DraftReviewForCaller(ctx context.Context, caller, draftID
 		cursor = nextCursor
 	}
 	return nil, nil, errors.New("draft review not found")
+}
+
+// DraftEditorialMediaForCaller returns only assets bound to the authorized
+// draft. Review grants never turn into a general media-library capability.
+func (s *DraftService) DraftEditorialMediaForCaller(ctx context.Context, caller, draftID string) (*models.Draft, []DraftEditorialMediaBinding, error) {
+	draft, _, err := s.DraftReviewForCaller(ctx, caller, draftID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if s.mediaRepo == nil {
+		return nil, nil, errors.New("editorial media repository is unavailable")
+	}
+	bindings := make([]DraftEditorialMediaBinding, 0, len(draft.EditorialMedia))
+	for _, usage := range draft.EditorialMedia {
+		media, getErr := s.mediaRepo.GetMedia(ctx, usage.MediaID)
+		if getErr != nil && (errors.Is(getErr, storage.ErrNotFound) || apperrors.HasCode(getErr, apperrors.CodeNotFound)) {
+			bindings = append(bindings, DraftEditorialMediaBinding{Usage: usage})
+			continue
+		}
+		if getErr != nil {
+			return nil, nil, getErr
+		}
+		if media == nil || !strings.EqualFold(strings.TrimSpace(media.UserID), strings.TrimSpace(draft.AuthorID)) {
+			bindings = append(bindings, DraftEditorialMediaBinding{Usage: usage})
+			continue
+		}
+		bindings = append(bindings, DraftEditorialMediaBinding{Usage: usage, Media: media})
+	}
+	return draft, bindings, nil
+}
+
+// BoundEditorialMediaForCaller authorizes one exact asset against an owner or
+// active reviewer grant. It intentionally cannot authorize unbound media.
+func (s *DraftService) BoundEditorialMediaForCaller(ctx context.Context, caller, draftID, mediaID string) (*models.Media, error) {
+	_, bindings, err := s.DraftEditorialMediaForCaller(ctx, caller, draftID)
+	if err != nil {
+		return nil, err
+	}
+	mediaID = strings.TrimSpace(mediaID)
+	for _, binding := range bindings {
+		if binding.Usage.MediaID != mediaID {
+			continue
+		}
+		if binding.Media == nil || !binding.Media.IsInternalEditorial() {
+			return nil, errors.New("bound editorial media is unavailable")
+		}
+		return binding.Media, nil
+	}
+	return nil, errors.New("editorial media is not bound to this draft")
 }
 
 // SubmitDraftReview records an immutable reviewer verdict.

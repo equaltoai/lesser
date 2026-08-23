@@ -10,8 +10,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/services/cms"
+	"github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"go.uber.org/zap"
 )
 
 func (r *Resolver) cmsStorage() core.RepositoryStorage {
@@ -68,6 +70,7 @@ func (r *Resolver) convertCMSDraft(ctx context.Context, draft *models.Draft) *mo
 		ReviewedBy:      r.resolveActorByID(ctx, draft.ReviewedBy),
 		ActedBy:         r.resolveActorByID(ctx, draft.ActedBy),
 		ReviewVerdict:   cmsDraftReviewVerdict(draft.ReviewStatus),
+		EditorialMedia:  r.convertCMSEditorialMediaBindings(ctx, r.resolveCMSEditorialMediaBindings(ctx, draft), false),
 		ContentHash:     cms.DraftReviewContentHash(draft),
 		Revision:        draft.AutosaveVersion,
 		AutosaveVersion: draft.AutosaveVersion,
@@ -90,9 +93,15 @@ func cmsDraftReviewVerdict(value string) *model.DraftReviewVerdict {
 	}
 }
 
-func (r *Resolver) convertCMSDraftPreview(draft *models.Draft, rendered cmsrender.RenderedArticleContent, renderErr error) *model.DraftPreview {
+func (r *Resolver) convertCMSDraftPreview(
+	ctx context.Context,
+	draft *models.Draft,
+	bindings []cms.DraftEditorialMediaBinding,
+	rendered cmsrender.RenderedArticleContent,
+	renderErr error,
+) (*model.DraftPreview, error) {
 	if draft == nil {
-		return nil
+		return nil, nil
 	}
 
 	sourceFormat := strings.TrimSpace(draft.ContentFormat)
@@ -117,15 +126,151 @@ func (r *Resolver) convertCMSDraftPreview(draft *models.Draft, rendered cmsrende
 		sourceFormat = cmsrender.FormatMarkdown
 	}
 
+	editorialMedia := r.convertCMSEditorialMediaBindingsWithAccess(ctx, bindings)
 	return &model.DraftPreview{
-		DraftID:       draft.ID,
-		Success:       renderErr == nil,
-		RenderedHTML:  renderedHTML,
-		SourceFormat:  sourceFormat,
-		SourceBytes:   sourceBytes,
-		RenderedBytes: renderedBytes,
-		Errors:        errorsList,
+		DraftID:        draft.ID,
+		Success:        renderErr == nil,
+		RenderedHTML:   renderedHTML,
+		SourceFormat:   sourceFormat,
+		SourceBytes:    sourceBytes,
+		RenderedBytes:  renderedBytes,
+		Errors:         errorsList,
+		EditorialMedia: editorialMedia,
+	}, nil
+}
+
+func (r *Resolver) resolveCMSEditorialMediaBindings(ctx context.Context, draft *models.Draft) []cms.DraftEditorialMediaBinding {
+	if draft == nil {
+		return nil
 	}
+	bindings := make([]cms.DraftEditorialMediaBinding, 0, len(draft.EditorialMedia))
+	store := r.cmsStorage()
+	for _, usage := range draft.EditorialMedia {
+		binding := cms.DraftEditorialMediaBinding{Usage: usage}
+		if store != nil && store.Media() != nil {
+			media, err := store.Media().GetMedia(ctx, usage.MediaID)
+			if err == nil && media != nil && strings.EqualFold(strings.TrimSpace(media.UserID), strings.TrimSpace(draft.AuthorID)) {
+				binding.Media = media
+			}
+		}
+		bindings = append(bindings, binding)
+	}
+	return bindings
+}
+
+func (r *Resolver) convertCMSEditorialMediaBindings(
+	ctx context.Context,
+	bindings []cms.DraftEditorialMediaBinding,
+	includeAccess bool,
+) []*model.EditorialMediaUsage {
+	out := make([]*model.EditorialMediaUsage, 0, len(bindings))
+	for _, binding := range bindings {
+		out = append(out, r.convertCMSEditorialMediaBinding(ctx, binding, includeAccess, nil))
+	}
+	return out
+}
+
+func (r *Resolver) convertCMSEditorialMediaBindingsWithAccess(
+	ctx context.Context,
+	bindings []cms.DraftEditorialMediaBinding,
+) []*model.EditorialMediaUsage {
+	out := make([]*model.EditorialMediaUsage, 0, len(bindings))
+	for _, binding := range bindings {
+		var access *media.EditorialAccess
+		if binding.Media != nil && binding.Media.IsInternalEditorial() {
+			issued, err := r.Registry.Media().IssueEditorialAccess(ctx, binding.Media.MediaID)
+			if err != nil {
+				if r.Logger != nil {
+					r.Logger.Warn("failed to issue editorial media access",
+						zap.String("media_id", binding.Media.MediaID),
+						zap.Error(err))
+				}
+			} else {
+				access = issued
+			}
+		}
+		out = append(out, r.convertCMSEditorialMediaBinding(ctx, binding, true, access))
+	}
+	return out
+}
+
+func (r *Resolver) convertCMSEditorialMediaBinding(
+	ctx context.Context,
+	binding cms.DraftEditorialMediaBinding,
+	includeAccess bool,
+	access *media.EditorialAccess,
+) *model.EditorialMediaUsage {
+	usage := binding.Usage
+	out := &model.EditorialMediaUsage{
+		MediaID:        usage.MediaID,
+		Role:           model.EditorialMediaRole(strings.ToUpper(string(usage.Role))),
+		InlinePosition: usage.InlinePosition,
+		Caption:        cmsOptionalString(usage.Caption),
+		CreditLine:     cmsOptionalString(usage.CreditLine),
+		AltText:        cmsOptionalString(usage.AltText),
+		Focus:          cmsOptionalString(usage.Focus),
+		State:          model.EditorialMediaStateMissing,
+	}
+	mediaRecord := binding.Media
+	if mediaRecord == nil {
+		return out
+	}
+	out.Width = cmsOptionalPositiveInt(mediaRecord.Width)
+	out.Height = cmsOptionalPositiveInt(mediaRecord.Height)
+	out.MimeType = cmsOptionalString(mediaRecord.ContentType)
+	out.ContentHash = cmsOptionalString(mediaRecord.ContentHash)
+	out.EffectiveAltText = cmsOptionalString(usage.AltText)
+	if out.EffectiveAltText == nil {
+		out.EffectiveAltText = cmsOptionalString(mediaRecord.Description)
+	}
+	switch {
+	case !mediaRecord.IsInternalEditorial(), mediaRecord.Provenance == nil,
+		mediaRecord.Provenance.ContentIntegrity != mediaRecord.ContentHash, mediaRecord.IsFailed():
+		out.State = model.EditorialMediaStateRejected
+	case mediaRecord.IsReady():
+		out.State = model.EditorialMediaStateReady
+	default:
+		out.State = model.EditorialMediaStateProcessing
+	}
+	out.Provenance = r.convertCMSEditorialMediaProvenance(ctx, mediaRecord.Provenance)
+	if includeAccess && access != nil {
+		out.AccessURL = cmsOptionalString(access.URL)
+		expiresAt := model.Time(access.ExpiresAt)
+		out.AccessExpiresAt = &expiresAt
+	}
+	return out
+}
+
+func (r *Resolver) convertCMSEditorialMediaProvenance(ctx context.Context, provenance *models.MediaProvenance) *model.EditorialMediaProvenance {
+	if provenance == nil {
+		return nil
+	}
+	out := &model.EditorialMediaProvenance{
+		Origin:             model.EditorialMediaOrigin(strings.ToUpper(string(provenance.Origin))),
+		Tool:               cmsOptionalString(provenance.Tool),
+		ResponsibleActorID: provenance.ResponsibleActor,
+		ResponsibleActor:   r.resolveActorByID(ctx, provenance.ResponsibleActor),
+		SourceReferences:   append([]string(nil), provenance.SourceReferences...),
+		RightsLicenseNotes: cmsOptionalString(provenance.RightsLicenseNotes),
+		RecordedAt:         model.Time(provenance.RecordedAt),
+		ContentIntegrity:   provenance.ContentIntegrity,
+	}
+	if provenance.CreatedAt != nil {
+		value := model.Time(*provenance.CreatedAt)
+		out.CreatedAt = &value
+	}
+	if provenance.UpdatedAt != nil {
+		value := model.Time(*provenance.UpdatedAt)
+		out.UpdatedAt = &value
+	}
+	return out
+}
+
+func cmsOptionalPositiveInt(value int) *int {
+	if value <= 0 {
+		return nil
+	}
+	return &value
 }
 
 func (r *Resolver) convertCMSRevision(ctx context.Context, revision *models.Revision) *model.Revision {
@@ -542,7 +687,13 @@ func (r *Resolver) canViewCMSPrivateAttribution(ctx context.Context, attributedT
 	return strings.EqualFold(cmsNormalizeUsername(attributedTo), claims.Username)
 }
 
-func (r *Resolver) buildCMSDraftReview(ctx context.Context, draft *models.Draft, grant *models.DraftReviewGrant, verdicts []*models.DraftReviewVerdict) (*model.DraftReview, error) {
+func (r *Resolver) buildCMSDraftReview(
+	ctx context.Context,
+	draft *models.Draft,
+	grant *models.DraftReviewGrant,
+	verdicts []*models.DraftReviewVerdict,
+	includeMediaAccess bool,
+) (*model.DraftReview, error) {
 	if draft == nil {
 		return nil, nil
 	}
@@ -572,6 +723,11 @@ func (r *Resolver) buildCMSDraftReview(ctx context.Context, draft *models.Draft,
 		reviewGrant = r.convertCMSDraftReviewGrant(ctx, grant)
 	}
 	viewer := strings.TrimSpace(getUsernameFromContext(ctx))
+	mediaBindings := r.resolveCMSEditorialMediaBindings(ctx, draft)
+	editorialMedia := r.convertCMSEditorialMediaBindings(ctx, mediaBindings, false)
+	if includeMediaAccess {
+		editorialMedia = r.convertCMSEditorialMediaBindingsWithAccess(ctx, mediaBindings)
+	}
 	grants := make([]*model.DraftReviewGrant, 0, len(state.Grants))
 	activeReviewerIDs := make([]string, 0, len(state.Grants))
 	viewerIsOwner := strings.EqualFold(viewer, draft.AuthorID)
@@ -615,6 +771,7 @@ func (r *Resolver) buildCMSDraftReview(ctx context.Context, draft *models.Draft,
 		CreatedAt: model.Time(draft.CreatedAt), GeneratedBy: r.resolveActorByID(ctx, draft.GeneratedBy),
 		ReviewedBy: r.resolveActorByID(ctx, draft.ReviewedBy), ReviewStatus: cmsOptionalString(draft.ReviewStatus),
 		EditorNotes: cmsOptionalString(draft.EditorNotes), ContentHash: state.ContentHash, Revision: draft.AutosaveVersion,
+		EditorialMedia:    editorialMedia,
 		ActiveReviewerIds: activeReviewerIDs, PublishEligible: state.PublishEligible,
 		PublishBlockingReasons: state.BlockingReasons, ReviewersApproved: state.ReviewersApproved,
 		PrincipalApprovalRequired: state.PrincipalApprovalRequired, PrincipalApproved: state.PrincipalApproved,

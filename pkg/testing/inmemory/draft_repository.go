@@ -127,7 +127,31 @@ func (r *DraftRepository) UpdateDraft(_ context.Context, authorID string, draft 
 		r.draftsByStatus[newStatus] = append(r.draftsByStatus[newStatus], key)
 	}
 
-	r.drafts[key] = draft
+	updatedDraft := *draft
+	updatedDraft.EditorialMedia = append([]models.DraftMediaUsage(nil), oldDraft.EditorialMedia...)
+	r.drafts[key] = &updatedDraft
+	return nil
+}
+
+// UpdateDraftEditorialMedia replaces only the draft's editorial-media binding
+// and update timestamp, matching the production field-scoped writer.
+func (r *DraftRepository) UpdateDraftEditorialMedia(_ context.Context, authorID string, draft *models.Draft) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if draft == nil || strings.TrimSpace(authorID) == "" || draft.AuthorID == "" || draft.ID == "" {
+		return storage.ErrInvalidInput
+	}
+	if strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
+		return storage.ErrNotFound
+	}
+
+	stored, exists := r.drafts[draftKey(authorID, draft.ID)]
+	if !exists {
+		return storage.ErrNotFound
+	}
+	stored.EditorialMedia = append([]models.DraftMediaUsage(nil), draft.EditorialMedia...)
+	stored.UpdatedAt = draft.UpdatedAt
 	return nil
 }
 

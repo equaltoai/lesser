@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -92,6 +93,12 @@ type Media struct {
 	// Client-provided classification (image/video/gifv/etc.)
 	MediaCategory MediaCategory `theorydb:"attr:mediaCategory" json:"media_category,omitempty"`
 
+	// Editorial state is optional so historical and social media retain the
+	// existing public posture. Internal assets never expose CDNUrl through the
+	// application contract and carry private provenance separately from credits.
+	Visibility MediaVisibility  `theorydb:"attr:visibility,omitempty" json:"visibility,omitempty"`
+	Provenance *MediaProvenance `theorydb:"attr:provenance,omitempty" json:"provenance,omitempty"`
+
 	// Usage tracking
 	UsageCount int        `theorydb:"attr:usageCount" json:"usage_count"`
 	LastUsedAt *time.Time `theorydb:"attr:lastUsedAt" json:"last_used_at,omitempty"`
@@ -136,6 +143,10 @@ func (m *Media) BeforeCreate() error {
 	m.UpdatedAt = now
 	m.UploadedAt = now
 	m.SpoilerText = strings.TrimSpace(m.SpoilerText)
+	m.Visibility = MediaVisibility(strings.ToLower(strings.TrimSpace(string(m.Visibility))))
+	if m.Visibility == MediaVisibilityInternal {
+		m.CDNUrl = ""
+	}
 
 	// Generate media ID if not provided
 	if err := common.ValidateRequiredParam("MediaID", m.MediaID); err != nil {
@@ -181,6 +192,10 @@ func (m *Media) BeforeCreate() error {
 func (m *Media) BeforeUpdate() error {
 	m.UpdatedAt = time.Now()
 	m.SpoilerText = strings.TrimSpace(m.SpoilerText)
+	m.Visibility = MediaVisibility(strings.ToLower(strings.TrimSpace(string(m.Visibility))))
+	if m.Visibility == MediaVisibilityInternal {
+		m.CDNUrl = ""
+	}
 	if strings.TrimSpace(string(m.MediaCategory)) == "" {
 		m.MediaCategory = DetermineMediaCategory(m.ContentType)
 	} else {
@@ -264,6 +279,19 @@ func (m *Media) Validate() error {
 
 	if !IsValidMediaCategory(m.MediaCategory) {
 		return fmt.Errorf("%w: %s", ErrInvalidMediaCategory, m.MediaCategory)
+	}
+
+	switch m.Visibility {
+	case "", MediaVisibilityPublic:
+	case MediaVisibilityInternal:
+		if m.Provenance == nil {
+			return errors.New("internal editorial media requires provenance")
+		}
+		if err := m.Provenance.Normalize(m.UserID, m.ContentHash, time.Now().UTC()); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("invalid media visibility %q", m.Visibility)
 	}
 
 	return nil
@@ -410,6 +438,12 @@ func (m *Media) IsVideo() bool {
 // IsAudio returns true if the media is audio
 func (m *Media) IsAudio() bool {
 	return strings.HasPrefix(m.ContentType, "audio/")
+}
+
+// IsInternalEditorial reports whether the asset is restricted to the CMS
+// owner and exact draft-review grants.
+func (m *Media) IsInternalEditorial() bool {
+	return m != nil && m.Visibility == MediaVisibilityInternal
 }
 
 // DetermineMediaCategory derives a category from the MIME type when none is provided.

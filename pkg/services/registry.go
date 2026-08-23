@@ -67,6 +67,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -1025,6 +1026,7 @@ func (r *Registry) Drafts() *cms.DraftService {
 		r.cmsSchedulingEnabled(),
 		r.logger,
 	)
+	r.draftService.SetEditorialMediaRepository(r.storage.Media())
 	r.draftService.SetPrincipalUsernameProvider(func(ctx context.Context) (string, error) {
 		state, err := r.storage.Instance().GetInstanceState(ctx)
 		if err != nil {
@@ -1458,8 +1460,13 @@ type mediaS3API interface {
 	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 }
 
+type mediaS3PresignAPI interface {
+	PresignGetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+}
+
 type mediaS3ObjectStore struct {
-	client mediaS3API
+	client    mediaS3API
+	presigner mediaS3PresignAPI
 }
 
 func (s *mediaS3ObjectStore) UploadFile(
@@ -1487,8 +1494,54 @@ func (s *mediaS3ObjectStore) UploadFile(
 	return fmt.Sprintf("s3://%s/%s", bucket, key), nil
 }
 
+func (s *mediaS3ObjectStore) UploadInternalFile(
+	ctx context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+	kmsKeyID string,
+) (string, error) {
+	if s == nil || s.client == nil {
+		return "", errors.New("media S3 client is unavailable")
+	}
+	if strings.TrimSpace(kmsKeyID) == "" {
+		return "", errors.New("editorial media KMS key is unavailable")
+	}
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 bytes.NewReader(data),
+		ContentLength:        aws.Int64(int64(len(data))),
+		ContentType:          aws.String(contentType),
+		ChecksumAlgorithm:    s3types.ChecksumAlgorithmSha256,
+		ServerSideEncryption: s3types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String(strings.TrimSpace(kmsKeyID)),
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("s3://%s/%s", bucket, key), nil
+}
+
 func (s *mediaS3ObjectStore) DeleteFile(ctx context.Context, bucket, key string) error {
 	return s.DeleteMediaObject(ctx, bucket, key)
+}
+
+func (s *mediaS3ObjectStore) GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error) {
+	if s == nil || s.presigner == nil {
+		return "", errors.New("media S3 presigner is unavailable")
+	}
+	request, err := s.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(strings.TrimSpace(bucket)),
+		Key:    aws.String(strings.TrimSpace(key)),
+	}, func(options *s3.PresignOptions) {
+		options.Expires = expiry
+	})
+	if err != nil {
+		return "", err
+	}
+	return request.URL, nil
 }
 
 func (s *mediaS3ObjectStore) DeleteMediaObject(ctx context.Context, bucket, key string) error {
@@ -1510,6 +1563,9 @@ func (r *Registry) wireMediaStorageDependencies(mediaService *media.Service) {
 	if r.mediaS3 != nil {
 		mediaService.SetS3Service(r.mediaS3)
 	}
+	if r.config != nil && r.config.Config != nil {
+		mediaService.SetEditorialKMSKeyID(r.config.Config.KMSKeyID)
+	}
 	if r.config == nil || r.config.Config == nil || r.config.Config.IntegrationTestMode {
 		mediaService.SetDeletionDependencies(nil, metadata)
 		return
@@ -1520,7 +1576,8 @@ func (r *Registry) wireMediaStorageDependencies(mediaService *media.Service) {
 		mediaService.SetDeletionDependencies(nil, metadata)
 		return
 	}
-	objectStore := &mediaS3ObjectStore{client: s3.NewFromConfig(*awsCfg)}
+	client := s3.NewFromConfig(*awsCfg)
+	objectStore := &mediaS3ObjectStore{client: client, presigner: s3.NewPresignClient(client)}
 	mediaService.SetS3Service(objectStore)
 	mediaService.SetDeletionDependencies(objectStore, metadata)
 }

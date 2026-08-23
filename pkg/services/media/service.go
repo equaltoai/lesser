@@ -43,6 +43,7 @@ type Service struct {
 	objectDeleter     ObjectDeleter
 	metadataDeleter   MetadataDeleter
 	s3Service         S3Service
+	editorialKMSKeyID string
 }
 
 type transcoderService interface {
@@ -79,6 +80,19 @@ var (
 type S3Service interface {
 	UploadFile(ctx context.Context, bucket, key string, data []byte, contentType string) (string, error)
 	DeleteFile(ctx context.Context, bucket, key string) error
+}
+
+// InternalS3Service stores an object under the instance KMS key. The public
+// CloudFront origin has no permission to decrypt these objects, while Lesser's
+// authorized Lambda role can presign exact-object reads.
+type InternalS3Service interface {
+	UploadInternalFile(ctx context.Context, bucket, key string, data []byte, contentType, kmsKeyID string) (string, error)
+}
+
+// S3Presigner issues short-lived object reads without making an internal asset
+// part of the unsigned public CDN surface.
+type S3Presigner interface {
+	GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error)
 }
 
 // ProcessingQueue defines the interface for async media processing
@@ -155,6 +169,12 @@ func (s *Service) SetS3Service(s3Service S3Service) {
 	s.s3Service = s3Service
 }
 
+// SetEditorialKMSKeyID configures the instance key used to keep internal
+// editorial originals outside the unsigned CDN read surface.
+func (s *Service) SetEditorialKMSKeyID(keyID string) {
+	s.editorialKMSKeyID = strings.TrimSpace(keyID)
+}
+
 // SetMaxFileSize sets the maximum allowed file size
 func (s *Service) SetMaxFileSize(maxSize int64) {
 	s.maxFileSize = maxSize
@@ -164,15 +184,17 @@ func (s *Service) SetMaxFileSize(maxSize int64) {
 
 // UploadMediaCommand contains all data needed to upload a media file
 type UploadMediaCommand struct {
-	UserID        string               `json:"user_id" validate:"required"`
-	FileName      string               `json:"file_name" validate:"required"`
-	ContentType   string               `json:"content_type" validate:"required"`
-	FileData      []byte               `json:"file_data" validate:"required"`
-	Description   string               `json:"description" validate:"max=1500"` // Alt text
-	Focus         string               `json:"focus"`                           // Focus point for cropping (x,y)
-	Sensitive     bool                 `json:"sensitive"`
-	SpoilerText   string               `json:"spoiler_text"`
-	MediaCategory models.MediaCategory `json:"media_category"`
+	UserID        string                  `json:"user_id" validate:"required"`
+	FileName      string                  `json:"file_name" validate:"required"`
+	ContentType   string                  `json:"content_type" validate:"required"`
+	FileData      []byte                  `json:"file_data" validate:"required"`
+	Description   string                  `json:"description" validate:"max=1500"` // Alt text
+	Focus         string                  `json:"focus"`                           // Focus point for cropping (x,y)
+	Sensitive     bool                    `json:"sensitive"`
+	SpoilerText   string                  `json:"spoiler_text"`
+	MediaCategory models.MediaCategory    `json:"media_category"`
+	Editorial     bool                    `json:"editorial"`
+	Provenance    *models.MediaProvenance `json:"provenance,omitempty"`
 }
 
 // UpdateMediaCommand contains all data needed to update media metadata
@@ -223,6 +245,15 @@ type Result struct {
 	Events []*streaming.Event `json:"events"`
 }
 
+// EditorialAccess is a short-lived, exact-byte read for an internal asset.
+// Authorization of the bound draft is deliberately performed by the CMS
+// service before this storage capability is invoked.
+type EditorialAccess struct {
+	URL         string
+	ExpiresAt   time.Time
+	ContentHash string
+}
+
 // UpdateResult contains updated media and events
 type UpdateResult struct {
 	Media  *models.Media      `json:"media"`
@@ -258,6 +289,15 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 		MediaCategory: cmd.MediaCategory,
 		Status:        models.StatusPending,
 	}
+	if cmd.Editorial {
+		media.Visibility = models.MediaVisibilityInternal
+		media.Provenance = cmd.Provenance
+		if err := media.Provenance.Normalize(media.UserID, media.ContentHash, time.Now().UTC()); err != nil {
+			return nil, errors.Join(ErrMediaValidationFailed, err)
+		}
+	} else {
+		media.Visibility = models.MediaVisibilityPublic
+	}
 
 	// Persist the original bytes before publishing a media record that points at them.
 	s3Key := s.generateS3Key(media.MediaID, cmd.FileName)
@@ -266,12 +306,12 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 	if s.s3Service == nil {
 		return nil, errors.Join(ErrMediaStorageFailed, errors.New("media S3 service is unavailable"))
 	}
-	if _, err := s.s3Service.UploadFile(ctx, s.s3Bucket, s3Key, cmd.FileData, cmd.ContentType); err != nil {
+	if err := s.uploadOriginal(ctx, media, cmd.FileData); err != nil {
 		return nil, errors.Join(ErrMediaStorageFailed, err)
 	}
 
 	// Generate CDN URL
-	if s.cdnDomain != "" {
+	if !media.IsInternalEditorial() && s.cdnDomain != "" {
 		media.CDNUrl = fmt.Sprintf("https://%s/%s", s.cdnDomain, s3Key)
 	}
 
@@ -286,6 +326,9 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 			media.Width = 0
 			media.Height = 0
 			media.Blurhash = mediaprocessor.GetDefaultBlurhash()
+			if media.IsInternalEditorial() {
+				media.Status = models.StatusFailed
+			}
 		} else {
 			// Extract dimensions and blurhash from the original image
 			if original, exists := processedImages["original"]; exists {
@@ -298,6 +341,9 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 				media.Width = 0
 				media.Height = 0
 				media.Blurhash = mediaprocessor.GetDefaultBlurhash()
+			}
+			if media.IsInternalEditorial() {
+				media.Status = models.StatusReady
 			}
 		}
 	}
@@ -320,18 +366,45 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 	// Emit events
 	events := s.emitMediaUploadedEvents(ctx, media)
 
-	// Queue async processing (thumbnails, analysis, etc.)
-	if err := s.queueMediaProcessing(ctx, media); err != nil {
-		// Don't fail the upload if queueing fails - just log the error
-		s.logger.Warn("failed to queue media processing, processing will be skipped",
-			zap.String("media_id", media.MediaID),
-			zap.Error(err))
+	// The existing processor writes unsigned CDN variants. Internal editorial
+	// images are validated synchronously above and deliberately do not enter
+	// that public-derivative pipeline. Public/social uploads retain the M0 queue.
+	if !media.IsInternalEditorial() {
+		if err := s.queueMediaProcessing(ctx, media); err != nil {
+			// Don't fail the upload if queueing fails - just log the error
+			s.logger.Warn("failed to queue media processing, processing will be skipped",
+				zap.String("media_id", media.MediaID),
+				zap.Error(err))
+		}
 	}
 
 	return &Result{
 		Media:  media,
 		Events: events,
 	}, nil
+}
+
+func (s *Service) uploadOriginal(ctx context.Context, media *models.Media, data []byte) error {
+	if media.IsInternalEditorial() {
+		if s.editorialKMSKeyID == "" {
+			return errors.New("editorial media KMS key is unavailable")
+		}
+		internalStore, ok := s.s3Service.(InternalS3Service)
+		if !ok {
+			return errors.New("internal editorial media storage is unavailable")
+		}
+		_, err := internalStore.UploadInternalFile(
+			ctx,
+			media.S3Bucket,
+			media.S3Key,
+			data,
+			media.ContentType,
+			s.editorialKMSKeyID,
+		)
+		return err
+	}
+	_, err := s.s3Service.UploadFile(ctx, media.S3Bucket, media.S3Key, data, media.ContentType)
+	return err
 }
 
 func contentHash(data []byte) string {
@@ -500,6 +573,38 @@ func (s *Service) GetMedia(ctx context.Context, query *GetMediaQuery) (*models.M
 	return media, nil
 }
 
+// IssueEditorialAccess signs a read for one internal object. Callers must first
+// prove that this media ID is bound to a draft the current actor owns or has an
+// active review grant for; this method intentionally grants no list capability.
+func (s *Service) IssueEditorialAccess(ctx context.Context, mediaID string) (*EditorialAccess, error) {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("media ID is required"))
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil || !media.IsInternalEditorial() {
+		return nil, ErrMediaUnauthorizedAccess
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	key := strings.TrimSpace(media.S3Key)
+	if bucket == "" || key == "" {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("internal media storage location is unavailable"))
+	}
+	presigner, ok := s.s3Service.(S3Presigner)
+	if !ok || presigner == nil {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("internal media presigner is unavailable"))
+	}
+	const ttl = 5 * time.Minute
+	url, err := presigner.GeneratePresignedURL(ctx, bucket, key, ttl)
+	if err != nil {
+		return nil, errors.Join(ErrMediaStorageFailed, err)
+	}
+	return &EditorialAccess{URL: url, ExpiresAt: time.Now().UTC().Add(ttl), ContentHash: media.ContentHash}, nil
+}
+
 // ListMedia returns paginated media filtered by owner and type
 func (s *Service) ListMedia(ctx context.Context, query *ListMediaQuery) (*ListMediaResult, error) {
 	if query == nil {
@@ -594,6 +699,9 @@ func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaComma
 	// Validate content type
 	if !s.isValidMediaType(cmd.ContentType) {
 		return ErrMediaUnsupportedType
+	}
+	if cmd.Editorial && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(cmd.ContentType)), "image/") {
+		return common.ErrValidation("contentType", "editorial media currently requires an image").InternalError
 	}
 
 	if err := ValidateSVGUpload(cmd.ContentType, cmd.FileData); err != nil {
@@ -730,6 +838,9 @@ func (s *Service) checkMediaAccess(ctx context.Context, media *models.Media, vie
 	// Basic privacy check - owner can always access their media
 	if media.UserID == viewerID {
 		return nil
+	}
+	if media.IsInternalEditorial() {
+		return ErrMediaUnauthorizedAccess
 	}
 
 	// Check if media is marked as NSFW and viewer restrictions

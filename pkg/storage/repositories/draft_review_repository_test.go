@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +76,105 @@ func TestDraftRepositoryUpdateDraftReviewFieldsDoesNotClobberOwnerContent(t *tes
 	missing := staleReviewSnapshot
 	missing.ID = "missing"
 	require.ErrorIs(t, repo.UpdateDraftReviewFields(ctx, "owner", &missing), storage.ErrNotFound)
+}
+
+func TestDraftRepositoryUpdateDraftEditorialMediaUsesFieldScopedTableTheoryUpdate(t *testing.T) {
+	ctx := context.Background()
+	client := &draftReviewRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.Draft{}))
+
+	position := 2
+	persisted := &models.Draft{
+		AuthorID: "owner", ID: "draft-media", ContentType: "Article",
+		Content: "owner concurrent edit", ContentFormat: "markdown", Status: "draft",
+		EditorialMedia: []models.DraftMediaUsage{{MediaID: "old", Role: models.EditorialMediaRoleInline, InlinePosition: &position}},
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	require.NoError(t, persisted.UpdateKeys())
+	require.NoError(t, db.WithContext(ctx).Model(persisted).Create())
+
+	stale := *persisted
+	stale.Content = "stale content that must not be written"
+	stale.EditorialMedia = []models.DraftMediaUsage{{MediaID: "replacement", Role: models.EditorialMediaRoleHero}}
+	stale.UpdatedAt = persisted.UpdatedAt.Add(time.Minute)
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	require.NoError(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &stale))
+
+	got, err := repo.GetDraft(ctx, "owner", persisted.ID)
+	require.NoError(t, err)
+	require.Equal(t, "owner concurrent edit", got.Content)
+	require.Equal(t, stale.EditorialMedia, got.EditorialMedia)
+	require.True(t, stale.UpdatedAt.Equal(got.UpdatedAt))
+
+	stale.EditorialMedia = []models.DraftMediaUsage{}
+	stale.UpdatedAt = stale.UpdatedAt.Add(time.Minute)
+	require.NoError(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &stale))
+
+	cleared, err := repo.GetDraft(ctx, "owner", persisted.ID)
+	require.NoError(t, err)
+	require.Empty(t, cleared.EditorialMedia,
+		"the real TableTheory update expression must remove an omitempty slice when the replacement is empty")
+	require.Equal(t, "owner concurrent edit", cleared.Content)
+	require.Len(t, client.updateInputs, 2)
+	require.Contains(t, aws.ToString(client.updateInputs[1].UpdateExpression), "REMOVE")
+	require.Contains(t, aws.ToString(client.updateInputs[1].ConditionExpression), "attribute_exists")
+
+	missing := stale
+	missing.ID = "missing"
+	require.ErrorIs(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &missing), storage.ErrNotFound)
+}
+
+func TestDraftRepositoryUpdateDraftSkipsStaleEditorialMedia(t *testing.T) {
+	ctx := context.Background()
+	client := &draftReviewRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.Draft{}))
+
+	persisted := &models.Draft{
+		AuthorID: "owner", ID: "draft-content", ContentType: "Article",
+		Content: "original content", ContentFormat: "markdown", Status: "draft",
+		EditorialMedia: []models.DraftMediaUsage{{MediaID: "stale-binding", Role: models.EditorialMediaRoleHero}},
+		CreatedAt:      time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	require.NoError(t, persisted.UpdateKeys())
+	require.NoError(t, db.WithContext(ctx).Model(persisted).Create())
+
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+	stale, err := repo.GetDraft(ctx, "owner", persisted.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, stale.EditorialMedia, "the full-model writer must carry a non-empty stale association")
+
+	replacement := *stale
+	replacement.EditorialMedia = []models.DraftMediaUsage{{MediaID: "concurrent-replacement", Role: models.EditorialMediaRoleSocialCard}}
+	replacement.UpdatedAt = replacement.UpdatedAt.Add(time.Minute)
+	require.NoError(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &replacement))
+
+	client.updateInputs = nil
+	stale.Content = "content writer update"
+	stale.UpdatedAt = replacement.UpdatedAt.Add(time.Minute)
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", stale))
+	require.Len(t, client.updateInputs, 1)
+
+	input := client.updateInputs[0]
+	require.NotContains(t, strings.ToLower(aws.ToString(input.UpdateExpression)), "editorialmedia")
+	for _, attributeName := range input.ExpressionAttributeNames {
+		require.NotEqual(t, "editorialmedia", strings.ToLower(attributeName),
+			"the sparse full-model update must not select the editorial-media attribute")
+	}
+	expressionValues, err := json.Marshal(input.ExpressionAttributeValues)
+	require.NoError(t, err)
+	require.NotContains(t, strings.ToLower(string(expressionValues)), "editorialmedia")
+	require.NotContains(t, string(expressionValues), "stale-binding",
+		"the stale association must not appear among update expression values")
+
+	got, err := repo.GetDraft(ctx, "owner", persisted.ID)
+	require.NoError(t, err)
+	require.Equal(t, "content writer update", got.Content)
+	require.Equal(t, replacement.EditorialMedia, got.EditorialMedia,
+		"the concurrently replaced association must survive a stale full-model content update")
 }
 
 func (d *draftReviewRecordingDynamo) PutItem(ctx context.Context, input *dynamodb.PutItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
