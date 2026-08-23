@@ -127,7 +127,9 @@ func (r *DraftRepository) UpdateDraft(_ context.Context, authorID string, draft 
 		r.draftsByStatus[newStatus] = append(r.draftsByStatus[newStatus], key)
 	}
 
-	r.drafts[key] = draft
+	updatedDraft := *draft
+	updatedDraft.EditorialMedia = append([]models.DraftMediaUsage(nil), oldDraft.EditorialMedia...)
+	r.drafts[key] = &updatedDraft
 	return nil
 }
 
