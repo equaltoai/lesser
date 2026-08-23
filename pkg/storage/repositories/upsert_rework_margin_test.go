@@ -75,7 +75,6 @@ func TestDraftReviewProjectionQueriesAndImmutableVerdicts(t *testing.T) {
 	query.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
 	query.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
 	query.On("OrderBy", mock.Anything, mock.Anything).Return(query).Maybe()
-	query.On("Count").Return(int64(2), nil).Once()
 	query.On("All", mock.AnythingOfType("*[]models.DraftReviewGrant")).Run(func(args mock.Arguments) {
 		rows := args.Get(0).(*[]models.DraftReviewGrant)
 		*rows = []models.DraftReviewGrant{{OwnerID: "alice", DraftID: "draft-1", Reviewer: "bob"}}
@@ -87,10 +86,6 @@ func TestDraftReviewProjectionQueriesAndImmutableVerdicts(t *testing.T) {
 	}).Return(nil).Once()
 
 	repo := NewDraftRepository(db, models.MainTableName, zap.NewNop(), nil)
-	count, err := repo.CountActiveDraftReviewGrants(ctx, "bob")
-	require.NoError(t, err)
-	require.Equal(t, 2, count)
-
 	grants, err := repo.ListDraftReviewGrants(ctx, "alice", "draft-1")
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
@@ -345,15 +340,12 @@ func TestDraftReviewProjectionErrorsAreSurfaced(t *testing.T) {
 	query.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
 	query.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
 	query.On("OrderBy", mock.Anything, mock.Anything).Return(query).Maybe()
-	query.On("Count").Return(int64(0), failure).Once()
 	query.On("All", mock.AnythingOfType("*[]models.DraftReviewGrant")).Return(failure).Once()
 	query.On("Create").Return(failure).Once()
 	query.On("All", mock.AnythingOfType("*[]models.DraftReviewVerdict")).Return(failure).Once()
 
 	repo := NewDraftRepository(db, models.MainTableName, zap.NewNop(), nil)
-	_, err := repo.CountActiveDraftReviewGrants(ctx, "bob")
-	require.ErrorIs(t, err, failure)
-	_, err = repo.ListDraftReviewGrants(ctx, "alice", "draft-1")
+	_, err := repo.ListDraftReviewGrants(ctx, "alice", "draft-1")
 	require.ErrorIs(t, err, failure)
 	verdict := &models.DraftReviewVerdict{OwnerID: "alice", DraftID: "draft-1", Reviewer: "bob", Verdict: "approve", RecordedAt: time.Now().UTC()}
 	require.ErrorIs(t, repo.CreateDraftReviewVerdict(ctx, verdict), failure)

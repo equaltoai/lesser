@@ -366,20 +366,6 @@ func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, revie
 	return out, nextCursor, nil
 }
 
-// CountActiveDraftReviewGrants returns the full active sparse queue size.
-func (r *DraftRepository) CountActiveDraftReviewGrants(ctx context.Context, reviewer string) (int, error) {
-	count, err := r.db.WithContext(ctx).
-		Model(&models.DraftReviewGrant{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).
-		Filter("RevokedAt", "attribute_not_exists", nil).
-		Count()
-	if err != nil {
-		return 0, err
-	}
-	return int(count), nil
-}
-
 // ListDraftReviewGrants returns all grant records for one draft.
 func (r *DraftRepository) ListDraftReviewGrants(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewGrant, error) {
 	var rows []models.DraftReviewGrant

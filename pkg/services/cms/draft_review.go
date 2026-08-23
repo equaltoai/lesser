@@ -158,7 +158,6 @@ type draftReviewRepository interface {
 	RevokeDraftReviewGrant(context.Context, *models.DraftReviewGrant) error
 	GetDraftReviewGrant(context.Context, string, string, string) (*models.DraftReviewGrant, error)
 	ListActiveDraftReviewGrants(context.Context, string, int, string) ([]*models.DraftReviewGrant, string, error)
-	CountActiveDraftReviewGrants(context.Context, string) (int, error)
 	ListDraftReviewGrants(context.Context, string, string) ([]*models.DraftReviewGrant, error)
 	CreateDraftReviewVerdict(context.Context, *models.DraftReviewVerdict) error
 	ListDraftReviewVerdicts(context.Context, string, string) ([]*models.DraftReviewVerdict, error)

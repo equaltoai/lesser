@@ -122,15 +122,6 @@ func (r *reviewMemRepo) ListActiveDraftReviewGrants(_ context.Context, reviewer 
 	}
 	return out, nextCursor, nil
 }
-func (r *reviewMemRepo) CountActiveDraftReviewGrants(_ context.Context, reviewer string) (int, error) {
-	count := 0
-	for _, g := range r.grants {
-		if g.Reviewer == reviewer && g.RevokedAt == nil {
-			count++
-		}
-	}
-	return count, nil
-}
 func (r *reviewMemRepo) ListDraftReviewGrants(_ context.Context, owner, draft string) ([]*models.DraftReviewGrant, error) {
 	r.listGrantCalls++
 	if r.listGrantErr != nil {
