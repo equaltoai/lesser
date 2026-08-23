@@ -625,6 +625,7 @@ func (s *DraftService) transitionDraftToPublishing(ctx context.Context, authorID
 func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, authorID, draftID, domain, objectID, slug string, draft *models.Draft, now time.Time, actedBy string, mints map[string]EditorialPublishedMedia, batch *draftMintBatch) (*models.Article, error) {
 	article, err := s.articleService.GetArticle(ctx, objectID)
 	if err != nil {
+		err = categorizeArticlePublishError(err)
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		s.rollbackDraftMints(ctx, batch)
 		return nil, err
@@ -657,6 +658,7 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 	article.Updated = now
 
 	if err := s.articleService.UpdateArticle(ctx, article); err != nil {
+		err = categorizeArticlePublishError(err)
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		s.rollbackDraftMints(ctx, batch)
 		return nil, err
@@ -775,6 +777,7 @@ func (s *DraftService) publishDraftCreateNewArticle(ctx context.Context, authorI
 	}
 
 	if err := s.articleService.CreateArticle(ctx, article); err != nil {
+		err = categorizeArticlePublishError(err)
 		s.markDraftFailed(ctx, authorID, draft, draftID, err)
 		s.rollbackDraftMints(ctx, batch)
 		return nil, err
@@ -792,6 +795,22 @@ func (s *DraftService) deleteDraftAfterPublish(ctx context.Context, draft *model
 		draft.UpdatedAt = time.Now()
 		_ = s.draftRepo.UpdateDraft(ctx, authorID, draft)
 	}
+}
+
+// categorizeArticlePublishError marks a publish-path article-service failure
+// with the storage category when the underlying repository error carries no
+// application category. Article repository writes surface raw storage-layer
+// errors (e.g. a DynamoDB outage) that classifyDraftPublishFailureReason would
+// otherwise bucket as generic; wrapping them here records "storage". Errors
+// that already carry an application category (validation, not-found, media)
+// pass through unchanged so their own classification is preserved, and the
+// wrapper preserves the original message so callers see the same failure text.
+func categorizeArticlePublishError(err error) error {
+	if err == nil || apperrors.IsAppError(err) {
+		return err
+	}
+	return apperrors.NewAppErrorf(apperrors.CodeInternal, apperrors.CategoryStorage, "%s", err.Error()).
+		WithInternalError(err)
 }
 
 // classifyDraftPublishFailureReason buckets a failed interactive publish into a

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -69,6 +70,70 @@ func TestInteractivePublishFailureRecordsClassifiedReason(t *testing.T) {
 		require.Error(t, err)
 
 		got, getErr := svc.GetDraft(context.Background(), "owner", "reason-storage")
+		require.NoError(t, getErr)
+		require.Equal(t, draftStatusFailed, got.Status)
+		require.Equal(t, draftPublishFailureStorage, got.PublishFailureReason)
+	})
+
+	t.Run("plain article-write error classifies as storage at the publish boundary", func(t *testing.T) {
+		// Production ArticleRepository writes surface raw storage-layer errors
+		// without an application category; the publish boundary must classify a
+		// real DynamoDB outage as storage rather than falling through to generic.
+		svc, _, _, _ := newDraft(t, "reason-storage-plain")
+		svc.articleService = &memArticleServiceWithErrors{
+			base:      newMemArticleService(),
+			createErr: errors.New("dynamodb write timed out"),
+		}
+		_, err := svc.PublishDraft(context.Background(), "owner", "reason-storage-plain")
+		require.Error(t, err)
+		require.ErrorContains(t, err, "dynamodb write timed out", "the categorized error must preserve the original message")
+		require.True(t, apperrors.HasCategory(err, apperrors.CategoryStorage),
+			"the publish boundary must categorize an uncategorized article-write error as storage")
+
+		got, getErr := svc.GetDraft(context.Background(), "owner", "reason-storage-plain")
+		require.NoError(t, getErr)
+		require.Equal(t, draftStatusFailed, got.Status)
+		require.Equal(t, draftPublishFailureStorage, got.PublishFailureReason)
+	})
+
+	t.Run("plain update-article error classifies as storage on the update path", func(t *testing.T) {
+		svc, repo, media, minter := m2ReviewService(t)
+		ctx := context.Background()
+		digestA := m2Digest("a")
+		media.byID["hero"] = m2ReadyMedia("hero", "owner", digestA)
+		minter.seedFromMedia(media)
+		objectID := common.GenerateObjectID("example.test", "articles", "existing")
+		objectIDValue := objectID
+		base := newMemArticleService()
+		base.items[objectID] = &models.Article{
+			Object: models.Object{
+				ID: objectID, Type: activitypub.ArticleType, Name: "Existing",
+				Content: "existing", AttributedTo: common.GenerateActorID("example.test", "owner"),
+				Published: time.Now().UTC(), Updated: time.Now().UTC(), CreatedAt: time.Now().UTC(),
+			},
+			Slug: "existing",
+		}
+		base.slugIndex["existing"] = objectID
+		svc.articleService = &memArticleServiceWithErrors{base: base, updateErr: errors.New("dynamodb update timed out")}
+
+		draft := &models.Draft{ID: "reason-storage-plain-update", AuthorID: "owner", ContentType: activitypub.ArticleType, Title: "Update", Slug: "update", Content: "draft", ContentFormat: "markdown", ObjectID: &objectIDValue}
+		require.NoError(t, svc.CreateDraft(ctx, draft))
+		_, err := svc.SetEditorialMedia(ctx, "owner", draft.ID, []models.DraftMediaUsage{{MediaID: "hero", Role: models.EditorialMediaRoleHero}})
+		require.NoError(t, err)
+		require.NoError(t, repo.storeGrant(&models.DraftReviewGrant{
+			OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: time.Now().UTC(),
+			ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
+		}))
+		_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+		require.NoError(t, err)
+
+		_, err = svc.PublishDraft(ctx, "owner", draft.ID)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "dynamodb update timed out", "the categorized error must preserve the original message")
+		require.True(t, apperrors.HasCategory(err, apperrors.CategoryStorage),
+			"the publish boundary must categorize an uncategorized article-write error as storage")
+
+		got, getErr := svc.GetDraft(ctx, "owner", draft.ID)
 		require.NoError(t, getErr)
 		require.Equal(t, draftStatusFailed, got.Status)
 		require.Equal(t, draftPublishFailureStorage, got.PublishFailureReason)
