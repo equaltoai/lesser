@@ -723,17 +723,14 @@ func (s *DraftService) PromoPackageReviewState(ctx context.Context, owner, packa
 	}, nil
 }
 
-func (s *DraftService) promoReviewApprovalState(ctx context.Context, owner, packageID string, pkg *models.PromoPackage) (*promoReviewApprovalState, error) {
-	repo, err := s.promoReviewRepository()
-	if err != nil {
-		return nil, err
-	}
-	grants, err := repo.ListPromoReviewGrants(ctx, owner, packageID)
-	if err != nil {
-		return nil, err
-	}
-	now := time.Now().UTC()
-	active := make(map[string]*models.PromoReviewGrant, len(grants))
+// promoRequiredReviewers derives the doctrine "requested = required" reviewer
+// set: every reviewer with an active grant, plus every reviewer who ever
+// recorded a verdict — revocation or expiry cannot delete a required approval.
+// Each required reviewer is mapped to their latest grant record so the current
+// verdict can be dated against it (a re-grant requires a verdict recorded
+// after the new grant).
+func promoRequiredReviewers(grants []*models.PromoReviewGrant, verdicts []*models.PromoReviewVerdict, now time.Time) (active, required map[string]*models.PromoReviewGrant) {
+	active = make(map[string]*models.PromoReviewGrant, len(grants))
 	grantByReviewer := make(map[string]*models.PromoReviewGrant, len(grants))
 	for _, grant := range grants {
 		if grant == nil || strings.TrimSpace(grant.Reviewer) == "" {
@@ -744,26 +741,7 @@ func (s *DraftService) promoReviewApprovalState(ctx context.Context, owner, pack
 			active[grant.Reviewer] = grant
 		}
 	}
-	if pkg == nil {
-		pkg, err = repo.GetPromoPackage(ctx, owner, packageID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	resolved, reasons, resolveErr := s.resolvePromoPackageAssets(ctx, pkg)
-	if resolveErr != nil {
-		return nil, resolveErr
-	}
-	currentHash := models.PromoPackageContentHash(pkg)
-	verdicts, listErr := repo.ListPromoReviewVerdicts(ctx, owner, packageID)
-	if listErr != nil {
-		return nil, listErr
-	}
-	// "Requested = required" (operator doctrine): every active grant is
-	// required, and every reviewer who ever recorded a verdict stays required
-	// even when their grant was later revoked or expired — revocation cannot
-	// delete a required approval.
-	required := make(map[string]*models.PromoReviewGrant, len(grantByReviewer))
+	required = make(map[string]*models.PromoReviewGrant, len(grantByReviewer))
 	for reviewer, grant := range grantByReviewer {
 		if _, ok := active[reviewer]; ok {
 			required[reviewer] = grant
@@ -779,14 +757,19 @@ func (s *DraftService) promoReviewApprovalState(ctx context.Context, owner, pack
 			}
 		}
 	}
+	return active, required
+}
+
+// promoCurrentVerdicts derives, per required reviewer, the latest verdict that
+// is current for the exact reviewed content: hash-matching and recorded after
+// the reviewer's latest grant.
+func promoCurrentVerdicts(verdicts []*models.PromoReviewVerdict, required map[string]*models.PromoReviewGrant, currentHash string) map[string]*models.PromoReviewVerdict {
 	latest := make(map[string]*models.PromoReviewVerdict, len(required))
 	for _, verdict := range verdicts {
 		if verdict == nil {
 			continue
 		}
 		grant := required[verdict.Reviewer]
-		// A re-grant deliberately requires a verdict recorded after the new
-		// grant; a hash mismatch stales the approval on any content change.
 		if grant != nil && verdict.RecordedAt.After(grant.GrantedAt) &&
 			verdict.ContentHash == currentHash {
 			if current := latest[verdict.Reviewer]; current == nil || verdict.RecordedAt.After(current.RecordedAt) {
@@ -794,6 +777,35 @@ func (s *DraftService) promoReviewApprovalState(ctx context.Context, owner, pack
 			}
 		}
 	}
+	return latest
+}
+
+func (s *DraftService) promoReviewApprovalState(ctx context.Context, owner, packageID string, pkg *models.PromoPackage) (*promoReviewApprovalState, error) {
+	repo, err := s.promoReviewRepository()
+	if err != nil {
+		return nil, err
+	}
+	grants, err := repo.ListPromoReviewGrants(ctx, owner, packageID)
+	if err != nil {
+		return nil, err
+	}
+	verdicts, listErr := repo.ListPromoReviewVerdicts(ctx, owner, packageID)
+	if listErr != nil {
+		return nil, listErr
+	}
+	if pkg == nil {
+		pkg, err = repo.GetPromoPackage(ctx, owner, packageID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	resolved, reasons, resolveErr := s.resolvePromoPackageAssets(ctx, pkg)
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
+	currentHash := models.PromoPackageContentHash(pkg)
+	active, required := promoRequiredReviewers(grants, verdicts, time.Now().UTC())
+	latest := promoCurrentVerdicts(verdicts, required, currentHash)
 	return &promoReviewApprovalState{
 		active:       active,
 		required:     required,

@@ -154,6 +154,8 @@ func (r *PromoPackageRepository) UpdatePromoPackageContent(ctx context.Context, 
 // wins the reservation (every loser conflicts BEFORE a post exists). The
 // release then creates the post and finalizes to released; on post-creation
 // failure the winner rolls back releasing -> draft with RevertPromoPackageReleasing.
+//
+//nolint:dupl // the reservation writers mirror the released-stamp CAS lane (M4 issue #1446)
 func (r *PromoPackageRepository) MarkPromoPackageReleasing(ctx context.Context, ownerID string, pkg *models.PromoPackage) error {
 	if err := validatePromoPackageOwner(ownerID, pkg); err != nil {
 		return err
@@ -196,6 +198,8 @@ func (r *PromoPackageRepository) MarkPromoPackageReleasing(ctx context.Context, 
 // timestamp (never the content or a released stamp), so only the reservation
 // winner (who alone holds the post-reservation version) can roll back; a
 // concurrent content write cannot be clobbered by the rollback.
+//
+//nolint:dupl // the reservation writers mirror the released-stamp CAS lane (M4 issue #1446)
 func (r *PromoPackageRepository) RevertPromoPackageReleasing(ctx context.Context, ownerID string, pkg *models.PromoPackage) error {
 	if err := validatePromoPackageOwner(ownerID, pkg); err != nil {
 		return err
