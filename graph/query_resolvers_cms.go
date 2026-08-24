@@ -1564,3 +1564,22 @@ func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.Draf
 	}
 	return r.buildCMSDraftReview(ctx, d, g, vs, true)
 }
+
+func (r *queryResolver) UploadGrant(ctx context.Context, grantID string) (*model.UploadGrant, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return nil, errors.New("media service is not available")
+	}
+	grant, url, err := mediaService.UploadGrant(ctx, username, grantID)
+	if err != nil {
+		return nil, err
+	}
+	return r.convertCMSUploadGrant(grant, url), nil
+}

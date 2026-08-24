@@ -352,8 +352,9 @@ func (s *testRepositoryStorage) MediaSession() interfaces.MediaSessionRepository
 func (s *testRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }
-func (s *testRepositoryStorage) Article() interfaces.ArticleRepository { return nil }
-func (s *testRepositoryStorage) Draft() interfaces.DraftRepository     { return nil }
+func (s *testRepositoryStorage) Article() interfaces.ArticleRepository         { return nil }
+func (s *testRepositoryStorage) Draft() interfaces.DraftRepository             { return nil }
+func (s *testRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository { return nil }
 func (s *testRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return nil
 }

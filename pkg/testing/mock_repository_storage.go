@@ -91,6 +91,7 @@ type MockRepositoryStorage struct {
 	// CMS repositories (interface types for mockability)
 	articleRepo           interfaces.ArticleRepository
 	draftRepo             interfaces.DraftRepository
+	uploadGrantRepo       interfaces.UploadGrantRepository
 	revisionRepo          interfaces.RevisionRepository
 	seriesRepo            interfaces.SeriesRepository
 	categoryRepo          interfaces.CategoryRepository
@@ -244,6 +245,14 @@ func WithArticleRepository(repo interfaces.ArticleRepository) Option {
 func WithDraftRepository(repo interfaces.DraftRepository) Option {
 	return func(s *MockRepositoryStorage) {
 		s.draftRepo = repo
+	}
+}
+
+// WithUploadGrantRepository sets a custom upload grant repository
+// implementation. Use this to inject a mock for testing upload grant behavior.
+func WithUploadGrantRepository(repo interfaces.UploadGrantRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.uploadGrantRepo = repo
 	}
 }
 
@@ -631,6 +640,13 @@ func (s *MockRepositoryStorage) Article() interfaces.ArticleRepository {
 // Draft returns the draft repository (interface type for mockability).
 func (s *MockRepositoryStorage) Draft() interfaces.DraftRepository {
 	return s.draftRepo
+}
+
+// UploadGrant returns the upload grant repository (interface type for
+// mockability). Nil by default so upload-grant paths fail closed in tests that
+// do not exercise them.
+func (s *MockRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository {
+	return s.uploadGrantRepo
 }
 
 // Revision returns the revision repository (interface type for mockability).

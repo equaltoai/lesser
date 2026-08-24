@@ -2760,6 +2760,67 @@ type PublicationMember {
   joinedAt: Time!
 }
 
+# ============================================================
+# Presigned-companion upload grants (M3)
+# One-time, hash-bound, actor-scoped upload admission. The mint returns a
+# presigned S3 PUT bound to the declared content type and the declared sha256
+# of the intended bytes; finalize verifies the stored object's actual digest
+# before any editorial media record exists.
+# ============================================================
+
+"""A one-time, hash-bound, actor-scoped upload grant minted by the owner."""
+type UploadGrant {
+  id: ID!
+  ownerId: ID!
+  """Declared media type, bound into the presigned PUT."""
+  contentType: String!
+  """Declared size cap; finalize fails closed beyond it."""
+  maxSizeBytes: Int!
+  """Hex-encoded sha256 of the exact bytes the caller will PUT."""
+  declaredSha256: String!
+  status: UploadGrantStatus!
+  """Presigned PUT URL. Populated at mint and refreshed while the grant is minted."""
+  presignedUrl: String
+  """Media ID minted with the grant; set once the finalize admits the asset."""
+  mediaId: ID
+  grantedAt: Time!
+  """Bounded expiry; expired grants authorize no PUT or finalize."""
+  expiresAt: Time!
+  usedAt: Time
+  """Set on a digest-failure finalize so the owner can inspect why an upload was not admitted."""
+  failureReason: String
+}
+
+enum UploadGrantStatus {
+  MINTED
+  USED
+  EXPIRED
+  FAILED_DIGEST
+}
+
+input MintUploadGrantInput {
+  contentType: String!
+  maxSizeBytes: Int!
+  """Hex-encoded sha256 of the exact bytes the caller will PUT."""
+  sha256: String!
+}
+
+"""The internal editorial media record admitted by a successful finalize."""
+type UploadGrantMedia {
+  mediaId: ID!
+  contentType: String!
+  size: Int!
+  """Canonical sha256:<hex> content integrity of the exact admitted bytes."""
+  contentHash: String!
+  status: String!
+  visibility: String!
+}
+
+type UploadGrantFinalizeResult {
+  grant: UploadGrant!
+  media: UploadGrantMedia!
+}
+
 extend type Query {
   # Draft operations
   draft(id: ID!): Draft
@@ -2771,6 +2832,8 @@ extend type Query {
   draftReview(id: ID!): DraftReview
   """Issue a short-lived read for one exact asset bound to an authorized draft."""
   draftEditorialMediaAccess(draftId: ID!, mediaId: ID!): EditorialMediaAccess!
+  """One upload grant with its inspectable lifecycle state (owner-scoped)."""
+  uploadGrant(grantId: ID!): UploadGrant!
 
   # Revision history
   revisions(objectId: ID!, first: Int, after: Cursor): RevisionConnection!
@@ -2807,6 +2870,12 @@ extend type Mutation {
   setDraftEditorialMedia(draftId: ID!, media: [EditorialMediaUsageInput!]!): Draft!
   autosaveDraft(id: ID!, content: String!): Draft!
   deleteDraft(id: ID!): Boolean!
+
+  # Presigned-companion upload grants
+  """Mint a one-time, hash-bound upload grant with a presigned PUT URL."""
+  mintUploadGrant(input: MintUploadGrantInput!): UploadGrant!
+  """Verify the uploaded bytes against the grant and admit the editorial media record."""
+  finalizeUploadGrant(grantId: ID!): UploadGrantFinalizeResult!
 
   # Publishing
   publishDraft(id: ID!): Article!

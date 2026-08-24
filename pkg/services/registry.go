@@ -57,9 +57,13 @@ package services
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"reflect"
@@ -1506,12 +1510,15 @@ func (r *Registry) Media() *media.Service {
 
 type mediaS3API interface {
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
 	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 	CopyObject(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
 }
 
 type mediaS3PresignAPI interface {
 	PresignGetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+	PresignPutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
 }
 
 type mediaS3ObjectStore struct {
@@ -1623,6 +1630,100 @@ func (s *mediaS3ObjectStore) GeneratePresignedURL(ctx context.Context, bucket, k
 	return request.URL, nil
 }
 
+// PresignPutObject mints a presigned PUT for the presigned-companion upload
+// transport. The signed headers bind the object key, the exact Content-Type,
+// and the exact sha256 of the intended bytes (S3 validates the body checksum
+// on receipt, so a PUT whose bytes do not match the declared digest fails with
+// BadDigest), and the object is stored under the instance KMS key so internal
+// bytes are never world-readable. The checksum is client-declared, so it is an
+// integrity binding, NOT a size binding: a self-consistent multi-GB PUT passes
+// S3's validation. SigV4 presigned PUTs cannot express a numeric
+// content-length-range condition (that is POST-policy-only); the size cap is
+// therefore enforced at finalize, which first gates the stored object's
+// ContentLength via HeadObject and rejects+deletes an oversized object before
+// any download, then recomputes the digest over a bounded streaming read
+// (abort at MaxSizeBytes+1) as defense-in-depth, and only admits the asset
+// when both checks pass.
+func (s *mediaS3ObjectStore) PresignPutObject(ctx context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error) {
+	if s == nil || s.presigner == nil {
+		return "", errors.New("media S3 presigner is unavailable")
+	}
+	digest, err := hex.DecodeString(strings.TrimSpace(contentSHA256Hex))
+	if err != nil || len(digest) != sha256.Size {
+		return "", errors.New("declared sha256 must be a hex-encoded 32-byte digest")
+	}
+	checksum := base64.StdEncoding.EncodeToString(digest)
+	request, err := s.presigner.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(strings.TrimSpace(bucket)),
+		Key:                  aws.String(strings.TrimSpace(key)),
+		ContentType:          aws.String(strings.TrimSpace(contentType)),
+		ChecksumSHA256:       aws.String(checksum),
+		ServerSideEncryption: s3types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String(strings.TrimSpace(kmsKeyID)),
+	}, func(options *s3.PresignOptions) {
+		options.Expires = expiry
+	})
+	if err != nil {
+		return "", err
+	}
+	return request.URL, nil
+}
+
+// HeadFile returns the stored object's ContentLength and ContentType without
+// transferring the body, so finalize can reject an oversized object before any
+// bytes enter memory.
+func (s *mediaS3ObjectStore) HeadFile(ctx context.Context, bucket, key string) (int64, string, error) {
+	if s == nil || s.client == nil {
+		return 0, "", errors.New("media S3 client is unavailable")
+	}
+	output, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(strings.TrimSpace(bucket)),
+		Key:    aws.String(strings.TrimSpace(key)),
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	contentLength := int64(0)
+	if output.ContentLength != nil {
+		contentLength = aws.ToInt64(output.ContentLength)
+	}
+	contentType := ""
+	if output.ContentType != nil {
+		contentType = aws.ToString(output.ContentType)
+	}
+	return contentLength, contentType, nil
+}
+
+// DownloadFile returns a stored object's bytes and stored content type for
+// digest verification at finalize, refusing to read past maxBytes: the read
+// aborts at maxBytes+1 so an object that grew between HeadFile and GetObject
+// cannot be pulled into memory unbounded.
+func (s *mediaS3ObjectStore) DownloadFile(ctx context.Context, bucket, key string, maxBytes int64) ([]byte, string, error) {
+	if s == nil || s.client == nil {
+		return nil, "", errors.New("media S3 client is unavailable")
+	}
+	output, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(strings.TrimSpace(bucket)),
+		Key:    aws.String(strings.TrimSpace(key)),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	defer output.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(output.Body, maxBytes+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, "", errors.New("uploaded object exceeds the declared size cap")
+	}
+	contentType := ""
+	if output.ContentType != nil {
+		contentType = aws.ToString(output.ContentType)
+	}
+	return data, contentType, nil
+}
+
 func (s *mediaS3ObjectStore) DeleteMediaObject(ctx context.Context, bucket, key string) error {
 	if s == nil || s.client == nil {
 		return errors.New("media S3 client is unavailable")
@@ -1641,6 +1742,9 @@ func (r *Registry) wireMediaStorageDependencies(mediaService *media.Service) {
 	}
 	if r.mediaS3 != nil {
 		mediaService.SetS3Service(r.mediaS3)
+	}
+	if repository := r.storage.UploadGrant(); repository != nil {
+		mediaService.SetUploadGrantRepository(repository)
 	}
 	if r.config != nil && r.config.Config != nil {
 		mediaService.SetEditorialKMSKeyID(r.config.Config.KMSKeyID)

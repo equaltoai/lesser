@@ -73,6 +73,7 @@ type RepositoryStorage interface {
 	// CMS Repositories (interface types for mockability)
 	Article() interfaces.ArticleRepository
 	Draft() interfaces.DraftRepository
+	UploadGrant() interfaces.UploadGrantRepository
 	Revision() interfaces.RevisionRepository
 	Series() interfaces.SeriesRepository
 	Category() interfaces.CategoryRepository

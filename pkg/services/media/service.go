@@ -44,6 +44,7 @@ type Service struct {
 	metadataDeleter   MetadataDeleter
 	s3Service         S3Service
 	editorialKMSKeyID string
+	uploadGrantRepo   interfaces.UploadGrantRepository
 	orphanSource      OrphanedPublishedMintSource
 }
 
