@@ -61,14 +61,6 @@ var (
 	ErrUploadGrantObjectEmpty = errors.New("uploaded object is empty")
 )
 
-// uploadGrantRepository is the storage surface for upload grants as consumed
-// by the media service.
-type uploadGrantRepository interface {
-	CreateUploadGrant(context.Context, *models.UploadGrant) error
-	GetUploadGrant(context.Context, string, string) (*models.UploadGrant, error)
-	ConsumeUploadGrant(context.Context, *models.UploadGrant, string, string, time.Time) error
-}
-
 // uploadGrantObjectStore is the S3 capability the presigned-companion
 // transport needs beyond the read presigner: a constrained PUT presigner, a
 // full-object download for digest verification, and deletion for the
@@ -335,7 +327,7 @@ func verifyUploadedObject(grant *models.UploadGrant, bytes []byte, storedType st
 		return "uploaded object digest does not match the declared sha256"
 	}
 	storedType = strings.TrimSpace(storedType)
-	if storedType != "" && strings.ToLower(storedType) != strings.ToLower(strings.TrimSpace(grant.ContentType)) {
+	if storedType != "" && !strings.EqualFold(storedType, strings.TrimSpace(grant.ContentType)) {
 		return fmt.Sprintf("uploaded object content type %q does not match declared %q", storedType, grant.ContentType)
 	}
 	return ""
