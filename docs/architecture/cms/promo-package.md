@@ -52,7 +52,7 @@ composition* (post text, visibility, asset selection) is private until release.
   the attachment order, so reordering re-requires review);
 - `status` / `releasedStatusId` / `releasedAt` — stamped exactly once by the
   release transition (CAS); re-release and post-release composition are
-  refused;
+  refused. `releasing` is the transient pre-stamp reservation (see Release);
 - `modelVersion` — version token for the CAS field-scoped content and release
   writes.
 
@@ -96,12 +96,27 @@ governed by the **operator content doctrine** (2026-08-24, binding):
 
 ## Release
 
-`releasePromoPackage` creates the outbound Status through the notes promo lane
-(`CreatePromoNote`): the post is created at public/unlisted visibility with the
-exact approved assets attached, each attachment referencing the media record's
-M2 `publishedUrl` (the durable serving minted from the approved bytes — no
-re-upload, no unguessable-media fallback, no caller-supplied URL). The release
-creates the post and nothing else: no boosts, likes, or synthetic engagement.
+`releasePromoPackage` runs as a three-step reservation so a concurrent
+double-release can never create two posts:
+
+1. **Reserve.** The package moves `draft → releasing` through the
+   version-conditioned field-scoped writer (`MarkPromoPackageReleasing`) BEFORE
+   any outbound Status exists. Exactly one concurrent releaser wins the
+   reservation; every loser conflicts here, before a post can be created.
+2. **Create.** The outbound Status is created through the notes promo lane
+   (`CreatePromoNote`): public/unlisted visibility with the exact approved
+   assets attached, each attachment referencing the media record's M2
+   `publishedUrl` (the durable serving minted from the approved bytes — no
+   re-upload, no unguessable-media fallback, no caller-supplied URL). The
+   release creates the post and nothing else: no boosts, likes, or synthetic
+   engagement. On creation failure the reservation rolls back `releasing →
+   draft` on the same CAS lane and no stamp survives.
+3. **Stamp.** The reservation finalizes `releasing → released`, recording the
+   created Status ID (`releasedStatusId`). If the stamp write fails, the post
+   IS live but the package is not stamped: the created Status ID is surfaced
+   (`PromoPackageStampError`) so the caller cannot blindly retry into a second
+   post, and the package stays in the `releasing` reservation — release and
+   composition are refused until an operator reconciles it.
 
 **AI-authorship disclosure mechanism.** The article surface discloses AI
 authorship through `generatedBy`/`reviewedBy` attribution plus the
@@ -121,11 +136,12 @@ Additive GraphQL only (contentus is a deployed consumer): new
 `sharePromoPackageForReview` / `revokePromoPackageReview` /
 `submitPromoPackageReview`, `releasePromoPackage`, and
 `promoPackage` / `promoPackages` / `sharedPromoPackageReviews` queries, plus
-the additive `includeAccessUrls` argument on `draftPreview`/`draftReview`
-(fold-in: per-read access-URL minting is scoped to explicit exact-asset reads;
-see the access-URL fold-in below). Mastodon REST, OpenAPI, ActivityPub,
-JSON-LD, and federation contracts are unchanged — the release reuses the
-existing note-creation pipeline.
+the additive `includeAccessUrls` argument on `draftPreview`/`draftReview` and
+on the `shareDraftForReview`/`submitDraftReview` mutations (fold-in: per-read
+access-URL minting is scoped to explicit exact-asset reads; see the access-URL
+fold-in below). Mastodon REST, OpenAPI, ActivityPub, JSON-LD, and federation
+contracts are unchanged — the release reuses the existing note-creation
+pipeline.
 
 ## M4 fold-ins
 
@@ -147,7 +163,25 @@ existing note-creation pipeline.
   attribute is deliberately NOT `theorydb:"version"`-tagged: that tag would arm
   TableTheory's automatic optimistic lock on every full-model content write,
   whose condition fails in real DynamoDB for pre-M4 rows that never carried the
-  attribute — every existing draft would break on its next content save.
+  attribute — every existing draft would break on its next content save. The
+  content save lane additionally **zeroes `modelVersion` on its sparse copy**,
+  so a content autosave holding a pre-bump snapshot can never write the old
+  version back and let a stale media-set CAS succeed.
+- **Review submit binds the inspected content hash.** `submitPromoPackageReview`
+  takes an additive `contentHash` argument carrying the hash the reviewer
+  actually inspected; a recomposed package (hash mismatch) rejects the submit
+  with a conflict instead of recording a verdict over unseen content. The M2
+  draft submit surface shares the inherited pattern and is a flagged follow-up,
+  deliberately unchanged here.
+- **Mutation access-URL opt-in.** `shareDraftForReview` and
+  `submitDraftReview` accept the additive `includeAccessUrls` argument
+  (default `false`), matching the query reads: mutation responses mint the
+  short-lived per-asset URLs only on explicit opt-in; the exact-asset
+  `draftEditorialMediaAccess` lane remains the recommended read.
+- **Reviewer-visible review surface is owner-or-self.** Non-owner callers
+  (active reviewers) see only their own grant and verdict records — other
+  reviewers' identities and notes stay private — matching the draft-review
+  viewer filter; the owner sees the full surface.
 
 ## Persistence and compatibility
 
