@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -226,6 +227,7 @@ func TestMintUploadGrantValidation(t *testing.T) {
 	}{
 		{"missing owner", MintUploadGrantInput{ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: valid}},
 		{"unsupported type", MintUploadGrantInput{Owner: "alice", ContentType: "text/html", MaxSizeBytes: 100, ContentSHA256: valid}},
+		{"parameterized type", MintUploadGrantInput{Owner: "alice", ContentType: "image/png; x=1", MaxSizeBytes: 100, ContentSHA256: valid}},
 		// Editorial admission mirrors M0: mint only admits image/*, so video and
 		// audio grants are rejected instead of creating permanently-pending
 		// dead-end records the editorial pipeline would never admit.
@@ -245,6 +247,19 @@ func TestMintUploadGrantValidation(t *testing.T) {
 			require.Len(t, grantRepo.Grants(), 0, "no grant row may be persisted for a rejected mint")
 		})
 	}
+}
+
+func TestMintUploadGrantNormalizesContentType(t *testing.T) {
+	service, _, objectStore, _ := newUploadGrantTestService(t)
+	grant, _, err := service.MintUploadGrant(context.Background(), MintUploadGrantInput{
+		Owner: "alice", ContentType: "  IMAGE/PNG ", MaxSizeBytes: 100, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "image/png", grant.ContentType, "the stored type is the normalized canonical type")
+	require.True(t, strings.HasSuffix(grant.FileName, ".png"), "the key extension derives from the normalized type")
+	presigns := objectStore.Presigns()
+	require.Len(t, presigns, 1)
+	require.Equal(t, "image/png", presigns[0].contentType, "the presigned PUT signs the normalized type")
 }
 
 func TestMintUploadGrantFailsClosedWhenUnwired(t *testing.T) {

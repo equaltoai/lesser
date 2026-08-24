@@ -120,6 +120,15 @@ func (s *Service) MintUploadGrant(ctx context.Context, input MintUploadGrantInpu
 	if owner == "" {
 		return nil, "", errors.Join(ErrMediaValidationFailed, errors.New("owner is required"))
 	}
+	// M0 normalizes media types (strips parameters) before comparing; mint
+	// rejects parameterized input outright so the declared type stored in the
+	// grant, signed into the presigned PUT, and used to derive the key extension
+	// is always one canonical type. Rejection is chosen over silent stripping:
+	// it is simpler, and a client sending parameters gets an explicit error
+	// instead of a silently-different stored type.
+	if contentType != normalizedContentType(contentType) {
+		return nil, "", errors.Join(ErrMediaValidationFailed, errors.New("content type must not carry parameters"))
+	}
 	if !s.isValidMediaType(contentType) {
 		return nil, "", errors.Join(ErrMediaValidationFailed, errors.New("unsupported content type"))
 	}
