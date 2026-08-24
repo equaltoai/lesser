@@ -804,3 +804,49 @@ func TestPromoReleaseFinalizeFailureSurfacesCreatedStatusID(t *testing.T) {
 	require.False(t, state.ReleaseEligible)
 	require.Contains(t, state.BlockingReasons, PromoPackageReviewReasonReleasing)
 }
+
+// TestPromoPrincipalIdentityMixedCaseAgreesAcrossGateReadStateAndSelfGrant pins
+// N5: PrimaryAdminUsername is persisted TrimSpace-only
+// (instance_repository.SetPrimaryAdminUsername), so the instance principal can
+// arrive with mixed casing relative to a caller or reviewer string. Every
+// principal-identity comparison must route through the sameAccount choke point
+// so the release gate and the read state agree (the principal is NOT required
+// for the principal's own release) and the principal's own self-grant and
+// self-review are not refused by a byte-wise mismatch.
+func TestPromoPrincipalIdentityMixedCaseAgreesAcrossGateReadStateAndSelfGrant(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	// The stored primary-admin username keeps its original casing.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "PriNcIpAl", nil })
+	digest := promoDigest("2a")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "principal", digest, models.EditorialMediaOriginSupplied)
+
+	// The principal (caller string "principal") owns the package; zero reviewers
+	// have ever been granted, so the doctrine treats the release action as the
+	// implicit principal approval. The gate and the read state must agree that
+	// the principal is not required despite the casing divergence.
+	pkg, err := svc.ComposePromoPackage(ctx, "principal", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	state, err := svc.PromoPackageReviewState(ctx, "principal", pkg.PackageID, nil)
+	require.NoError(t, err)
+	require.False(t, state.PrincipalApprovalRequired,
+		"the read state renders the principal not required for the principal's own package")
+	require.True(t, state.ReleaseEligible, "zero ever-granted reviewers; the principal's release is eligible")
+
+	release, err := svc.ReleasePromoPackage(ctx, "principal", pkg.PackageID)
+	require.NoError(t, err, "the gate must agree with the read state and release the principal's own package")
+	require.NotEmpty(t, release.ReleasedStatusID)
+	require.Len(t, creator.commands, 1)
+
+	// Self-grant: the principal may share a package with themselves (owner ==
+	// reviewer); the mixed-case identity must not refuse it.
+	selfPkg, err := svc.ComposePromoPackage(ctx, "principal", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "principal", selfPkg.PackageID, "principal")
+	require.NoError(t, err, "the principal may self-grant despite the casing divergence")
+
+	// Self-review: the principal may submit a verdict on their own package
+	// through the active self-grant.
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "principal", selfPkg.PackageID, models.PromoPackageReviewApproved, "", selfPkg.ContentHash)
+	require.NoError(t, err, "the principal may self-review despite the casing divergence")
+}

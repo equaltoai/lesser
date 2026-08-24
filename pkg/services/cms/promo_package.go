@@ -77,6 +77,19 @@ var (
 	errPromoReviewStorageUnavailable = errors.New("promo package review storage is not available")
 )
 
+// sameAccount is the single normalization choke point for local account
+// identity comparisons. PrimaryAdminUsername is persisted TrimSpace-only
+// (instance_repository.SetPrimaryAdminUsername), so the instance principal can
+// legitimately differ from a caller or reviewer string by case alone. A
+// byte-wise comparison would split the release gate (fail-closed demand for
+// extra principal approval) from the read state (renders principal not
+// required) and would refuse the principal's own self-grant/self-review. Every
+// principal-identity comparison routes through here: EqualFold on both sides
+// after trimming whitespace.
+func sameAccount(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
 // PromoPackageComposeInput carries the full reviewed content of a promo
 // package. The same shape composes a new package (PackageID empty) or replaces
 // the content of an existing one (PackageID set); every content change
@@ -418,7 +431,7 @@ func (s *DraftService) SharePromoPackageForReview(ctx context.Context, owner, pa
 	}
 	if owner == reviewer {
 		principal, err := s.instancePrincipal(ctx)
-		if err != nil || principal != owner {
+		if err != nil || !sameAccount(principal, owner) {
 			return nil, errors.New("promo package owner cannot review their own package")
 		}
 	}
@@ -574,7 +587,7 @@ func (s *DraftService) SubmitPromoPackageReview(ctx context.Context, caller, own
 	packageID = strings.TrimSpace(packageID)
 	if caller == owner {
 		principal, err := s.instancePrincipal(ctx)
-		if err != nil || principal != owner {
+		if err != nil || !sameAccount(principal, owner) {
 			return nil, errors.New("promo package owner cannot review their own package")
 		}
 	}
@@ -683,7 +696,7 @@ func (s *DraftService) PromoPackageReviewState(ctx context.Context, owner, packa
 	principal, principalErr := s.instancePrincipal(ctx)
 	principalUnavailable := principalErr != nil
 	principalApproved := false
-	principalRequired := principalUnavailable || !strings.EqualFold(strings.TrimSpace(owner), principal)
+	principalRequired := principalUnavailable || !sameAccount(owner, principal)
 	var reviewersApproved bool
 	if principalUnavailable {
 		reviewersApproved = allRequiredReviewersApprovedPromo(approval)
@@ -840,7 +853,7 @@ func allRequiredReviewersApprovedPromo(state *promoReviewApprovalState) bool {
 // regardless of asset provenance.
 func promoApprovalAnswers(state *promoReviewApprovalState, releaser, principal string) (reviewersApproved, principalApproved bool) {
 	required := state.required
-	if releaser == principal {
+	if sameAccount(releaser, principal) {
 		required = promoRequiredWithoutPrincipal(state.required, principal)
 	}
 	for reviewer := range required {
@@ -848,7 +861,7 @@ func promoApprovalAnswers(state *promoReviewApprovalState, releaser, principal s
 			return false, false
 		}
 	}
-	if releaser == principal {
+	if sameAccount(releaser, principal) {
 		return true, true
 	}
 	grant := state.active[principal]
@@ -864,7 +877,7 @@ func promoRequiredWithoutPrincipal(required map[string]*models.PromoReviewGrant,
 	}
 	out := make(map[string]*models.PromoReviewGrant, len(required))
 	for reviewer, grant := range required {
-		if reviewer == principal {
+		if sameAccount(reviewer, principal) {
 			continue
 		}
 		out[reviewer] = grant
