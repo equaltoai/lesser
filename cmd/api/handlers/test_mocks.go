@@ -520,6 +520,11 @@ func (m *MockRepositoryStorage) Draft() interfaces.DraftRepository {
 	return nil
 }
 
+// UploadGrant returns a mock upload grant repository for testing
+func (m *MockRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository {
+	return nil
+}
+
 // Revision returns a mock revision repository for testing
 func (m *MockRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return nil

@@ -130,6 +130,7 @@ func (s *SimpleRepositoryStorage) StreamingConnection() interfaces.StreamingConn
 
 func (s *SimpleRepositoryStorage) Article() interfaces.ArticleRepository         { return nil }
 func (s *SimpleRepositoryStorage) Draft() interfaces.DraftRepository             { return nil }
+func (s *SimpleRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository { return nil }
 func (s *SimpleRepositoryStorage) Revision() interfaces.RevisionRepository       { return nil }
 func (s *SimpleRepositoryStorage) Series() interfaces.SeriesRepository           { return nil }
 func (s *SimpleRepositoryStorage) Category() interfaces.CategoryRepository       { return nil }
