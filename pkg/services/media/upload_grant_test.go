@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
@@ -49,6 +50,7 @@ type uploadGrantObjectFake struct {
 	deletes     []string
 	presignErr  error
 	downloadErr error
+	deleteErr   error
 }
 
 func newUploadGrantObjectFake() *uploadGrantObjectFake {
@@ -69,6 +71,9 @@ func (f *uploadGrantObjectFake) UploadFile(_ context.Context, bucket, key string
 func (f *uploadGrantObjectFake) DeleteFile(_ context.Context, bucket, key string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
 	f.deletes = append(f.deletes, bucket+"/"+key)
 	delete(f.objects, bucket+"/"+key)
 	return nil
@@ -532,4 +537,253 @@ func TestVerifyUploadedObject(t *testing.T) {
 	require.Contains(t, verifyUploadedObject(grant, []byte("other bytes"), "image/png"), "digest")
 	require.Contains(t, verifyUploadedObject(grant, bytes.Repeat([]byte{0x01}, 101), "image/png"), "exceeds declared cap")
 	require.Contains(t, verifyUploadedObject(grant, data, "image/jpeg"), "content type")
+}
+
+func TestMintUploadGrantStoreUnavailableFailsClosed(t *testing.T) {
+	service, grantRepo, _, _ := newUploadGrantTestService(t)
+	// A store without the presigned-PUT capability must fail closed.
+	service.SetS3Service(newFakeMediaS3Service())
+	_, _, err := service.MintUploadGrant(context.Background(), MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.ErrorIs(t, err, ErrUploadGrantUnavailable)
+	require.Len(t, grantRepo.Grants(), 0)
+}
+
+func TestMintUploadGrantFailsClosedOnMissingBucketAndKMS(t *testing.T) {
+	service, _, _, _ := newUploadGrantTestService(t)
+	service.s3Bucket = ""
+	_, _, err := service.MintUploadGrant(context.Background(), MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.Error(t, err)
+
+	service.s3Bucket = "media-private"
+	service.editorialKMSKeyID = ""
+	_, _, err = service.MintUploadGrant(context.Background(), MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.Error(t, err)
+}
+
+func TestMintUploadGrantPresignAndPersistErrors(t *testing.T) {
+	service, grantRepo, objectStore, _ := newUploadGrantTestService(t)
+	valid := MintUploadGrantInput{Owner: "alice", ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: uploadGrantDigest(tinyPNG)}
+
+	// Presign failure: nothing is persisted.
+	objectStore.presignErr = fmt.Errorf("presign down")
+	_, _, err := service.MintUploadGrant(context.Background(), valid)
+	require.Error(t, err)
+	require.Len(t, grantRepo.Grants(), 0)
+
+	// Persist failure: the error surfaces.
+	objectStore.presignErr = nil
+	service.uploadGrantRepo = &failingUploadGrantRepo{createErr: fmt.Errorf("storage down")}
+	_, _, err = service.MintUploadGrant(context.Background(), valid)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "storage down")
+}
+
+type failingUploadGrantRepo struct {
+	inmemory.UploadGrantRepository
+	createErr  error
+	getErr     error
+	consumeErr error
+}
+
+func (f *failingUploadGrantRepo) CreateUploadGrant(_ context.Context, _ *models.UploadGrant) error {
+	return f.createErr
+}
+
+func (f *failingUploadGrantRepo) GetUploadGrant(_ context.Context, _, _ string) (*models.UploadGrant, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	return nil, storage.ErrNotFound
+}
+
+func (f *failingUploadGrantRepo) ConsumeUploadGrant(_ context.Context, _ *models.UploadGrant, _, _ string, _ time.Time) error {
+	return f.consumeErr
+}
+
+func TestFinalizeUploadGrantConsumeErrorSurfaces(t *testing.T) {
+	service, _, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	require.NoError(t, objectStore.SimulateUpload(grant, tinyPNG))
+
+	service.uploadGrantRepo = &failingUploadGrantRepo{getErr: fmt.Errorf("read failed")}
+	_, err = service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read failed")
+	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+}
+
+func TestFinalizeUploadGrantNonImageStaysPendingLikeM0(t *testing.T) {
+	service, _, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	audio := []byte{0xFF, 0xF3, 0x04, 0x01}
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "audio/mpeg", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(audio),
+	})
+	require.NoError(t, err)
+	require.NoError(t, objectStore.SimulateUpload(grant, audio))
+
+	var created *models.Media
+	mediaRepo.On("CreateMedia", ctx, mock.MatchedBy(func(media *models.Media) bool {
+		created = media
+		return true
+	})).Return(nil).Once()
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.NotNil(t, media)
+	require.Equal(t, models.StatusPending, media.Status, "non-image internal assets stay pending exactly as the M0 pipeline leaves them")
+	require.NotNil(t, created)
+	require.Equal(t, models.StatusPending, created.Status)
+}
+
+func TestFinalizeUploadGrantImageDecodeFailureMarksFailed(t *testing.T) {
+	service, _, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	garbage := []byte("definitely not a decodable image")
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(garbage),
+	})
+	require.NoError(t, err)
+	require.NoError(t, objectStore.SimulateUpload(grant, garbage))
+
+	var created *models.Media
+	mediaRepo.On("CreateMedia", ctx, mock.MatchedBy(func(media *models.Media) bool {
+		created = media
+		return true
+	})).Return(nil).Once()
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.StatusFailed, media.Status, "an image that fails dimension processing enters failed like the M0 pipeline")
+	require.NotNil(t, created)
+	require.Equal(t, models.StatusFailed, created.Status)
+}
+
+func TestFinalizeUploadGrantStoredTypeMismatchFailsClosed(t *testing.T) {
+	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	// The PUT carries the right bytes but a different Content-Type than declared.
+	_, err = objectStore.UploadFile(ctx, grant.S3Bucket, grant.S3Key, tinyPNG, "image/jpeg")
+	require.NoError(t, err)
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.ErrorIs(t, err, ErrUploadGrantDigestMismatch)
+	require.Nil(t, media)
+	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+	stored, err := grantRepo.GetUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusFailedDigest, stored.Status)
+	require.Contains(t, stored.FailureReason, "content type")
+	require.Contains(t, objectStore.Deletes(), grant.S3Bucket+"/"+grant.S3Key)
+}
+
+func TestFinalizeUploadGrantCreateMediaFailureCleansObject(t *testing.T) {
+	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	require.NoError(t, objectStore.SimulateUpload(grant, tinyPNG))
+
+	mediaRepo.On("CreateMedia", ctx, mock.MatchedBy(func(media *models.Media) bool { return true })).
+		Return(fmt.Errorf("record write failed")).Once()
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "record write failed")
+	require.Nil(t, media)
+	// The grant is consumed (single-use) and the object is removed so no
+	// orphan bytes survive a failed record creation.
+	stored, err := grantRepo.GetUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusUsed, stored.Status)
+	require.Contains(t, objectStore.Deletes(), grant.S3Bucket+"/"+grant.S3Key)
+}
+
+func TestFinalizeUploadGrantDeleteFailureStillFailsClosed(t *testing.T) {
+	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	wrong := []byte("wrong bytes")
+	require.NoError(t, objectStore.SimulateUpload(grant, wrong))
+	// Deletion failure must not mask the digest failure or admit the asset.
+	objectStore.deleteErr = fmt.Errorf("delete failed")
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.ErrorIs(t, err, ErrUploadGrantDigestMismatch)
+	require.Nil(t, media)
+	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+	stored, err := grantRepo.GetUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusFailedDigest, stored.Status)
+}
+
+func TestUploadGrantQueryPresignErrorReturnsStateWithoutURL(t *testing.T) {
+	service, _, objectStore, _ := newUploadGrantTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	objectStore.presignErr = fmt.Errorf("presign down")
+
+	queried, url, err := service.UploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusMinted, queried.StatusClassification(time.Now().UTC()))
+	require.Empty(t, url, "a presign failure must not hide the grant state")
+}
+
+func TestUploadGrantQueryStoreUnavailableReturnsStateWithoutURL(t *testing.T) {
+	service, _, _, _ := newUploadGrantTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	service.SetS3Service(newFakeMediaS3Service())
+
+	queried, url, err := service.UploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusMinted, queried.StatusClassification(time.Now().UTC()))
+	require.Empty(t, url)
+}
+
+func TestUploadGrantQueryUnwiredFailsClosed(t *testing.T) {
+	service, _, _, _ := newUploadGrantTestService(t)
+	service.SetUploadGrantRepository(nil)
+	_, _, err := service.UploadGrant(context.Background(), "alice", "grant-x")
+	require.ErrorIs(t, err, ErrUploadGrantUnavailable)
+}
+
+func TestExtensionForContentType(t *testing.T) {
+	cases := map[string]string{
+		"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/gif": ".gif",
+		"image/webp": ".webp", "image/svg+xml": ".svg", "image/bmp": ".bmp", "image/tiff": ".tiff",
+		"video/mp4": ".mp4", "video/webm": ".webm", "video/ogg": ".ogv", "video/avi": ".avi",
+		"video/x-msvideo": ".avi", "video/mov": ".mov", "video/quicktime": ".mov",
+		"audio/mpeg": ".mp3", "audio/mp3": ".mp3", "audio/wav": ".wav", "audio/x-wav": ".wav",
+		"audio/ogg": ".oga", "audio/aac": ".aac", "audio/flac": ".flac",
+		"application/octet-stream": "",
+	}
+	for contentType, expected := range cases {
+		require.Equal(t, expected, extensionForContentType(contentType), "extension for %q", contentType)
+	}
 }

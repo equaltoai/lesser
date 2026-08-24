@@ -197,3 +197,45 @@ func TestUploadGrantRepositoryConsumeRejectsInvalidStatus(t *testing.T) {
 	err := repo.ConsumeUploadGrant(context.Background(), grant, "SOMETHING_ELSE", "", time.Now().UTC())
 	require.Error(t, err)
 }
+
+func TestUploadGrantRepositoryCreateRejectsUnbounded(t *testing.T) {
+	repo := NewUploadGrantRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
+	grant := testUploadGrantFixture(t)
+	grant.ExpiresAt = time.Time{}
+	err := repo.CreateUploadGrant(context.Background(), grant)
+	require.Error(t, err)
+}
+
+func TestUploadGrantRepositoryCreateGenericError(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockDB.On("WithContext", context.Background()).Return(mockDB)
+	mockDB.On("Model", mock.MatchedBy(func(g *models.UploadGrant) bool { return true })).Return(mockQuery)
+	mockQuery.On("IfNotExists").Return(mockQuery)
+	mockQuery.On("Create").Return(errors.New("database error"))
+
+	repo := NewUploadGrantRepository(mockDB, "test-table", zap.NewNop(), nil)
+	err := repo.CreateUploadGrant(context.Background(), testUploadGrantFixture(t))
+	require.Error(t, err)
+}
+
+func TestUploadGrantRepositoryConsumeGenericError(t *testing.T) {
+	grant := testUploadGrantFixture(t)
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
+	mockDB.On("WithContext", context.Background()).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", grant.PK).Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", grant.SK).Return(mockQuery)
+	mockQuery.On("UpdateBuilder").Return(mockUpdateBuilder)
+	mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder)
+	mockUpdateBuilder.On("Remove", mock.Anything).Return(mockUpdateBuilder)
+	mockUpdateBuilder.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder)
+	mockUpdateBuilder.On("ConditionVersion", mock.Anything).Return(mockUpdateBuilder)
+	mockUpdateBuilder.On("Execute").Return(errors.New("database error"))
+
+	repo := NewUploadGrantRepository(mockDB, "test-table", zap.NewNop(), nil)
+	err := repo.ConsumeUploadGrant(context.Background(), grant, models.UploadGrantStatusUsed, "", time.Now().UTC())
+	require.Error(t, err)
+}

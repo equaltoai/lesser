@@ -60,3 +60,12 @@ func TestUploadGrantStatusPredicates(t *testing.T) {
 	require.True(t, failed.IsFailedDigest())
 	require.Equal(t, UploadGrantStatusFailedDigest, failed.StatusClassification(now))
 }
+
+func TestUploadGrantBaseModelSurface(t *testing.T) {
+	now := time.Now().UTC()
+	grant := &UploadGrant{Owner: "alice", GrantID: "g", GrantedAt: now, ExpiresAt: now.Add(time.Minute)}
+	require.NoError(t, grant.UpdateKeys())
+	require.Equal(t, MainTableName, grant.TableName())
+	require.Equal(t, grant.PK, grant.GetPK())
+	require.Equal(t, grant.SK, grant.GetSK())
+}
