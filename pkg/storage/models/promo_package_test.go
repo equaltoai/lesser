@@ -229,3 +229,28 @@ func TestPromoPackageTableNameAndGrantExpiredEdges(t *testing.T) {
 	g2 := &PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "r", GrantedAt: now}
 	require.True(t, g2.Expired(now), "a grant without expiry is expired (fail-closed)")
 }
+
+func TestPromoGrantNilActivity(t *testing.T) {
+	var nilGrant *PromoReviewGrant
+	now := time.Now().UTC()
+	require.False(t, nilGrant.IsActive(now))
+	require.False(t, nilGrant.Expired(now))
+}
+
+func TestPromoModelKeyDefaults(t *testing.T) {
+	// Package keys + timestamps default when zero.
+	pkg := &PromoPackage{PackageID: "pkg-1", OwnerID: "alice"}
+	require.NoError(t, pkg.UpdateKeys())
+	require.False(t, pkg.CreatedAt.IsZero())
+	require.False(t, pkg.UpdatedAt.IsZero())
+
+	// Grant granted-at defaults when zero.
+	grant := &PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "r"}
+	require.NoError(t, grant.UpdateKeys())
+	require.False(t, grant.GrantedAt.IsZero())
+
+	// Verdict recorded-at defaults when zero.
+	verdict := &PromoReviewVerdict{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "r", Verdict: PromoPackageReviewApproved}
+	require.NoError(t, verdict.UpdateKeys())
+	require.False(t, verdict.RecordedAt.IsZero())
+}

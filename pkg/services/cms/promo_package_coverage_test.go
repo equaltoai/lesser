@@ -274,3 +274,104 @@ func TestPromoServiceComposeGuardBranches(t *testing.T) {
 	require.ErrorContains(t, err, "editorial media repository is unavailable")
 	svc.SetEditorialMediaRepository(media)
 }
+
+func TestPromoServiceFinalSmallBranches(t *testing.T) {
+	ctx := context.Background()
+
+	// Approval helper nil-state fails closed.
+	require.False(t, allActiveReviewersApprovedPromo(nil))
+
+	// Disclosure helper: AI-origin with an empty principal yields no
+	// attribution; non-AI origin yields none either.
+	require.Nil(t, promoDisclosureForPackage("", true))
+	require.Nil(t, promoDisclosureForPackage("principal", false))
+
+	// AI-origin detection handles unresolvable and non-AI assets.
+	require.False(t, promoPackageHasAIOriginAssets([]PromoPackageResolvedAsset{{Media: nil}}))
+	require.False(t, promoPackageHasAIOriginAssets([]PromoPackageResolvedAsset{{
+		Media: &models.Media{Provenance: &models.MediaProvenance{Origin: models.EditorialMediaOriginSupplied}},
+	}}))
+	require.True(t, promoPackageHasAIOriginAssets([]PromoPackageResolvedAsset{{
+		Media: &models.Media{Provenance: &models.MediaProvenance{Origin: models.EditorialMediaOriginAIEdited}},
+	}}))
+
+	// A released package reports PACKAGE_RELEASED and is not releasable.
+	svc, _, media, _ := promoServiceHarness(t)
+	digest := promoDigest("77")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	require.NoError(t, err)
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	state, err := svc.PromoPackageReviewState(ctx, "alice", pkg.PackageID, nil)
+	require.NoError(t, err)
+	require.False(t, state.ReleaseEligible)
+	require.Contains(t, state.BlockingReasons, PromoPackageReviewReasonReleased)
+}
+
+func TestPromoServiceGateRemainingBranches(t *testing.T) {
+	ctx := context.Background()
+
+	// Gate-side blocking-reasons helper with the principal-blocked flag.
+	reasons := promoBlockingReasonsForGate(&promoReviewApprovalState{
+		active: map[string]*models.PromoReviewGrant{"r": {Reviewer: "r"}},
+		latest: map[string]*models.PromoReviewVerdict{},
+	}, true)
+	require.Contains(t, reasons, PromoPackageReviewReasonApprovalRequired)
+	require.Contains(t, reasons, PromoPackageReviewReasonPrincipalRequired)
+
+	// Releasing a missing package fails closed.
+	svc, _, media, _ := promoServiceHarness(t)
+	digest := promoDigest("88")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	require.NoError(t, err)
+	_, err = svc.ReleasePromoPackage(ctx, "alice", "missing")
+	require.Error(t, err)
+
+	// A submit through an expired grant fails closed.
+	expired := time.Now().UTC().Add(-time.Minute)
+	g, err := svc.promoRepo.GetPromoReviewGrant(ctx, "alice", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+	g.ExpiresAt = &expired
+	require.NoError(t, svc.promoRepo.RegrantPromoReviewGrant(ctx, g))
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	require.Error(t, err)
+
+	// An AI-origin release without a configured domain fails closed at the
+	// disclosure step.
+	media.byID["media-ai"] = publishedPromoMedia("media-ai", "alice", digest, models.EditorialMediaOriginAIGenerated)
+	aiPkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-ai"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", aiPkg.PackageID, "reviewer")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", aiPkg.PackageID, models.PromoPackageReviewApproved, "")
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", aiPkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", aiPkg.PackageID, models.PromoPackageReviewApproved, "")
+	require.NoError(t, err)
+	svc.domain = ""
+	_, err = svc.ReleasePromoPackage(ctx, "alice", aiPkg.PackageID)
+	require.ErrorContains(t, err, "domain is required")
+}
+
+func TestPromoGateNilSnapshotFetchFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _ := promoServiceHarness(t)
+	// A nil snapshot forces the gate to fetch the package, which fails closed
+	// for a package that does not exist.
+	approved, principalApproved, state, err := svc.promoReviewGateApprovals(ctx, "alice", "missing", nil)
+	require.Error(t, err)
+	require.False(t, approved)
+	require.False(t, principalApproved)
+	require.Nil(t, state)
+}
