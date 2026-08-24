@@ -2297,11 +2297,11 @@ type ComplexityRoot struct {
 		SetDraftEditorialMedia                    func(childComplexity int, draftID string, media []*model.EditorialMediaUsageInput) int
 		SetFederationLimit                        func(childComplexity int, domain string, limit model.FederationLimitInput) int
 		SetInstanceBudget                         func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
-		ShareDraftForReview                       func(childComplexity int, draftID string, reviewer string) int
+		ShareDraftForReview                       func(childComplexity int, draftID string, reviewer string, includeAccessUrls *bool) int
 		ShareObject                               func(childComplexity int, id string) int
 		SharePromoPackageForReview                func(childComplexity int, packageID string, reviewer string) int
 		StartHostedSoulBootstrap                  func(childComplexity int, input model.StartHostedSoulBootstrapInput) int
-		SubmitDraftReview                         func(childComplexity int, draftID string, verdict model.DraftReviewVerdict, notes *string) int
+		SubmitDraftReview                         func(childComplexity int, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool) int
 		SubmitModerationReview                    func(childComplexity int, input model.ModerationReviewInput) int
 		SubmitPromoPackageReview                  func(childComplexity int, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash *string) int
 		SyncMissingReplies                        func(childComplexity int, noteID string) int
@@ -3968,9 +3968,9 @@ type MutationResolver interface {
 	PublishDraft(ctx context.Context, id string) (*model.Article, error)
 	ScheduleDraft(ctx context.Context, id string, scheduledAt model.Time) (*model.Draft, error)
 	CancelScheduledDraft(ctx context.Context, id string) (*model.Draft, error)
-	ShareDraftForReview(ctx context.Context, draftID string, reviewer string) (*model.DraftReview, error)
+	ShareDraftForReview(ctx context.Context, draftID string, reviewer string, includeAccessUrls *bool) (*model.DraftReview, error)
 	RevokeDraftReview(ctx context.Context, draftID string, reviewer string) (bool, error)
-	SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string) (*model.DraftReview, error)
+	SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool) (*model.DraftReview, error)
 	CreateArticle(ctx context.Context, input model.CreateArticleInput) (*model.Article, error)
 	UpdateArticle(ctx context.Context, id string, input model.UpdateArticleInput) (*model.Article, error)
 	DeleteArticle(ctx context.Context, id string) (bool, error)
@@ -15884,7 +15884,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.ShareDraftForReview(childComplexity, args["draftId"].(string), args["reviewer"].(string)), true
+		return e.complexity.Mutation.ShareDraftForReview(childComplexity, args["draftId"].(string), args["reviewer"].(string), args["includeAccessUrls"].(*bool)), true
 
 	case "Mutation.shareObject":
 		if e.complexity.Mutation.ShareObject == nil {
@@ -15932,7 +15932,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.SubmitDraftReview(childComplexity, args["draftId"].(string), args["verdict"].(model.DraftReviewVerdict), args["notes"].(*string)), true
+		return e.complexity.Mutation.SubmitDraftReview(childComplexity, args["draftId"].(string), args["verdict"].(model.DraftReviewVerdict), args["notes"].(*string), args["includeAccessUrls"].(*bool)), true
 
 	case "Mutation.submitModerationReview":
 		if e.complexity.Mutation.SubmitModerationReview == nil {
@@ -26565,6 +26565,11 @@ func (ec *executionContext) field_Mutation_shareDraftForReview_args(ctx context.
 		return nil, err
 	}
 	args["reviewer"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "includeAccessUrls", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["includeAccessUrls"] = arg2
 	return args, nil
 }
 
@@ -26624,6 +26629,11 @@ func (ec *executionContext) field_Mutation_submitDraftReview_args(ctx context.Co
 		return nil, err
 	}
 	args["notes"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "includeAccessUrls", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["includeAccessUrls"] = arg3
 	return args, nil
 }
 
@@ -103363,7 +103373,7 @@ func (ec *executionContext) _Mutation_shareDraftForReview(ctx context.Context, f
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().ShareDraftForReview(rctx, fc.Args["draftId"].(string), fc.Args["reviewer"].(string))
+		return ec.resolvers.Mutation().ShareDraftForReview(rctx, fc.Args["draftId"].(string), fc.Args["reviewer"].(string), fc.Args["includeAccessUrls"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -103541,7 +103551,7 @@ func (ec *executionContext) _Mutation_submitDraftReview(ctx context.Context, fie
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().SubmitDraftReview(rctx, fc.Args["draftId"].(string), fc.Args["verdict"].(model.DraftReviewVerdict), fc.Args["notes"].(*string))
+		return ec.resolvers.Mutation().SubmitDraftReview(rctx, fc.Args["draftId"].(string), fc.Args["verdict"].(model.DraftReviewVerdict), fc.Args["notes"].(*string), fc.Args["includeAccessUrls"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

@@ -1629,7 +1629,7 @@ func derefString(value *string) string {
 	return *value
 }
 
-func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID string, reviewer string) (*model.DraftReview, error) {
+func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID string, reviewer string, includeAccessUrls *bool) (*model.DraftReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -1661,9 +1661,10 @@ func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID stri
 	if err != nil {
 		return nil, err
 	}
-	// Write-path responses do not mint per-asset read URLs; the reviewer reads
-	// exact assets through draftEditorialMediaAccess (fold-in a).
-	return r.buildCMSDraftReview(ctx, d, g, vs, false)
+	// Write-path responses mint per-asset read URLs only when the caller
+	// explicitly opts in (includeAccessUrls); otherwise the reviewer reads exact
+	// assets through draftEditorialMediaAccess (fold-in a).
+	return r.buildCMSDraftReview(ctx, d, g, vs, cmsIncludeAccessUrls(includeAccessUrls))
 }
 func (r *mutationResolver) RevokeDraftReview(ctx context.Context, draftID string, reviewer string) (bool, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
@@ -1682,7 +1683,7 @@ func (r *mutationResolver) RevokeDraftReview(ctx context.Context, draftID string
 	}
 	return true, nil
 }
-func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string) (*model.DraftReview, error) {
+func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool) (*model.DraftReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -1709,9 +1710,10 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 	if err != nil {
 		return nil, err
 	}
-	// Write-path responses do not mint per-asset read URLs (fold-in a); the
-	// reviewer reads exact assets through draftEditorialMediaAccess.
-	return r.buildCMSDraftReview(ctx, d, g, vs, false)
+	// Write-path responses mint per-asset read URLs only when the caller
+	// explicitly opts in (includeAccessUrls); otherwise the reviewer reads exact
+	// assets through draftEditorialMediaAccess (fold-in a).
+	return r.buildCMSDraftReview(ctx, d, g, vs, cmsIncludeAccessUrls(includeAccessUrls))
 }
 
 func (r *mutationResolver) MintUploadGrant(ctx context.Context, input model.MintUploadGrantInput) (*model.UploadGrant, error) {
