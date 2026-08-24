@@ -331,7 +331,16 @@ type Result struct {
 }
 
 // CreateNote creates a new note, validates input, stores it, emits events, and queues federation
+// CreateNote creates a new note (post) with the standard media path.
 func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*NoteResult, error) {
+	return s.createNote(ctx, cmd, nil)
+}
+
+// createNote is the shared creation pipeline. When published is non-nil, the
+// attachments come from the promo release path (PUBLISHED media identity, exact
+// approved digests) instead of the ordinary ready-media path; otherwise the
+// standard MediaIDs path applies.
+func (s *Service) createNote(ctx context.Context, cmd *CreateNoteCommand, published []PromoPublishedMediaRef) (*NoteResult, error) {
 	s.logger.Info("creating note",
 		zap.String("author_id", cmd.AuthorID),
 		zap.String("visibility", cmd.Visibility),
@@ -392,8 +401,15 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	}
 	s.addReplyAudience(note, replyParentStatus(replyParent))
 
-	// Attach media if provided
-	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, sanitizedCmd.MediaIDs)
+	// Attach media if provided. The promo release path supplies the approved
+	// PUBLISHED asset set directly; the ordinary path resolves MediaIDs.
+	var attachments []activitypub.Attachment
+	var mediaIDsToMark []string
+	if published != nil {
+		attachments, mediaIDsToMark, err = s.preparePromoPublishedAttachments(ctx, author, published)
+	} else {
+		attachments, mediaIDsToMark, err = s.prepareMediaAttachments(ctx, author, sanitizedCmd.MediaIDs)
+	}
 	if err != nil {
 		return nil, err
 	}
