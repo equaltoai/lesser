@@ -48,6 +48,7 @@ type uploadGrantObjectFake struct {
 	types       map[string]string
 	presigns    []uploadGrantPresignCall
 	deletes     []string
+	downloads   []string
 	presignErr  error
 	downloadErr error
 	deleteErr   error
@@ -99,15 +100,29 @@ func (f *uploadGrantObjectFake) PresignPutObject(_ context.Context, bucket, key,
 	return "https://presigned.example.invalid/" + bucket + "/" + key + "?X-Amz-Signature=test", nil
 }
 
-func (f *uploadGrantObjectFake) DownloadFile(_ context.Context, bucket, key string) ([]byte, string, error) {
+func (f *uploadGrantObjectFake) HeadFile(_ context.Context, bucket, key string) (int64, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.objects[bucket+"/"+key]
+	if !ok {
+		return 0, "", fmt.Errorf("object not found")
+	}
+	return int64(len(data)), f.types[bucket+"/"+key], nil
+}
+
+func (f *uploadGrantObjectFake) DownloadFile(_ context.Context, bucket, key string, maxBytes int64) ([]byte, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.downloadErr != nil {
 		return nil, "", f.downloadErr
 	}
+	f.downloads = append(f.downloads, bucket+"/"+key)
 	data, ok := f.objects[bucket+"/"+key]
 	if !ok {
 		return nil, "", fmt.Errorf("object not found")
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, "", fmt.Errorf("object exceeds size cap")
 	}
 	return bytes.Clone(data), f.types[bucket+"/"+key], nil
 }
@@ -122,6 +137,14 @@ func (f *uploadGrantObjectFake) Deletes() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.deletes...)
+}
+
+// Downloads returns the object keys whose bodies were actually fetched, so
+// tests can assert the fail-closed size gate never downloaded an object.
+func (f *uploadGrantObjectFake) Downloads() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.downloads...)
 }
 
 func newUploadGrantTestService(t *testing.T) (*Service, *inmemory.UploadGrantRepository, *uploadGrantObjectFake, *MockMediaRepository) {
@@ -318,6 +341,37 @@ func TestFinalizeUploadGrantSizeCapViolationConsumesAndDeletes(t *testing.T) {
 	require.Equal(t, models.UploadGrantStatusFailedDigest, stored.Status)
 	require.Contains(t, stored.FailureReason, "exceeds declared cap")
 	require.Contains(t, objectStore.Deletes(), grant.S3Bucket+"/"+grant.S3Key)
+	// The size gate rejects from HEAD metadata alone: the oversized object must
+	// never be downloaded into memory.
+	require.Len(t, objectStore.Downloads(), 0, "oversized object must be rejected without downloading")
+}
+
+func TestFinalizeUploadGrantSizeBoundaryExactlyAtCapPasses(t *testing.T) {
+	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+
+	// The cap is exactly the object size: the boundary must pass, not trip the
+	// size gate.
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: int64(len(tinyPNG)), ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	require.NoError(t, objectStore.SimulateUpload(grant, tinyPNG))
+
+	mediaRepo.On("CreateMedia", ctx, mock.MatchedBy(func(media *models.Media) bool {
+		return media.IsInternalEditorial() && media.FileSize == int64(len(tinyPNG))
+	})).Return(nil).Once()
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.NotNil(t, media)
+	require.Equal(t, models.StatusReady, media.Status)
+
+	stored, err := grantRepo.GetUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusUsed, stored.Status)
+	require.Len(t, objectStore.Deletes(), 0)
+	require.Len(t, objectStore.Downloads(), 1, "an at-cap object is downloaded exactly once for digest verification")
 }
 
 func TestFinalizeUploadGrantExpiredFailsClosed(t *testing.T) {
@@ -340,12 +394,13 @@ func TestFinalizeUploadGrantExpiredFailsClosed(t *testing.T) {
 	require.Nil(t, media)
 	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
 
-	// Expired grants are never consumed and their object is never touched: the
-	// caller must mint again.
+	// The expired grant is never consumed (the row self-cleans via TTL), but its
+	// object is grant-scoped and unreferencable after expiry, so finalize deletes
+	// it before failing closed.
 	stored, err := grantRepo.GetUploadGrant(ctx, "alice", "grant-expired")
 	require.NoError(t, err)
 	require.Equal(t, models.UploadGrantStatusMinted, stored.Status)
-	require.Len(t, objectStore.Deletes(), 0)
+	require.Contains(t, objectStore.Deletes(), expired.S3Bucket+"/"+expired.S3Key)
 }
 
 func TestFinalizeUploadGrantAlreadyUsedFailsClosed(t *testing.T) {

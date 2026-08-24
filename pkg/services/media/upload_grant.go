@@ -63,16 +63,23 @@ var (
 
 // uploadGrantObjectStore is the S3 capability the presigned-companion
 // transport needs beyond the read presigner: a constrained PUT presigner, a
-// full-object download for digest verification, and deletion for the
-// fail-closed mismatch path. It is type-asserted from the media service's S3
-// service so existing deployments that lack the capability fail closed.
+// HeadObject gate plus a bounded download for size/digest verification, and
+// deletion for the fail-closed mismatch path. It is type-asserted from the
+// media service's S3 service so existing deployments that lack the capability
+// fail closed.
 type uploadGrantObjectStore interface {
 	// PresignPutObject mints a presigned PUT whose signed headers bind the
 	// content type, the exact sha256 of the intended bytes (S3 validates the
 	// body checksum at upload), and SSE-KMS encryption under the instance key.
 	PresignPutObject(ctx context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error)
-	// DownloadFile returns the stored object's bytes and stored content type.
-	DownloadFile(ctx context.Context, bucket, key string) ([]byte, string, error)
+	// HeadFile returns the stored object's ContentLength and ContentType
+	// without downloading, so finalize can reject an oversized object before
+	// any bytes enter memory.
+	HeadFile(ctx context.Context, bucket, key string) (contentLength int64, storedType string, err error)
+	// DownloadFile returns the stored object's bytes and stored content type,
+	// refusing to read past maxBytes (defense-in-depth against an object that
+	// grows between HeadFile and GetObject).
+	DownloadFile(ctx context.Context, bucket, key string, maxBytes int64) ([]byte, string, error)
 	// DeleteFile removes one stored object.
 	DeleteFile(ctx context.Context, bucket, key string) error
 }
@@ -181,9 +188,13 @@ func (s *Service) MintUploadGrant(ctx context.Context, input MintUploadGrantInpu
 // FinalizeUploadGrant verifies that the stored object's actual bytes match the
 // grant's declared sha256 (and declared size/type bounds) BEFORE any media
 // record exists, consumes the grant exactly once, and only then creates the
-// internal editorial media record through the M0/M1 pipeline. On any mismatch
-// the grant is consumed to FAILED_DIGEST and the unverified object is deleted;
-// a concurrent finalize loses the single-use consume and fails closed.
+// internal editorial media record through the M0/M1 pipeline. The size cap is
+// enforced from the object's HEAD metadata before any download, so an
+// oversized object is rejected, consumed to FAILED_DIGEST, and deleted without
+// ever entering memory; the digest is then recomputed over a bounded streaming
+// read as defense-in-depth. On any mismatch the grant is consumed to
+// FAILED_DIGEST and the unverified object is deleted; a concurrent finalize
+// loses the single-use consume and fails closed.
 func (s *Service) FinalizeUploadGrant(ctx context.Context, ownerID, grantID string) (*models.Media, error) {
 	if s == nil || s.uploadGrantRepo == nil {
 		return nil, ErrUploadGrantUnavailable
@@ -204,35 +215,59 @@ func (s *Service) FinalizeUploadGrant(ctx context.Context, ownerID, grantID stri
 	if !grant.IsMinted() {
 		return nil, ErrUploadGrantNotMinted
 	}
-	if grant.Expired(now) {
-		return nil, ErrUploadGrantExpired
-	}
 	store, ok := s.s3Service.(uploadGrantObjectStore)
 	if !ok || store == nil {
 		return nil, errors.Join(ErrUploadGrantUnavailable, errors.New("presigned PUT capability is unavailable"))
 	}
+	if grant.Expired(now) {
+		// The grant is expired, so no finalize can ever admit its object: the
+		// bytes are grant-scoped and unreferencable after expiry. Delete them
+		// before failing closed so they do not linger past the grant (the row
+		// self-cleans via TTL).
+		if err := store.DeleteFile(ctx, grant.S3Bucket, grant.S3Key); err != nil {
+			s.logger.Warn("failed to delete object for expired upload grant",
+				zap.String("grant_id", grantID),
+				zap.String("s3_key", grant.S3Key),
+				zap.Error(err))
+		}
+		return nil, ErrUploadGrantExpired
+	}
 
-	bytes, storedType, err := store.DownloadFile(ctx, grant.S3Bucket, grant.S3Key)
+	// Size gate: reject an oversized object from its HEAD metadata alone. The
+	// presigned PUT cannot carry a content-length-range condition (SigV4
+	// presigns cannot express it, and the declared checksum is client-declared,
+	// so a self-consistent multi-GB PUT passes S3 validation), which is why the
+	// cap is enforced here: consume+delete exactly like the digest-mismatch
+	// lane, and never download the bytes.
+	contentLength, _, err := store.HeadFile(ctx, grant.S3Bucket, grant.S3Key)
 	if err != nil {
 		return nil, errors.Join(ErrUploadGrantObjectMissing, err)
 	}
-	if len(bytes) == 0 {
+	if contentLength > grant.MaxSizeBytes {
+		reason := fmt.Sprintf("uploaded object size %d exceeds declared cap %d", contentLength, grant.MaxSizeBytes)
+		if err := s.rejectUploadedObject(ctx, grant, reason, now); err != nil {
+			return nil, err
+		}
+		return nil, errors.Join(ErrUploadGrantDigestMismatch, errors.New(reason))
+	}
+	if contentLength == 0 {
+		// The PUT landed an empty object; remove it and keep the grant minted so
+		// a retried PUT can succeed.
 		_ = store.DeleteFile(ctx, grant.S3Bucket, grant.S3Key)
 		return nil, ErrUploadGrantObjectEmpty
 	}
 
+	// Bounded read: the stream aborts at MaxSizeBytes+1, so even an object that
+	// grew between HeadFile and GetObject cannot be pulled into memory past the
+	// cap (defense-in-depth on top of the HEAD gate).
+	bytes, storedType, err := store.DownloadFile(ctx, grant.S3Bucket, grant.S3Key, grant.MaxSizeBytes)
+	if err != nil {
+		return nil, errors.Join(ErrUploadGrantObjectMissing, err)
+	}
+
 	if reason := verifyUploadedObject(grant, bytes, storedType); reason != "" {
-		// Consume first: only the winner of the single-use consume may delete
-		// the object. A loser must not delete bytes the winning finalize is
-		// about to admit as an asset.
-		if err := s.consumeUploadGrant(ctx, grant, models.UploadGrantStatusFailedDigest, reason, now); err != nil {
+		if err := s.rejectUploadedObject(ctx, grant, reason, now); err != nil {
 			return nil, err
-		}
-		if err := store.DeleteFile(ctx, grant.S3Bucket, grant.S3Key); err != nil {
-			s.logger.Warn("failed to delete unverified upload object",
-				zap.String("grant_id", grantID),
-				zap.String("s3_key", grant.S3Key),
-				zap.Error(err))
 		}
 		return nil, errors.Join(ErrUploadGrantDigestMismatch, fmt.Errorf("%s", reason))
 	}
@@ -244,6 +279,14 @@ func (s *Service) FinalizeUploadGrant(ctx context.Context, ownerID, grantID stri
 	if err != nil {
 		// The grant is consumed; remove the object so no asset and no orphan
 		// bytes survive a failed record creation.
+		//
+		// Crash window: between the USED consume above and this DeleteFile (or a
+		// successful record creation), a crash can leave a consumed grant row
+		// without a media record and with live bytes at the grant-scoped key.
+		// The row is TTL-bounded and the key is unguessable, so the blast radius
+		// is a single orphaned object; a reaper that reconciles consumed grants
+		// lacking a media record is future work and intentionally out of scope
+		// here.
 		if deleteErr := store.DeleteFile(ctx, grant.S3Bucket, grant.S3Key); deleteErr != nil {
 			s.logger.Warn("failed to delete object after media record creation failure",
 				zap.String("grant_id", grantID),
@@ -306,6 +349,26 @@ func (s *Service) consumeUploadGrant(ctx context.Context, grant *models.UploadGr
 			return errors.Join(ErrUploadGrantAlreadyConsumed, err)
 		}
 		return err
+	}
+	return nil
+}
+
+// rejectUploadedObject runs the fail-closed rejection lane shared by every
+// verification failure (size cap, digest mismatch, unsafe SVG): consume the
+// grant to FAILED_DIGEST, then delete the unverified object. Consume first —
+// only the winner of the single-use consume may delete; a concurrent loser
+// must not delete bytes the winning finalize is about to admit as an asset.
+func (s *Service) rejectUploadedObject(ctx context.Context, grant *models.UploadGrant, reason string, now time.Time) error {
+	if err := s.consumeUploadGrant(ctx, grant, models.UploadGrantStatusFailedDigest, reason, now); err != nil {
+		return err
+	}
+	if store, ok := s.s3Service.(uploadGrantObjectStore); ok && store != nil {
+		if err := store.DeleteFile(ctx, grant.S3Bucket, grant.S3Key); err != nil {
+			s.logger.Warn("failed to delete unverified upload object",
+				zap.String("grant_id", grant.GrantID),
+				zap.String("s3_key", grant.S3Key),
+				zap.Error(err))
+		}
 	}
 	return nil
 }

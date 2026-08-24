@@ -80,9 +80,21 @@ func (s round12MediaS3Service) PresignPutObject(_ context.Context, bucket, key, 
 	return "https://presigned.example/" + bucket + "/" + key + "?X-Amz-Signature=test", nil
 }
 
-func (s round12MediaS3Service) DownloadFile(_ context.Context, bucket, key string) ([]byte, string, error) {
+func (s round12MediaS3Service) HeadFile(_ context.Context, bucket, key string) (int64, string, error) {
 	if s.state != nil && s.state.uploadObjects != nil {
 		if data, ok := s.state.uploadObjects[bucket+"/"+key]; ok {
+			return int64(len(data)), s.state.uploadTypes[bucket+"/"+key], nil
+		}
+	}
+	return 0, "", fmt.Errorf("object %s/%s not found", bucket, key)
+}
+
+func (s round12MediaS3Service) DownloadFile(_ context.Context, bucket, key string, maxBytes int64) ([]byte, string, error) {
+	if s.state != nil && s.state.uploadObjects != nil {
+		if data, ok := s.state.uploadObjects[bucket+"/"+key]; ok {
+			if int64(len(data)) > maxBytes {
+				return nil, "", fmt.Errorf("object %s/%s exceeds size cap", bucket, key)
+			}
 			return append([]byte(nil), data...), s.state.uploadTypes[bucket+"/"+key], nil
 		}
 	}

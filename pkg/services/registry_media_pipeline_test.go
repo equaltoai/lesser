@@ -51,6 +51,17 @@ func (f *fakeMediaS3API) GetObject(
 	}, nil
 }
 
+func (f *fakeMediaS3API) HeadObject(
+	_ context.Context,
+	_ *s3.HeadObjectInput,
+	_ ...func(*s3.Options),
+) (*s3.HeadObjectOutput, error) {
+	return &s3.HeadObjectOutput{
+		ContentLength: aws.Int64(int64(len(f.putData))),
+		ContentType:   aws.String("image/png"),
+	}, nil
+}
+
 func (f *fakeMediaS3API) DeleteObject(
 	_ context.Context,
 	_ *s3.DeleteObjectInput,
