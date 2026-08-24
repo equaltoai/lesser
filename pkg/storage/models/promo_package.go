@@ -14,9 +14,12 @@ import (
 // RELEASED exactly once when the release transition stamps the created outbound
 // Status ID; re-release of a released package is refused. RELEASING is the
 // transient pre-stamp state held between the version-conditioned release
-// reservation and the final released stamp; a crash left in RELEASING has no
-// outbound post and requires operator reconciliation (release is refused while
-// it is held).
+// reservation and the final released stamp. A package left in RELEASING is in
+// one of two windows: before the outbound Status was created (crash or create
+// failure — no post exists, revert to DRAFT), or after the Status was created
+// but before the final stamp (stamp failure — the post IS live and its ID is
+// surfaced via PromoPackageStampError for operator reconciliation). Release is
+// refused while the reservation is held; see the release recovery runbook.
 const (
 	PromoPackageStatusDraft     = "draft"
 	PromoPackageStatusReleasing = "releasing"
