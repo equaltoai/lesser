@@ -14,7 +14,7 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 

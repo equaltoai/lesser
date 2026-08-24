@@ -8,7 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/stretchr/testify/require"
-	frameworkoauth "github.com/theory-cloud/apptheory/v3/runtime/oauth"
+	frameworkoauth "github.com/theory-cloud/apptheory/v4/runtime/oauth"
 )
 
 func TestHandleOAuthAuthorizationServerMetadataLift(t *testing.T) {

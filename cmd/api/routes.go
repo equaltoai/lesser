@@ -7,7 +7,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 // requireAnySecureScope preserves the Mastodon-compatible any-of scope aliases

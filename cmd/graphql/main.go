@@ -49,7 +49,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"

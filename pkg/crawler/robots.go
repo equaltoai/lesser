@@ -1,7 +1,7 @@
 package crawler
 
 import (
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 // RobotsTxt is the robots.txt policy for Lesser instances.

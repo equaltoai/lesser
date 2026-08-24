@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/theory-cloud/tabletheory/v3"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"

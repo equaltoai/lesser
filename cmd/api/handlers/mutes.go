@@ -10,7 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 

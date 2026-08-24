@@ -13,7 +13,7 @@ import (
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v3"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v4"
 )
 
 type StreamProcessorsProps struct {

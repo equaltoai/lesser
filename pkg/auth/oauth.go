@@ -14,7 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/golang-jwt/jwt/v5"
-	frameworkoauth "github.com/theory-cloud/apptheory/v3/runtime/oauth"
+	frameworkoauth "github.com/theory-cloud/apptheory/v4/runtime/oauth"
 	"go.uber.org/zap"
 )
 

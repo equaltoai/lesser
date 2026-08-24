@@ -12,7 +12,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
