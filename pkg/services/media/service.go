@@ -44,6 +44,7 @@ type Service struct {
 	metadataDeleter   MetadataDeleter
 	s3Service         S3Service
 	editorialKMSKeyID string
+	orphanSource      OrphanedPublishedMintSource
 }
 
 type transcoderService interface {
@@ -93,6 +94,26 @@ type InternalS3Service interface {
 // part of the unsigned public CDN surface.
 type S3Presigner interface {
 	GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error)
+}
+
+// PublishedMediaCopier copies the exact original bytes of an internal editorial
+// asset to the durable unsigned serving surface at the publish transition. The
+// destination object is SSE-S3 (the CloudFront origin can serve it) while the
+// source remains SSE-KMS under the instance key.
+type PublishedMediaCopier interface {
+	CopyFileToPublished(ctx context.Context, bucket, sourceKey, destinationKey, contentType string) (string, error)
+}
+
+// OrphanedPublishedMintSource enumerates durable published mints that no live
+// article references: assets minted by a publish whose draft is terminally
+// failed and whose compensating rollback never ran or failed. The registry
+// wires it from the CMS side; reconciliation is a no-op without it.
+// RecheckOrphanedPublishedMint re-verifies one candidate's orphan premise at
+// unpublish time so the enumerate-then-unpublish window cannot clear an asset a
+// concurrent republish just made live.
+type OrphanedPublishedMintSource interface {
+	ListOrphanedPublishedMintIDs(ctx context.Context) ([]string, error)
+	RecheckOrphanedPublishedMint(ctx context.Context, mediaID string) (bool, error)
 }
 
 // ProcessingQueue defines the interface for async media processing
@@ -167,6 +188,13 @@ func (s *Service) SetDeletionDependencies(objectDeleter ObjectDeleter, metadataD
 // SetS3Service wires the object-storage client used for original media bytes.
 func (s *Service) SetS3Service(s3Service S3Service) {
 	s.s3Service = s3Service
+}
+
+// SetOrphanPublishedMintSource wires the enumeration of orphaned durable
+// published mints used by ReconcileOrphanedPublishedMedia. Leaving it unwired
+// makes reconciliation a no-op; the registry wires it from the CMS side.
+func (s *Service) SetOrphanPublishedMintSource(source OrphanedPublishedMintSource) {
+	s.orphanSource = source
 }
 
 // SetEditorialKMSKeyID configures the instance key used to keep internal
@@ -252,6 +280,22 @@ type EditorialAccess struct {
 	URL         string
 	ExpiresAt   time.Time
 	ContentHash string
+}
+
+// PublishedMedia is the durable public serving minted for one internal
+// editorial asset at the publish transition. The URL serves the exact approved
+// original bytes indefinitely: no expiring presignature, no temporary
+// generator URL, no dependence on the internal KMS-read posture.
+type PublishedMedia struct {
+	MediaID     string
+	ContentHash string
+	ContentType string
+	FileSize    int64
+	Width       int
+	Height      int
+	URL         string
+	S3Key       string
+	PublishedAt time.Time
 }
 
 // UpdateResult contains updated media and events
@@ -603,6 +647,274 @@ func (s *Service) IssueEditorialAccess(ctx context.Context, mediaID string) (*Ed
 		return nil, errors.Join(ErrMediaStorageFailed, err)
 	}
 	return &EditorialAccess{URL: url, ExpiresAt: time.Now().UTC().Add(ttl), ContentHash: media.ContentHash}, nil
+}
+
+// PublishMediaDurably transitions one internal editorial asset to durable
+// public serving of its exact approved bytes. The publish transition is the
+// single point where durable public serving is minted: before it, internal
+// assets expose no unsigned URL through the application contract.
+func (s *Service) PublishMediaDurably(ctx context.Context, mediaID string) (*PublishedMedia, error) {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("media ID is required"))
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil {
+		return nil, ErrMediaUnauthorizedAccess
+	}
+	if !media.IsInternalEditorial() {
+		return nil, errors.Join(ErrMediaUnauthorizedAccess, errors.New("durable published serving is minted only for internal editorial assets"))
+	}
+	if media.Provenance == nil || media.Provenance.ContentIntegrity != media.ContentHash {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial media integrity is unavailable"))
+	}
+	if !media.EditorialLifecycleAvailableForPublish() {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial media lifecycle does not allow publication"))
+	}
+	if !media.IsReady() {
+		return nil, ErrMediaNotReady
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	sourceKey := strings.TrimSpace(media.S3Key)
+	if bucket == "" || sourceKey == "" {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("internal media storage location is unavailable"))
+	}
+	copier, ok := s.s3Service.(PublishedMediaCopier)
+	if !ok || copier == nil {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("durable published copy capability is unavailable"))
+	}
+	if strings.TrimSpace(s.cdnDomain) == "" {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("CDN domain is required to mint durable published serving"))
+	}
+	destinationKey := "published/" + sourceKey
+	location, err := copier.CopyFileToPublished(ctx, bucket, sourceKey, destinationKey, media.ContentType)
+	if err != nil {
+		return nil, errors.Join(ErrMediaStorageFailed, err)
+	}
+	_ = location
+	publishedURL := fmt.Sprintf("https://%s/%s", s.cdnDomain, destinationKey)
+	publishedAt := time.Now().UTC()
+	if err := s.mediaRepo.UpdateMediaPublishedState(ctx, mediaID, destinationKey, publishedURL, publishedAt, media.ModelVersion); err != nil {
+		// The copy is already live on the unsigned CDN surface but no record
+		// references it. Compensate with a best-effort delete of the
+		// deterministic published key; a cleanup failure is logged, never
+		// surfaced, so the caller still sees the record-write error.
+		s.deletePublishedObject(ctx, bucket, destinationKey)
+		return nil, errors.Join(ErrMediaUpdateFailed, err)
+	}
+	s.logger.Info("minted durable published serving",
+		zap.String("media_id", mediaID),
+		zap.String("published_key", destinationKey),
+		zap.String("published_url", publishedURL))
+	return &PublishedMedia{
+		MediaID:     media.MediaID,
+		ContentHash: media.ContentHash,
+		ContentType: media.ContentType,
+		FileSize:    media.FileSize,
+		Width:       media.Width,
+		Height:      media.Height,
+		URL:         publishedURL,
+		S3Key:       destinationKey,
+		PublishedAt: publishedAt,
+	}, nil
+}
+
+// deletePublishedObject best-effort removes one durable published object. The
+// deterministic published key makes the compensating delete idempotent, and the
+// original error is preserved: cleanup failures are logged at error level so an
+// orphaned object stays alarmable, but never surfaced over the original error.
+func (s *Service) deletePublishedObject(ctx context.Context, bucket, destinationKey string) {
+	if strings.TrimSpace(bucket) == "" || strings.TrimSpace(destinationKey) == "" {
+		return
+	}
+	if err := s.s3Service.DeleteFile(ctx, bucket, destinationKey); err != nil {
+		s.logger.Error("failed to compensate orphaned durable published serving",
+			zap.String("bucket", bucket),
+			zap.String("published_key", destinationKey),
+			zap.Error(err))
+	}
+}
+
+// UnpublishMediaDurably best-effort removes durable public serving minted for
+// one internal asset. It clears the record state first under the observed model
+// version (a concurrent re-mint advances the version and is left intact) and
+// only then deletes the deterministic published object, re-reading the record
+// after the clear so a re-mint that lands between the two steps keeps its
+// serving. Assets without published state are a no-op, so repeated rollback is
+// idempotent.
+func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) error {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		// Unreadable or missing media means there is nothing durable to roll
+		// back; compensation is best-effort.
+		s.logger.Debug("unpublish rollback skipped for unreadable media",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	if media == nil || !media.IsInternalEditorial() || !media.IsPublished() {
+		return nil
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	publishedKey := strings.TrimSpace(media.PublishedS3Key)
+	if err := s.mediaRepo.ClearMediaPublishedState(ctx, mediaID, media.ModelVersion); err != nil {
+		// A failed clear leaves the record published. The failure is logged at
+		// error level so the orphan stays alarmable, then swallowed to preserve
+		// the best-effort contract; ReconcileOrphanedPublishedMedia can retry it.
+		s.logger.Error("failed to clear published serving on rollback",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	// Re-read the record after the clear. A concurrent re-mint between the two
+	// steps advances the model version and re-publishes; deleting the
+	// deterministic object then would remove a legitimate concurrent mint's
+	// serving. Only delete when the record still shows no published state.
+	fresh, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		s.logger.Warn("failed to re-read media after clearing published serving",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	if fresh == nil || fresh.IsPublished() {
+		// A concurrent re-mint re-published the record; leave its serving intact.
+		return nil
+	}
+	// Residual TOCTOU window: between the fresh re-read above and this delete,
+	// a concurrent same-key re-mint can land and still lose its object. Fully
+	// closing the window needs a conditional delete or per-mint object keys
+	// (schema/scale change), which is deliberately out of scope; a post-delete
+	// re-check is pointless because the object is already gone and the
+	// deterministic key makes a later reconcile idempotent. The version-guarded
+	// clear above already bounds the window to this single delete, and the
+	// reconcile path re-verifies the orphan premise before unpublishing, so the
+	// residual risk is a re-mint landing within this delete's latency and
+	// losing its serving, which the operator can re-mint by re-publishing.
+	s.deletePublishedObject(ctx, bucket, publishedKey)
+	return nil
+}
+
+// ReconcileOrphanedPublishedMedia re-runs the best-effort unpublish for every
+// durable published mint the wired OrphanedPublishedMintSource reports as
+// orphaned (owning draft terminally failed, no live article reference). It is
+// idempotent: UnpublishMediaDurably is a no-op once the record is unpublished
+// and version-guarded against concurrent re-mints, so repeated reconciliation
+// is safe and a live published asset is never touched. Before each unpublish
+// the source re-verifies the candidate's orphan premise at the current state,
+// so a draft that was republished (or an article that appeared) between the
+// enumeration and the unpublish aborts that candidate.
+func (s *Service) ReconcileOrphanedPublishedMedia(ctx context.Context) error {
+	if s.orphanSource == nil {
+		return nil
+	}
+	orphanedIDs, err := s.orphanSource.ListOrphanedPublishedMintIDs(ctx)
+	if err != nil {
+		return errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	for _, mediaID := range orphanedIDs {
+		mediaID = strings.TrimSpace(mediaID)
+		if mediaID == "" {
+			continue
+		}
+		// Re-verify the orphan premise at unpublish time. Unverifiable or
+		// changed candidates are skipped fail closed: a live published asset is
+		// never unpublished on a stale enumeration.
+		stillOrphaned, err := s.orphanSource.RecheckOrphanedPublishedMint(ctx, mediaID)
+		if err != nil {
+			s.logger.Warn("orphan reconciliation re-check failed; skipping candidate",
+				zap.String("media_id", mediaID), zap.Error(err))
+			continue
+		}
+		if !stillOrphaned {
+			s.logger.Info("orphan reconciliation candidate no longer orphaned; skipping",
+				zap.String("media_id", mediaID))
+			continue
+		}
+		s.logger.Info("reconciling orphaned published media mint",
+			zap.String("media_id", mediaID))
+		if err := s.UnpublishMediaDurably(ctx, mediaID); err != nil {
+			// UnpublishMediaDurably is best-effort and reports failures at error
+			// level; keep reconciling the remaining candidates.
+			s.logger.Warn("orphan reconciliation unpublish failed",
+				zap.String("media_id", mediaID), zap.Error(err))
+		}
+	}
+	return nil
+}
+
+// UpdateEditorialLifecycleCommand identifies the asset and the owner requesting
+// an explicit editorial lifecycle change.
+type UpdateEditorialLifecycleCommand struct {
+	MediaID             string
+	UserID              string
+	Lifecycle           models.EditorialLifecycle
+	SupersededByMediaID string
+}
+
+// UpdateEditorialLifecycle applies an explicit editorial lifecycle change to an
+// internal asset. Withdrawn, superseded, and unavailable states are inspectable
+// through the draft preview surface and block publication until re-review.
+func (s *Service) UpdateEditorialLifecycle(ctx context.Context, cmd *UpdateEditorialLifecycleCommand) (*models.Media, error) {
+	if cmd == nil {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("update editorial lifecycle command cannot be nil"))
+	}
+	cmd.MediaID = strings.TrimSpace(cmd.MediaID)
+	cmd.UserID = strings.TrimSpace(cmd.UserID)
+	if cmd.MediaID == "" || cmd.UserID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("media ID and owner are required"))
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, cmd.MediaID)
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil || media.UserID != cmd.UserID {
+		return nil, ErrMediaUnauthorizedAccess
+	}
+	if !media.IsInternalEditorial() {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial lifecycle applies only to internal editorial media"))
+	}
+	lifecycle := models.EditorialLifecycle(strings.ToLower(strings.TrimSpace(string(cmd.Lifecycle))))
+	if lifecycle == "" || lifecycle == models.EditorialLifecycleAvailable {
+		lifecycle = ""
+	} else {
+		switch lifecycle {
+		case models.EditorialLifecycleWithdrawn, models.EditorialLifecycleSuperseded, models.EditorialLifecycleUnavailable:
+		default:
+			return nil, errors.Join(ErrMediaValidationFailed, fmt.Errorf("invalid editorial lifecycle %q", lifecycle))
+		}
+	}
+	cmd.SupersededByMediaID = strings.TrimSpace(cmd.SupersededByMediaID)
+	if cmd.SupersededByMediaID != "" && lifecycle != models.EditorialLifecycleSuperseded {
+		// Mirror the model's whole-write validation: the successor attribute is
+		// meaningful only under the superseded lifecycle. Rejecting it here keeps
+		// the field-scoped writer from persisting a model-invalid state that
+		// would later block unrelated metadata updates.
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded-by media ID requires the superseded lifecycle"))
+	}
+	if lifecycle == models.EditorialLifecycleSuperseded && cmd.SupersededByMediaID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded editorial media must name the superseding asset"))
+	}
+	if lifecycle == models.EditorialLifecycleSuperseded {
+		successor, getErr := s.mediaRepo.GetMedia(ctx, cmd.SupersededByMediaID)
+		if getErr != nil {
+			return nil, errors.Join(ErrMediaRetrievalFailed, getErr)
+		}
+		if successor == nil || strings.TrimSpace(successor.UserID) != cmd.UserID {
+			return nil, ErrMediaUnauthorizedAccess
+		}
+		if !successor.IsInternalEditorial() {
+			return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseding media must be an internal editorial asset"))
+		}
+	}
+	if err := s.mediaRepo.UpdateMediaEditorialState(ctx, cmd.MediaID, lifecycle, cmd.SupersededByMediaID, media.ModelVersion); err != nil {
+		return nil, errors.Join(ErrMediaUpdateFailed, err)
+	}
+	return s.mediaRepo.GetMedia(ctx, cmd.MediaID)
 }
 
 // ListMedia returns paginated media filtered by owner and type

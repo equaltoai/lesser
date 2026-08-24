@@ -1276,11 +1276,13 @@ type DraftReviewEdge struct {
 }
 
 type DraftReviewGrant struct {
-	ReviewerID string                 `json:"reviewerId"`
-	Reviewer   *activitypub.Actor     `json:"reviewer"`
-	GrantedAt  Time                   `json:"grantedAt"`
-	Status     DraftReviewGrantStatus `json:"status"`
-	RevokedAt  *Time                  `json:"revokedAt,omitempty"`
+	ReviewerID string             `json:"reviewerId"`
+	Reviewer   *activitypub.Actor `json:"reviewer"`
+	GrantedAt  Time               `json:"grantedAt"`
+	// Bounded expiry; expired grants authorize no reads, URL minting, or approval.
+	ExpiresAt *Time                  `json:"expiresAt,omitempty"`
+	Status    DraftReviewGrantStatus `json:"status"`
+	RevokedAt *Time                  `json:"revokedAt,omitempty"`
 }
 
 type DraftReviewVerdictRecord struct {
@@ -1305,6 +1307,12 @@ type EditorialMediaAccess struct {
 	URL         string `json:"url"`
 	ExpiresAt   Time   `json:"expiresAt"`
 	ContentHash string `json:"contentHash"`
+}
+
+type EditorialMediaLifecyclePayload struct {
+	MediaID             string                  `json:"mediaId"`
+	Lifecycle           EditorialMediaLifecycle `json:"lifecycle"`
+	SupersededByMediaID *string                 `json:"supersededByMediaId,omitempty"`
 }
 
 type EditorialMediaProvenance struct {
@@ -1347,6 +1355,9 @@ type EditorialMediaUsage struct {
 	Height           *int                `json:"height,omitempty"`
 	MimeType         *string             `json:"mimeType,omitempty"`
 	ContentHash      *string             `json:"contentHash,omitempty"`
+	// Durable published serving minted at the publish transition; absent pre-publish.
+	PublishedURL *string `json:"publishedUrl,omitempty"`
+	PublishedAt  *Time   `json:"publishedAt,omitempty"`
 	// Short-lived exact-asset URL, only issued to an owner or active reviewer.
 	AccessURL       *string                   `json:"accessUrl,omitempty"`
 	AccessExpiresAt *Time                     `json:"accessExpiresAt,omitempty"`
@@ -4474,16 +4485,18 @@ type DraftReviewGrantStatus string
 const (
 	DraftReviewGrantStatusActive  DraftReviewGrantStatus = "ACTIVE"
 	DraftReviewGrantStatusRevoked DraftReviewGrantStatus = "REVOKED"
+	DraftReviewGrantStatusExpired DraftReviewGrantStatus = "EXPIRED"
 )
 
 var AllDraftReviewGrantStatus = []DraftReviewGrantStatus{
 	DraftReviewGrantStatusActive,
 	DraftReviewGrantStatusRevoked,
+	DraftReviewGrantStatusExpired,
 }
 
 func (e DraftReviewGrantStatus) IsValid() bool {
 	switch e {
-	case DraftReviewGrantStatusActive, DraftReviewGrantStatusRevoked:
+	case DraftReviewGrantStatusActive, DraftReviewGrantStatusRevoked, DraftReviewGrantStatusExpired:
 		return true
 	}
 	return false
@@ -4574,6 +4587,66 @@ func (e *DraftReviewVerdict) UnmarshalJSON(b []byte) error {
 }
 
 func (e DraftReviewVerdict) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+// Explicit editorial lifecycle of an internal asset, distinct from the processing-pipeline status.
+type EditorialMediaLifecycle string
+
+const (
+	EditorialMediaLifecycleAvailable   EditorialMediaLifecycle = "AVAILABLE"
+	EditorialMediaLifecycleWithdrawn   EditorialMediaLifecycle = "WITHDRAWN"
+	EditorialMediaLifecycleSuperseded  EditorialMediaLifecycle = "SUPERSEDED"
+	EditorialMediaLifecycleUnavailable EditorialMediaLifecycle = "UNAVAILABLE"
+)
+
+var AllEditorialMediaLifecycle = []EditorialMediaLifecycle{
+	EditorialMediaLifecycleAvailable,
+	EditorialMediaLifecycleWithdrawn,
+	EditorialMediaLifecycleSuperseded,
+	EditorialMediaLifecycleUnavailable,
+}
+
+func (e EditorialMediaLifecycle) IsValid() bool {
+	switch e {
+	case EditorialMediaLifecycleAvailable, EditorialMediaLifecycleWithdrawn, EditorialMediaLifecycleSuperseded, EditorialMediaLifecycleUnavailable:
+		return true
+	}
+	return false
+}
+
+func (e EditorialMediaLifecycle) String() string {
+	return string(e)
+}
+
+func (e *EditorialMediaLifecycle) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = EditorialMediaLifecycle(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid EditorialMediaLifecycle", str)
+	}
+	return nil
+}
+
+func (e EditorialMediaLifecycle) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *EditorialMediaLifecycle) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e EditorialMediaLifecycle) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -4704,6 +4777,12 @@ const (
 	EditorialMediaStateProcessing EditorialMediaState = "PROCESSING"
 	EditorialMediaStateReady      EditorialMediaState = "READY"
 	EditorialMediaStateRejected   EditorialMediaState = "REJECTED"
+	// Editorial lifecycle withdrew the asset; publication stays blocked until re-review.
+	EditorialMediaStateWithdrawn EditorialMediaState = "WITHDRAWN"
+	// A named successor asset replaced this binding; publication stays blocked until re-review.
+	EditorialMediaStateSuperseded EditorialMediaState = "SUPERSEDED"
+	// The asset's bytes are not servable; publication stays blocked until re-review.
+	EditorialMediaStateUnavailable EditorialMediaState = "UNAVAILABLE"
 )
 
 var AllEditorialMediaState = []EditorialMediaState{
@@ -4711,11 +4790,14 @@ var AllEditorialMediaState = []EditorialMediaState{
 	EditorialMediaStateProcessing,
 	EditorialMediaStateReady,
 	EditorialMediaStateRejected,
+	EditorialMediaStateWithdrawn,
+	EditorialMediaStateSuperseded,
+	EditorialMediaStateUnavailable,
 }
 
 func (e EditorialMediaState) IsValid() bool {
 	switch e {
-	case EditorialMediaStateMissing, EditorialMediaStateProcessing, EditorialMediaStateReady, EditorialMediaStateRejected:
+	case EditorialMediaStateMissing, EditorialMediaStateProcessing, EditorialMediaStateReady, EditorialMediaStateRejected, EditorialMediaStateWithdrawn, EditorialMediaStateSuperseded, EditorialMediaStateUnavailable:
 		return true
 	}
 	return false

@@ -31,7 +31,7 @@ func TestM4DraftPublishCreatesCanonicalArticleWithAttribution(t *testing.T) {
 		Slug:          "agent-draft",
 		Content:       "# Agent Draft\n\nBody.",
 		ContentFormat: "markdown",
-		Status:        draftStatusDraft,
+		Status:        DraftStatusDraft,
 		GeneratedBy:   " https://example.com/users/agent-0 ",
 	}
 	require.NoError(t, repo.CreateDraft(context.Background(), draft))
@@ -94,7 +94,7 @@ func TestM4DraftPublishRejectsCanonicalArticleSlugChangeSafely(t *testing.T) {
 		Slug:          "renamed",
 		Content:       "after",
 		ContentFormat: "markdown",
-		Status:        draftStatusDraft,
+		Status:        DraftStatusDraft,
 	}
 	require.NoError(t, draftRepo.CreateDraft(context.Background(), draft))
 
@@ -105,7 +105,7 @@ func TestM4DraftPublishRejectsCanonicalArticleSlugChangeSafely(t *testing.T) {
 
 	afterDraft, getErr := draftRepo.GetDraft(context.Background(), "alice", "draft-1")
 	require.NoError(t, getErr)
-	require.Equal(t, draftStatusFailed, afterDraft.Status)
+	require.Equal(t, DraftStatusFailed, afterDraft.Status)
 
 	stored, getArticleErr := articleRepo.GetArticle(context.Background(), articleID)
 	require.NoError(t, getArticleErr)

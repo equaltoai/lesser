@@ -1416,6 +1416,8 @@ type Mutation {
   updateMedia(id: ID!, input: UpdateMediaInput!): Media!
   """Delete media owned by the authenticated account."""
   deleteMedia(id: ID!): Boolean!
+  """Apply an explicit editorial lifecycle change to an internal editorial asset."""
+  updateEditorialMediaLifecycle(mediaId: ID!, lifecycle: EditorialMediaLifecycle!, supersededByMediaId: ID): EditorialMediaLifecyclePayload!
   
   # Notification operations
   dismissNotification(id: ID!): Boolean!
@@ -2490,6 +2492,8 @@ type DraftReviewGrant {
   reviewerId: ID!
   reviewer: Actor!
   grantedAt: Time!
+  """Bounded expiry; expired grants authorize no reads, URL minting, or approval."""
+  expiresAt: Time
   status: DraftReviewGrantStatus!
   revokedAt: Time
 }
@@ -2497,6 +2501,7 @@ type DraftReviewGrant {
 enum DraftReviewGrantStatus {
   ACTIVE
   REVOKED
+  EXPIRED
 }
 
 type DraftReviewVerdictRecord {
@@ -2592,6 +2597,26 @@ enum EditorialMediaState {
   PROCESSING
   READY
   REJECTED
+  """Editorial lifecycle withdrew the asset; publication stays blocked until re-review."""
+  WITHDRAWN
+  """A named successor asset replaced this binding; publication stays blocked until re-review."""
+  SUPERSEDED
+  """The asset's bytes are not servable; publication stays blocked until re-review."""
+  UNAVAILABLE
+}
+
+"""Explicit editorial lifecycle of an internal asset, distinct from the processing-pipeline status."""
+enum EditorialMediaLifecycle {
+  AVAILABLE
+  WITHDRAWN
+  SUPERSEDED
+  UNAVAILABLE
+}
+
+type EditorialMediaLifecyclePayload {
+  mediaId: ID!
+  lifecycle: EditorialMediaLifecycle!
+  supersededByMediaId: ID
 }
 
 type EditorialMediaProvenance {
@@ -2624,6 +2649,9 @@ type EditorialMediaUsage {
   height: Int
   mimeType: String
   contentHash: String
+  """Durable published serving minted at the publish transition; absent pre-publish."""
+  publishedUrl: String
+  publishedAt: Time
   """Short-lived exact-asset URL, only issued to an owner or active reviewer."""
   accessUrl: String
   accessExpiresAt: Time

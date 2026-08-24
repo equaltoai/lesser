@@ -1268,6 +1268,7 @@ type ComplexityRoot struct {
 	}
 
 	DraftReviewGrant struct {
+		ExpiresAt  func(childComplexity int) int
 		GrantedAt  func(childComplexity int) int
 		Reviewer   func(childComplexity int) int
 		ReviewerID func(childComplexity int) int
@@ -1306,6 +1307,12 @@ type ComplexityRoot struct {
 		URL         func(childComplexity int) int
 	}
 
+	EditorialMediaLifecyclePayload struct {
+		Lifecycle           func(childComplexity int) int
+		MediaID             func(childComplexity int) int
+		SupersededByMediaID func(childComplexity int) int
+	}
+
 	EditorialMediaProvenance struct {
 		ContentIntegrity   func(childComplexity int) int
 		CreatedAt          func(childComplexity int) int
@@ -1333,6 +1340,8 @@ type ComplexityRoot struct {
 		MediaID          func(childComplexity int) int
 		MimeType         func(childComplexity int) int
 		Provenance       func(childComplexity int) int
+		PublishedAt      func(childComplexity int) int
+		PublishedURL     func(childComplexity int) int
 		Role             func(childComplexity int) int
 		State            func(childComplexity int) int
 		Width            func(childComplexity int) int
@@ -2309,6 +2318,7 @@ type ComplexityRoot struct {
 		UpdateArticle                             func(childComplexity int, id string, input model.UpdateArticleInput) int
 		UpdateCategory                            func(childComplexity int, id string, input model.UpdateCategoryInput) int
 		UpdateDraft                               func(childComplexity int, id string, input model.UpdateDraftInput) int
+		UpdateEditorialMediaLifecycle             func(childComplexity int, mediaID string, lifecycle model.EditorialMediaLifecycle, supersededByMediaID *string) int
 		UpdateEmoji                               func(childComplexity int, shortcode string, input model.UpdateEmojiInput) int
 		UpdateFilter                              func(childComplexity int, id string, input model.UpdateFilterInput) int
 		UpdateHashtagNotifications                func(childComplexity int, hashtag string, settings model.HashtagNotificationSettingsInput) int
@@ -3762,6 +3772,7 @@ type MutationResolver interface {
 	UploadMedia(ctx context.Context, input model.UploadMediaInput) (*model.UploadMediaPayload, error)
 	UpdateMedia(ctx context.Context, id string, input model.UpdateMediaInput) (*model.Media, error)
 	DeleteMedia(ctx context.Context, id string) (bool, error)
+	UpdateEditorialMediaLifecycle(ctx context.Context, mediaID string, lifecycle model.EditorialMediaLifecycle, supersededByMediaID *string) (*model.EditorialMediaLifecyclePayload, error)
 	DismissNotification(ctx context.Context, id string) (bool, error)
 	ClearNotifications(ctx context.Context) (bool, error)
 	MarkNotificationGroupAsRead(ctx context.Context, groupID string) (bool, error)
@@ -9814,6 +9825,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.DraftReviewEdge.Node(childComplexity), true
 
+	case "DraftReviewGrant.expiresAt":
+		if e.complexity.DraftReviewGrant.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewGrant.ExpiresAt(childComplexity), true
+
 	case "DraftReviewGrant.grantedAt":
 		if e.complexity.DraftReviewGrant.GrantedAt == nil {
 			break
@@ -9982,6 +10000,27 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.EditorialMediaAccess.URL(childComplexity), true
 
+	case "EditorialMediaLifecyclePayload.lifecycle":
+		if e.complexity.EditorialMediaLifecyclePayload.Lifecycle == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaLifecyclePayload.Lifecycle(childComplexity), true
+
+	case "EditorialMediaLifecyclePayload.mediaId":
+		if e.complexity.EditorialMediaLifecyclePayload.MediaID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaLifecyclePayload.MediaID(childComplexity), true
+
+	case "EditorialMediaLifecyclePayload.supersededByMediaId":
+		if e.complexity.EditorialMediaLifecyclePayload.SupersededByMediaID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaLifecyclePayload.SupersededByMediaID(childComplexity), true
+
 	case "EditorialMediaProvenance.contentIntegrity":
 		if e.complexity.EditorialMediaProvenance.ContentIntegrity == nil {
 			break
@@ -10142,6 +10181,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.EditorialMediaUsage.Provenance(childComplexity), true
+
+	case "EditorialMediaUsage.publishedAt":
+		if e.complexity.EditorialMediaUsage.PublishedAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.PublishedAt(childComplexity), true
+
+	case "EditorialMediaUsage.publishedUrl":
+		if e.complexity.EditorialMediaUsage.PublishedURL == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.PublishedURL(childComplexity), true
 
 	case "EditorialMediaUsage.role":
 		if e.complexity.EditorialMediaUsage.Role == nil {
@@ -15924,6 +15977,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UpdateDraft(childComplexity, args["id"].(string), args["input"].(model.UpdateDraftInput)), true
+
+	case "Mutation.updateEditorialMediaLifecycle":
+		if e.complexity.Mutation.UpdateEditorialMediaLifecycle == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateEditorialMediaLifecycle_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateEditorialMediaLifecycle(childComplexity, args["mediaId"].(string), args["lifecycle"].(model.EditorialMediaLifecycle), args["supersededByMediaId"].(*string)), true
 
 	case "Mutation.updateEmoji":
 		if e.complexity.Mutation.UpdateEmoji == nil {
@@ -25885,6 +25950,27 @@ func (ec *executionContext) field_Mutation_updateDraft_args(ctx context.Context,
 		return nil, err
 	}
 	args["input"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_updateEditorialMediaLifecycle_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "mediaId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "lifecycle", ec.unmarshalNEditorialMediaLifecycle2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecycle)
+	if err != nil {
+		return nil, err
+	}
+	args["lifecycle"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "supersededByMediaId", ec.unmarshalOID2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["supersededByMediaId"] = arg2
 	return args, nil
 }
 
@@ -64083,6 +64169,10 @@ func (ec *executionContext) fieldContext_Draft_editorialMedia(_ context.Context,
 				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "publishedUrl":
+				return ec.fieldContext_EditorialMediaUsage_publishedUrl(ctx, field)
+			case "publishedAt":
+				return ec.fieldContext_EditorialMediaUsage_publishedAt(ctx, field)
 			case "accessUrl":
 				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
 			case "accessExpiresAt":
@@ -65012,6 +65102,10 @@ func (ec *executionContext) fieldContext_DraftPreview_editorialMedia(_ context.C
 				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "publishedUrl":
+				return ec.fieldContext_EditorialMediaUsage_publishedUrl(ctx, field)
+			case "publishedAt":
+				return ec.fieldContext_EditorialMediaUsage_publishedAt(ctx, field)
 			case "accessUrl":
 				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
 			case "accessExpiresAt":
@@ -66208,6 +66302,10 @@ func (ec *executionContext) fieldContext_DraftReview_editorialMedia(_ context.Co
 				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "publishedUrl":
+				return ec.fieldContext_EditorialMediaUsage_publishedUrl(ctx, field)
+			case "publishedAt":
+				return ec.fieldContext_EditorialMediaUsage_publishedAt(ctx, field)
 			case "accessUrl":
 				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
 			case "accessExpiresAt":
@@ -66662,6 +66760,8 @@ func (ec *executionContext) fieldContext_DraftReview_grants(_ context.Context, f
 				return ec.fieldContext_DraftReviewGrant_reviewer(ctx, field)
 			case "grantedAt":
 				return ec.fieldContext_DraftReviewGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_DraftReviewGrant_expiresAt(ctx, field)
 			case "status":
 				return ec.fieldContext_DraftReviewGrant_status(ctx, field)
 			case "revokedAt":
@@ -66715,6 +66815,8 @@ func (ec *executionContext) fieldContext_DraftReview_grant(_ context.Context, fi
 				return ec.fieldContext_DraftReviewGrant_reviewer(ctx, field)
 			case "grantedAt":
 				return ec.fieldContext_DraftReviewGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_DraftReviewGrant_expiresAt(ctx, field)
 			case "status":
 				return ec.fieldContext_DraftReviewGrant_status(ctx, field)
 			case "revokedAt":
@@ -67314,6 +67416,47 @@ func (ec *executionContext) _DraftReviewGrant_grantedAt(ctx context.Context, fie
 }
 
 func (ec *executionContext) fieldContext_DraftReviewGrant_grantedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewGrant_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewGrant_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewGrant_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "DraftReviewGrant",
 		Field:      field,
@@ -68374,6 +68517,135 @@ func (ec *executionContext) fieldContext_EditorialMediaAccess_contentHash(_ cont
 	return fc, nil
 }
 
+func (ec *executionContext) _EditorialMediaLifecyclePayload_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaLifecyclePayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaLifecyclePayload_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaLifecyclePayload_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaLifecyclePayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaLifecyclePayload_lifecycle(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaLifecyclePayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaLifecyclePayload_lifecycle(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Lifecycle, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.EditorialMediaLifecycle)
+	fc.Result = res
+	return ec.marshalNEditorialMediaLifecycle2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecycle(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaLifecyclePayload_lifecycle(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaLifecyclePayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EditorialMediaLifecycle does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaLifecyclePayload_supersededByMediaId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaLifecyclePayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaLifecyclePayload_supersededByMediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SupersededByMediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOID2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaLifecyclePayload_supersededByMediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaLifecyclePayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _EditorialMediaProvenance_origin(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_EditorialMediaProvenance_origin(ctx, field)
 	if err != nil {
@@ -69382,6 +69654,88 @@ func (ec *executionContext) fieldContext_EditorialMediaUsage_contentHash(_ conte
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_publishedUrl(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_publishedUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublishedURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_publishedUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_publishedAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_publishedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublishedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_publishedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
 		},
 	}
 	return fc, nil
@@ -97863,6 +98217,69 @@ func (ec *executionContext) fieldContext_Mutation_deleteMedia(ctx context.Contex
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_deleteMedia_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateEditorialMediaLifecycle(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateEditorialMediaLifecycle(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateEditorialMediaLifecycle(rctx, fc.Args["mediaId"].(string), fc.Args["lifecycle"].(model.EditorialMediaLifecycle), fc.Args["supersededByMediaId"].(*string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.EditorialMediaLifecyclePayload)
+	fc.Result = res
+	return ec.marshalNEditorialMediaLifecyclePayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecyclePayload(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateEditorialMediaLifecycle(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaLifecyclePayload_mediaId(ctx, field)
+			case "lifecycle":
+				return ec.fieldContext_EditorialMediaLifecyclePayload_lifecycle(ctx, field)
+			case "supersededByMediaId":
+				return ec.fieldContext_EditorialMediaLifecyclePayload_supersededByMediaId(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaLifecyclePayload", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateEditorialMediaLifecycle_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -174690,6 +175107,8 @@ func (ec *executionContext) _DraftReviewGrant(ctx context.Context, sel ast.Selec
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "expiresAt":
+			out.Values[i] = ec._DraftReviewGrant_expiresAt(ctx, field, obj)
 		case "status":
 			out.Values[i] = ec._DraftReviewGrant_status(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -175097,6 +175516,52 @@ func (ec *executionContext) _EditorialMediaAccess(ctx context.Context, sel ast.S
 	return out
 }
 
+var editorialMediaLifecyclePayloadImplementors = []string{"EditorialMediaLifecyclePayload"}
+
+func (ec *executionContext) _EditorialMediaLifecyclePayload(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaLifecyclePayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, editorialMediaLifecyclePayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EditorialMediaLifecyclePayload")
+		case "mediaId":
+			out.Values[i] = ec._EditorialMediaLifecyclePayload_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lifecycle":
+			out.Values[i] = ec._EditorialMediaLifecyclePayload_lifecycle(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "supersededByMediaId":
+			out.Values[i] = ec._EditorialMediaLifecyclePayload_supersededByMediaId(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var editorialMediaProvenanceImplementors = []string{"EditorialMediaProvenance"}
 
 func (ec *executionContext) _EditorialMediaProvenance(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaProvenance) graphql.Marshaler {
@@ -175212,6 +175677,10 @@ func (ec *executionContext) _EditorialMediaUsage(ctx context.Context, sel ast.Se
 			out.Values[i] = ec._EditorialMediaUsage_mimeType(ctx, field, obj)
 		case "contentHash":
 			out.Values[i] = ec._EditorialMediaUsage_contentHash(ctx, field, obj)
+		case "publishedUrl":
+			out.Values[i] = ec._EditorialMediaUsage_publishedUrl(ctx, field, obj)
+		case "publishedAt":
+			out.Values[i] = ec._EditorialMediaUsage_publishedAt(ctx, field, obj)
 		case "accessUrl":
 			out.Values[i] = ec._EditorialMediaUsage_accessUrl(ctx, field, obj)
 		case "accessExpiresAt":
@@ -181696,6 +182165,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "deleteMedia":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_deleteMedia(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateEditorialMediaLifecycle":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateEditorialMediaLifecycle(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -198245,6 +198721,30 @@ func (ec *executionContext) marshalNEditorialMediaAccess2ᚖgithubᚗcomᚋequal
 		return graphql.Null
 	}
 	return ec._EditorialMediaAccess(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaLifecycle2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecycle(ctx context.Context, v any) (model.EditorialMediaLifecycle, error) {
+	var res model.EditorialMediaLifecycle
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEditorialMediaLifecycle2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecycle(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaLifecycle) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNEditorialMediaLifecyclePayload2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecyclePayload(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaLifecyclePayload) graphql.Marshaler {
+	return ec._EditorialMediaLifecyclePayload(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNEditorialMediaLifecyclePayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecyclePayload(ctx context.Context, sel ast.SelectionSet, v *model.EditorialMediaLifecyclePayload) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EditorialMediaLifecyclePayload(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx context.Context, v any) (model.EditorialMediaOrigin, error) {

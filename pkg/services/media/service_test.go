@@ -30,6 +30,9 @@ func (m *MockMediaRepository) CreateMedia(ctx context.Context, media *models.Med
 
 func (m *MockMediaRepository) GetMedia(ctx context.Context, mediaID string) (*models.Media, error) {
 	args := m.Called(ctx, mediaID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*models.Media), args.Error(1)
 }
 
@@ -216,6 +219,21 @@ func (m *MockMediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID
 
 func (m *MockMediaRepository) UnmarkAllMediaAsSensitive(ctx context.Context, username string) error {
 	args := m.Called(ctx, username)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) UpdateMediaEditorialState(ctx context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string, expectedVersion int) error {
+	args := m.Called(ctx, mediaID, state, supersededByMediaID, expectedVersion)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) UpdateMediaPublishedState(ctx context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time, expectedVersion int) error {
+	args := m.Called(ctx, mediaID, publishedS3Key, publishedURL, publishedAt, expectedVersion)
+	return args.Error(0)
+}
+
+func (m *MockMediaRepository) ClearMediaPublishedState(ctx context.Context, mediaID string, expectedVersion int) error {
+	args := m.Called(ctx, mediaID, expectedVersion)
 	return args.Error(0)
 }
 

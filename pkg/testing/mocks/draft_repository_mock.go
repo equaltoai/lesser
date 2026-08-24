@@ -50,6 +50,13 @@ func (m *MockDraftRepository) UpdateDraftEditorialMedia(ctx context.Context, aut
 	return args.Error(0)
 }
 
+// TransitionDraftToPublishing mocks the field-scoped publish-transition method,
+// the only writer of the PublishAttemptedAt stamp.
+func (m *MockDraftRepository) TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error {
+	args := m.Called(ctx, authorID, draft)
+	return args.Error(0)
+}
+
 // DeleteDraft mocks the DeleteDraft method
 func (m *MockDraftRepository) DeleteDraft(ctx context.Context, authorID, draftID string) error {
 	args := m.Called(ctx, authorID, draftID)
@@ -81,6 +88,15 @@ func (m *MockDraftRepository) ListDraftsByAuthorPaginated(ctx context.Context, a
 // ListScheduledDraftsDuePaginated mocks the ListScheduledDraftsDuePaginated method
 func (m *MockDraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, dueBefore time.Time, limit int, cursor string) ([]*models.Draft, string, error) {
 	args := m.Called(ctx, dueBefore, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*models.Draft), args.String(1), args.Error(2)
+}
+
+// ListDraftsByStatusPaginated mocks the ListDraftsByStatusPaginated method
+func (m *MockDraftRepository) ListDraftsByStatusPaginated(ctx context.Context, status string, limit int, cursor string) ([]*models.Draft, string, error) {
+	args := m.Called(ctx, status, limit, cursor)
 	if args.Get(0) == nil {
 		return nil, args.String(1), args.Error(2)
 	}

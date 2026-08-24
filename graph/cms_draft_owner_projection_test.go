@@ -83,8 +83,8 @@ func TestDraftReviewQueuesSkipDeletedDraftGrants(t *testing.T) {
 	draft := &models.Draft{ID: "orphan", AuthorID: "owner", ContentType: "Article", Content: "body", ContentFormat: "markdown", Status: "draft"}
 	require.NoError(t, drafts.CreateDraft(ctx, draft))
 	grant := &models.DraftReviewGrant{
-		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer",
-		SK: "GRANT#orphan#REVIEWER#reviewer", GSI2SK: "TIME#2026-08-08T00:00:00Z#OWNER#owner#DRAFT#orphan",
+		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: time.Now().UTC(),
+		ExpiresAt: m2FutureExpiry(), SK: "GRANT#orphan#REVIEWER#reviewer", GSI2SK: "TIME#2026-08-08T00:00:00Z#OWNER#owner#DRAFT#orphan",
 	}
 	drafts.ownedDraftReviews = []*models.DraftReviewGrant{grant}
 	drafts.sharedDraftReviews = []*models.DraftReviewGrant{grant}
@@ -111,7 +111,7 @@ func TestOwnedDraftReviewExposesCurrentRevisionGrantAndEligibility(t *testing.T)
 	require.NoError(t, drafts.CreateDraft(ctx, draft))
 	grant := &models.DraftReviewGrant{
 		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: time.Now().UTC(),
-		SK: "GRANT#reviewed#REVIEWER#reviewer", GSI2SK: "TIME#2026-08-08T00:00:00Z#OWNER#owner#DRAFT#reviewed",
+		ExpiresAt: m2FutureExpiry(), SK: "GRANT#reviewed#REVIEWER#reviewer", GSI2SK: "TIME#2026-08-08T00:00:00Z#OWNER#owner#DRAFT#reviewed",
 	}
 	drafts.ownedDraftReviews = []*models.DraftReviewGrant{grant}
 
@@ -148,7 +148,7 @@ func TestSharedDraftReviewExposesGrantedCrossActorSourceAndPreview(t *testing.T)
 	require.NoError(t, drafts.CreateDraft(ctx, draft))
 	grant := &models.DraftReviewGrant{
 		OwnerID: "author", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: time.Now().UTC(),
-		SK: "GRANT#cross-actor#REVIEWER#reviewer", GSI2SK: "TIME#2026-08-08T00:00:00Z#OWNER#author#DRAFT#cross-actor",
+		ExpiresAt: m2FutureExpiry(), SK: "GRANT#cross-actor#REVIEWER#reviewer", GSI2SK: "TIME#2026-08-08T00:00:00Z#OWNER#author#DRAFT#cross-actor",
 	}
 	drafts.sharedDraftReviews = []*models.DraftReviewGrant{grant}
 

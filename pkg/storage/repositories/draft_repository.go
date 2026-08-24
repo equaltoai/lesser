@@ -83,10 +83,61 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, authorID string, draf
 	}
 
 	// EditorialMedia has its own field-scoped writer; content updates must not
-	// replay a binding list carried by a stale full-model snapshot.
+	// replay a binding list carried by a stale full-model snapshot. The
+	// publish-attempt stamp likewise has its own field-scoped writer (the
+	// publishing transition); content updates must not advance or clear it, or
+	// an author could re-arm the stale-publishing sweep by editing a
+	// crash-stuck draft. A nil omitempty field is unselected by the sparse
+	// update, so the stored attribute is left untouched.
 	sparse := *draft
 	sparse.EditorialMedia = nil
+	sparse.PublishAttemptedAt = nil
 	return r.db.WithContext(ctx).Model(&sparse).Update()
+}
+
+// TransitionDraftToPublishing atomically applies only the fields that enter the
+// publishing status: the status, the cleared schedule, the transition
+// timestamp, the publish-attempt stamp, and the derived index keys. It is the
+// ONLY writer of PublishAttemptedAt; content writers and the editorial-media
+// lane run through UpdateDraft / UpdateDraftEditorialMedia, which never select
+// the attribute, so a crash-stuck publishing draft cannot be re-armed by an
+// author editing it. The index keys are written here because the status change
+// must move the row between GSI4 status partitions (and refresh the object
+// index) exactly as the full-model UpdateKeys derivation would.
+func (r *DraftRepository) TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error {
+	if err := validateDraftWriteOwner(authorID, draft); err != nil {
+		return err
+	}
+	if err := draft.UpdateKeys(); err != nil {
+		return err
+	}
+
+	builder := r.db.WithContext(ctx).
+		Model(draft).
+		Where("PK", "=", draft.PK).
+		Where("SK", "=", draft.SK).
+		UpdateBuilder()
+	builder.Set("Status", draft.Status)
+	builder.Set("UpdatedAt", draft.UpdatedAt)
+	if draft.PublishAttemptedAt != nil {
+		builder.Set("PublishAttemptedAt", draft.PublishAttemptedAt)
+	} else {
+		builder.Remove("PublishAttemptedAt")
+	}
+	builder.Set("GSI1PK", draft.GSI1PK)
+	builder.Set("GSI1SK", draft.GSI1SK)
+	builder.Set("GSI4PK", draft.GSI4PK)
+	builder.Set("GSI4SK", draft.GSI4SK)
+	builder.Remove("ScheduledAt")
+	builder.ConditionExists("PK")
+	if err := builder.Execute(); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.ItemNotFoundWithID("draft", draft.ID).
+				WithInternalError(errors.Join(err, storage.ErrNotFound))
+		}
+		return ErrorHandler.HandleUpdateError(err, "draft", draft.ID)
+	}
+	return nil
 }
 
 // UpdateDraftEditorialMedia atomically replaces only the editorial-media
@@ -238,6 +289,49 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 	return result, nextCursor, nil
 }
 
+// ListDraftsByStatusPaginated lists drafts in one status, paginated by GSI4SK
+// cursor values. It powers orphan reconciliation over terminally failed drafts
+// whose bound media mints may have survived a best-effort rollback.
+func (r *DraftRepository) ListDraftsByStatusPaginated(ctx context.Context, status string, limit int, cursor string) ([]*models.Draft, string, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		return nil, "", common.ValidateRequiredParam("status", status)
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
+	query := r.db.WithContext(ctx).Model(&models.Draft{}).
+		Index("gsi4").
+		Where("gsi4PK", "=", "DRAFT#STATUS#"+status).
+		OrderBy("gsi4SK", "ASC")
+
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		query = query.Where("gsi4SK", ">", cursor)
+	}
+
+	query = query.Limit(limit + 1)
+
+	var draftModels []models.Draft
+	if err := query.All(&draftModels); err != nil {
+		return nil, "", err
+	}
+
+	nextCursor := ""
+	if len(draftModels) > limit {
+		nextCursor = draftModels[limit-1].GSI4SK
+		draftModels = draftModels[:limit]
+	}
+
+	result := make([]*models.Draft, len(draftModels))
+	for i := range draftModels {
+		result[i] = &draftModels[i]
+	}
+
+	return result, nextCursor, nil
+}
+
 // CreateDraftReviewGrant creates a first-time review grant.
 func (r *DraftRepository) CreateDraftReviewGrant(ctx context.Context, grant *models.DraftReviewGrant) error {
 	if err := grant.UpdateKeys(); err != nil {
@@ -269,6 +363,12 @@ func (r *DraftRepository) RegrantDraftReviewGrant(ctx context.Context, grant *mo
 		Where("SK", "=", grant.SK).
 		UpdateBuilder()
 	builder.Set("GrantedAt", grant.GrantedAt.UTC())
+	if grant.ExpiresAt != nil {
+		expiresAt := grant.ExpiresAt.UTC()
+		builder.Set("ExpiresAt", expiresAt)
+	} else {
+		builder.Remove("ExpiresAt")
+	}
 	builder.Set("GSI2PK", grant.GSI2PK)
 	builder.Set("GSI2SK", grant.GSI2SK)
 	builder.Remove("RevokedAt")
@@ -358,20 +458,6 @@ func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, revie
 		out[i] = &rows[i]
 	}
 	return out, nextCursor, nil
-}
-
-// CountActiveDraftReviewGrants returns the full active sparse queue size.
-func (r *DraftRepository) CountActiveDraftReviewGrants(ctx context.Context, reviewer string) (int, error) {
-	count, err := r.db.WithContext(ctx).
-		Model(&models.DraftReviewGrant{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("DRAFT#REVIEWER#%s", reviewer)).
-		Filter("RevokedAt", "attribute_not_exists", nil).
-		Count()
-	if err != nil {
-		return 0, err
-	}
-	return int(count), nil
 }
 
 // ListDraftReviewGrants returns all grant records for one draft.

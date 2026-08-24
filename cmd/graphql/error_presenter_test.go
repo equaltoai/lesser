@@ -248,11 +248,14 @@ func TestGraphQLDuplicateDraftReviewGrantReturnsConflictCode(t *testing.T) {
 func TestGraphQLOwnerCanListDraftReviewAssignments(t *testing.T) {
 	ctx := context.Background()
 	harness := newDraftReviewWireHarness(t, &failingGrantCreateDynamo{Fake: fakedb.New()})
+	grantedAt := time.Now().UTC()
+	expiresAt := grantedAt.Add(time.Hour)
 	require.NoError(t, harness.repository.CreateDraftReviewGrant(ctx, &models.DraftReviewGrant{
 		OwnerID:   "owner",
 		DraftID:   "draft-1",
 		Reviewer:  "reviewer",
-		GrantedAt: time.Now().UTC(),
+		GrantedAt: grantedAt,
+		ExpiresAt: &expiresAt,
 	}))
 
 	requestBody := []byte(`{"query":"query { myDraftReviews(first: 10) { totalCount edges { node { draftId grant { reviewer { username } } } } } }"}`)

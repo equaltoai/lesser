@@ -39,6 +39,16 @@ type Draft struct {
 	ScheduledAt          *time.Time `theorydb:"attr:scheduledAt" json:"scheduled_at,omitempty"`
 	PublishFailureReason string     `theorydb:"attr:publishFailureReason" json:"publish_failure_reason,omitempty"`
 
+	// PublishAttemptedAt records the moment the draft transitioned into the
+	// publishing status. It is written ONLY by the publish transition's
+	// field-scoped repository lane (TransitionDraftToPublishing); content
+	// writers never select the attribute, so an author editing a crash-stuck
+	// publishing draft cannot re-arm the orphan-reconciliation stale-publishing
+	// horizon by advancing UpdatedAt. Absent on rows that never entered
+	// publishing and on legacy publishing rows that predate the attribute;
+	// those fall back to UpdatedAt for the sweep horizon.
+	PublishAttemptedAt *time.Time `theorydb:"attr:publishAttemptedAt,omitempty" json:"publish_attempted_at,omitempty"`
+
 	// Metadata snapshot (full object metadata for preview)
 	MetadataJSON string `theorydb:"attr:metadataJSON" json:"metadata_json,omitempty"`
 

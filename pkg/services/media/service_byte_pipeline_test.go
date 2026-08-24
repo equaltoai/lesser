@@ -87,6 +87,24 @@ func (f *fakeMediaS3Service) GeneratePresignedURL(
 	return fmt.Sprintf("https://example.invalid/%s/%s", bucket, key), nil
 }
 
+func (f *fakeMediaS3Service) CopyFileToPublished(
+	_ context.Context,
+	bucket string,
+	sourceKey string,
+	destinationKey string,
+	contentType string,
+) (string, error) {
+	objectKey := bucket + "/" + sourceKey
+	data, ok := f.objects[objectKey]
+	if !ok {
+		return "", fmt.Errorf("source object %q not found", objectKey)
+	}
+	destination := bucket + "/" + destinationKey
+	f.objects[destination] = bytes.Clone(data)
+	f.contentTypes[destination] = contentType
+	return "s3://" + destination, nil
+}
+
 func TestServiceEditorialUploadIsInternalAndAccessIsExact(t *testing.T) {
 	service, mediaRepo, jobQueue, _ := createTestService(t)
 	objectStore := newFakeMediaS3Service()

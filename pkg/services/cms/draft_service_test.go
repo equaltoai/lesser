@@ -51,6 +51,38 @@ func (r *memDraftRepo) UpdateDraft(ctx context.Context, authorID string, draft *
 	if strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
 		return apperrors.NotFound("draft")
 	}
+	stored, ok := r.items[r.key(authorID, draft.ID)]
+	if !ok {
+		return apperrors.NotFound("draft")
+	}
+	updated := cloneDraft(draft)
+	// The production content lane never writes PublishAttemptedAt (the
+	// transition lane is its only writer), so preserve the stored publish-attempt
+	// stamp: an author editing a crash-stuck publishing draft must not re-arm
+	// the stale-publishing sweep.
+	if stored.PublishAttemptedAt != nil {
+		stamp := *stored.PublishAttemptedAt
+		updated.PublishAttemptedAt = &stamp
+	}
+	r.items[r.key(authorID, draft.ID)] = updated
+	return nil
+}
+
+// TransitionDraftToPublishing models the production field-scoped transition
+// lane: it is the only writer of the PublishAttemptedAt stamp.
+func (r *memDraftRepo) TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error {
+	if draft == nil || strings.TrimSpace(authorID) == "" {
+		return apperrors.ValidationFailedWithField("draft")
+	}
+	if err := draft.UpdateKeys(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
+		return apperrors.NotFound("draft")
+	}
+	if _, ok := r.items[r.key(authorID, draft.ID)]; !ok {
+		return apperrors.NotFound("draft")
+	}
 	r.items[r.key(authorID, draft.ID)] = cloneDraft(draft)
 	return nil
 }
@@ -96,6 +128,10 @@ func cloneDraft(d *models.Draft) *models.Draft {
 	if d.ScheduledAt != nil {
 		v := *d.ScheduledAt
 		cp.ScheduledAt = &v
+	}
+	if d.PublishAttemptedAt != nil {
+		v := *d.PublishAttemptedAt
+		cp.PublishAttemptedAt = &v
 	}
 	cp.EditorialMedia = append([]models.DraftMediaUsage(nil), d.EditorialMedia...)
 	for i := range cp.EditorialMedia {

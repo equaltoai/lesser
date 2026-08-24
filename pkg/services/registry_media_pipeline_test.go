@@ -21,8 +21,9 @@ import (
 )
 
 type fakeMediaS3API struct {
-	putInput *s3.PutObjectInput
-	putData  []byte
+	putInput  *s3.PutObjectInput
+	putData   []byte
+	copyInput *s3.CopyObjectInput
 }
 
 func (f *fakeMediaS3API) PutObject(
@@ -45,6 +46,15 @@ func (f *fakeMediaS3API) DeleteObject(
 	_ ...func(*s3.Options),
 ) (*s3.DeleteObjectOutput, error) {
 	return &s3.DeleteObjectOutput{}, nil
+}
+
+func (f *fakeMediaS3API) CopyObject(
+	_ context.Context,
+	input *s3.CopyObjectInput,
+	_ ...func(*s3.Options),
+) (*s3.CopyObjectOutput, error) {
+	f.copyInput = input
+	return &s3.CopyObjectOutput{}, nil
 }
 
 type fakeRegistryMediaStore struct {

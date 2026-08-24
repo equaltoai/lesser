@@ -8,6 +8,31 @@ import (
 	"time"
 )
 
+// EditorialLifecycle is the editorial lifecycle of an internal asset, distinct
+// from the processing-pipeline Status enum ("pending/processing/ready/failed").
+// The lifecycle is an inspectable editorial decision surface: withdrawal,
+// supersession, and service unavailability are explicit states that block
+// publication until the draft is re-reviewed against the surviving asset.
+type EditorialLifecycle string
+
+const (
+	// EditorialLifecycleAvailable is the default servable editorial state.
+	EditorialLifecycleAvailable EditorialLifecycle = "available"
+	// EditorialLifecycleWithdrawn removes an asset from editorial circulation.
+	EditorialLifecycleWithdrawn EditorialLifecycle = "withdrawn"
+	// EditorialLifecycleSuperseded marks an asset replaced by a named successor.
+	EditorialLifecycleSuperseded EditorialLifecycle = "superseded"
+	// EditorialLifecycleUnavailable marks an asset whose bytes are not servable.
+	EditorialLifecycleUnavailable EditorialLifecycle = "unavailable"
+)
+
+var validEditorialLifecycles = map[EditorialLifecycle]struct{}{
+	EditorialLifecycleAvailable:   {},
+	EditorialLifecycleWithdrawn:   {},
+	EditorialLifecycleSuperseded:  {},
+	EditorialLifecycleUnavailable: {},
+}
+
 // MediaVisibility describes whether media bytes may use the public social-media
 // delivery posture or must remain inside the authenticated editorial workflow.
 type MediaVisibility string

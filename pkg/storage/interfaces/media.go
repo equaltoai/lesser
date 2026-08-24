@@ -44,6 +44,15 @@ type MediaRepository interface {
 	UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error
 	UnmarkAllMediaAsSensitive(ctx context.Context, username string) error
 
+	// Editorial lifecycle and durable published serving (M2). The writers are
+	// conditioned on the observed model version so concurrent lifecycle and
+	// publish transitions fail closed instead of interleaving.
+	UpdateMediaEditorialState(ctx context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string, expectedVersion int) error
+	UpdateMediaPublishedState(ctx context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time, expectedVersion int) error
+	// ClearMediaPublishedState removes the durable published-serving mint for
+	// compensating rollback when a publish fails before the article is committed.
+	ClearMediaPublishedState(ctx context.Context, mediaID string, expectedVersion int) error
+
 	// Media usage tracking
 	MarkMediaUsed(ctx context.Context, mediaID string) error
 	GetMediaUsageStats(ctx context.Context, mediaID string) (usageCount int, lastUsed *time.Time, err error)

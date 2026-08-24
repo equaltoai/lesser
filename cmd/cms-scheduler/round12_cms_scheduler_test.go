@@ -93,6 +93,13 @@ func (f *fakeDraftRepo) UpdateDraftEditorialMedia(ctx context.Context, authorID 
 	return nil
 }
 
+func (f *fakeDraftRepo) TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error {
+	// The production lane is field-scoped; this scheduler-side fake routes it
+	// through the recorded update path, which carries the transition's
+	// PublishAttemptedAt stamp on the model.
+	return f.UpdateDraft(ctx, authorID, draft)
+}
+
 func (f *fakeDraftRepo) DeleteDraft(context.Context, string, string) error { return nil }
 
 func (f *fakeDraftRepo) ListDraftsByAuthor(context.Context, string, int) ([]*models.Draft, error) {
@@ -108,6 +115,10 @@ func (f *fakeDraftRepo) ListScheduledDraftsDuePaginated(ctx context.Context, due
 	if f.listFn != nil {
 		return f.listFn(ctx, dueBefore, limit, cursor)
 	}
+	return nil, "", nil
+}
+
+func (f *fakeDraftRepo) ListDraftsByStatusPaginated(context.Context, string, int, string) ([]*models.Draft, string, error) {
 	return nil, "", nil
 }
 

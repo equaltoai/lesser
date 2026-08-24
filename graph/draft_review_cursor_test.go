@@ -56,16 +56,6 @@ func (r *cursorRecordingDraftRepository) ListActiveDraftReviewGrants(_ context.C
 	return r.sharedDraftReviews, "", nil
 }
 
-func (r *cursorRecordingDraftRepository) CountActiveDraftReviewGrants(_ context.Context, reviewer string) (int, error) {
-	count := 0
-	for _, grant := range r.sharedDraftReviews {
-		if grant != nil && grant.Reviewer == reviewer && grant.RevokedAt == nil {
-			count++
-		}
-	}
-	return count, nil
-}
-
 func (r *cursorRecordingDraftRepository) ListDraftReviewGrants(_ context.Context, owner, draftID string) ([]*models.DraftReviewGrant, error) {
 	out := make([]*models.DraftReviewGrant, 0)
 	seen := map[string]struct{}{}

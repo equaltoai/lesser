@@ -157,8 +157,9 @@ func TestEditorialMediaMintingGranularityForListAndSingleDraftContexts(t *testin
 		CreatedAt: now, UpdatedAt: now, LastSavedAt: now,
 	}
 	require.NoError(t, drafts.CreateDraft(context.Background(), draft))
+	expiresAt := now.Add(time.Hour)
 	grant := &models.DraftReviewGrant{
-		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: now,
+		OwnerID: "owner", DraftID: draft.ID, Reviewer: "reviewer", GrantedAt: now, ExpiresAt: &expiresAt,
 		SK:     "GRANT#mint-granularity#REVIEWER#reviewer",
 		GSI2SK: "TIME#2026-08-23T00:00:00Z#OWNER#owner#DRAFT#mint-granularity",
 	}

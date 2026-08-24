@@ -98,7 +98,29 @@ func (r *DraftRepository) GetDraft(_ context.Context, authorID, draftID string) 
 func (r *DraftRepository) UpdateDraft(_ context.Context, authorID string, draft *models.Draft) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Content writers never write PublishAttemptedAt (the transition lane is its
+	// only writer), so preserve the stored publish-attempt stamp: an author
+	// editing a crash-stuck publishing draft must not re-arm the sweep.
+	return r.storeDraftLocked(authorID, draft, true)
+}
 
+// TransitionDraftToPublishing applies the publish transition: the status,
+// cleared schedule, transition timestamps, the publish-attempt stamp, and the
+// status-index move. It models the production field-scoped lane, which is the
+// only writer of PublishAttemptedAt (it stamps the incoming attempt time).
+func (r *DraftRepository) TransitionDraftToPublishing(_ context.Context, authorID string, draft *models.Draft) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.storeDraftLocked(authorID, draft, false)
+}
+
+// storeDraftLocked validates and stores one draft under the held lock, moving
+// the status index when the status changes and preserving the stored
+// editorial-media binding (it has its own field-scoped writer).
+// preserveStoredStamp selects which publish-attempt stamp to keep: content
+// writers preserve the stored stamp (nil stays nil), while the transition lane
+// takes the incoming stamp.
+func (r *DraftRepository) storeDraftLocked(authorID string, draft *models.Draft, preserveStoredStamp bool) error {
 	if draft == nil || strings.TrimSpace(authorID) == "" || draft.AuthorID == "" || draft.ID == "" {
 		return storage.ErrInvalidInput
 	}
@@ -127,8 +149,18 @@ func (r *DraftRepository) UpdateDraft(_ context.Context, authorID string, draft 
 		r.draftsByStatus[newStatus] = append(r.draftsByStatus[newStatus], key)
 	}
 
+	stamp := draft.PublishAttemptedAt
+	if preserveStoredStamp {
+		stamp = oldDraft.PublishAttemptedAt
+	}
 	updatedDraft := *draft
 	updatedDraft.EditorialMedia = append([]models.DraftMediaUsage(nil), oldDraft.EditorialMedia...)
+	if stamp != nil {
+		cloned := *stamp
+		updatedDraft.PublishAttemptedAt = &cloned
+	} else {
+		updatedDraft.PublishAttemptedAt = nil
+	}
 	r.drafts[key] = &updatedDraft
 	return nil
 }
@@ -234,10 +266,14 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(_ context.Context, due
 		return drafts[i].GSI4SK < drafts[j].GSI4SK
 	})
 
-	// Apply cursor
+	// Apply cursor. A cursor past the last key (no key exceeds it) must yield an
+	// empty page with an empty next cursor so the caller terminates; defaulting
+	// startIdx to len(drafts) does that, matching the production repository's
+	// past-end behavior instead of re-emitting page one forever.
 	startIdx := 0
 	cursor = strings.TrimSpace(cursor)
 	if cursor != "" {
+		startIdx = len(drafts)
 		for i, draft := range drafts {
 			if draft.GSI4SK > cursor {
 				startIdx = i
@@ -247,6 +283,55 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(_ context.Context, due
 	}
 
 	// Apply limit
+	endIdx := startIdx + limit
+	if endIdx > len(drafts) {
+		endIdx = len(drafts)
+	}
+
+	result := drafts[startIdx:endIdx]
+	nextCursor := ""
+	if endIdx < len(drafts) && len(result) > 0 {
+		nextCursor = result[len(result)-1].GSI4SK
+	}
+
+	return result, nextCursor, nil
+}
+
+// ListDraftsByStatusPaginated lists drafts in one status, paginated by GSI4SK
+// cursor values. It powers orphan reconciliation over terminally failed drafts
+// whose bound media mints may have survived a best-effort rollback.
+func (r *DraftRepository) ListDraftsByStatusPaginated(_ context.Context, status string, limit int, cursor string) ([]*models.Draft, string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 25
+	}
+
+	keys := r.draftsByStatus[strings.ToLower(strings.TrimSpace(status))]
+	drafts := make([]*models.Draft, 0, len(keys))
+	for _, key := range keys {
+		if draft, exists := r.drafts[key]; exists {
+			drafts = append(drafts, draft)
+		}
+	}
+
+	sort.Slice(drafts, func(i, j int) bool {
+		return drafts[i].GSI4SK < drafts[j].GSI4SK
+	})
+
+	startIdx := 0
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		startIdx = len(drafts)
+		for i, draft := range drafts {
+			if draft.GSI4SK > cursor {
+				startIdx = i
+				break
+			}
+		}
+	}
+
 	endIdx := startIdx + limit
 	if endIdx > len(drafts) {
 		endIdx = len(drafts)

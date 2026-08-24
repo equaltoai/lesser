@@ -72,6 +72,13 @@ func (s round12MediaS3Service) GeneratePresignedURL(_ context.Context, bucket, k
 	return "https://signed.example/" + bucket + "/" + key + "?signature=review", nil
 }
 
+func (s round12MediaS3Service) CopyFileToPublished(_ context.Context, bucket, sourceKey, destinationKey, _ string) (string, error) {
+	if s.state != nil {
+		s.state.publishCopies = append(s.state.publishCopies, round12PublishCopy{source: sourceKey, destination: destinationKey})
+	}
+	return "s3://" + bucket + "/" + destinationKey, nil
+}
+
 type round12VAPIDSecretsClient struct {
 	secret string
 }
@@ -131,8 +138,14 @@ type round12PermissiveQueryState struct {
 	persistMedia           bool
 	presignCalls           int
 	presignErr             error
+	publishCopies          []round12PublishCopy
 	pendingUpdateSets      map[string]any
 	pendingUpdateRemovals  map[string]struct{}
+}
+
+type round12PublishCopy struct {
+	source      string
+	destination string
 }
 
 func setupRound12PermissiveDynamormMocks(t *testing.T) (*dynamormmocks.MockDB, *dynamormmocks.MockQuery, *round12PermissiveQueryState) {
@@ -940,6 +953,22 @@ func round12ApplyPendingUpdate(state *round12PermissiveQueryState) {
 		state.pendingUpdateRemovals = nil
 	}()
 
+	// Media rows use media#<id> partition keys; apply field-scoped writer
+	// updates to the seeded map so the double models the write semantics.
+	if mediaID := strings.TrimPrefix(state.lastPK, "media#"); mediaID != state.lastPK && strings.TrimSpace(mediaID) != "" {
+		if seeded := state.seededMedia[mediaID]; seeded != nil {
+			updated := round12CloneMedia(seeded)
+			for field, value := range state.pendingUpdateSets {
+				round12ApplyMediaField(updated, field, value)
+			}
+			for field := range state.pendingUpdateRemovals {
+				round12RemoveMediaField(updated, field)
+			}
+			state.seededMedia[mediaID] = updated
+		}
+		return
+	}
+
 	username := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(state.lastPK, "USER#")))
 	if username == "" {
 		return
@@ -960,6 +989,40 @@ func round12ApplyPendingUpdate(state *round12PermissiveQueryState) {
 			state.seededGovernanceStates = map[string]*storagepkg.AgentGovernanceState{}
 		}
 		state.seededGovernanceStates[username] = governance.Clone()
+	}
+}
+
+func round12ApplyMediaField(media *models.Media, field string, value any) {
+	switch field {
+	case "EditorialState":
+		if state, ok := value.(models.EditorialLifecycle); ok {
+			media.EditorialState = state
+		}
+	case "SupersededByMediaID":
+		if id, ok := value.(string); ok {
+			media.SupersededByMediaID = id
+		}
+	case "PublishedS3Key":
+		if key, ok := value.(string); ok {
+			media.PublishedS3Key = key
+		}
+	case "PublishedURL":
+		if url, ok := value.(string); ok {
+			media.PublishedURL = url
+		}
+	case "PublishedAt":
+		if at, ok := value.(time.Time); ok {
+			media.PublishedAt = &at
+		}
+	}
+}
+
+func round12RemoveMediaField(media *models.Media, field string) {
+	switch field {
+	case "EditorialState":
+		media.EditorialState = ""
+	case "SupersededByMediaID":
+		media.SupersededByMediaID = ""
 	}
 }
 

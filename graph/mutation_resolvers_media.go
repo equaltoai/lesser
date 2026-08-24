@@ -578,3 +578,45 @@ func (r *mutationResolver) ReportStreamingQuality(ctx context.Context, input mod
 		ReportID: reportID,
 	}, nil
 }
+
+// UpdateEditorialMediaLifecycle is the resolver for the updateEditorialMediaLifecycle field.
+func (r *mutationResolver) UpdateEditorialMediaLifecycle(ctx context.Context, mediaID string, lifecycle model.EditorialMediaLifecycle, supersededByMediaID *string) (*model.EditorialMediaLifecyclePayload, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	supersededBy := ""
+	if supersededByMediaID != nil {
+		supersededBy = strings.TrimSpace(*supersededByMediaID)
+	}
+	updated, err := r.Registry.Media().UpdateEditorialLifecycle(ctx, &mediasvc.UpdateEditorialLifecycleCommand{
+		MediaID:             strings.TrimSpace(mediaID),
+		UserID:              username,
+		Lifecycle:           models.EditorialLifecycle(strings.ToLower(strings.TrimSpace(string(lifecycle)))),
+		SupersededByMediaID: supersededBy,
+	})
+	if err != nil {
+		r.Logger.Error("Failed to update editorial media lifecycle",
+			zap.String("user", username),
+			zap.String("media", mediaID),
+			zap.Error(err))
+		return nil, errors.Join(errors.New("failed to update editorial media lifecycle"), err)
+	}
+	r.trackDynamoOperation(ctx, "write", 1)
+
+	payloadLifecycle := model.EditorialMediaLifecycleAvailable
+	if state := strings.ToLower(strings.TrimSpace(string(updated.EditorialState))); state != "" && state != string(models.EditorialLifecycleAvailable) {
+		payloadLifecycle = model.EditorialMediaLifecycle(strings.ToUpper(state))
+	}
+	var supersededByOut *string
+	if strings.TrimSpace(updated.SupersededByMediaID) != "" {
+		v := strings.TrimSpace(updated.SupersededByMediaID)
+		supersededByOut = &v
+	}
+	return &model.EditorialMediaLifecyclePayload{
+		MediaID:             updated.MediaID,
+		Lifecycle:           payloadLifecycle,
+		SupersededByMediaID: supersededByOut,
+	}, nil
+}

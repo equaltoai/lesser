@@ -16,6 +16,7 @@ type memArticleServiceWithErrors struct {
 	base      *memArticleService
 	getErr    error
 	updateErr error
+	createErr error
 }
 
 func (s *memArticleServiceWithErrors) GetArticle(ctx context.Context, articleID string) (*models.Article, error) {
@@ -30,6 +31,9 @@ func (s *memArticleServiceWithErrors) GetArticleBySlug(ctx context.Context, slug
 }
 
 func (s *memArticleServiceWithErrors) CreateArticle(ctx context.Context, article *models.Article) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
 	return s.base.CreateArticle(ctx, article)
 }
 
@@ -317,7 +321,7 @@ func TestDraftServicePublishDraftCreateNewArticle_DeleteDraftFailurePublishesDra
 
 	now := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	objectID := "https://example.com/objects/new"
-	article, err := svc.publishDraftCreateNewArticle(context.Background(), draft.AuthorID, draft.ID, "example.com", objectID, "hello-world", draft, now, "")
+	article, err := svc.publishDraftCreateNewArticle(context.Background(), draft.AuthorID, draft.ID, "example.com", objectID, "hello-world", draft, now, "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, article)
 	require.Equal(t, objectID, article.ID)
