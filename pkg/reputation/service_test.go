@@ -106,6 +106,7 @@ func (s *serviceTestStorage) StreamingConnection() interfaces.StreamingConnectio
 }
 func (s *serviceTestStorage) Article() interfaces.ArticleRepository                     { return nil }
 func (s *serviceTestStorage) Draft() interfaces.DraftRepository                         { return nil }
+func (s *serviceTestStorage) UploadGrant() interfaces.UploadGrantRepository             { return nil }
 func (s *serviceTestStorage) Revision() interfaces.RevisionRepository                   { return nil }
 func (s *serviceTestStorage) Series() interfaces.SeriesRepository                       { return nil }
 func (s *serviceTestStorage) Category() interfaces.CategoryRepository                   { return nil }

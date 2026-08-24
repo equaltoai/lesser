@@ -40,6 +40,17 @@ func (f *fakeMediaS3API) PutObject(
 	return &s3.PutObjectOutput{}, nil
 }
 
+func (f *fakeMediaS3API) GetObject(
+	_ context.Context,
+	input *s3.GetObjectInput,
+	_ ...func(*s3.Options),
+) (*s3.GetObjectOutput, error) {
+	return &s3.GetObjectOutput{
+		Body:        io.NopCloser(bytes.NewReader(f.putData)),
+		ContentType: aws.String("image/png"),
+	}, nil
+}
+
 func (f *fakeMediaS3API) DeleteObject(
 	_ context.Context,
 	_ *s3.DeleteObjectInput,
