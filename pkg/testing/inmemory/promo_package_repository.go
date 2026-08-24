@@ -105,6 +105,9 @@ func (r *PromoPackageRepository) updatePromoPackageContentLocked(ownerID string,
 		return apperrors.DynamoDBConditionalCheckFailed("promo package " + pkg.PackageID).
 			WithInternalError(storage.ErrVersionConflict)
 	}
+	if err := pkg.UpdateKeys(); err != nil {
+		return err
+	}
 	next := *pkg
 	next.Assets = append([]models.PromoPackageAsset(nil), pkg.Assets...)
 	next.ModelVersion = stored.ModelVersion + 1
@@ -112,6 +115,7 @@ func (r *PromoPackageRepository) updatePromoPackageContentLocked(ownerID string,
 		next.ModelVersion = 1
 	}
 	r.packages[promoPackageKey(ownerID, pkg.PackageID)] = &next
+	pkg.ModelVersion = next.ModelVersion
 	return nil
 }
 
@@ -136,6 +140,9 @@ func (r *PromoPackageRepository) markPromoPackageReleasedLocked(ownerID string, 
 		return apperrors.DynamoDBConditionalCheckFailed("promo package " + pkg.PackageID).
 			WithInternalError(storage.ErrVersionConflict)
 	}
+	if err := pkg.UpdateKeys(); err != nil {
+		return err
+	}
 	next := *stored
 	next.Status = pkg.Status
 	next.ReleasedStatusID = pkg.ReleasedStatusID
@@ -146,6 +153,7 @@ func (r *PromoPackageRepository) markPromoPackageReleasedLocked(ownerID string, 
 		next.ModelVersion = 1
 	}
 	r.packages[key] = &next
+	pkg.ModelVersion = next.ModelVersion
 	return nil
 }
 
@@ -230,6 +238,7 @@ func (r *PromoPackageRepository) RegrantPromoReviewGrant(_ context.Context, gran
 		return err
 	}
 	r.grants[key] = &next
+	grant.Version = next.Version
 	if !stringSliceContains(r.grantsByReviewer[grant.Reviewer], key) {
 		r.grantsByReviewer[grant.Reviewer] = append(r.grantsByReviewer[grant.Reviewer], key)
 	}
@@ -260,6 +269,7 @@ func (r *PromoPackageRepository) RevokePromoReviewGrant(_ context.Context, grant
 	next.GSI2PK = ""
 	next.GSI2SK = ""
 	r.grants[key] = &next
+	grant.Version = next.Version
 	r.grantsByReviewer[grant.Reviewer] = stringSliceRemove(r.grantsByReviewer[grant.Reviewer], key)
 	return nil
 }

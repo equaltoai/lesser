@@ -324,3 +324,50 @@ func TestPromoPackageRepositoryMissingPackageNotFound(t *testing.T) {
 	_, err = repo.GetPromoReviewGrant(ctx, "alice", "missing", "reviewer")
 	require.ErrorIs(t, err, storage.ErrNotFound)
 }
+
+func TestPromoPackageRepositoryListGrantsByPackageAndVerdictErrors(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := newPromoRecordingDB(t)
+
+	now := time.Now().UTC()
+	grant := &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", GrantedAt: now}
+	require.NoError(t, repo.CreatePromoReviewGrant(ctx, grant))
+	other := &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-2", Reviewer: "reviewer", GrantedAt: now}
+	require.NoError(t, repo.CreatePromoReviewGrant(ctx, other))
+
+	// Package-scoped grant listing excludes other packages.
+	grants, err := repo.ListPromoReviewGrants(ctx, "alice", "pkg-1")
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	require.Equal(t, "pkg-1", grants[0].PackageID)
+
+	// Duplicate grant creation conflicts.
+	err = repo.CreatePromoReviewGrant(ctx, grant)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeConflict))
+
+	// Missing required fields fail closed at key preparation.
+	err = repo.CreatePromoReviewGrant(ctx, &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-3"})
+	require.Error(t, err)
+	err = repo.CreatePromoReviewVerdict(ctx, &models.PromoReviewVerdict{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer"})
+	require.Error(t, err)
+
+	// Revoking a stale grant version conflicts.
+	stored, err := repo.GetPromoReviewGrant(ctx, "alice", "pkg-1", "reviewer")
+	require.NoError(t, err)
+	revokedAt := now.Add(time.Minute)
+	stale := &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", GrantedAt: now, RevokedAt: &revokedAt, Version: stored.Version + 7}
+	err = repo.RevokePromoReviewGrant(ctx, stale)
+	require.Error(t, err)
+
+	// A current revoke succeeds and the package-scoped list still returns the row.
+	current := &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", GrantedAt: now, RevokedAt: &revokedAt, Version: stored.Version}
+	require.NoError(t, repo.RevokePromoReviewGrant(ctx, current))
+	grants, err = repo.ListPromoReviewGrants(ctx, "alice", "pkg-1")
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	require.NotNil(t, grants[0].RevokedAt)
+
+	// Regrant of a revoked grant is refused (re-share creates a fresh grant).
+	err = repo.RegrantPromoReviewGrant(ctx, &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", GrantedAt: now, RevokedAt: &revokedAt})
+	require.Error(t, err)
+}

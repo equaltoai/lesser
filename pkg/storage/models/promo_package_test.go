@@ -215,3 +215,17 @@ func TestPromoReviewVerdictUpdateKeys(t *testing.T) {
 
 	require.ErrorContains(t, (&PromoReviewVerdict{PackageID: "pkg-1", Reviewer: "r", Verdict: PromoPackageReviewApproved}).UpdateKeys(), "ownerID")
 }
+
+func TestPromoPackageTableNameAndGrantExpiredEdges(t *testing.T) {
+	require.Equal(t, MainTableName, (PromoPackage{}).TableName())
+	require.Equal(t, MainTableName, (PromoReviewGrant{}).TableName())
+	require.Equal(t, MainTableName, (PromoReviewVerdict{}).TableName())
+
+	now := time.Now().UTC()
+	revoked := now.Add(time.Minute)
+	g := &PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "r", GrantedAt: now, RevokedAt: &revoked}
+	require.False(t, g.Expired(now), "a revoked grant is not classified as expired")
+
+	g2 := &PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "r", GrantedAt: now}
+	require.True(t, g2.Expired(now), "a grant without expiry is expired (fail-closed)")
+}
