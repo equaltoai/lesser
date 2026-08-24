@@ -119,6 +119,58 @@ func (r *PromoPackageRepository) updatePromoPackageContentLocked(ownerID string,
 	return nil
 }
 
+// MarkPromoPackageReleasing reserves the release transition (draft -> releasing)
+// via a version-conditioned field-scoped write, mirroring the production lane:
+// exactly one concurrent releaser wins; every loser conflicts BEFORE any post
+// exists.
+func (r *PromoPackageRepository) MarkPromoPackageReleasing(_ context.Context, ownerID string, pkg *models.PromoPackage) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.markPromoPackageReleasingLocked(ownerID, pkg)
+}
+
+func (r *PromoPackageRepository) markPromoPackageReleasingLocked(ownerID string, pkg *models.PromoPackage) error {
+	return r.writePromoPackageStatusLocked(ownerID, pkg)
+}
+
+// RevertPromoPackageReleasing rolls a reserved release back to draft via the
+// same version-conditioned lane, writing only the status and timestamp.
+func (r *PromoPackageRepository) RevertPromoPackageReleasing(_ context.Context, ownerID string, pkg *models.PromoPackage) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.writePromoPackageStatusLocked(ownerID, pkg)
+}
+
+// writePromoPackageStatusLocked applies a status-only field-scoped write with
+// the same version-conditioned CAS as the content and released writers.
+func (r *PromoPackageRepository) writePromoPackageStatusLocked(ownerID string, pkg *models.PromoPackage) error {
+	if pkg == nil || strings.TrimSpace(ownerID) == "" || strings.TrimSpace(pkg.OwnerID) != strings.TrimSpace(ownerID) {
+		return storage.ErrInvalidInput
+	}
+	key := promoPackageKey(ownerID, pkg.PackageID)
+	stored, exists := r.packages[key]
+	if !exists {
+		return storage.ErrNotFound
+	}
+	if stored.ModelVersion != pkg.ModelVersion {
+		return apperrors.DynamoDBConditionalCheckFailed("promo package " + pkg.PackageID).
+			WithInternalError(storage.ErrVersionConflict)
+	}
+	if err := pkg.UpdateKeys(); err != nil {
+		return err
+	}
+	next := *stored
+	next.Status = pkg.Status
+	next.UpdatedAt = pkg.UpdatedAt
+	next.ModelVersion = stored.ModelVersion + 1
+	if next.ModelVersion <= 0 {
+		next.ModelVersion = 1
+	}
+	r.packages[key] = &next
+	pkg.ModelVersion = next.ModelVersion
+	return nil
+}
+
 // MarkPromoPackageReleased stamps the outbound Status via a version-conditioned
 // field-scoped write.
 func (r *PromoPackageRepository) MarkPromoPackageReleased(_ context.Context, ownerID string, pkg *models.PromoPackage) error {

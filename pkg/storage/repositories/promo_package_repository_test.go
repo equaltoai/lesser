@@ -424,3 +424,81 @@ func TestPromoPackageRepositoryInputGuardBranches(t *testing.T) {
 	err = repo.CreatePromoReviewVerdict(ctx, &models.PromoReviewVerdict{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", Verdict: models.PromoPackageReviewApproved})
 	require.NoError(t, err, "verdict with defaults still derives keys")
 }
+
+func TestPromoPackageRepositoryReleaseReservationLane(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := newPromoRecordingDB(t)
+
+	pkg := promoFixture("pkg-1", "alice")
+	require.NoError(t, repo.CreatePromoPackage(ctx, pkg))
+
+	// Reserve: draft -> releasing on the version-conditioned lane (v0 -> v1).
+	reserving := promoFixture("pkg-1", "alice")
+	reserving.Status = models.PromoPackageStatusReleasing
+	reserving.UpdatedAt = time.Now().UTC()
+	require.NoError(t, repo.MarkPromoPackageReleasing(ctx, "alice", reserving))
+	require.Equal(t, 1, reserving.ModelVersion)
+
+	// A concurrent reservation with the stale version must conflict BEFORE any
+	// post exists.
+	stale := promoFixture("pkg-1", "alice")
+	stale.Status = models.PromoPackageStatusReleasing
+	err := repo.MarkPromoPackageReleasing(ctx, "alice", stale)
+	require.ErrorIs(t, err, storage.ErrVersionConflict)
+
+	// Finalize: releasing -> released on the post-reservation version (v1 -> v2).
+	now := time.Now().UTC()
+	released := reserving
+	released.Status = models.PromoPackageStatusReleased
+	released.ReleasedStatusID = "status-1"
+	released.ReleasedAt = &now
+	released.UpdatedAt = now
+	require.NoError(t, repo.MarkPromoPackageReleased(ctx, "alice", released))
+	require.Equal(t, 2, released.ModelVersion)
+
+	persisted, err := repo.GetPromoPackage(ctx, "alice", "pkg-1")
+	require.NoError(t, err)
+	require.True(t, persisted.IsReleased())
+	require.Equal(t, "status-1", persisted.ReleasedStatusID)
+	require.Equal(t, 2, persisted.ModelVersion)
+}
+
+func TestPromoPackageRepositoryRevertReleasingReturnsToDraft(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := newPromoRecordingDB(t)
+
+	pkg := promoFixture("pkg-1", "alice")
+	require.NoError(t, repo.CreatePromoPackage(ctx, pkg))
+
+	reserving := promoFixture("pkg-1", "alice")
+	reserving.Status = models.PromoPackageStatusReleasing
+	reserving.UpdatedAt = time.Now().UTC()
+	require.NoError(t, repo.MarkPromoPackageReleasing(ctx, "alice", reserving))
+	require.Equal(t, models.PromoPackageStatusReleasing, reserving.Status)
+	require.Equal(t, 1, reserving.ModelVersion)
+
+	// Roll back on the post-reservation version: releasing -> draft (v1 -> v2).
+	rollback := reserving
+	rollback.Status = models.PromoPackageStatusDraft
+	rollback.UpdatedAt = time.Now().UTC()
+	require.NoError(t, repo.RevertPromoPackageReleasing(ctx, "alice", rollback))
+	require.Equal(t, 2, rollback.ModelVersion)
+
+	persisted, err := repo.GetPromoPackage(ctx, "alice", "pkg-1")
+	require.NoError(t, err)
+	require.Equal(t, models.PromoPackageStatusDraft, persisted.Status, "the rollback returns the package to draft")
+	require.False(t, persisted.IsReleased())
+	require.Equal(t, 2, persisted.ModelVersion)
+
+	// A stale rollback (pre-reservation version) must conflict.
+	staleRollback := promoFixture("pkg-1", "alice")
+	staleRollback.Status = models.PromoPackageStatusDraft
+	err = repo.RevertPromoPackageReleasing(ctx, "alice", staleRollback)
+	require.ErrorIs(t, err, storage.ErrVersionConflict)
+
+	// Owner validation applies to the new writers.
+	notOwner := promoFixture("pkg-1", "mallory")
+	notOwner.Status = models.PromoPackageStatusReleasing
+	require.ErrorContains(t, repo.MarkPromoPackageReleasing(ctx, "alice", notOwner), "does not match promo package owner")
+	require.ErrorContains(t, repo.RevertPromoPackageReleasing(ctx, "alice", notOwner), "does not match promo package owner")
+}

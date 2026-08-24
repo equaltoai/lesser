@@ -148,6 +148,91 @@ func (r *PromoPackageRepository) UpdatePromoPackageContent(ctx context.Context, 
 	return nil
 }
 
+// MarkPromoPackageReleasing reserves the release transition before any outbound
+// Status is created: the status moves draft -> releasing through the same
+// version-conditioned field-scoped lane, and exactly one concurrent releaser
+// wins the reservation (every loser conflicts BEFORE a post exists). The
+// release then creates the post and finalizes to released; on post-creation
+// failure the winner rolls back releasing -> draft with RevertPromoPackageReleasing.
+func (r *PromoPackageRepository) MarkPromoPackageReleasing(ctx context.Context, ownerID string, pkg *models.PromoPackage) error {
+	if err := validatePromoPackageOwner(ownerID, pkg); err != nil {
+		return err
+	}
+	if err := pkg.UpdateKeys(); err != nil {
+		return err
+	}
+
+	nextVersion := pkg.ModelVersion + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
+	builder := r.db.WithContext(ctx).
+		Model(pkg).
+		Where("PK", "=", pkg.PK).
+		Where("SK", "=", pkg.SK).
+		UpdateBuilder()
+	builder.Set("Status", pkg.Status)
+	builder.Set("UpdatedAt", pkg.UpdatedAt.UTC())
+	// Same migration-safe CAS and ExecuteWithResult requirement as the content
+	// writer (see UpdatePromoPackageContent).
+	builder.ConditionExists("PK")
+	builder.ConditionNotExists("ModelVersion")
+	builder.OrCondition("ModelVersion", "=", pkg.ModelVersion)
+	builder.Set("ModelVersion", nextVersion)
+	var updated models.PromoPackage
+	if err := builder.ExecuteWithResult(&updated); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.DynamoDBConditionalCheckFailed("promo package " + pkg.PackageID).
+				WithInternalError(errors.Join(err, storage.ErrVersionConflict))
+		}
+		return ErrorHandler.HandleUpdateError(err, "promo package", pkg.PackageID)
+	}
+	pkg.ModelVersion = nextVersion
+	return nil
+}
+
+// RevertPromoPackageReleasing rolls a reserved release back to draft through
+// the same version-conditioned lane. It writes only the status and the update
+// timestamp (never the content or a released stamp), so only the reservation
+// winner (who alone holds the post-reservation version) can roll back; a
+// concurrent content write cannot be clobbered by the rollback.
+func (r *PromoPackageRepository) RevertPromoPackageReleasing(ctx context.Context, ownerID string, pkg *models.PromoPackage) error {
+	if err := validatePromoPackageOwner(ownerID, pkg); err != nil {
+		return err
+	}
+	if err := pkg.UpdateKeys(); err != nil {
+		return err
+	}
+
+	nextVersion := pkg.ModelVersion + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
+	builder := r.db.WithContext(ctx).
+		Model(pkg).
+		Where("PK", "=", pkg.PK).
+		Where("SK", "=", pkg.SK).
+		UpdateBuilder()
+	builder.Set("Status", pkg.Status)
+	builder.Set("UpdatedAt", pkg.UpdatedAt.UTC())
+	// Same migration-safe CAS and ExecuteWithResult requirement as the content
+	// writer (see UpdatePromoPackageContent).
+	builder.ConditionExists("PK")
+	builder.ConditionNotExists("ModelVersion")
+	builder.OrCondition("ModelVersion", "=", pkg.ModelVersion)
+	builder.Set("ModelVersion", nextVersion)
+	var updated models.PromoPackage
+	if err := builder.ExecuteWithResult(&updated); err != nil {
+		if dynamormerrors.IsConditionFailed(err) {
+			return apperrors.DynamoDBConditionalCheckFailed("promo package " + pkg.PackageID).
+				WithInternalError(errors.Join(err, storage.ErrVersionConflict))
+		}
+		return ErrorHandler.HandleUpdateError(err, "promo package", pkg.PackageID)
+	}
+	pkg.ModelVersion = nextVersion
+	return nil
+}
+
 // MarkPromoPackageReleased stamps the outbound Status created by the release
 // transition via a version-conditioned field-scoped write. The stamp blocks
 // re-release; the CAS closes the double-release race.

@@ -32,6 +32,17 @@ type PromoPackageRepository interface {
 	// field-scoped write; the stamp blocks re-release.
 	MarkPromoPackageReleased(ctx context.Context, ownerID string, pkg *models.PromoPackage) error
 
+	// MarkPromoPackageReleasing reserves the release transition with a
+	// version-conditioned field-scoped write (status -> releasing, no outbound
+	// Status yet). Exactly one concurrent releaser wins the reservation; every
+	// other releaser receives a conflict BEFORE any post exists.
+	MarkPromoPackageReleasing(ctx context.Context, ownerID string, pkg *models.PromoPackage) error
+
+	// RevertPromoPackageReleasing rolls a reserved release back to draft
+	// (status -> draft) via the same version-conditioned lane, used when the
+	// outbound Status creation failed before any post existed.
+	RevertPromoPackageReleasing(ctx context.Context, ownerID string, pkg *models.PromoPackage) error
+
 	// ListPromoPackages lists one owner's packages, paginated by SK cursors.
 	ListPromoPackages(ctx context.Context, ownerID string, limit int, cursor string) ([]*models.PromoPackage, string, error)
 

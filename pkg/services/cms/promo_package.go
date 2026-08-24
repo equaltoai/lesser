@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // Promo package blocking reasons exposed through the review state surface,
@@ -29,6 +30,7 @@ const (
 	PromoPackageReviewReasonAssetNotPublished = "ASSET_NOT_PUBLISHED"
 	PromoPackageReviewReasonAssetDigestChange = "ASSET_DIGEST_CHANGED"
 	PromoPackageReviewReasonReleased          = "PACKAGE_RELEASED"
+	PromoPackageReviewReasonReleasing         = "PACKAGE_RELEASING"
 
 	// maxPromoPostTextBytes mirrors the notes service content limit so a
 	// reviewed package can always be released as composed.
@@ -65,6 +67,12 @@ var (
 	// longer matches the stored package: the owner recomposed after the reviewer
 	// inspected the package, so the verdict must not bless unseen content.
 	ErrPromoPackageReviewContentChanged = errors.New("promo package content changed since the reviewer inspected it")
+	// ErrPromoPackageReleaseInProgress means the package holds the transient
+	// releasing reservation (a previous release reserved it but never stamped
+	// an outbound Status, or is mid-flight). Release and composition are
+	// refused until an operator reconciles the reservation; the reservation
+	// guarantees the loser of a concurrent release never creates a post.
+	ErrPromoPackageReleaseInProgress = errors.New("promo package release is already in progress")
 
 	errPromoReviewStorageUnavailable = errors.New("promo package review storage is not available")
 )
@@ -118,11 +126,30 @@ type PromoPackageRelease struct {
 	StatusURL        string
 }
 
+// PromoPackageStampError surfaces a release whose outbound Status WAS created
+// but could not be stamped onto the package (the final releasing -> released
+// write failed). The caller must NOT blindly retry — a retry would create a
+// second post — so the created status ID is carried for operator
+// reconciliation. The package stays in the transient releasing reservation,
+// which blocks further release attempts until it is reconciled.
+type PromoPackageStampError struct {
+	ReleasedStatusID string
+	Err              error
+}
+
+func (e *PromoPackageStampError) Error() string {
+	return fmt.Sprintf("promo package release created status %s but could not stamp it: %v", e.ReleasedStatusID, e.Err)
+}
+
+func (e *PromoPackageStampError) Unwrap() error { return e.Err }
+
 type promoPackageRepository interface {
 	CreatePromoPackage(context.Context, *models.PromoPackage) error
 	GetPromoPackage(context.Context, string, string) (*models.PromoPackage, error)
 	UpdatePromoPackageContent(context.Context, string, *models.PromoPackage) error
 	MarkPromoPackageReleased(context.Context, string, *models.PromoPackage) error
+	MarkPromoPackageReleasing(context.Context, string, *models.PromoPackage) error
+	RevertPromoPackageReleasing(context.Context, string, *models.PromoPackage) error
 	ListPromoPackages(context.Context, string, int, string) ([]*models.PromoPackage, string, error)
 	CreatePromoReviewGrant(context.Context, *models.PromoReviewGrant) error
 	RegrantPromoReviewGrant(context.Context, *models.PromoReviewGrant) error
@@ -201,6 +228,9 @@ func (s *DraftService) ComposePromoPackage(ctx context.Context, owner string, in
 	}
 	if existing.IsReleased() {
 		return nil, ErrPromoPackageAlreadyReleased
+	}
+	if existing.IsReleasing() {
+		return nil, ErrPromoPackageReleaseInProgress
 	}
 	pkg.PackageID = packageID
 	pkg.OwnerID = owner
@@ -598,7 +628,7 @@ type promoReviewApprovalState struct {
 	// holders of an active grant plus every reviewer who EVER recorded a
 	// verdict — revocation or expiry cannot delete a required approval
 	// (operator doctrine, "requested = required").
-	required map[string]*models.PromoReviewGrant
+	required     map[string]*models.PromoReviewGrant
 	latest       map[string]*models.PromoReviewVerdict
 	contentHash  string
 	resolved     []PromoPackageResolvedAsset
@@ -664,6 +694,9 @@ func (s *DraftService) PromoPackageReviewState(ctx context.Context, owner, packa
 	blockingReasons := make([]string, 0, 8)
 	if pkg.IsReleased() {
 		blockingReasons = append(blockingReasons, PromoPackageReviewReasonReleased)
+	}
+	if pkg.IsReleasing() {
+		blockingReasons = append(blockingReasons, PromoPackageReviewReasonReleasing)
 	}
 	if !reviewersApproved {
 		blockingReasons = append(blockingReasons, PromoPackageReviewReasonApprovalRequired)
@@ -878,12 +911,18 @@ func promoDisclosureForPackage(principal string, aiOrigin bool) *activitypub.Age
 // required approval — and the instance principal holds a current approval for
 // any non-principal release, regardless of asset provenance) must be current
 // for the exact reviewed content, and every bound asset must still be in the
-// PUBLISHED durable state carrying the digest bound at review time. The
-// outbound Status is then created with the exact approved assets attached
-// (reusing the M2 published serving, no re-upload) and AI-authorship disclosure
-// intact; the release stamps the created Status on the package and creates
-// nothing else (no boosts, likes, or synthetic engagement). A released package
-// cannot release again.
+// PUBLISHED durable state carrying the digest bound at review time. The release
+// transition reserves the package FIRST (draft -> releasing through a
+// version-conditioned write, so a concurrent double-release has exactly one
+// winner and every loser conflicts before any post exists), then creates the
+// outbound Status with the exact approved assets attached (reusing the M2
+// published serving, no re-upload) and AI-authorship disclosure intact, then
+// finalizes releasing -> released recording the created Status. On post-creation
+// failure the reservation is rolled back to draft (same CAS lane); on finalize
+// failure the created Status ID is surfaced via PromoPackageStampError so the
+// caller cannot blindly retry into a second post. The release creates the post
+// and nothing else (no boosts, likes, or synthetic engagement). A released
+// package cannot release again.
 func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID string) (*PromoPackageRelease, error) {
 	owner = strings.TrimSpace(owner)
 	packageID = strings.TrimSpace(packageID)
@@ -900,6 +939,13 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 	}
 	if pkg.IsReleased() {
 		return nil, ErrPromoPackageAlreadyReleased
+	}
+	if pkg.IsReleasing() {
+		// A previous release reserved the transition but never stamped an
+		// outbound Status (crash between reservation and stamp). Releasing
+		// again would risk a duplicate post; an operator must reconcile the
+		// reservation.
+		return nil, ErrPromoPackageReleaseInProgress
 	}
 	approved, principalApproved, approval, err := s.promoReviewGateApprovals(ctx, owner, owner, packageID, pkg)
 	if err != nil {
@@ -932,6 +978,40 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 			return nil, errors.New("domain is required to release promo packages")
 		}
 	}
+
+	// Reserve the release transition FIRST, before any outbound Status exists.
+	// The version-conditioned reservation means exactly one concurrent releaser
+	// wins; every loser conflicts here — before a post can be created — instead
+	// of racing a plain read and both creating public posts (the CAS on the
+	// final stamp alone could not prevent the loser's post from going live).
+	now := time.Now().UTC()
+	reserving := *pkg
+	reserving.Status = models.PromoPackageStatusReleasing
+	reserving.UpdatedAt = now
+	if err := repo.MarkPromoPackageReleasing(ctx, owner, &reserving); err != nil {
+		if apperrors.HasCode(err, apperrors.CodeConflict) || errors.Is(err, storage.ErrVersionConflict) {
+			return nil, errors.Join(ErrPromoPackageConflict, err)
+		}
+		return nil, err
+	}
+
+	rollbackReleasing := func() {
+		// Best-effort rollback on the same version-conditioned lane: only the
+		// reservation winner holds the post-reservation version, so only it can
+		// return the package to draft. The post was never created, so there is
+		// nothing live to retract; a rollback conflict leaves the package in the
+		// releasing reservation, which blocks future release attempts (safe).
+		rollback := reserving
+		rollback.Status = models.PromoPackageStatusDraft
+		rollback.UpdatedAt = time.Now().UTC()
+		if rbErr := repo.RevertPromoPackageReleasing(ctx, owner, &rollback); rbErr != nil {
+			if s.logger != nil {
+				s.logger.Warn("promo release rollback failed; package left in releasing reservation",
+					zap.String("owner_id", owner), zap.String("package_id", packageID), zap.Error(rbErr))
+			}
+		}
+	}
+
 	result, err := s.promoStatusCreator.CreatePromoNote(ctx, &notes.CreateNoteCommand{
 		AuthorID:         owner,
 		Content:          pkg.PostText,
@@ -939,22 +1019,26 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 		AgentAttribution: promoDisclosureForPackage(common.GenerateActorID(s.domain, principal), approval.aiOrigin),
 	}, refs)
 	if err != nil {
+		rollbackReleasing()
 		return nil, err
 	}
 	if result == nil || result.Note == nil {
+		rollbackReleasing()
 		return nil, errors.New("promo release created no status")
 	}
 
-	now := time.Now().UTC()
-	pkg.Status = models.PromoPackageStatusReleased
-	pkg.ReleasedStatusID = result.Note.StatusID
-	pkg.ReleasedAt = &now
-	pkg.UpdatedAt = now
-	if err := repo.MarkPromoPackageReleased(ctx, owner, pkg); err != nil {
-		if apperrors.HasCode(err, apperrors.CodeConflict) || errors.Is(err, storage.ErrVersionConflict) {
-			return nil, errors.Join(ErrPromoPackageConflict, err)
-		}
-		return nil, err
+	stampTime := time.Now().UTC()
+	released := reserving
+	released.Status = models.PromoPackageStatusReleased
+	released.ReleasedStatusID = result.Note.StatusID
+	released.ReleasedAt = &stampTime
+	released.UpdatedAt = stampTime
+	if err := repo.MarkPromoPackageReleased(ctx, owner, &released); err != nil {
+		// The post IS live but the package could not be stamped. Surface the
+		// created status ID so the caller cannot blindly retry (a retry would
+		// create a second post); the package stays in the releasing reservation,
+		// which blocks further release attempts until an operator reconciles.
+		return nil, &PromoPackageStampError{ReleasedStatusID: result.Note.StatusID, Err: err}
 	}
 
 	statusURL := ""
@@ -962,7 +1046,7 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 		statusURL = result.Note.Note.ID
 	}
 	return &PromoPackageRelease{
-		Package:          pkg,
+		Package:          &released,
 		ReleasedStatusID: result.Note.StatusID,
 		StatusURL:        statusURL,
 	}, nil

@@ -2,8 +2,10 @@ package cms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,12 +44,15 @@ func publishedPromoMedia(id, owner, digest string, origin models.EditorialMediaO
 }
 
 type recordingPromoStatusCreator struct {
+	mu       sync.Mutex
 	commands []*notes.CreateNoteCommand
 	refSets  [][]notes.PromoPublishedMediaRef
 	err      error
 }
 
 func (r *recordingPromoStatusCreator) CreatePromoNote(_ context.Context, cmd *notes.CreateNoteCommand, refs []notes.PromoPublishedMediaRef) (*notes.NoteResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.commands = append(r.commands, cmd)
 	r.refSets = append(r.refSets, refs)
 	if r.err != nil {
@@ -647,4 +652,143 @@ func TestPromoDoctrine_RevokedGrantCannotDeleteRequiredApproval(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, release.ReleasedStatusID)
 	require.Len(t, creator.commands, 1)
+}
+
+// failingStampPromoRepo wraps the in-memory promo repository and injects a
+// finalize failure so the release flow's stamp-error path can be exercised.
+type failingStampPromoRepo struct {
+	*testinginmemory.PromoPackageRepository
+	failStamp bool
+}
+
+func (f *failingStampPromoRepo) MarkPromoPackageReleased(ctx context.Context, ownerID string, pkg *models.PromoPackage) error {
+	if f.failStamp {
+		return errors.New("stamp boom")
+	}
+	return f.PromoPackageRepository.MarkPromoPackageReleased(ctx, ownerID, pkg)
+}
+
+// TestPromoConcurrentDoubleReleaseCreatesExactlyOnePost pins F1: two concurrent
+// releases of the same package must create exactly one outbound post. The
+// version-conditioned releasing reservation is won by exactly one releaser; the
+// loser conflicts (or observes the completed release) BEFORE any post exists.
+// The race runs many times to exercise both loser paths.
+func TestPromoConcurrentDoubleReleaseCreatesExactlyOnePost(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		ctx := context.Background()
+		svc, _, media, creator := promoServiceHarness(t)
+		digest := promoDigest(fmt.Sprintf("a%d", i))
+		media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+		pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+		require.NoError(t, err)
+		for _, reviewer := range []string{"reviewer", "principal"} {
+			_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, reviewer)
+			require.NoError(t, err)
+			_, err = svc.SubmitPromoPackageReview(ctx, reviewer, "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+			require.NoError(t, err)
+		}
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		results := make([]error, 2)
+		for g := 0; g < 2; g++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				<-start
+				_, results[idx] = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+			}(g)
+		}
+		close(start)
+		wg.Wait()
+
+		successes := 0
+		for _, res := range results {
+			if res == nil {
+				successes++
+			}
+		}
+		require.Equal(t, 1, successes, "exactly one concurrent releaser wins: %v", results)
+		require.Equal(t, 1, len(creator.commands), "exactly one post is created per package")
+		persisted, err := svc.promoRepo.GetPromoPackage(ctx, "alice", pkg.PackageID)
+		require.NoError(t, err)
+		require.True(t, persisted.IsReleased(), "the winning release stamps the package")
+	}
+}
+
+// TestPromoReleasePostCreationFailureRollsBackToDraft pins F1's rollback: when
+// the outbound Status creation fails, the reserved release is rolled back to
+// draft on the same CAS lane and no released stamp survives; a later release
+// can proceed cleanly.
+func TestPromoReleasePostCreationFailureRollsBackToDraft(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	digest := promoDigest("a5")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	for _, reviewer := range []string{"reviewer", "principal"} {
+		_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, reviewer)
+		require.NoError(t, err)
+		_, err = svc.SubmitPromoPackageReview(ctx, reviewer, "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+		require.NoError(t, err)
+	}
+	creator.err = errors.New("post creation boom")
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorContains(t, err, "post creation boom")
+
+	persisted, err := svc.promoRepo.GetPromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.Equal(t, models.PromoPackageStatusDraft, persisted.Status, "the failed release rolls back to draft")
+	require.Empty(t, persisted.ReleasedStatusID, "no released stamp survives a failed post creation")
+	require.False(t, persisted.IsReleased())
+	require.Equal(t, 2, persisted.ModelVersion, "reservation bump plus rollback bump on the same CAS lane")
+
+	// The package is releasable again once the creator recovers.
+	creator.err = nil
+	release, err := svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.NotEmpty(t, release.ReleasedStatusID)
+	require.Len(t, creator.commands, 2, "one failed attempt and one successful post")
+}
+
+// TestPromoReleaseFinalizeFailureSurfacesCreatedStatusID pins F1's finalize
+// failure: the post WAS created but the releasing -> released stamp failed, so
+// the created status ID is surfaced through PromoPackageStampError and a retry
+// is refused (the package holds the releasing reservation) instead of creating
+// a second post.
+func TestPromoReleaseFinalizeFailureSurfacesCreatedStatusID(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	repo := &failingStampPromoRepo{PromoPackageRepository: svc.promoRepo.(*testinginmemory.PromoPackageRepository)}
+	svc.SetPromoPackageRepository(repo)
+	digest := promoDigest("e7")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	for _, reviewer := range []string{"reviewer", "principal"} {
+		_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, reviewer)
+		require.NoError(t, err)
+		_, err = svc.SubmitPromoPackageReview(ctx, reviewer, "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+		require.NoError(t, err)
+	}
+
+	repo.failStamp = true
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.Error(t, err)
+	var stampErr *PromoPackageStampError
+	require.ErrorAs(t, err, &stampErr, "the stamp failure surfaces the created status ID")
+	require.NotEmpty(t, stampErr.ReleasedStatusID)
+	require.Equal(t, "status-1", stampErr.ReleasedStatusID, "the surfaced ID is the post that WAS created")
+	require.Len(t, creator.commands, 1, "the post exists before the stamp failed")
+
+	// A retry must NOT create a second post: the releasing reservation blocks
+	// release until an operator reconciles the stuck reservation.
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorIs(t, err, ErrPromoPackageReleaseInProgress)
+	require.Len(t, creator.commands, 1, "no second post on a blind retry")
+	persisted, err := svc.promoRepo.GetPromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.Equal(t, models.PromoPackageStatusReleasing, persisted.Status,
+		"the package stays in the releasing reservation for operator reconciliation")
 }

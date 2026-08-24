@@ -6666,18 +6666,23 @@ func (e PromoPackageReviewVerdict) MarshalJSON() ([]byte, error) {
 type PromoPackageStatus string
 
 const (
-	PromoPackageStatusDraft    PromoPackageStatus = "DRAFT"
-	PromoPackageStatusReleased PromoPackageStatus = "RELEASED"
+	PromoPackageStatusDraft PromoPackageStatus = "DRAFT"
+	// Transient release reservation: the package is mid-release (or a release
+	//   crashed between reservation and stamp); release and composition are refused
+	//   until an operator reconciles the reservation.
+	PromoPackageStatusReleasing PromoPackageStatus = "RELEASING"
+	PromoPackageStatusReleased  PromoPackageStatus = "RELEASED"
 )
 
 var AllPromoPackageStatus = []PromoPackageStatus{
 	PromoPackageStatusDraft,
+	PromoPackageStatusReleasing,
 	PromoPackageStatusReleased,
 }
 
 func (e PromoPackageStatus) IsValid() bool {
 	switch e {
-	case PromoPackageStatusDraft, PromoPackageStatusReleased:
+	case PromoPackageStatusDraft, PromoPackageStatusReleasing, PromoPackageStatusReleased:
 		return true
 	}
 	return false

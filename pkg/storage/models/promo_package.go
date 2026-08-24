@@ -12,10 +12,15 @@ import (
 
 // Promo package status values. A package is composed in DRAFT and moves to
 // RELEASED exactly once when the release transition stamps the created outbound
-// Status ID; re-release of a released package is refused.
+// Status ID; re-release of a released package is refused. RELEASING is the
+// transient pre-stamp state held between the version-conditioned release
+// reservation and the final released stamp; a crash left in RELEASING has no
+// outbound post and requires operator reconciliation (release is refused while
+// it is held).
 const (
-	PromoPackageStatusDraft    = "draft"
-	PromoPackageStatusReleased = "released"
+	PromoPackageStatusDraft     = "draft"
+	PromoPackageStatusReleasing = "releasing"
+	PromoPackageStatusReleased  = "released"
 )
 
 // Promo package visibility values. Issue #1446 scopes promo attachment to
@@ -145,6 +150,14 @@ func (p *PromoPackage) GetSK() string { return p.SK }
 func (p *PromoPackage) IsReleased() bool {
 	return p != nil && strings.TrimSpace(p.ReleasedStatusID) != "" &&
 		strings.EqualFold(strings.TrimSpace(p.Status), PromoPackageStatusReleased)
+}
+
+// IsReleasing reports whether the package is mid-release: the version-
+// conditioned release reservation was won but the outbound Status has not been
+// stamped yet (or the process crashed between reservation and stamp). Release
+// and composition are refused while this transient state is held.
+func (p *PromoPackage) IsReleasing() bool {
+	return p != nil && strings.EqualFold(strings.TrimSpace(p.Status), PromoPackageStatusReleasing)
 }
 
 // NormalizePromoPackageVisibility canonicalizes the intended outbound

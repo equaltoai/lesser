@@ -732,6 +732,10 @@ enum PromoPackageVisibility {
 
 enum PromoPackageStatus {
   DRAFT
+  """Transient release reservation: the package is mid-release (or a release
+  crashed between reservation and stamp); release and composition are refused
+  until an operator reconciles the reservation."""
+  RELEASING
   RELEASED
 }
 

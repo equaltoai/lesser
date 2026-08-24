@@ -166,3 +166,47 @@ func TestInMemoryPromoReviewGrantsAndVerdicts(t *testing.T) {
 	require.Len(t, verdicts, 1)
 	require.Equal(t, models.PromoPackageReviewApproved, verdicts[0].Verdict)
 }
+
+func TestPromoPackageRepositoryReleaseReservationLane(t *testing.T) {
+	ctx := context.Background()
+	repo := NewPromoPackageRepository()
+
+	pkg := &models.PromoPackage{PackageID: "pkg-1", OwnerID: "alice", PostText: "hi", Visibility: models.PromoPackageVisibilityPublic, Status: models.PromoPackageStatusDraft, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	require.NoError(t, repo.CreatePromoPackage(ctx, pkg))
+
+	reserving := &models.PromoPackage{PackageID: "pkg-1", OwnerID: "alice", Status: models.PromoPackageStatusReleasing, UpdatedAt: time.Now().UTC()}
+	require.NoError(t, repo.MarkPromoPackageReleasing(ctx, "alice", reserving))
+	require.Equal(t, 1, reserving.ModelVersion)
+
+	// A stale concurrent reservation conflicts before any post exists.
+	stale := &models.PromoPackage{PackageID: "pkg-1", OwnerID: "alice", Status: models.PromoPackageStatusReleasing}
+	require.ErrorIs(t, repo.MarkPromoPackageReleasing(ctx, "alice", stale), storage.ErrVersionConflict)
+
+	// Rollback on the post-reservation version returns to draft.
+	rollback := reserving
+	rollback.Status = models.PromoPackageStatusDraft
+	rollback.UpdatedAt = time.Now().UTC()
+	require.NoError(t, repo.RevertPromoPackageReleasing(ctx, "alice", rollback))
+	got, err := repo.GetPromoPackage(ctx, "alice", "pkg-1")
+	require.NoError(t, err)
+	require.Equal(t, models.PromoPackageStatusDraft, got.Status)
+	require.Equal(t, 2, got.ModelVersion)
+
+	// Reserve again, then finalize to released on the same lane.
+	again := got
+	again.Status = models.PromoPackageStatusReleasing
+	again.UpdatedAt = time.Now().UTC()
+	require.NoError(t, repo.MarkPromoPackageReleasing(ctx, "alice", again))
+	now := time.Now().UTC()
+	released := again
+	released.Status = models.PromoPackageStatusReleased
+	released.ReleasedStatusID = "status-1"
+	released.ReleasedAt = &now
+	released.UpdatedAt = now
+	require.NoError(t, repo.MarkPromoPackageReleased(ctx, "alice", released))
+	persisted, err := repo.GetPromoPackage(ctx, "alice", "pkg-1")
+	require.NoError(t, err)
+	require.True(t, persisted.IsReleased())
+	require.Equal(t, "status-1", persisted.ReleasedStatusID)
+	require.Equal(t, 4, persisted.ModelVersion)
+}
