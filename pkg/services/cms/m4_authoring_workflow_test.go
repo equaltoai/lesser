@@ -84,6 +84,8 @@ func TestM4DraftPublishRejectsCanonicalArticleSlugChangeSafely(t *testing.T) {
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	draftSvc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-1",

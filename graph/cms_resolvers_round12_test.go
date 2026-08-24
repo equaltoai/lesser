@@ -24,9 +24,12 @@ import (
 )
 
 func TestRound12CMS_DraftLifecycle(t *testing.T) {
-	resolver, _ := newRound12GraphResolver(t)
+	resolver, storage := newRound12GraphResolver(t)
 
 	ctx := round12AuthContext("alice")
+	// The releasing owner is the instance principal, so the doctrine floor is
+	// implicit for the schedule/publish steps below.
+	require.NoError(t, storage.Instance().SetPrimaryAdminUsername(ctx, "alice"))
 
 	mut := resolver.Mutation()
 	qry := resolver.Query()

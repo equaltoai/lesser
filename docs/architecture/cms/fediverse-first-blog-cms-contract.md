@@ -218,7 +218,7 @@ sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
 draftReview(id: ID!): DraftReview
 shareDraftForReview(draftId: ID!, reviewer: String!): DraftReview!
 revokeDraftReview(draftId: ID!, reviewer: String!): Boolean!
-submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String): DraftReview!
+submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String, contentHash: String): DraftReview!
 ```
 
 `reviewer` is a local canonical account username, not an actor URL and never a
@@ -246,7 +246,13 @@ revocation takes effect immediately for queue, `draftReview`, preview, and
 verdict authorization. A reviewer may submit multiple ordered verdict rounds
 while their grant remains active. `APPROVED` and `CHANGES_REQUESTED` are the
 only M2a verdicts. The newest verdict is the current status, while immutable
-history remains available for audit and re-review.
+history remains available for audit and re-review. Every verdict is bound to
+the exact reviewed content hash; a submit that carries a non-empty
+`contentHash` (the hash the reviewer actually inspected) is rejected with a
+conflict when the stored draft no longer matches it, so a verdict can never
+bless content the reviewer did not see. An empty `contentHash` is the legacy
+no-constraint path kept for deployed consumers; new consumers should always
+carry the inspected hash.
 
 ### Persistence and server-side publication gate
 
@@ -267,12 +273,31 @@ private CMS record types unless a future processor explicitly opts in.
 On every verdict, the server records the reviewer and current structured status
 on the draft (`reviewedBy`, `reviewStatus`, `editorNotes`) and preserves the
 round in verdict history. Publishing copies this attribution to the target
-article/revision using the existing attribution path. If `generatedBy != null`,
-`publishDraft` and `scheduleDraft` must reject unless a non-revoked recorded
-`APPROVED` verdict exists; client/UI state never substitutes for that check. A
-subsequent `CHANGES_REQUESTED` verdict supersedes an earlier approval until a
-later approval is recorded. Human-authored drafts retain their current publish
-behavior.
+article/revision using the existing attribution path. The publish and schedule
+gates are governed by the **operator content doctrine** (2026-08-24, binding):
+
+> "No content shall be published by agents without principal approval;
+> additional approvals, once requested, are also required."
+
+1. **Requested = required.** `publishDraft` (including the scheduled-fire
+   publish), and `scheduleDraft` must reject unless every required reviewer
+   holds a current (non-revoked, hash-current) `APPROVED` verdict. Required
+   reviewers are holders of an active grant plus every reviewer who ever
+   recorded a verdict — revocation or expiry cannot delete a required approval.
+   A subsequent `CHANGES_REQUESTED` verdict supersedes an earlier approval
+   until a later approval is recorded.
+2. **Principal floor on the releaser.** If the releasing actor is NOT the
+   instance principal (`InstanceState.PrimaryAdminUsername`), a current
+   principal approval is required **regardless of `generatedBy`** — an agent
+   releasing human-written content is still an agent release. The principal
+   releasing themselves is the implicit approval (no extra step).
+3. Client/UI state never substitutes for these server-side checks.
+
+The doctrine matrix: principal releaser + zero ever-granted reviewers →
+allowed; principal releaser + granted reviewers → all required; non-principal
+releaser → principal required, plus all requested approvals. Until the
+applicable approvals are current, publish/schedule are blocked with explicit
+reasons (`REVIEW_APPROVAL_REQUIRED` / `PRINCIPAL_APPROVAL_REQUIRED`).
 
 ### Compatibility and consumer handoff
 
@@ -454,22 +479,27 @@ When M1-M4 ship, release notes should say:
 
 ### M2a operator clarification: approval gate
 
-The generated-draft gate is evaluated per reviewer: a reviewer's newest verdict
-while their grant is active is that reviewer's current verdict. At publish,
-schedule, and scheduled fire time, **every** active grant must have a current
-`APPROVED` verdict. Revoked grants are excluded from the required set
-immediately, while their verdict history remains audit-only. Re-granting a
-reviewer requires a verdict recorded after the refreshed grant.
+The doctrine gate is evaluated per reviewer: a reviewer's newest verdict while
+their grant is active is that reviewer's current verdict. At publish and
+schedule time, **every required reviewer** must hold a current `APPROVED`
+verdict for the exact reviewed content (hash-current). Required reviewers are
+holders of an active grant plus every reviewer who EVER recorded a verdict —
+revocation or expiry cannot delete a required approval (a dissenting reviewer
+cannot be revoked out of the requirement). Re-granting a reviewer requires a
+verdict recorded after the refreshed grant.
 
-In addition, a generated draft requires an active grant and current `APPROVED`
-verdict from the instance principal (`InstanceState.PrimaryAdminUsername`). A
-draft that does not grant that account fails closed; no other reviewer can
-substitute. Human-authored drafts with no active grants retain the vacuous
-existing gate.
+The principal floor keys on the RELEASING ACTOR, not on `generatedBy`: an
+active grant and current `APPROVED` verdict from the instance principal
+(`InstanceState.PrimaryAdminUsername`) are required for any release by a
+non-principal actor — including agent releases of human-written content. A
+draft whose release does not satisfy the floor fails closed; no other reviewer
+can substitute. Drafts with no grants and no verdicts released by the principal
+retain the vacuous existing gate: the principal's own release action is the
+implicit approval.
 
 The normal reviewer/owner separation remains mandatory. Where the instance
 principal is also the draft owner, the service permits that designated account
 alone to create and use an explicit self-grant through the same grant and
-verdict records; this narrowly defined principal-owner path is required to make
-principal approval possible and is not available to any other owner. It remains
-auditable as a grant and verdict, never as an implicit approval.
+verdict records; this narrowly defined principal-owner path remains available
+and auditable as a grant and verdict for the principal reviewer, and is not
+available to any other owner.

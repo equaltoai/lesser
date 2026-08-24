@@ -514,17 +514,17 @@ func TestDraftReviewGateHashesTheSnapshotBeingScheduledOrPublished(t *testing.T)
 func TestHumanDraftWithoutReviewersHasNoApprovalGateRead(t *testing.T) {
 	svc, repo := newReviewService(t)
 	ctx := context.Background()
-	draft, err := repo.GetDraft(ctx, "owner", "d1")
-	require.NoError(t, err)
-	draft.GeneratedBy = ""
-	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+	// The releasing owner is the instance principal, so the vacuous gate holds:
+	// a human draft with no reviewers schedules without any approval reads
+	// beyond the operation's own draft load.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "owner", nil })
 
 	repo.getDraftCalls = 0
 	require.NoError(t, svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour)))
 	require.Equal(t, 1, repo.getDraftCalls, "schedule must load the draft only once")
 }
 
-func TestHumanDraftWithoutReviewersSkipsApprovalDetailReads(t *testing.T) {
+func TestHumanDraftWithoutReviewersRemainsVacuouslyApproved(t *testing.T) {
 	svc, repo := newReviewService(t)
 	ctx := context.Background()
 	draft, err := repo.GetDraft(ctx, "owner", "d1")
@@ -532,19 +532,14 @@ func TestHumanDraftWithoutReviewersSkipsApprovalDetailReads(t *testing.T) {
 	draft.GeneratedBy = ""
 	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
 
-	repo.getDraftCalls = 0
 	repo.listGrantCalls = 0
 	repo.listVerdictCalls = 0
-	repo.afterGetDraft = func(int) {
-		panic("zero-grant approval must not reload the draft")
-	}
-
 	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
-	require.True(t, approved)
+	require.True(t, approved, "no grants and no verdicts leave the required set empty")
 	require.Equal(t, 1, repo.listGrantCalls)
-	require.Zero(t, repo.listVerdictCalls, "zero active grants make verdict history irrelevant")
-	require.Zero(t, repo.getDraftCalls, "zero active grants must return before loading draft content")
+	require.Equal(t, 1, repo.listVerdictCalls,
+		"the ever-verdict rule must always read verdict history: a revoked-grant reviewer is still required")
 }
 
 func TestDraftReviewApprovalStateRejectsLegacyHashlessVerdict(t *testing.T) {
@@ -567,7 +562,7 @@ func TestDraftReviewApprovalStateRejectsLegacyHashlessVerdict(t *testing.T) {
 	require.Contains(t, state.active, "reviewer")
 	require.NotContains(t, state.latest, "reviewer",
 		"a pre-migration verdict without a content hash must require re-review")
-	require.False(t, allActiveReviewersApproved(state))
+	require.False(t, allRequiredReviewersApproved(state))
 }
 
 func TestDraftReviewGateApprovalsAcceptsNilDraftSnapshot(t *testing.T) {
@@ -579,7 +574,7 @@ func TestDraftReviewGateApprovalsAcceptsNilDraftSnapshot(t *testing.T) {
 	require.NoError(t, err)
 
 	repo.getDraftCalls = 0
-	unanimous, principal, _, err := svc.draftReviewGateApprovals(ctx, "owner", "d1", nil)
+	unanimous, principal, _, err := svc.draftReviewGateApprovals(ctx, "owner", "owner", "d1", nil)
 	require.NoError(t, err)
 	require.True(t, unanimous)
 	require.True(t, principal)
@@ -692,14 +687,21 @@ func TestHumanDraftWithActiveReviewsRequiresUnanimousApproval(t *testing.T) {
 	require.NoError(t, err)
 
 	err = svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour))
-	require.ErrorContains(t, err, "every active reviewer", "a missing current verdict must block")
+	require.ErrorContains(t, err, "every required reviewer", "a missing current verdict must block")
 
 	_, err = svc.SubmitDraftReview(ctx, "reviewer-b", "owner", "d1", DraftReviewChangesRequested, "revise")
 	require.NoError(t, err)
 	_, err = svc.PublishDraft(ctx, "owner", "d1")
-	require.ErrorContains(t, err, "every active reviewer", "changes requested must block")
+	require.ErrorContains(t, err, "every required reviewer", "changes requested must block")
 
 	_, err = svc.SubmitDraftReview(ctx, "reviewer-b", "owner", "d1", DraftReviewApproved, "ready")
+	require.NoError(t, err)
+	// The releasing owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval even though the content is
+	// human-written (no GeneratedBy).
+	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "operator approval")
 	require.NoError(t, err)
 	require.NoError(t, svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour)))
 	article, err := svc.PublishDraft(ctx, "owner", "d1")

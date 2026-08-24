@@ -546,10 +546,15 @@ extend type Mutation {
   accessUrl (use draftEditorialMediaAccess for one exact asset read)."""
   shareDraftForReview(draftId: ID!, reviewer: String!, includeAccessUrls: Boolean = false): DraftReview!
   revokeDraftReview(draftId: ID!, reviewer: String!): Boolean!
-  """Record a review verdict. includeAccessUrls mints the per-usage short-lived
-  media read URLs on the returned review; without it the projection returns no
-  accessUrl (use draftEditorialMediaAccess for one exact asset read)."""
-  submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String, includeAccessUrls: Boolean = false): DraftReview!
+  """Record a review verdict. contentHash is the content hash the reviewer
+  actually inspected; it is NULLABLE for compatibility with deployed consumers
+  that submit without it (an empty value is the legacy no-constraint path) and,
+  when supplied, a mismatch (the owner edited after inspection) rejects the
+  submit with a conflict instead of blessing unseen content. includeAccessUrls
+  mints the per-usage short-lived media read URLs on the returned review;
+  without it the projection returns no accessUrl (use draftEditorialMediaAccess
+  for one exact asset read)."""
+  submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String, includeAccessUrls: Boolean = false, contentHash: String): DraftReview!
 
   # Article operations
   createArticle(input: CreateArticleInput!): Article!

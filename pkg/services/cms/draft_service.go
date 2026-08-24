@@ -370,7 +370,9 @@ func (s *DraftService) ScheduleDraft(ctx context.Context, authorID, draftID stri
 		return err
 	}
 
-	approved, principalApproved, approval, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
+	// The scheduling actor is the releaser; a non-principal releaser triggers
+	// the operator doctrine principal floor regardless of draft provenance.
+	approved, principalApproved, approval, approvalErr := s.draftReviewGateApprovals(ctx, authorID, authorID, draftID, draft)
 	if approvalErr != nil {
 		return approvalErr
 	}
@@ -420,7 +422,12 @@ func (s *DraftService) PublishDraftWithAttribution(ctx context.Context, authorID
 	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
 		return nil, stdErrors.New("only article drafts can be published")
 	}
-	approved, principalApproved, approval, approvalErr := s.draftReviewGateApprovals(ctx, authorID, draftID, draft)
+	// authorID is the releasing actor: the acting identity resolved by the
+	// resolver (the agent username under act-as, else the authenticated caller).
+	// A non-principal releaser triggers the operator doctrine principal floor
+	// regardless of draft provenance; actedBy carries the real-caller
+	// attribution for audit and never substitutes for the releaser.
+	approved, principalApproved, approval, approvalErr := s.draftReviewGateApprovals(ctx, authorID, authorID, draftID, draft)
 	if approvalErr != nil {
 		return nil, approvalErr
 	}

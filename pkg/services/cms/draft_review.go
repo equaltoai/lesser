@@ -43,8 +43,8 @@ const (
 // records. Metadata, autosave state, and timestamps do not reach the published
 // article and are intentionally excluded. GeneratedBy is also excluded because
 // cmsApplyDraftRequestAttribution in graph/mutation_resolvers_cms.go only sets
-// and never clears it; that invariant is load-bearing because GeneratedBy
-// enables the principal-approval gate.
+// and never clears it; it describes authorship, not reviewed content, so it
+// must never stale a verdict.
 func draftReviewContentHash(d *models.Draft, mediaDigests map[string]string) string {
 	h := sha256.New()
 	var length [8]byte
@@ -136,14 +136,29 @@ func DraftReviewContentHashWithMedia(d *models.Draft, mediaDigests map[string]st
 }
 
 var (
-	// ErrDraftReviewApprovalRequired means an active reviewer is missing a current approval.
-	ErrDraftReviewApprovalRequired = errors.New("draft requires approval from every active reviewer")
-	// ErrDraftReviewPrincipalApprovalRequired means the designated principal is missing a current approval.
-	ErrDraftReviewPrincipalApprovalRequired = errors.New("generated draft requires an active approval from the instance principal")
+	// ErrDraftReviewApprovalRequired means a required reviewer is missing a
+	// current approval for the exact reviewed content. Required reviewers are
+	// holders of an active grant plus every reviewer who ever recorded a verdict
+	// (operator doctrine, "requested = required").
+	ErrDraftReviewApprovalRequired = errors.New("draft requires approval from every required reviewer")
+	// ErrDraftReviewPrincipalApprovalRequired means the operator doctrine
+	// principal floor is unmet: the releasing actor is not the instance
+	// principal, and the principal does not hold a current approving verdict
+	// (regardless of draft provenance).
+	ErrDraftReviewPrincipalApprovalRequired = errors.New("draft release requires an active approval from the instance principal")
 	// ErrDraftReviewMediaRequired means a required bound asset cannot serve the
 	// exact approved bytes (missing, not ready, withdrawn, superseded, or
 	// unavailable). The wrapped message names the blocking reasons.
 	ErrDraftReviewMediaRequired = errors.New("draft requires its bound media to be ready and available")
+	// ErrDraftReviewConflict is the additive conflict signal surfaced when a
+	// review submit carries an expected content hash that no longer matches the
+	// stored draft; the caller re-reads and retries.
+	ErrDraftReviewConflict = errors.New("draft changed concurrently")
+	// ErrDraftReviewReviewContentChanged is the additive conflict signal surfaced
+	// when a review submit carries an expected content hash that no longer
+	// matches the stored draft: the owner edited after the reviewer inspected
+	// the draft, so the verdict must not bless unseen content.
+	ErrDraftReviewReviewContentChanged = errors.New("draft content changed since the reviewer inspected it")
 	// ErrInstancePrincipalUnavailable means the principal provider could not be used.
 	ErrInstancePrincipalUnavailable = errors.New("instance principal is unavailable")
 	// ErrInstancePrincipalNotConfigured means the provider returned no principal username.
@@ -271,7 +286,7 @@ func (s *DraftService) ShareDraftForReview(ctx context.Context, owner, draftID, 
 	}
 	if owner == reviewer {
 		principal, err := s.instancePrincipal(ctx)
-		if err != nil || principal != owner {
+		if err != nil || !sameAccount(principal, owner) {
 			return nil, errors.New("draft owner cannot review their own draft")
 		}
 	}
@@ -494,13 +509,21 @@ func (s *DraftService) BoundEditorialMediaForCaller(ctx context.Context, caller,
 	return nil, errors.New("editorial media is not bound to this draft")
 }
 
-// SubmitDraftReview records an immutable reviewer verdict.
-func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, draftID, verdict, notes string) (*models.DraftReviewVerdict, error) {
+// SubmitDraftReview records an immutable reviewer verdict bound to the exact
+// draft content hash. The caller MAY carry the expectedContentHash it actually
+// inspected: an empty value is the legacy no-constraint path (the draft surface
+// has deployed consumers that submit without a hash, so the argument defaults
+// to empty and the advisory binding is closed at the client contract rather
+// than the server). When a non-empty expected hash no longer matches the stored
+// draft (the owner edited between the reviewer's read and this submit), the
+// submit is rejected with a conflict signal instead of silently blessing unseen
+// content.
+func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, draftID, verdict, notes string, expectedContentHashes ...string) (*models.DraftReviewVerdict, error) {
 	caller = strings.TrimSpace(caller)
 	owner = strings.TrimSpace(owner)
 	if caller == owner {
 		principal, err := s.instancePrincipal(ctx)
-		if err != nil || principal != owner {
+		if err != nil || !sameAccount(principal, owner) {
 			return nil, errors.New("draft owner cannot review their own draft")
 		}
 	}
@@ -526,6 +549,13 @@ func (s *DraftService) SubmitDraftReview(ctx context.Context, caller, owner, dra
 	contentHash, err := s.draftContentHash(ctx, d)
 	if err != nil {
 		return nil, err
+	}
+	expectedContentHash := ""
+	if len(expectedContentHashes) > 0 {
+		expectedContentHash = strings.TrimSpace(expectedContentHashes[0])
+	}
+	if expectedContentHash != "" && expectedContentHash != contentHash {
+		return nil, errors.Join(ErrDraftReviewConflict, ErrDraftReviewReviewContentChanged)
 	}
 	v := &models.DraftReviewVerdict{
 		OwnerID:     owner,
@@ -572,7 +602,14 @@ func (s *DraftService) instancePrincipal(ctx context.Context) (string, error) {
 }
 
 type draftReviewApprovalState struct {
-	active       map[string]*models.DraftReviewGrant
+	// active maps every currently active grant (not revoked, not expired) to its
+	// grant record.
+	active map[string]*models.DraftReviewGrant
+	// required maps every reviewer whose approval the publish/schedule gate
+	// demands: holders of an active grant plus every reviewer who EVER recorded a
+	// verdict — revocation or expiry cannot delete a required approval
+	// (operator doctrine, "requested = required").
+	required     map[string]*models.DraftReviewGrant
 	latest       map[string]*models.DraftReviewVerdict
 	contentHash  string
 	mediaDigests map[string]string
@@ -635,18 +672,19 @@ func (s *DraftService) DraftReviewState(ctx context.Context, owner, draftID stri
 		return nil, err
 	}
 
-	reviewersApproved := allActiveReviewersApproved(approval)
-	principalRequired := strings.TrimSpace(draft.GeneratedBy) != ""
+	// The owner is the presumed releaser when rendering the read state; the
+	// doctrine answers are derived for that actor (a principal owner releases
+	// with implicit approval, a non-principal owner triggers the principal
+	// floor).
+	principal, principalErr := s.instancePrincipal(ctx)
+	principalUnavailable := principalErr != nil
 	principalApproved := false
-	principalUnavailable := false
-	if principalRequired {
-		principal, principalErr := s.instancePrincipal(ctx)
-		if principalErr != nil {
-			principalUnavailable = true
-		} else {
-			verdict := approval.latest[principal]
-			principalApproved = approval.active[principal] != nil && verdict != nil && verdict.Verdict == DraftReviewApproved
-		}
+	principalRequired := principalUnavailable || !sameAccount(owner, principal)
+	var reviewersApproved bool
+	if principalUnavailable {
+		reviewersApproved = allRequiredReviewersApproved(approval)
+	} else {
+		reviewersApproved, principalApproved = draftApprovalAnswers(approval, owner, principal)
 	}
 
 	blockingReasons := make([]string, 0, 4)
@@ -682,35 +720,9 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
-	active := make(map[string]*models.DraftReviewGrant, len(grants))
-	for _, grant := range grants {
-		if grant != nil && grant.IsActive(now) {
-			active[grant.Reviewer] = grant
-		}
-	}
-	if len(active) == 0 {
-		// Public approval helpers may not already have the draft snapshot. Fetch
-		// only when the caller supplied one: with no grants the approval answer
-		// is vacuously true and the hash is only relevant to read-state callers.
-		if draft == nil {
-			return &draftReviewApprovalState{active: active, latest: map[string]*models.DraftReviewVerdict{}}, nil
-		}
-		digests, reasons, resolveErr := s.resolveDraftMediaBindings(ctx, draft)
-		if resolveErr != nil {
-			return nil, resolveErr
-		}
-		return &draftReviewApprovalState{
-			active:       active,
-			latest:       map[string]*models.DraftReviewVerdict{},
-			contentHash:  draftReviewContentHash(draft, digests),
-			mediaDigests: digests,
-			mediaReasons: reasons,
-		}, nil
-	}
-	verdicts, err := repo.ListDraftReviewVerdicts(ctx, owner, draftID)
-	if err != nil {
-		return nil, err
+	verdicts, listErr := repo.ListDraftReviewVerdicts(ctx, owner, draftID)
+	if listErr != nil {
+		return nil, listErr
 	}
 	if draft == nil {
 		draft, err = s.draftRepo.GetDraft(ctx, owner, draftID)
@@ -723,15 +735,70 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 		return nil, resolveErr
 	}
 	currentHash := draftReviewContentHash(draft, digests)
-	latest := make(map[string]*models.DraftReviewVerdict, len(active))
+	active, required := draftRequiredReviewers(grants, verdicts, time.Now().UTC())
+	latest := draftCurrentVerdicts(verdicts, required, currentHash)
+	return &draftReviewApprovalState{
+		active:       active,
+		required:     required,
+		latest:       latest,
+		contentHash:  currentHash,
+		mediaDigests: digests,
+		mediaReasons: reasons,
+	}, nil
+}
+
+// draftRequiredReviewers derives the doctrine "requested = required" reviewer
+// set: every reviewer with an active grant, plus every reviewer who ever
+// recorded a verdict — revocation or expiry cannot delete a required approval.
+// Each required reviewer is mapped to their grant record so the current verdict
+// can be dated against it (a re-grant requires a verdict recorded after the new
+// grant).
+//
+//nolint:dupl // the required-reviewer derivation mirrors the promo review surface (M4 issue #1446); the record types differ
+func draftRequiredReviewers(grants []*models.DraftReviewGrant, verdicts []*models.DraftReviewVerdict, now time.Time) (active, required map[string]*models.DraftReviewGrant) {
+	active = make(map[string]*models.DraftReviewGrant, len(grants))
+	grantByReviewer := make(map[string]*models.DraftReviewGrant, len(grants))
+	for _, grant := range grants {
+		if grant == nil || strings.TrimSpace(grant.Reviewer) == "" {
+			continue
+		}
+		grantByReviewer[grant.Reviewer] = grant
+		if grant.IsActive(now) {
+			active[grant.Reviewer] = grant
+		}
+	}
+	required = make(map[string]*models.DraftReviewGrant, len(grantByReviewer))
+	for reviewer, grant := range grantByReviewer {
+		if _, ok := active[reviewer]; ok {
+			required[reviewer] = grant
+		}
+	}
+	for _, verdict := range verdicts {
+		if verdict == nil || strings.TrimSpace(verdict.Reviewer) == "" {
+			continue
+		}
+		if _, ok := required[verdict.Reviewer]; !ok {
+			if grant := grantByReviewer[verdict.Reviewer]; grant != nil {
+				required[verdict.Reviewer] = grant
+			}
+		}
+	}
+	return active, required
+}
+
+// draftCurrentVerdicts derives, per required reviewer, the latest verdict that
+// is current for the exact reviewed content: hash-matching and recorded after
+// the reviewer's latest grant. Pre-deploy approvals have no hash and
+// deliberately revert to unapproved; the fail-closed/no-backfill rollout
+// requires re-review.
+func draftCurrentVerdicts(verdicts []*models.DraftReviewVerdict, required map[string]*models.DraftReviewGrant, currentHash string) map[string]*models.DraftReviewVerdict {
+	latest := make(map[string]*models.DraftReviewVerdict, len(required))
 	for _, verdict := range verdicts {
 		if verdict == nil {
 			continue
 		}
-		grant := active[verdict.Reviewer]
+		grant := required[verdict.Reviewer]
 		// A re-grant deliberately requires a verdict recorded after the new grant.
-		// Pre-deploy approvals have no hash and deliberately revert to unapproved;
-		// the fail-closed/no-backfill rollout requires re-review.
 		if grant != nil && verdict.RecordedAt.After(grant.GrantedAt) &&
 			verdict.ContentHash == currentHash {
 			if current := latest[verdict.Reviewer]; current == nil || verdict.RecordedAt.After(current.RecordedAt) {
@@ -739,14 +806,17 @@ func (s *DraftService) draftReviewApprovalState(ctx context.Context, owner, draf
 			}
 		}
 	}
-	return &draftReviewApprovalState{active: active, latest: latest, contentHash: currentHash, mediaDigests: digests, mediaReasons: reasons}, nil
+	return latest
 }
 
-func allActiveReviewersApproved(state *draftReviewApprovalState) bool {
+// allRequiredReviewersApproved reports whether every required reviewer (active
+// grants plus ever-recorded-verdict reviewers) holds a current approving
+// verdict for the exact reviewed content.
+func allRequiredReviewersApproved(state *draftReviewApprovalState) bool {
 	if state == nil {
 		return false
 	}
-	for reviewer := range state.active {
+	for reviewer := range state.required {
 		if verdict := state.latest[reviewer]; verdict == nil || verdict.Verdict != DraftReviewApproved {
 			return false
 		}
@@ -754,12 +824,56 @@ func allActiveReviewersApproved(state *draftReviewApprovalState) bool {
 	return true
 }
 
+// draftApprovalAnswers applies the operator doctrine matrix to an already
+// derived approval snapshot for one releasing actor. When the releaser IS the
+// principal, their own requirement is implicit (their action is the approval)
+// and only other required reviewers must approve; for a non-principal releaser
+// the principal floor demands an active grant with a current approving verdict,
+// regardless of draft provenance.
+func draftApprovalAnswers(state *draftReviewApprovalState, releaser, principal string) (reviewersApproved, principalApproved bool) {
+	required := state.required
+	if sameAccount(releaser, principal) {
+		required = draftRequiredWithoutPrincipal(state.required, principal)
+	}
+	for reviewer := range required {
+		if verdict := state.latest[reviewer]; verdict == nil || verdict.Verdict != DraftReviewApproved {
+			return false, false
+		}
+	}
+	if sameAccount(releaser, principal) {
+		return true, true
+	}
+	grant := state.active[principal]
+	verdict := state.latest[principal]
+	return true, grant != nil && verdict != nil && verdict.Verdict == DraftReviewApproved
+}
+
+// draftRequiredWithoutPrincipal returns the required set with the principal's
+// own requirement dropped (their release action is the implicit approval).
+func draftRequiredWithoutPrincipal(required map[string]*models.DraftReviewGrant, principal string) map[string]*models.DraftReviewGrant {
+	if required == nil {
+		return nil
+	}
+	out := make(map[string]*models.DraftReviewGrant, len(required))
+	for reviewer, grant := range required {
+		if sameAccount(reviewer, principal) {
+			continue
+		}
+		out[reviewer] = grant
+	}
+	return out
+}
+
 // draftReviewGateApprovals derives the approval snapshot once for the publish
-// and schedule gates, then answers both the unanimous-reviewer and conditional
-// principal requirements from that same snapshot. The derived state carries the
-// exact text-and-media hash the approvals were matched against, so the publish
-// path can mint durable serving for exactly those bytes.
-func (s *DraftService) draftReviewGateApprovals(ctx context.Context, owner, draftID string, draft *models.Draft) (bool, bool, *draftReviewApprovalState, error) {
+// and schedule gates, then answers the reviewer-approval and principal-approval
+// requirements of the operator doctrine from that same snapshot: every required
+// reviewer (active grants plus ever-recorded-verdict reviewers — revocation
+// cannot delete a required approval) must hold a current approving verdict, and
+// the principal is required for any non-principal release regardless of draft
+// provenance. The derived state carries the exact text-and-media hash the
+// approvals were matched against, so the publish path can mint durable serving
+// for exactly those bytes.
+func (s *DraftService) draftReviewGateApprovals(ctx context.Context, releaser, owner, draftID string, draft *models.Draft) (bool, bool, *draftReviewApprovalState, error) {
 	if draft == nil {
 		// Callers without a snapshot fetch it exactly once before deriving both
 		// approval answers from that same content.
@@ -774,47 +888,41 @@ func (s *DraftService) draftReviewGateApprovals(ctx context.Context, owner, draf
 		if !errors.Is(err, errDraftReviewStorageUnavailable) {
 			return false, false, nil, err
 		}
-		if strings.TrimSpace(draft.GeneratedBy) == "" {
-			// A repository without review support cannot contain active grants;
-			// preserve the pre-review behavior for human-authored drafts while
-			// still deriving the media surface for the publish gate.
-			digests, reasons, mediaErr := s.resolveDraftMediaBindings(ctx, draft)
-			if mediaErr != nil {
-				return false, false, nil, mediaErr
-			}
-			emptyState := &draftReviewApprovalState{
-				active:       map[string]*models.DraftReviewGrant{},
-				latest:       map[string]*models.DraftReviewVerdict{},
-				contentHash:  draftReviewContentHash(draft, digests),
-				mediaDigests: digests,
-				mediaReasons: reasons,
-			}
-			return true, true, emptyState, nil
+		// A repository without review support cannot contain grants or verdicts,
+		// so the required-reviewer set is empty. The principal floor still
+		// applies: only the instance principal may release without a current
+		// principal approval (a non-principal releaser has no way to record one
+		// here and fails closed).
+		digests, reasons, mediaErr := s.resolveDraftMediaBindings(ctx, draft)
+		if mediaErr != nil {
+			return false, false, nil, mediaErr
 		}
-		// Preserve the generated-draft error ordering: principal resolution ran
-		// before its independent approval-state derivation on the former path.
-		if _, principalErr := s.instancePrincipal(ctx); principalErr != nil {
-			return false, false, nil, principalErr
+		emptyState := &draftReviewApprovalState{
+			active:       map[string]*models.DraftReviewGrant{},
+			required:     map[string]*models.DraftReviewGrant{},
+			latest:       map[string]*models.DraftReviewVerdict{},
+			contentHash:  draftReviewContentHash(draft, digests),
+			mediaDigests: digests,
+			mediaReasons: reasons,
 		}
-		return false, false, nil, err
-	}
-	if !allActiveReviewersApproved(state) {
-		return false, false, state, nil
-	}
-	if strings.TrimSpace(draft.GeneratedBy) == "" {
-		return true, true, state, nil
+		principal, principalErr := s.instancePrincipal(ctx)
+		if principalErr != nil {
+			return false, false, emptyState, principalErr
+		}
+		return true, sameAccount(releaser, principal), emptyState, nil
 	}
 	principal, err := s.instancePrincipal(ctx)
 	if err != nil {
 		return false, false, state, err
 	}
-	grant := state.active[principal]
-	verdict := state.latest[principal]
-	return true, grant != nil && verdict != nil && verdict.Verdict == DraftReviewApproved, state, nil
+	reviewersApproved, principalApproved := draftApprovalAnswers(state, strings.TrimSpace(releaser), principal)
+	return reviewersApproved, principalApproved, state, nil
 }
 
-// HasUnanimousActiveApproval applies the all-invited-reviewers rule. With no
-// active grants the result is vacuously true, preserving human draft behavior.
+// HasUnanimousActiveApproval applies the requested = required rule: every
+// reviewer with an active grant plus every reviewer who ever recorded a verdict
+// must hold a current approving verdict. With no grants and no verdicts the
+// result is vacuously true, preserving human draft behavior.
 func (s *DraftService) HasUnanimousActiveApproval(ctx context.Context, owner, draftID string) (bool, error) {
 	return s.hasUnanimousActiveApproval(ctx, owner, draftID, nil)
 }
@@ -823,13 +931,14 @@ func (s *DraftService) hasUnanimousActiveApproval(ctx context.Context, owner, dr
 	state, err := s.draftReviewApprovalState(ctx, owner, draftID, draft)
 	if err != nil {
 		if errors.Is(err, errDraftReviewStorageUnavailable) {
-			// A repository without review support cannot contain active grants;
-			// preserve the pre-review behavior for human-authored drafts.
+			// A repository without review support cannot contain grants or
+			// verdicts; the required set is empty and the answer is vacuously
+			// true.
 			return true, nil
 		}
 		return false, err
 	}
-	return allActiveReviewersApproved(state), nil
+	return allRequiredReviewersApproved(state), nil
 }
 
 // HasPrincipalApproval applies the additional generated-content principal rule.
@@ -851,14 +960,14 @@ func (s *DraftService) hasPrincipalApproval(ctx context.Context, owner, draftID 
 	return grant != nil && verdict != nil && verdict.Verdict == DraftReviewApproved, nil
 }
 
-// HasActiveApproval preserves the combined generated-draft gate for callers
-// that need both unanimous active-reviewer and principal approval.
+// HasActiveApproval preserves the combined non-principal-releaser gate for
+// callers that need both required-reviewer and principal approval.
 func (s *DraftService) HasActiveApproval(ctx context.Context, owner, draftID string) (bool, error) {
 	state, err := s.draftReviewApprovalState(ctx, owner, draftID, nil)
 	if err != nil {
 		return false, err
 	}
-	if !allActiveReviewersApproved(state) {
+	if !allRequiredReviewersApproved(state) {
 		return false, nil
 	}
 	principal, err := s.instancePrincipal(ctx)

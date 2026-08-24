@@ -49,6 +49,8 @@ func TestDraftServicePublishDraft_UpdateExistingArticleGetErrorMarksFailed(t *te
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	draft := &models.Draft{
@@ -82,6 +84,8 @@ func TestDraftServicePublishDraft_UpdatesExistingArticleAndDeletesDraft(t *testi
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	articles.items[objectID] = &models.Article{
