@@ -74,6 +74,21 @@ type Draft struct {
 	// Timestamps
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+
+	// ModelVersion provides optimistic concurrency for the field-scoped
+	// editorial-media writer (UpdateDraftEditorialMedia), closing the
+	// setDraftEditorialMedia lost-update seam with a version-conditioned CAS.
+	// It is deliberately NOT tagged theorydb:"version": that tag would arm
+	// TableTheory's automatic optimistic lock on every full-model content write
+	// (UpdateDraft/autosave), whose condition (`version = <read>`) fails in real
+	// DynamoDB for pre-M4 rows that never carried the attribute — every existing
+	// draft would break on its next content save. The media lane instead
+	// conditions explicitly (attribute_exists AND (attribute_not_exists OR
+	// version = read)), migrating pre-version rows on their first media write.
+	// The omitempty modifier keeps content writers from selecting a zero-valued
+	// version and resetting a versioned row; a fetched non-zero version
+	// round-trips unchanged because the field is not auto-incremented.
+	ModelVersion int `theorydb:"attr:modelVersion,omitempty" json:"-"`
 }
 
 // TableName returns the DynamoDB table backing Draft.

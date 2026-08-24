@@ -123,7 +123,10 @@ func TestDraftRepositoryUpdateDraftEditorialMediaUsesFieldScopedTableTheoryUpdat
 
 	missing := stale
 	missing.ID = "missing"
-	require.ErrorIs(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &missing), storage.ErrNotFound)
+	err = repo.UpdateDraftEditorialMedia(ctx, "owner", &missing)
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeConflict),
+		"a missing-row CAS write is indistinguishable from a stale version and surfaces as a conflict: %v", err)
 }
 
 func TestDraftRepositoryUpdateDraftSkipsStaleEditorialMedia(t *testing.T) {

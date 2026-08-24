@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -98,4 +99,40 @@ func TestDraftRepositoryStatusPaginationPastEndCursorTerminates(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, past, "a past-end cursor must return an empty page")
 	require.Empty(t, nextPast, "a past-end cursor must not re-emit a next cursor")
+}
+
+// TestDraftRepositoryEditorialMediaCASEnforced proves the in-memory mirror
+// enforces the same version-conditioned CAS as the production writer: a stale
+// media-set snapshot conflicts instead of silently losing its update, and the
+// winning bump is carried back to the caller's snapshot.
+func TestDraftRepositoryEditorialMediaCASEnforced(t *testing.T) {
+	ctx := context.Background()
+	repo := NewDraftRepository()
+
+	stored := &models.Draft{
+		AuthorID: "owner",
+		ID:       "draft-cas",
+		Content:  "body",
+		EditorialMedia: []models.DraftMediaUsage{
+			{MediaID: "original", Role: models.EditorialMediaRoleHero},
+		},
+	}
+	require.NoError(t, repo.CreateDraft(ctx, stored))
+
+	first := &models.Draft{AuthorID: "owner", ID: "draft-cas"}
+	first.EditorialMedia = []models.DraftMediaUsage{{MediaID: "alice", Role: models.EditorialMediaRoleHero}}
+	require.NoError(t, repo.UpdateDraftEditorialMedia(ctx, "owner", first))
+	require.Equal(t, 1, first.ModelVersion, "the winning snapshot carries the bumped version")
+
+	// A stale snapshot (version 0) must conflict.
+	stale := &models.Draft{AuthorID: "owner", ID: "draft-cas"}
+	stale.EditorialMedia = []models.DraftMediaUsage{{MediaID: "bob", Role: models.EditorialMediaRoleHero}}
+	err := repo.UpdateDraftEditorialMedia(ctx, "owner", stale)
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeConflict), "stale media-set surfaces CONFLICT: %v", err)
+
+	updated, err := repo.GetDraft(ctx, "owner", "draft-cas")
+	require.NoError(t, err)
+	require.Equal(t, "alice", updated.EditorialMedia[0].MediaID, "the losing write must not land")
+	require.Equal(t, 1, updated.ModelVersion)
 }
