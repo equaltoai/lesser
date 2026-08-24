@@ -123,6 +123,13 @@ func (s *Service) MintUploadGrant(ctx context.Context, input MintUploadGrantInpu
 	if !s.isValidMediaType(contentType) {
 		return nil, "", errors.Join(ErrMediaValidationFailed, errors.New("unsupported content type"))
 	}
+	// Editorial admission must mirror the M0 pipeline, which rejects non-image
+	// content types for editorial records: minting a video/audio grant would
+	// create a permanently-pending dead-end media record that M0 would never
+	// admit, so restrict mint to image/* exactly like the editorial rule.
+	if !strings.HasPrefix(contentType, "image/") {
+		return nil, "", errors.Join(ErrMediaValidationFailed, errors.New("editorial media currently requires an image"))
+	}
 	maxSize := s.maxFileSize
 	if maxSize <= 0 {
 		maxSize = 50 * 1024 * 1024

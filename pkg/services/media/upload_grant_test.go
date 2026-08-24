@@ -226,6 +226,11 @@ func TestMintUploadGrantValidation(t *testing.T) {
 	}{
 		{"missing owner", MintUploadGrantInput{ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: valid}},
 		{"unsupported type", MintUploadGrantInput{Owner: "alice", ContentType: "text/html", MaxSizeBytes: 100, ContentSHA256: valid}},
+		// Editorial admission mirrors M0: mint only admits image/*, so video and
+		// audio grants are rejected instead of creating permanently-pending
+		// dead-end records the editorial pipeline would never admit.
+		{"editorial video type", MintUploadGrantInput{Owner: "alice", ContentType: "video/mp4", MaxSizeBytes: 100, ContentSHA256: valid}},
+		{"editorial audio type", MintUploadGrantInput{Owner: "alice", ContentType: "audio/mpeg", MaxSizeBytes: 100, ContentSHA256: valid}},
 		{"zero size", MintUploadGrantInput{Owner: "alice", ContentType: "image/png", MaxSizeBytes: 0, ContentSHA256: valid}},
 		{"over cap", MintUploadGrantInput{Owner: "alice", ContentType: "image/png", MaxSizeBytes: 51 * 1024 * 1024, ContentSHA256: valid}},
 		{"bad sha256", MintUploadGrantInput{Owner: "alice", ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: "not-hex"}},
@@ -742,30 +747,6 @@ func TestFinalizeUploadGrantConsumeErrorSurfaces(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "read failed")
 	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
-}
-
-func TestFinalizeUploadGrantNonImageStaysPendingLikeM0(t *testing.T) {
-	service, _, objectStore, mediaRepo := newUploadGrantTestService(t)
-	ctx := context.Background()
-	audio := []byte{0xFF, 0xF3, 0x04, 0x01}
-	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
-		Owner: "alice", ContentType: "audio/mpeg", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(audio),
-	})
-	require.NoError(t, err)
-	require.NoError(t, objectStore.SimulateUpload(grant, audio))
-
-	var created *models.Media
-	mediaRepo.On("CreateMedia", ctx, mock.MatchedBy(func(media *models.Media) bool {
-		created = media
-		return true
-	})).Return(nil).Once()
-
-	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
-	require.NoError(t, err)
-	require.NotNil(t, media)
-	require.Equal(t, models.StatusPending, media.Status, "non-image internal assets stay pending exactly as the M0 pipeline leaves them")
-	require.NotNil(t, created)
-	require.Equal(t, models.StatusPending, created.Status)
 }
 
 func TestFinalizeUploadGrantImageDecodeFailureMarksFailed(t *testing.T) {
