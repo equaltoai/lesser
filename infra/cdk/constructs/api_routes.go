@@ -19,7 +19,7 @@ import (
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
-	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v3"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v4"
 )
 
 type APIGatewayProps struct {
