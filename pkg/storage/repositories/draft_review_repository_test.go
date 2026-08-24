@@ -180,6 +180,77 @@ func TestDraftRepositoryUpdateDraftSkipsStaleEditorialMedia(t *testing.T) {
 		"the concurrently replaced association must survive a stale full-model content update")
 }
 
+// TestDraftRepositoryStaleContentSaveCannotDowngradeMediaCASVersion pins the
+// content-lane version choke point: UpdateDraft zeroes ModelVersion on the
+// sparse copy, so a content autosave holding a pre-bump snapshot never selects
+// the attribute. Without the choke point the stale save would write the old
+// version back and a stale media-set CAS on that version would succeed,
+// reopening the setDraftEditorialMedia lost-update seam (M4 fold-in b).
+func TestDraftRepositoryStaleContentSaveCannotDowngradeMediaCASVersion(t *testing.T) {
+	ctx := context.Background()
+	client := &draftReviewRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.Draft{}))
+
+	persisted := &models.Draft{
+		AuthorID: "owner", ID: "draft-version-lane", ContentType: "Article",
+		Content: "original content", ContentFormat: "markdown", Status: "draft",
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	require.NoError(t, persisted.UpdateKeys())
+	require.NoError(t, db.WithContext(ctx).Model(persisted).Create())
+
+	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
+
+	// Three media-sets advance the version to 3; the same v3 row is snapshotted
+	// by both the media lane and the content lane.
+	winner := *persisted
+	for i, mediaID := range []string{"media-a", "media-b", "media-c"} {
+		winner.EditorialMedia = []models.DraftMediaUsage{{MediaID: mediaID, Role: models.EditorialMediaRoleHero}}
+		winner.UpdatedAt = winner.UpdatedAt.Add(time.Minute)
+		require.NoError(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &winner))
+		require.Equal(t, i+1, winner.ModelVersion, "the winning media-set snapshot carries the bumped version")
+	}
+	require.Equal(t, 3, winner.ModelVersion)
+	staleContent, err := repo.GetDraft(ctx, "owner", persisted.ID)
+	require.NoError(t, err)
+	require.Equal(t, 3, staleContent.ModelVersion)
+	staleLosingMedia := winner // a second v3 snapshot that will never win
+
+	// The media lane wins again: v3 -> v4.
+	winner.EditorialMedia = []models.DraftMediaUsage{{MediaID: "media-d", Role: models.EditorialMediaRoleHero}}
+	winner.UpdatedAt = winner.UpdatedAt.Add(time.Minute)
+	require.NoError(t, repo.UpdateDraftEditorialMedia(ctx, "owner", &winner))
+	require.Equal(t, 4, winner.ModelVersion)
+
+	// A stale v3 content autosave runs. The content lane must not select
+	// modelVersion (zeroed choke point), so the stored version stays 4.
+	client.updateInputs = nil
+	staleContent.Content = "stale autosave carrying a v3 snapshot"
+	staleContent.UpdatedAt = winner.UpdatedAt.Add(time.Minute)
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", staleContent))
+	for _, input := range client.updateInputs {
+		for _, attributeName := range input.ExpressionAttributeNames {
+			require.NotEqual(t, "modelversion", strings.ToLower(attributeName),
+				"the content lane must never select the media-CAS version attribute")
+		}
+	}
+
+	// A stale v3 media-set CAS must now conflict: the stored version is still 4.
+	err = repo.UpdateDraftEditorialMedia(ctx, "owner", &staleLosingMedia)
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeConflict),
+		"a stale media-set after a stale content save must surface CONFLICT: %v", err)
+
+	got, err := repo.GetDraft(ctx, "owner", persisted.ID)
+	require.NoError(t, err)
+	require.Equal(t, 4, got.ModelVersion, "the stale content save must not downgrade the media-CAS version")
+	require.Equal(t, "stale autosave carrying a v3 snapshot", got.Content)
+	require.Equal(t, []models.DraftMediaUsage{{MediaID: "media-d", Role: models.EditorialMediaRoleHero}}, got.EditorialMedia,
+		"the losing media-set must not land")
+}
+
 func (d *draftReviewRecordingDynamo) PutItem(ctx context.Context, input *dynamodb.PutItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
 	d.putInputs = append(d.putInputs, input)
 	return d.Fake.PutItem(ctx, input, opts...)

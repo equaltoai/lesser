@@ -87,11 +87,16 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, authorID string, draf
 	// publish-attempt stamp likewise has its own field-scoped writer (the
 	// publishing transition); content updates must not advance or clear it, or
 	// an author could re-arm the stale-publishing sweep by editing a
-	// crash-stuck draft. A nil omitempty field is unselected by the sparse
-	// update, so the stored attribute is left untouched.
+	// crash-stuck draft. ModelVersion likewise belongs to the field-scoped
+	// editorial-media writer (its version-conditioned CAS): a content save
+	// holding a pre-bump snapshot must not write the old version back, or a
+	// stale media-set CAS would match the downgraded stored version and reopen
+	// the lost-update seam. A nil/zero omitempty field is unselected by the
+	// sparse update, so the stored attribute is left untouched.
 	sparse := *draft
 	sparse.EditorialMedia = nil
 	sparse.PublishAttemptedAt = nil
+	sparse.ModelVersion = 0
 	return r.db.WithContext(ctx).Model(&sparse).Update()
 }
 
