@@ -105,6 +105,46 @@ func TestContentUpdateDraftDoesNotAlterStoredPublishAttempt(t *testing.T) {
 		"the content lane never selects PublishAttemptedAt; the stored stamp must survive the edit")
 }
 
+// Discriminating direction of the sparse nil-unselected semantics: a stale
+// editor-tab model carries an OLDER stamp (>24h) while the stored stamp is NEW
+// (the draft was retried after the tab loaded). The same-value test above is
+// indistinguishable from unselected on a SET of an identical value; this case
+// would regress the stored stamp if UpdateDraft selected the attribute, so it
+// pins the exact defense line (sparse.PublishAttemptedAt = nil) rather than the
+// value-identity artifact.
+func TestContentUpdateDraftStaleModelStampCannotRegressNewerStoredStamp(t *testing.T) {
+	ctx := context.Background()
+	repo := newTransitionLaneRepo(t)
+
+	// A crash-stuck draft was retried 1 minute ago: the stored stamp is NEW.
+	newAttempt := time.Now().UTC().Add(-time.Minute)
+	seed := &models.Draft{
+		AuthorID: "owner", ID: "draft-1", Content: "body", ContentFormat: "markdown",
+		Status: "publishing", CreatedAt: newAttempt.Add(-26 * time.Hour), UpdatedAt: newAttempt,
+		PublishAttemptedAt: &newAttempt,
+	}
+	require.NoError(t, seed.UpdateKeys())
+	require.NoError(t, repo.CreateDraft(ctx, seed))
+
+	// An editor tab loaded the draft BEFORE the retry: its model stamp is OLD
+	// while the stored stamp is NEW. Selecting the stamp here would SET the old
+	// value back over the newer stored one and re-arm the stale-publishing sweep
+	// during a publish retry.
+	loaded, err := repo.GetDraft(ctx, "owner", "draft-1")
+	require.NoError(t, err)
+	oldAttempt := time.Now().UTC().Add(-25 * time.Hour)
+	loaded.PublishAttemptedAt = &oldAttempt
+	loaded.Content = "stale-tab edit racing the retry"
+
+	require.NoError(t, repo.UpdateDraft(ctx, "owner", loaded))
+
+	stored, err := repo.GetDraft(ctx, "owner", "draft-1")
+	require.NoError(t, err)
+	require.NotNil(t, stored.PublishAttemptedAt)
+	require.Equal(t, newAttempt, *stored.PublishAttemptedAt,
+		"the content lane must not regress a newer stored stamp with a stale model stamp")
+}
+
 func TestTransitionDraftToPublishingMissingRowFailsClosed(t *testing.T) {
 	ctx := context.Background()
 	repo := newTransitionLaneRepo(t)
