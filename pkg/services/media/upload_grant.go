@@ -152,11 +152,6 @@ func (s *Service) MintUploadGrant(ctx context.Context, input MintUploadGrantInpu
 	s3Key := s.generateS3Key(mediaID, fileName)
 	expiresAt := now.Add(UploadGrantTTL)
 
-	url, err := store.PresignPutObject(ctx, bucket, s3Key, contentType, contentSHA256, s.editorialKMSKeyID, UploadGrantTTL)
-	if err != nil {
-		return nil, "", errors.Join(ErrMediaStorageFailed, err)
-	}
-
 	grant := &models.UploadGrant{
 		Owner:         owner,
 		GrantID:       grantID,
@@ -172,8 +167,16 @@ func (s *Service) MintUploadGrant(ctx context.Context, input MintUploadGrantInpu
 		ExpiresAt:     expiresAt,
 		ExpiresAtTTL:  expiresAt.Unix(),
 	}
+	// Persist before presigning: if the persist fails, no URL was ever minted,
+	// so no live capability points at an untracked key. If the presign fails
+	// after a successful persist, the error surfaces without a URL and the row
+	// self-cleans via TTL (the caller never received the grant ID).
 	if err := s.uploadGrantRepo.CreateUploadGrant(ctx, grant); err != nil {
 		return nil, "", err
+	}
+	url, err := store.PresignPutObject(ctx, bucket, s3Key, contentType, contentSHA256, s.editorialKMSKeyID, UploadGrantTTL)
+	if err != nil {
+		return nil, "", errors.Join(ErrMediaStorageFailed, err)
 	}
 	s.logger.Info("minted upload grant",
 		zap.String("owner", owner),

@@ -686,18 +686,24 @@ func TestMintUploadGrantPresignAndPersistErrors(t *testing.T) {
 	service, grantRepo, objectStore, _ := newUploadGrantTestService(t)
 	valid := MintUploadGrantInput{Owner: "alice", ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: uploadGrantDigest(tinyPNG)}
 
-	// Presign failure: nothing is persisted.
-	objectStore.presignErr = fmt.Errorf("presign down")
+	// Persist failure: no URL is ever minted. The grant row is persisted AFTER
+	// validation but BEFORE presigning, so a storage failure cannot leave a live
+	// presigned URL to an untracked key.
+	service.uploadGrantRepo = &failingUploadGrantRepo{createErr: fmt.Errorf("storage down")}
 	_, _, err := service.MintUploadGrant(context.Background(), valid)
 	require.Error(t, err)
-	require.Len(t, grantRepo.Grants(), 0)
+	require.Contains(t, err.Error(), "storage down")
+	require.Len(t, objectStore.Presigns(), 0, "a persist failure must never mint a live URL to an untracked key")
 
-	// Persist failure: the error surfaces.
-	objectStore.presignErr = nil
-	service.uploadGrantRepo = &failingUploadGrantRepo{createErr: fmt.Errorf("storage down")}
+	// Presign failure: the error surfaces without a URL. The grant row exists
+	// (persist ran first) but self-cleans via TTL; the caller never received the
+	// grant ID, so nothing live points at the key.
+	service.uploadGrantRepo = grantRepo
+	objectStore.presignErr = fmt.Errorf("presign down")
 	_, _, err = service.MintUploadGrant(context.Background(), valid)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "storage down")
+	require.Contains(t, err.Error(), "presign down")
+	require.Len(t, grantRepo.Grants(), 1, "the grant row persists before the presign attempt")
 }
 
 type failingUploadGrantRepo struct {
