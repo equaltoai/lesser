@@ -13,7 +13,7 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 

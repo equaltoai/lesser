@@ -33,7 +33,7 @@ import (
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"

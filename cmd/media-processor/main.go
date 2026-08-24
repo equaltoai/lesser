@@ -18,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dhowden/tag"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 

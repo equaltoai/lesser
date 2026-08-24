@@ -251,8 +251,8 @@ github.com/stretchr/testify v1.12.0 h1:K6Mr6jO9JICuend/5xzTM03ydSV3vdNRYAdPSukj8
 github.com/stretchr/testify v1.12.0/go.mod h1:bOYBZb5qJ00vPzWfIqBUZPaxK8jWiXc6d3ErP4Ca9Gw=
 github.com/supranational/blst v0.3.16 h1:bTDadT+3fK497EvLdWRQEjiGnUtzJ7jjIUMF0jqwYhE=
 github.com/supranational/blst v0.3.16/go.mod h1:jZJtfjgudtNl4en1tzwPIV3KjUnQUvG3/j+w+fVonLw=
-github.com/theory-cloud/apptheory/v3 v3.3.0 h1:zIjLxM1B3dpsB5AD/ou7oG3D84erSBQF34ShM2E/vbw=
-github.com/theory-cloud/apptheory/v3 v3.3.0/go.mod h1:2JkQLcAeOXqLgkICbiOz3AMOAnY5pBitMisUJTdtzDg=
+github.com/theory-cloud/apptheory/v4 v4.0.0 h1:xtviPaBdgSfFyEIuc4DWUyyvyOML0bb9Fv2dYjqdO3g=
+github.com/theory-cloud/apptheory/v4 v4.0.0/go.mod h1:W0X5wp/HF/dKvJQATyStyzn5bMxoPmVJ3+cDIN5bIF0=
 github.com/theory-cloud/tabletheory/v3 v3.0.6 h1:R0YwCLfLn/9GBx3UKU2+nuN8OUT5HJP6xPok2/aRz+8=
 github.com/theory-cloud/tabletheory/v3 v3.0.6/go.mod h1:pvwWngnJS39oCf30H8OjrZLbi1HKkuElohIOnKIsO0Y=
 github.com/tklauser/go-sysconf v0.3.16 h1:frioLaCQSsF5Cy1jgRBrzr6t502KIIwQ0MArYICU0nA=

@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"

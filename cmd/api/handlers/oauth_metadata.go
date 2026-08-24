@@ -6,8 +6,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
-	frameworkoauth "github.com/theory-cloud/apptheory/v3/runtime/oauth"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	frameworkoauth "github.com/theory-cloud/apptheory/v4/runtime/oauth"
 )
 
 // HandleOAuthAuthorizationServerMetadataLift serves RFC 8414 authorization server metadata.

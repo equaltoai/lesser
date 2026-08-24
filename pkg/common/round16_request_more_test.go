@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 func TestParseRequestWithFallback_MoreErrorBranches(t *testing.T) {

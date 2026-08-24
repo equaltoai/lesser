@@ -6,7 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"

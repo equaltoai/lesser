@@ -21,7 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )

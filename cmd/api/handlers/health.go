@@ -18,7 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/ssrf"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/version"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 

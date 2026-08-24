@@ -8,7 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 // AuthenticatedAccount represents an authenticated user account

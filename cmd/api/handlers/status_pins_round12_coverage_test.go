@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 func TestStatusPinsRound12_Coverage(t *testing.T) {

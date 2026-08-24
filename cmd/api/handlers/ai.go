@@ -10,7 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	ai "github.com/equaltoai/lesser/pkg/services/ai"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 type aiAnalysisLiftRequest struct {

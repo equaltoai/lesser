@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
