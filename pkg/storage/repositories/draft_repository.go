@@ -446,6 +446,8 @@ func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draf
 }
 
 // ListActiveDraftReviewGrants returns one page from the sparse reviewer queue.
+//
+//nolint:dupl // the draft reviewer queue mirrors the promo reviewer queue (M4 issue #1446)
 func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, reviewer string, limit int, cursor string) ([]*models.DraftReviewGrant, string, error) {
 	if limit <= 0 {
 		limit = 25

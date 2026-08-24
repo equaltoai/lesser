@@ -304,6 +304,9 @@ func (r *PromoPackageRepository) GetPromoReviewGrant(ctx context.Context, ownerI
 }
 
 // ListActivePromoReviewGrants returns one page from the sparse reviewer queue.
+//
+//nolint:dupl // the promo reviewer queue mirrors the draft-review reviewer queue (M4 issue #1446)
+//nolint:dupl // the promo reviewer queue mirrors the draft-review reviewer queue (M4 issue #1446)
 func (r *PromoPackageRepository) ListActivePromoReviewGrants(ctx context.Context, reviewer string, limit int, cursor string) ([]*models.PromoReviewGrant, string, error) {
 	if limit <= 0 {
 		limit = 25

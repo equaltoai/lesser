@@ -41,13 +41,6 @@ const (
 	// enforced by the notes service, so every reviewed package can actually be
 	// released without truncation or re-composition.
 	maxPromoPackageAssets = 4
-
-	// maxPromoPostTextBytes mirrors the notes service content limit.
-	maxPromoPostTextBytes = 5000
-
-	// maxPromoReviewReadGrants bounds the reviewer queue read like the draft
-	// review surface.
-	maxPromoReviewReadGrants = 200
 )
 
 // PromoPackageAsset is one asset bound into a promo package. The binding
@@ -278,6 +271,8 @@ type PromoReviewGrant struct {
 func (PromoReviewGrant) TableName() string { return MainTableName }
 
 // UpdateKeys derives grant primary and sparse reviewer-queue keys.
+//
+//nolint:dupl // the review-grant key derivation mirrors its sibling review surface (M4 issue #1446)
 func (g *PromoReviewGrant) UpdateKeys() error {
 	if strings.TrimSpace(g.OwnerID) == "" || strings.TrimSpace(g.PackageID) == "" || strings.TrimSpace(g.Reviewer) == "" {
 		return fmt.Errorf("ownerID, packageID, and reviewer are required")
@@ -326,6 +321,8 @@ func (g *PromoReviewGrant) Expired(now time.Time) bool {
 // PromoReviewVerdict is an immutable review decision audit record bound to the
 // exact package content hash. Any package content change re-hashes and the
 // verdict-vs-hash comparison stales the approval, matching M2.
+//
+//nolint:dupl // promo review verdicts mirror the draft-review verdict record shape (M4 issue #1446)
 type PromoReviewVerdict struct {
 	PK          string    `theorydb:"pk,attr:PK"`
 	SK          string    `theorydb:"sk,attr:SK"`
@@ -343,6 +340,8 @@ type PromoReviewVerdict struct {
 func (PromoReviewVerdict) TableName() string { return MainTableName }
 
 // UpdateKeys derives verdict primary keys.
+//
+//nolint:dupl // promo review verdicts mirror the draft-review verdict record shape (M4 issue #1446)
 func (v *PromoReviewVerdict) UpdateKeys() error {
 	if strings.TrimSpace(v.OwnerID) == "" || strings.TrimSpace(v.PackageID) == "" || strings.TrimSpace(v.Reviewer) == "" || strings.TrimSpace(v.Verdict) == "" {
 		return fmt.Errorf("ownerID, packageID, reviewer, and verdict are required")
