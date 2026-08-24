@@ -576,11 +576,12 @@ func (s *DraftService) PromoPackageForCaller(ctx context.Context, caller, packag
 
 // SubmitPromoPackageReview records an immutable reviewer verdict bound to the
 // exact package content hash. The caller carries the expectedContentHash it
-// actually inspected; when the stored package no longer matches (the owner
-// recomposed between the reviewer's read and this submit), the submit is
-// rejected with a conflict signal instead of silently blessing unseen content.
-// An empty expectedContentHash applies no constraint (legacy callers); the
-// GraphQL surface always supplies it.
+// actually inspected — the argument is required: an empty value is rejected so
+// the advisory-binding gap (empty → no constraint) cannot exist beneath the
+// GraphQL contract, which declares contentHash non-null. When the stored
+// package no longer matches the inspected hash (the owner recomposed between
+// the reviewer's read and this submit), the submit is rejected with a conflict
+// signal instead of silently blessing unseen content.
 func (s *DraftService) SubmitPromoPackageReview(ctx context.Context, caller, owner, packageID, verdict, notes, expectedContentHash string) (*models.PromoReviewVerdict, error) {
 	caller = strings.TrimSpace(caller)
 	owner = strings.TrimSpace(owner)
@@ -606,7 +607,11 @@ func (s *DraftService) SubmitPromoPackageReview(ctx context.Context, caller, own
 	if err != nil {
 		return nil, err
 	}
-	if expectedContentHash = strings.TrimSpace(expectedContentHash); expectedContentHash != "" && expectedContentHash != pkg.ContentHash {
+	expectedContentHash = strings.TrimSpace(expectedContentHash)
+	if expectedContentHash == "" {
+		return nil, errors.New("promo package review submit requires the inspected content hash")
+	}
+	if expectedContentHash != pkg.ContentHash {
 		return nil, errors.Join(ErrPromoPackageConflict, ErrPromoPackageReviewContentChanged)
 	}
 	v := &models.PromoReviewVerdict{

@@ -3222,10 +3222,12 @@ extend type Mutation {
   sharePromoPackageForReview(packageId: ID!, reviewer: String!): PromoPackageReview!
   revokePromoPackageReview(packageId: ID!, reviewer: String!): Boolean!
   """Record a hash-bound reviewer verdict on the exact current package content.
-  contentHash carries the content hash the reviewer actually inspected; a
-  mismatch (the package was recomposed after inspection) rejects the submit
-  with a conflict instead of blessing unseen content."""
-  submitPromoPackageReview(packageId: ID!, verdict: PromoPackageReviewVerdict!, notes: String, contentHash: String): PromoPackageReview!
+  contentHash carries the content hash the reviewer actually inspected; the
+  argument is REQUIRED (the promo surface has no deployed consumer, so the
+  advisory-binding gap is closed at the contract) and a mismatch (the package
+  was recomposed after inspection) rejects the submit with a conflict instead
+  of blessing unseen content."""
+  submitPromoPackageReview(packageId: ID!, verdict: PromoPackageReviewVerdict!, notes: String, contentHash: String!): PromoPackageReview!
   """Release an approved package: creates the outbound public/unlisted Status with the exact approved PUBLISHED assets and AI-authorship disclosure intact."""
   releasePromoPackage(packageId: ID!): PromoPackageReleaseResult!
 }

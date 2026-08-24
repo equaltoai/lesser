@@ -2303,7 +2303,7 @@ type ComplexityRoot struct {
 		StartHostedSoulBootstrap                  func(childComplexity int, input model.StartHostedSoulBootstrapInput) int
 		SubmitDraftReview                         func(childComplexity int, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool) int
 		SubmitModerationReview                    func(childComplexity int, input model.ModerationReviewInput) int
-		SubmitPromoPackageReview                  func(childComplexity int, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash *string) int
+		SubmitPromoPackageReview                  func(childComplexity int, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash string) int
 		SyncMissingReplies                        func(childComplexity int, noteID string) int
 		SyncThread                                func(childComplexity int, noteURL string, depth *int) int
 		TestFilters                               func(childComplexity int, input model.FilterTestInput) int
@@ -3994,7 +3994,7 @@ type MutationResolver interface {
 	ComposePromoPackage(ctx context.Context, input model.ComposePromoPackageInput) (*model.PromoPackage, error)
 	SharePromoPackageForReview(ctx context.Context, packageID string, reviewer string) (*model.PromoPackageReview, error)
 	RevokePromoPackageReview(ctx context.Context, packageID string, reviewer string) (bool, error)
-	SubmitPromoPackageReview(ctx context.Context, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash *string) (*model.PromoPackageReview, error)
+	SubmitPromoPackageReview(ctx context.Context, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash string) (*model.PromoPackageReview, error)
 	ReleasePromoPackage(ctx context.Context, packageID string) (*model.PromoPackageReleaseResult, error)
 	RequestStreamingURL(ctx context.Context, mediaID string, quality *model.StreamQuality) (*model.MediaStream, error)
 	PreloadMedia(ctx context.Context, mediaIds []string) ([]*model.MediaStream, error)
@@ -15956,7 +15956,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.SubmitPromoPackageReview(childComplexity, args["packageId"].(string), args["verdict"].(model.PromoPackageReviewVerdict), args["notes"].(*string), args["contentHash"].(*string)), true
+		return e.complexity.Mutation.SubmitPromoPackageReview(childComplexity, args["packageId"].(string), args["verdict"].(model.PromoPackageReviewVerdict), args["notes"].(*string), args["contentHash"].(string)), true
 
 	case "Mutation.syncMissingReplies":
 		if e.complexity.Mutation.SyncMissingReplies == nil {
@@ -26666,7 +26666,7 @@ func (ec *executionContext) field_Mutation_submitPromoPackageReview_args(ctx con
 		return nil, err
 	}
 	args["notes"] = arg2
-	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "contentHash", ec.unmarshalOString2ᚖstring)
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "contentHash", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
@@ -105549,7 +105549,7 @@ func (ec *executionContext) _Mutation_submitPromoPackageReview(ctx context.Conte
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().SubmitPromoPackageReview(rctx, fc.Args["packageId"].(string), fc.Args["verdict"].(model.PromoPackageReviewVerdict), fc.Args["notes"].(*string), fc.Args["contentHash"].(*string))
+		return ec.resolvers.Mutation().SubmitPromoPackageReview(rctx, fc.Args["packageId"].(string), fc.Args["verdict"].(model.PromoPackageReviewVerdict), fc.Args["notes"].(*string), fc.Args["contentHash"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

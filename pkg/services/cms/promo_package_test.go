@@ -530,6 +530,35 @@ func TestPromoSubmitBindsToInspectedContentHash(t *testing.T) {
 	require.Equal(t, updated.ContentHash, v.ContentHash, "the recorded verdict binds the reviewed hash")
 }
 
+// TestPromoSubmitRejectsEmptyInspectedContentHash pins N4: the submit's
+// expectedContentHash is REQUIRED — the GraphQL contract declares contentHash
+// non-null (the promo surface has no deployed consumer, so the advisory-binding
+// gap is closed at the contract), and the service rejects an empty value below
+// the wire so a non-GraphQL caller cannot record a verdict over content it
+// never bound. No verdict is recorded.
+func TestPromoSubmitRejectsEmptyInspectedContentHash(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, _ := promoServiceHarness(t)
+	digest := promoDigest("4a")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", "")
+	require.ErrorContains(t, err, "requires the inspected content hash",
+		"an empty expected content hash is rejected instead of applying no constraint")
+	verdicts, err := svc.PromoPackageVerdicts(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.Empty(t, verdicts, "no verdict is recorded for an unbound content hash")
+
+	// A submit carrying the actual content hash records the verdict as before.
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+}
+
 // The OPERATOR CONTENT DOCTRINE matrix (2026-08-24) pinned as tests:
 //
 //	principal releaser + zero ever-granted reviewers -> allowed

@@ -103,10 +103,10 @@ func (r *mutationResolver) RevokePromoPackageReview(ctx context.Context, package
 
 // SubmitPromoPackageReview records a hash-bound reviewer verdict on the exact
 // current package content and returns the caller-authorized review state. The
-// optional contentHash argument carries the hash the reviewer actually
+// required contentHash argument carries the hash the reviewer actually
 // inspected; when it no longer matches the stored package, the submit is
 // rejected with a conflict signal instead of blessing unseen content.
-func (r *mutationResolver) SubmitPromoPackageReview(ctx context.Context, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash *string) (*model.PromoPackageReview, error) {
+func (r *mutationResolver) SubmitPromoPackageReview(ctx context.Context, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash string) (*model.PromoPackageReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (r *mutationResolver) SubmitPromoPackageReview(ctx context.Context, package
 	if grant == nil {
 		return nil, errors.New("promo package owner cannot review their own package")
 	}
-	if _, err := svc.SubmitPromoPackageReview(ctx, caller, pkg.OwnerID, pkg.PackageID, string(verdict), trimStringPtr(notes), trimStringPtr(contentHash)); err != nil {
+	if _, err := svc.SubmitPromoPackageReview(ctx, caller, pkg.OwnerID, pkg.PackageID, string(verdict), trimStringPtr(notes), strings.TrimSpace(contentHash)); err != nil {
 		return nil, err
 	}
 	r.auditActAs(ctx, acting, "cms.promo.review_verdict", pkg.PackageID, map[string]any{"verdict": string(verdict)})

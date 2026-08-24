@@ -150,7 +150,7 @@ func TestPromoPackageScenarioE_BlockedReleaseThenAuthorizedRelease(t *testing.T)
 	review, err := mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer")
 	require.NoError(t, err)
 	require.False(t, review.ReviewersApproved)
-	review, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
+	review, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, pkg.ContentHash)
 	require.NoError(t, err)
 	require.True(t, review.ReviewersApproved)
 	require.True(t, review.PrincipalApprovalRequired, "the AI-origin asset requires the instance principal")
@@ -166,7 +166,7 @@ func TestPromoPackageScenarioE_BlockedReleaseThenAuthorizedRelease(t *testing.T)
 	// same package content.
 	review, err = mut.SharePromoPackageForReview(alice, pkg.ID, "principal")
 	require.NoError(t, err)
-	review, err = mut.SubmitPromoPackageReview(principal, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
+	review, err = mut.SubmitPromoPackageReview(principal, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, pkg.ContentHash)
 	require.NoError(t, err)
 	require.True(t, review.ReleaseEligible, "after principal authorization the package may release")
 
@@ -219,7 +219,7 @@ func TestPromoPackageContract_StaleOnChangeReBlocksAndUnpublishedAssetsRejected(
 	require.NoError(t, err)
 	_, err = mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer")
 	require.NoError(t, err)
-	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
+	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, pkg.ContentHash)
 	require.NoError(t, err)
 
 	// Any content edit after approval re-hashes and stales the verdict.
@@ -358,13 +358,13 @@ func TestPromoPackageContract_SubmitBindsInspectedContentHash(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, inspectedHash, edited.ContentHash)
 
-	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, &inspectedHash)
+	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, inspectedHash)
 	require.Error(t, err)
 	require.Contains(t, strings.ToLower(err.Error()), "changed",
 		"the conflict names the content change between inspection and submit")
 
 	// A submit with the current content hash records the verdict.
-	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
+	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, edited.ContentHash)
 	require.NoError(t, err)
 }
 
@@ -395,12 +395,12 @@ func TestPromoPackageContract_ReviewerSeesOnlyOwnGrantAndVerdict(t *testing.T) {
 	_, err = mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer-1")
 	require.NoError(t, err)
 	noteOne := "confidential note from reviewer-1"
-	_, err = mut.SubmitPromoPackageReview(reviewerOne, pkg.ID, model.PromoPackageReviewVerdictApproved, &noteOne, nil)
+	_, err = mut.SubmitPromoPackageReview(reviewerOne, pkg.ID, model.PromoPackageReviewVerdictApproved, &noteOne, pkg.ContentHash)
 	require.NoError(t, err)
 	_, err = mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer-2")
 	require.NoError(t, err)
 	noteTwo := "confidential note from reviewer-2"
-	_, err = mut.SubmitPromoPackageReview(reviewerTwo, pkg.ID, model.PromoPackageReviewVerdictChangesRequested, &noteTwo, nil)
+	_, err = mut.SubmitPromoPackageReview(reviewerTwo, pkg.ID, model.PromoPackageReviewVerdictChangesRequested, &noteTwo, pkg.ContentHash)
 	require.NoError(t, err)
 
 	// The owner sees the full surface: both grants and both verdicts.
