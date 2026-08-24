@@ -939,8 +939,12 @@ func promoDisclosureForPackage(principal string, aiOrigin bool) *activitypub.Age
 // PUBLISHED durable state carrying the digest bound at review time. The release
 // transition reserves the package FIRST (draft -> releasing through a
 // version-conditioned write, so a concurrent double-release has exactly one
-// winner and every loser conflicts before any post exists), then creates the
-// outbound Status with the exact approved assets attached (reusing the M2
+// winner and every loser conflicts before any post exists), then re-derives the
+// approval answers from the current grants and verdicts (a revocation, expiry,
+// or CHANGES_REQUESTED verdict landing between the gate check and the
+// reservation win aborts the release with the reservation rolled back, exactly
+// as if the gate had re-checked at the CAS moment), then creates the outbound
+// Status with the exact approved assets attached (reusing the M2
 // published serving, no re-upload) and AI-authorship disclosure intact, then
 // finalizes releasing -> released recording the created Status. On post-creation
 // failure the reservation is rolled back to draft (same CAS lane); on finalize
@@ -1020,21 +1024,15 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 		return nil, err
 	}
 
-	rollbackReleasing := func() {
-		// Best-effort rollback on the same version-conditioned lane: only the
-		// reservation winner holds the post-reservation version, so only it can
-		// return the package to draft. The post was never created, so there is
-		// nothing live to retract; a rollback conflict leaves the package in the
-		// releasing reservation, which blocks future release attempts (safe).
-		rollback := reserving
-		rollback.Status = models.PromoPackageStatusDraft
-		rollback.UpdatedAt = time.Now().UTC()
-		if rbErr := repo.RevertPromoPackageReleasing(ctx, owner, &rollback); rbErr != nil {
-			if s.logger != nil {
-				s.logger.Warn("promo release rollback failed; package left in releasing reservation",
-					zap.String("owner_id", owner), zap.String("package_id", packageID), zap.Error(rbErr))
-			}
-		}
+	// The approval snapshot taken by the gate above could have gone stale in the
+	// window before the reservation CAS won: a revocation, an expiry, or a
+	// CHANGES_REQUESTED verdict landing in between would not have aborted the
+	// in-flight release. Now that the reservation is held, re-derive the
+	// approval answers from the CURRENT grants and verdicts; a regression rolls
+	// the reservation back on the same CAS lane and fails exactly as the gate
+	// would have at the CAS moment (see confirmPromoReservationApprovals).
+	if err := s.confirmPromoReservationApprovals(ctx, repo, owner, packageID, &reserving); err != nil {
+		return nil, err
 	}
 
 	result, err := s.promoStatusCreator.CreatePromoNote(ctx, &notes.CreateNoteCommand{
@@ -1044,11 +1042,11 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 		AgentAttribution: promoDisclosureForPackage(common.GenerateActorID(s.domain, principal), approval.aiOrigin),
 	}, refs)
 	if err != nil {
-		rollbackReleasing()
+		s.rollbackPromoReservation(ctx, repo, owner, packageID, &reserving)
 		return nil, err
 	}
 	if result == nil || result.Note == nil {
-		rollbackReleasing()
+		s.rollbackPromoReservation(ctx, repo, owner, packageID, &reserving)
 		return nil, errors.New("promo release created no status")
 	}
 
@@ -1075,6 +1073,49 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 		ReleasedStatusID: result.Note.StatusID,
 		StatusURL:        statusURL,
 	}, nil
+}
+
+// rollbackPromoReservation returns a reserved release to draft on the same
+// version-conditioned lane, best-effort. Only the reservation winner holds the
+// post-reservation version, so only it can roll back; a rollback conflict
+// leaves the package in the releasing reservation, which blocks future release
+// attempts (safe).
+func (s *DraftService) rollbackPromoReservation(ctx context.Context, repo promoPackageRepository, owner, packageID string, reserving *models.PromoPackage) {
+	rollback := *reserving
+	rollback.Status = models.PromoPackageStatusDraft
+	rollback.UpdatedAt = time.Now().UTC()
+	if rbErr := repo.RevertPromoPackageReleasing(ctx, owner, &rollback); rbErr != nil {
+		if s.logger != nil {
+			s.logger.Warn("promo release rollback failed; package left in releasing reservation",
+				zap.String("owner_id", owner), zap.String("package_id", packageID), zap.Error(rbErr))
+		}
+	}
+}
+
+// confirmPromoReservationApprovals re-derives the approval answers after the
+// release reservation is won. The gate's pre-reservation snapshot could have
+// gone stale in the window before the reservation CAS (a revocation, an
+// expiry, or a CHANGES_REQUESTED verdict landing in between); any regression —
+// or an unresolvable re-derive (fail-closed: no post is created against
+// unverifiable approvals) — rolls the reservation back on the same CAS lane
+// and returns exactly the error the gate would have produced at the CAS
+// moment. It is a single post-reservation check, not a loop: the verdicts are
+// immutable and the answers are derived from one fresh snapshot.
+func (s *DraftService) confirmPromoReservationApprovals(ctx context.Context, repo promoPackageRepository, owner, packageID string, reserving *models.PromoPackage) error {
+	reapproved, reprincipalApproved, reState, reerr := s.promoReviewGateApprovals(ctx, owner, owner, packageID, reserving)
+	if reerr == nil && reapproved && reprincipalApproved {
+		return nil
+	}
+	s.rollbackPromoReservation(ctx, repo, owner, packageID, reserving)
+	if reerr != nil {
+		return reerr
+	}
+	if !reapproved {
+		return errors.Join(ErrPromoPackageApprovalRequired,
+			fmt.Errorf("blocking reasons: %s", strings.Join(promoBlockingReasonsForGate(reState, false), ", ")))
+	}
+	return errors.Join(ErrPromoPackagePrincipalApprovalRequired,
+		fmt.Errorf("blocking reasons: %s", strings.Join(promoBlockingReasonsForGate(reState, true), ", ")))
 }
 
 // promoBlockingReasonsForGate renders the gate-side blocking reasons for the

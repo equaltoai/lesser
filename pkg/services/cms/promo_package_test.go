@@ -850,3 +850,170 @@ func TestPromoPrincipalIdentityMixedCaseAgreesAcrossGateReadStateAndSelfGrant(t 
 	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "principal", selfPkg.PackageID, models.PromoPackageReviewApproved, "", selfPkg.ContentHash)
 	require.NoError(t, err, "the principal may self-review despite the casing divergence")
 }
+
+// secondVerdictListPromoRepo wraps the in-memory promo repository and runs a
+// hook on the second ListPromoReviewVerdicts call. ReleasePromoPackage derives
+// the approval snapshot twice once the reservation re-derive lands: the first
+// list is the pre-reservation gate snapshot, the second is the
+// post-reservation re-derive. The hook lets a test land a concurrent approval
+// regression (or an injection failure) deterministically in that exact window.
+type secondVerdictListPromoRepo struct {
+	*testinginmemory.PromoPackageRepository
+	onSecond func(ctx context.Context) error
+	lists    int
+}
+
+func (r *secondVerdictListPromoRepo) ListPromoReviewVerdicts(ctx context.Context, ownerID, packageID string) ([]*models.PromoReviewVerdict, error) {
+	r.lists++
+	if r.lists == 2 && r.onSecond != nil {
+		if err := r.onSecond(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return r.PromoPackageRepository.ListPromoReviewVerdicts(ctx, ownerID, packageID)
+}
+
+// TestPromoReleaseAbortsWhenApprovalWithdrawnBetweenGateAndReservation pins N2:
+// an approval regression (a reviewer submitting CHANGES_REQUESTED for the exact
+// same content) landing in the window between the release gate's snapshot and
+// the reservation win must abort the release: the reservation is rolled back on
+// the same CAS lane, no post is created, and the release fails with exactly the
+// gate's approval-required error — as if the gate had re-checked at the CAS
+// moment. The mutation-kill is the re-derive: without it the withdrawal is
+// never observed and this test fails (a post is created).
+func TestPromoReleaseAbortsWhenApprovalWithdrawnBetweenGateAndReservation(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	digest := promoDigest("2b")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	for _, reviewer := range []string{"reviewer", "principal"} {
+		_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, reviewer)
+		require.NoError(t, err)
+		_, err = svc.SubmitPromoPackageReview(ctx, reviewer, "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+		require.NoError(t, err)
+	}
+
+	// The reviewer withdraws (CHANGES_REQUESTED for the exact reviewed content)
+	// concurrently with the release, landing between the gate snapshot and the
+	// reservation win.
+	inner := svc.promoRepo.(*testinginmemory.PromoPackageRepository)
+	withdrawing := &secondVerdictListPromoRepo{
+		PromoPackageRepository: inner,
+		onSecond: func(ctx context.Context) error {
+			now := time.Now().UTC()
+			return inner.CreatePromoReviewVerdict(ctx, &models.PromoReviewVerdict{
+				OwnerID: "alice", PackageID: pkg.PackageID, Reviewer: "reviewer",
+				Verdict: models.PromoPackageReviewChangesRequested, Notes: "withdrawn concurrently",
+				ContentHash: pkg.ContentHash, RecordedAt: now,
+			})
+		},
+	}
+	svc.SetPromoPackageRepository(withdrawing)
+
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorIs(t, err, ErrPromoPackageApprovalRequired,
+		"the regression surfaces exactly the gate's approval-required error")
+	require.Len(t, creator.commands, 0, "no post is created against a withdrawn approval")
+
+	persisted, err := svc.promoRepo.GetPromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.Equal(t, models.PromoPackageStatusDraft, persisted.Status,
+		"the reservation is rolled back to draft on the same CAS lane")
+	require.Empty(t, persisted.ReleasedStatusID, "no released stamp survives the aborted release")
+	require.False(t, persisted.IsReleased())
+
+	// The package is releasable again once the approval is restored.
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+	release, err := svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.NotEmpty(t, release.ReleasedStatusID)
+	require.Len(t, creator.commands, 1, "exactly one post after the aborted attempt")
+}
+
+// TestPromoReleaseAbortsWhenPrincipalGrantRevokedBetweenGateAndReservation pins
+// the principal-floor regression arm of N2: the reviewer approval stays current
+// but the principal's grant is revoked in the window, so the re-derive keeps
+// the reviewer requirement satisfied while the principal floor regresses. The
+// release aborts with the principal-required error, the reservation is rolled
+// back, and no post is created.
+func TestPromoReleaseAbortsWhenPrincipalGrantRevokedBetweenGateAndReservation(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	digest := promoDigest("2c")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	for _, reviewer := range []string{"reviewer", "principal"} {
+		_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, reviewer)
+		require.NoError(t, err)
+		_, err = svc.SubmitPromoPackageReview(ctx, reviewer, "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+		require.NoError(t, err)
+	}
+
+	// The principal's grant is revoked concurrently with the release, landing
+	// between the gate snapshot and the reservation win.
+	inner := svc.promoRepo.(*testinginmemory.PromoPackageRepository)
+	revoking := &secondVerdictListPromoRepo{
+		PromoPackageRepository: inner,
+		onSecond: func(ctx context.Context) error {
+			g, err := inner.GetPromoReviewGrant(ctx, "alice", pkg.PackageID, "principal")
+			if err != nil {
+				return err
+			}
+			now := time.Now().UTC()
+			g.RevokedAt = &now
+			return inner.RevokePromoReviewGrant(ctx, g)
+		},
+	}
+	svc.SetPromoPackageRepository(revoking)
+
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorIs(t, err, ErrPromoPackagePrincipalApprovalRequired,
+		"the regressed principal floor surfaces the principal-required error")
+	require.Len(t, creator.commands, 0, "no post is created against a withdrawn principal approval")
+
+	persisted, err := svc.promoRepo.GetPromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.Equal(t, models.PromoPackageStatusDraft, persisted.Status, "the reservation is rolled back")
+	require.Empty(t, persisted.ReleasedStatusID)
+}
+
+// TestPromoReleaseAbortsWhenPostReservationReDeriveFails pins the fail-closed
+// arm of N2: when the post-reservation re-derive cannot resolve (the verdict
+// read itself fails), the release aborts without creating a post and the
+// reservation is rolled back, rather than releasing against unverifiable
+// approvals.
+func TestPromoReleaseAbortsWhenPostReservationReDeriveFails(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	digest := promoDigest("2d")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	for _, reviewer := range []string{"reviewer", "principal"} {
+		_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, reviewer)
+		require.NoError(t, err)
+		_, err = svc.SubmitPromoPackageReview(ctx, reviewer, "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+		require.NoError(t, err)
+	}
+
+	errInjected := errors.New("verdict read boom")
+	inner := svc.promoRepo.(*testinginmemory.PromoPackageRepository)
+	failing := &secondVerdictListPromoRepo{
+		PromoPackageRepository: inner,
+		onSecond:               func(context.Context) error { return errInjected },
+	}
+	svc.SetPromoPackageRepository(failing)
+
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorIs(t, err, errInjected, "an unresolvable post-reservation re-derive fails closed")
+	require.Len(t, creator.commands, 0, "no post is created when the re-derive cannot confirm approvals")
+
+	persisted, err := svc.promoRepo.GetPromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.Equal(t, models.PromoPackageStatusDraft, persisted.Status, "the reservation is rolled back on re-derive failure")
+	require.Empty(t, persisted.ReleasedStatusID)
+}
