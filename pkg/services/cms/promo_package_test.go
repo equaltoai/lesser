@@ -791,4 +791,16 @@ func TestPromoReleaseFinalizeFailureSurfacesCreatedStatusID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, models.PromoPackageStatusReleasing, persisted.Status,
 		"the package stays in the releasing reservation for operator reconciliation")
+
+	// The releasing reservation also blocks composition and renders on the
+	// review state with the transient reason.
+	edited := promoComposeInput(models.PromoPackageVisibilityPublic, "media-1")
+	edited.PackageID = pkg.PackageID
+	edited.PostText = "cannot compose while releasing"
+	_, err = svc.ComposePromoPackage(ctx, "alice", edited)
+	require.ErrorIs(t, err, ErrPromoPackageReleaseInProgress)
+	state, err := svc.PromoPackageReviewState(ctx, "alice", pkg.PackageID, nil)
+	require.NoError(t, err)
+	require.False(t, state.ReleaseEligible)
+	require.Contains(t, state.BlockingReasons, PromoPackageReviewReasonReleasing)
 }
