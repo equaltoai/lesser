@@ -92,6 +92,7 @@ type MockRepositoryStorage struct {
 	articleRepo           interfaces.ArticleRepository
 	draftRepo             interfaces.DraftRepository
 	uploadGrantRepo       interfaces.UploadGrantRepository
+	promoPackageRepo      interfaces.PromoPackageRepository
 	revisionRepo          interfaces.RevisionRepository
 	seriesRepo            interfaces.SeriesRepository
 	categoryRepo          interfaces.CategoryRepository
@@ -253,6 +254,15 @@ func WithDraftRepository(repo interfaces.DraftRepository) Option {
 func WithUploadGrantRepository(repo interfaces.UploadGrantRepository) Option {
 	return func(s *MockRepositoryStorage) {
 		s.uploadGrantRepo = repo
+	}
+}
+
+// WithPromoPackageRepository sets a custom promo package repository
+// implementation. Use this to inject the in-memory repository for exercising
+// the M4 promo compose/review/release lanes in tests.
+func WithPromoPackageRepository(repo interfaces.PromoPackageRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.promoPackageRepo = repo
 	}
 }
 
@@ -647,6 +657,13 @@ func (s *MockRepositoryStorage) Draft() interfaces.DraftRepository {
 // do not exercise them.
 func (s *MockRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository {
 	return s.uploadGrantRepo
+}
+
+// PromoPackage returns the promo package repository (interface type for
+// mockability). Nil by default so promo package paths fail closed in tests that
+// do not exercise them.
+func (s *MockRepositoryStorage) PromoPackage() interfaces.PromoPackageRepository {
+	return s.promoPackageRepo
 }
 
 // Revision returns the revision repository (interface type for mockability).

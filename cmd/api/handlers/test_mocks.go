@@ -525,6 +525,11 @@ func (m *MockRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository {
 	return nil
 }
 
+// PromoPackage returns a mock promo package repository for testing
+func (m *MockRepositoryStorage) PromoPackage() interfaces.PromoPackageRepository {
+	return nil
+}
+
 // Revision returns a mock revision repository for testing
 func (m *MockRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return nil

@@ -4579,6 +4579,11 @@ func (m *MockRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository {
 	return nil // Mock can be implemented as needed
 }
 
+// PromoPackage returns the mock PromoPackage repository (interface type for mockability)
+func (m *MockRepositoryStorage) PromoPackage() interfaces.PromoPackageRepository {
+	return nil // Mock can be implemented as needed
+}
+
 // Revision returns the mock Revision repository (interface type for mockability)
 func (m *MockRepositoryStorage) Revision() interfaces.RevisionRepository {
 	return nil // Mock can be implemented as needed

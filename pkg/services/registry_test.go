@@ -86,6 +86,7 @@ func (m *mockStorage) StreamingConnection() interfaces.StreamingConnectionReposi
 func (m *mockStorage) Article() interfaces.ArticleRepository                            { return nil }
 func (m *mockStorage) Draft() interfaces.DraftRepository                                { return nil }
 func (m *mockStorage) UploadGrant() interfaces.UploadGrantRepository                    { return nil }
+func (m *mockStorage) PromoPackage() interfaces.PromoPackageRepository                  { return nil }
 func (m *mockStorage) Revision() interfaces.RevisionRepository                          { return nil }
 func (m *mockStorage) Series() interfaces.SeriesRepository                              { return nil }
 func (m *mockStorage) Category() interfaces.CategoryRepository                          { return nil }

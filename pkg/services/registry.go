@@ -999,7 +999,11 @@ func (r *Registry) Articles() *cms.ArticleService {
 func (r *Registry) Drafts() *cms.DraftService {
 	// Resolve the media service before taking the registry lock: Media() lazily
 	// initializes under the same mutex and would deadlock if called here.
+	// Resolve the media and notes services before taking the registry lock:
+	// both lazily initialize under the same mutex and would deadlock if called
+	// here.
 	mediaService := r.Media()
+	notesService := r.Notes()
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1046,6 +1050,12 @@ func (r *Registry) Drafts() *cms.DraftService {
 		}
 		return state.PrimaryAdminUsername, nil
 	})
+	r.draftService.SetPromoPackageRepository(r.storage.PromoPackage())
+	if notesService != nil {
+		// The notes service is the outbound release seam for the promo gate; it
+		// creates the public/unlisted Status with the exact PUBLISHED assets.
+		r.draftService.SetPromoStatusCreator(notesService)
+	}
 	r.initialized["Drafts"] = true
 
 	return r.draftService
