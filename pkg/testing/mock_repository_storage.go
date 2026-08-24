@@ -338,6 +338,8 @@ func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 		// CMS repositories
 		articleRepo:           inmemory.NewArticleRepository(),
 		draftRepo:             inmemory.NewDraftRepository(),
+		uploadGrantRepo:       inmemory.NewUploadGrantRepository(),
+		promoPackageRepo:      inmemory.NewPromoPackageRepository(),
 		revisionRepo:          inmemory.NewRevisionRepository(),
 		seriesRepo:            inmemory.NewSeriesRepository(),
 		categoryRepo:          inmemory.NewCategoryRepository(),

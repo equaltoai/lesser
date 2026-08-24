@@ -77,10 +77,13 @@ type PromoPackageComposeInput struct {
 
 // PromoPackageResolvedAsset is one bound asset with its live media record, used
 // by the review surface to render state and by the release gate to verify the
-// exact approved bytes are still attachable.
+// exact approved bytes are still attachable. Reason carries the per-asset
+// blocking reason (empty when the asset resolves to the PUBLISHED state) so the
+// review projection can render conspicuous per-asset states.
 type PromoPackageResolvedAsset struct {
 	Binding models.PromoPackageAsset
 	Media   *models.Media // nil when the binding cannot resolve
+	Reason  string
 }
 
 // PromoPackageReviewReadState is the complete, hash-bound review state exposed
@@ -323,7 +326,7 @@ func (s *DraftService) resolvePromoPackageAssets(ctx context.Context, pkg *model
 		media, getErr := s.mediaRepo.GetMedia(ctx, binding.MediaID)
 		if getErr != nil && (errors.Is(getErr, storage.ErrNotFound) || apperrors.HasCode(getErr, apperrors.CodeNotFound)) {
 			reasons = append(reasons, PromoPackageReviewReasonAssetMissing)
-			resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding})
+			resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding, Reason: PromoPackageReviewReasonAssetMissing})
 			continue
 		}
 		if getErr != nil {
@@ -331,17 +334,20 @@ func (s *DraftService) resolvePromoPackageAssets(ctx context.Context, pkg *model
 		}
 		if media == nil || !strings.EqualFold(strings.TrimSpace(media.UserID), strings.TrimSpace(pkg.OwnerID)) {
 			reasons = append(reasons, PromoPackageReviewReasonAssetMissing)
-			resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding})
+			resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding, Reason: PromoPackageReviewReasonAssetMissing})
 			continue
 		}
 		if !media.IsPublished() {
 			reasons = append(reasons, PromoPackageReviewReasonAssetNotPublished)
-			resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding})
+			// The record is retained for the review surface so its explicit
+			// editorial lifecycle can render as WITHDRAWN / SUPERSEDED /
+			// UNAVAILABLE rather than a bare rejection.
+			resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding, Media: media, Reason: PromoPackageReviewReasonAssetNotPublished})
 			continue
 		}
 		if strings.TrimSpace(media.ContentHash) != strings.TrimSpace(binding.ContentHash) {
 			reasons = append(reasons, PromoPackageReviewReasonAssetDigestChange)
-			resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding})
+			resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding, Reason: PromoPackageReviewReasonAssetDigestChange})
 			continue
 		}
 		resolved = append(resolved, PromoPackageResolvedAsset{Binding: binding, Media: media})

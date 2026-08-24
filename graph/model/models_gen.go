@@ -929,6 +929,16 @@ type CompleteSoulBootstrapConversationInput struct {
 	CorrelationKey *string `json:"correlationKey,omitempty"`
 }
 
+type ComposePromoPackageInput struct {
+	// Set to replace an existing package's content (re-hashes and stales approvals); empty creates a new package.
+	PackageID  *string                `json:"packageId,omitempty"`
+	ArticleID  string                 `json:"articleId"`
+	PostText   string                 `json:"postText"`
+	Visibility PromoPackageVisibility `json:"visibility"`
+	// Ordered PUBLISHED asset IDs; order is the attachment order on the post.
+	AssetMediaIds []string `json:"assetMediaIds"`
+}
+
 type ContentMap struct {
 	Language string `json:"language"`
 	Content  string `json:"content"`
@@ -2474,6 +2484,113 @@ type ProfileFieldInput struct {
 	Name       string `json:"name"`
 	Value      string `json:"value"`
 	VerifiedAt *Time  `json:"verifiedAt,omitempty"`
+}
+
+type PromoPackage struct {
+	ID      string `json:"id"`
+	OwnerID string `json:"ownerId"`
+	// The published article this package promotes (canonical object URL).
+	ArticleID   string                 `json:"articleId"`
+	PostText    string                 `json:"postText"`
+	Visibility  PromoPackageVisibility `json:"visibility"`
+	ContentHash string                 `json:"contentHash"`
+	Status      PromoPackageStatus     `json:"status"`
+	// Outbound Status created by the release transition; nil until released.
+	ReleasedStatusID *string `json:"releasedStatusId,omitempty"`
+	// Ordered PUBLISHED assets attached to the outbound post (attachment order).
+	Assets    []*PromoPackageAsset `json:"assets"`
+	CreatedAt Time                 `json:"createdAt"`
+	UpdatedAt Time                 `json:"updatedAt"`
+	// Caller-authorized review state (owner or active reviewer grant).
+	Review *PromoPackageReview `json:"review,omitempty"`
+}
+
+type PromoPackageAsset struct {
+	MediaID string `json:"mediaId"`
+	// The canonical sha256 digest bound into the reviewed package at review time.
+	ContentHash *string `json:"contentHash,omitempty"`
+	// The M2 durable published serving snapshotted at compose time.
+	PublishedURL *string                   `json:"publishedUrl,omitempty"`
+	State        PromoPackageAssetState    `json:"state"`
+	Width        *int                      `json:"width,omitempty"`
+	Height       *int                      `json:"height,omitempty"`
+	MimeType     *string                   `json:"mimeType,omitempty"`
+	Provenance   *EditorialMediaProvenance `json:"provenance,omitempty"`
+}
+
+type PromoPackageConnection struct {
+	Edges      []*PromoPackageEdge `json:"edges"`
+	PageInfo   *PageInfo           `json:"pageInfo"`
+	TotalCount int                 `json:"totalCount"`
+}
+
+type PromoPackageEdge struct {
+	Node   *PromoPackage `json:"node"`
+	Cursor Cursor        `json:"cursor"`
+}
+
+type PromoPackageReleaseEligibility struct {
+	Eligible                  bool     `json:"eligible"`
+	BlockingReasons           []string `json:"blockingReasons"`
+	ReviewersApproved         bool     `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool     `json:"principalApprovalRequired"`
+	PrincipalApproved         bool     `json:"principalApproved"`
+}
+
+type PromoPackageReleaseResult struct {
+	Package  *PromoPackage `json:"package"`
+	StatusID string        `json:"statusId"`
+	URL      *string       `json:"url,omitempty"`
+}
+
+type PromoPackageReview struct {
+	PackageID string `json:"packageId"`
+	// Canonical digest over the exact reviewed content (post text, visibility, article reference, ordered asset digests).
+	ContentHash string `json:"contentHash"`
+	// Exact package-bound media visible to this owner or active reviewer.
+	Assets                    []*PromoPackageAsset            `json:"assets"`
+	ActiveReviewerIds         []string                        `json:"activeReviewerIds"`
+	ReleaseEligible           bool                            `json:"releaseEligible"`
+	ReleaseBlockingReasons    []string                        `json:"releaseBlockingReasons"`
+	ReviewersApproved         bool                            `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool                            `json:"principalApprovalRequired"`
+	PrincipalApproved         bool                            `json:"principalApproved"`
+	GrantCount                int                             `json:"grantCount"`
+	GrantsTruncated           bool                            `json:"grantsTruncated"`
+	Grants                    []*PromoPackageReviewGrant      `json:"grants"`
+	Verdicts                  []*PromoPackageVerdictRecord    `json:"verdicts"`
+	ReleaseEligibility        *PromoPackageReleaseEligibility `json:"releaseEligibility"`
+}
+
+type PromoPackageReviewConnection struct {
+	Edges      []*PromoPackageReviewEdge `json:"edges"`
+	PageInfo   *PageInfo                 `json:"pageInfo"`
+	TotalCount int                       `json:"totalCount"`
+}
+
+type PromoPackageReviewEdge struct {
+	Node   *PromoPackageReview `json:"node"`
+	Cursor Cursor              `json:"cursor"`
+}
+
+type PromoPackageReviewGrant struct {
+	ReviewerID string `json:"reviewerId"`
+	GrantedAt  Time   `json:"grantedAt"`
+	// Bounded expiry; expired grants authorize no package reads or approval.
+	ExpiresAt *Time                   `json:"expiresAt,omitempty"`
+	Status    PromoPackageGrantStatus `json:"status"`
+	RevokedAt *Time                   `json:"revokedAt,omitempty"`
+}
+
+type PromoPackageVerdictRecord struct {
+	Verdict     PromoPackageReviewVerdict `json:"verdict"`
+	Notes       *string                   `json:"notes,omitempty"`
+	ContentHash *string                   `json:"contentHash,omitempty"`
+	ReviewerID  string                    `json:"reviewerId"`
+	RecordedAt  Time                      `json:"recordedAt"`
+	// True only when this verdict is valid for the current package content and active grant.
+	Current bool `json:"current"`
+	Stale   bool `json:"stale"`
 }
 
 type PublishHostedSoulInput struct {
@@ -6366,6 +6483,291 @@ func (e *Priority) UnmarshalJSON(b []byte) error {
 }
 
 func (e Priority) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageAssetState string
+
+const (
+	PromoPackageAssetStatePublished   PromoPackageAssetState = "PUBLISHED"
+	PromoPackageAssetStateMissing     PromoPackageAssetState = "MISSING"
+	PromoPackageAssetStateWithdrawn   PromoPackageAssetState = "WITHDRAWN"
+	PromoPackageAssetStateSuperseded  PromoPackageAssetState = "SUPERSEDED"
+	PromoPackageAssetStateUnavailable PromoPackageAssetState = "UNAVAILABLE"
+	PromoPackageAssetStateRejected    PromoPackageAssetState = "REJECTED"
+)
+
+var AllPromoPackageAssetState = []PromoPackageAssetState{
+	PromoPackageAssetStatePublished,
+	PromoPackageAssetStateMissing,
+	PromoPackageAssetStateWithdrawn,
+	PromoPackageAssetStateSuperseded,
+	PromoPackageAssetStateUnavailable,
+	PromoPackageAssetStateRejected,
+}
+
+func (e PromoPackageAssetState) IsValid() bool {
+	switch e {
+	case PromoPackageAssetStatePublished, PromoPackageAssetStateMissing, PromoPackageAssetStateWithdrawn, PromoPackageAssetStateSuperseded, PromoPackageAssetStateUnavailable, PromoPackageAssetStateRejected:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageAssetState) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageAssetState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageAssetState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageAssetState", str)
+	}
+	return nil
+}
+
+func (e PromoPackageAssetState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageAssetState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageAssetState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageGrantStatus string
+
+const (
+	PromoPackageGrantStatusActive  PromoPackageGrantStatus = "ACTIVE"
+	PromoPackageGrantStatusRevoked PromoPackageGrantStatus = "REVOKED"
+	PromoPackageGrantStatusExpired PromoPackageGrantStatus = "EXPIRED"
+)
+
+var AllPromoPackageGrantStatus = []PromoPackageGrantStatus{
+	PromoPackageGrantStatusActive,
+	PromoPackageGrantStatusRevoked,
+	PromoPackageGrantStatusExpired,
+}
+
+func (e PromoPackageGrantStatus) IsValid() bool {
+	switch e {
+	case PromoPackageGrantStatusActive, PromoPackageGrantStatusRevoked, PromoPackageGrantStatusExpired:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageGrantStatus) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageGrantStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageGrantStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageGrantStatus", str)
+	}
+	return nil
+}
+
+func (e PromoPackageGrantStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageGrantStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageGrantStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageReviewVerdict string
+
+const (
+	PromoPackageReviewVerdictApproved         PromoPackageReviewVerdict = "APPROVED"
+	PromoPackageReviewVerdictChangesRequested PromoPackageReviewVerdict = "CHANGES_REQUESTED"
+)
+
+var AllPromoPackageReviewVerdict = []PromoPackageReviewVerdict{
+	PromoPackageReviewVerdictApproved,
+	PromoPackageReviewVerdictChangesRequested,
+}
+
+func (e PromoPackageReviewVerdict) IsValid() bool {
+	switch e {
+	case PromoPackageReviewVerdictApproved, PromoPackageReviewVerdictChangesRequested:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageReviewVerdict) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageReviewVerdict) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageReviewVerdict(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageReviewVerdict", str)
+	}
+	return nil
+}
+
+func (e PromoPackageReviewVerdict) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageReviewVerdict) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageReviewVerdict) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageStatus string
+
+const (
+	PromoPackageStatusDraft    PromoPackageStatus = "DRAFT"
+	PromoPackageStatusReleased PromoPackageStatus = "RELEASED"
+)
+
+var AllPromoPackageStatus = []PromoPackageStatus{
+	PromoPackageStatusDraft,
+	PromoPackageStatusReleased,
+}
+
+func (e PromoPackageStatus) IsValid() bool {
+	switch e {
+	case PromoPackageStatusDraft, PromoPackageStatusReleased:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageStatus) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageStatus", str)
+	}
+	return nil
+}
+
+func (e PromoPackageStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageVisibility string
+
+const (
+	PromoPackageVisibilityPublic   PromoPackageVisibility = "PUBLIC"
+	PromoPackageVisibilityUnlisted PromoPackageVisibility = "UNLISTED"
+)
+
+var AllPromoPackageVisibility = []PromoPackageVisibility{
+	PromoPackageVisibilityPublic,
+	PromoPackageVisibilityUnlisted,
+}
+
+func (e PromoPackageVisibility) IsValid() bool {
+	switch e {
+	case PromoPackageVisibilityPublic, PromoPackageVisibilityUnlisted:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageVisibility) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageVisibility) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageVisibility(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageVisibility", str)
+	}
+	return nil
+}
+
+func (e PromoPackageVisibility) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageVisibility) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageVisibility) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
