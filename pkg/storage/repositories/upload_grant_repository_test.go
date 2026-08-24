@@ -6,13 +6,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
 	"go.uber.org/zap"
 )
 
@@ -238,4 +242,78 @@ func TestUploadGrantRepositoryConsumeGenericError(t *testing.T) {
 	repo := NewUploadGrantRepository(mockDB, "test-table", zap.NewNop(), nil)
 	err := repo.ConsumeUploadGrant(context.Background(), grant, models.UploadGrantStatusUsed, "", time.Now().UTC())
 	require.Error(t, err)
+}
+
+// uploadGrantRecordingDynamo wraps fakedb and records every real UpdateItem
+// expression so a test can prove the single-use consume's CAS conditions are
+// actually present in the mutation the repository sends to DynamoDB.
+type uploadGrantRecordingDynamo struct {
+	*fakedb.Fake
+	updateInputs []*dynamodb.UpdateItemInput
+}
+
+func (d *uploadGrantRecordingDynamo) UpdateItem(ctx context.Context, input *dynamodb.UpdateItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
+	d.updateInputs = append(d.updateInputs, input)
+	return d.Fake.UpdateItem(ctx, input, opts...)
+}
+
+// newUploadGrantRealRepo builds the production repository adapter over the
+// in-process fakedb DynamoDB (the M1/M2 real-expression precedent), so the
+// version-conditioned consume is exercised against the real UpdateItem
+// expression rather than mocks.
+func newUploadGrantRealRepo(t *testing.T) (*UploadGrantRepository, *uploadGrantRecordingDynamo) {
+	t.Helper()
+	client := &uploadGrantRecordingDynamo{Fake: fakedb.New()}
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, client)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&models.UploadGrant{}))
+
+	repo := NewUploadGrantRepository(db, "test-table", zap.NewNop(), nil)
+	repo.SetValidationService(nil)
+	repo.SetPermissionService(nil)
+	repo.SetEventService(nil)
+	repo.SetCachingService(nil)
+
+	// The fakedb Create does not auto-run model key hooks; CreateUploadGrant
+	// calls UpdateKeys itself, so this is only relevant for direct seeding.
+	return repo, client
+}
+
+func TestUploadGrantRepositoryConsumeSingleUseRealExpression(t *testing.T) {
+	ctx := context.Background()
+	repo, client := newUploadGrantRealRepo(t)
+
+	// Persist a MINTED v0 grant through the real adapter.
+	grant := testUploadGrantFixture(t)
+	require.NoError(t, repo.CreateUploadGrant(ctx, grant))
+
+	// Two concurrent finalizers both observed the same MINTED v0 row; each runs
+	// the version+MINTED-conditioned consume. Exactly one may win.
+	staleConcurrentCopy := *grant
+	now := time.Now().UTC()
+	firstErr := repo.ConsumeUploadGrant(ctx, grant, models.UploadGrantStatusUsed, "", now)
+	secondErr := repo.ConsumeUploadGrant(ctx, &staleConcurrentCopy, models.UploadGrantStatusUsed, "", now)
+
+	wins := 0
+	for _, err := range []error{firstErr, secondErr} {
+		if err == nil {
+			wins++
+			continue
+		}
+		require.True(t, errors.Is(err, interfaces.ErrUploadGrantConsumed), "the losing consume must surface ErrUploadGrantConsumed, got %v", err)
+	}
+	require.Equal(t, 1, wins, "exactly one of the double-consume attempts wins")
+
+	// Both attempts issued a real UpdateItem expression carrying the CAS
+	// conditions; the loser's mutation was rejected with no state change.
+	require.Len(t, client.updateInputs, 2, "both consume attempts must issue a real UpdateItem expression")
+	for _, input := range client.updateInputs {
+		require.NotNil(t, input.ConditionExpression, "the consume update must carry the MINTED+version condition")
+	}
+
+	loaded, err := repo.GetUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusUsed, loaded.Status)
+	require.Equal(t, 1, loaded.Version, "the winner bumps the version exactly once")
+	require.NotNil(t, loaded.UsedAt)
 }
