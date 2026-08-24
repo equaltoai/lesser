@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/auth"
+	mediasvc "github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
@@ -1707,4 +1708,54 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 		return nil, err
 	}
 	return r.buildCMSDraftReview(ctx, d, g, vs, true)
+}
+
+func (r *mutationResolver) MintUploadGrant(ctx context.Context, input model.MintUploadGrantInput) (*model.UploadGrant, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return nil, errors.New("media service is not available")
+	}
+	grant, url, err := mediaService.MintUploadGrant(ctx, mediasvc.MintUploadGrantInput{
+		Owner:         username,
+		ContentType:   input.ContentType,
+		MaxSizeBytes:  int64(input.MaxSizeBytes),
+		ContentSHA256: input.Sha256,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.convertCMSUploadGrant(grant, url), nil
+}
+
+func (r *mutationResolver) FinalizeUploadGrant(ctx context.Context, grantID string) (*model.UploadGrantFinalizeResult, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return nil, errors.New("media service is not available")
+	}
+	media, err := mediaService.FinalizeUploadGrant(ctx, username, grantID)
+	if err != nil {
+		return nil, err
+	}
+	grant, _, err := mediaService.UploadGrant(ctx, username, grantID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.UploadGrantFinalizeResult{
+		Grant: r.convertCMSUploadGrant(grant, ""),
+		Media: r.convertCMSUploadGrantMedia(media),
+	}, nil
 }

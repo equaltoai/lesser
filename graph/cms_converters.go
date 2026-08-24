@@ -858,3 +858,65 @@ func (r *Resolver) convertCMSDraftReviewGrant(ctx context.Context, grant *models
 		Status: status, RevokedAt: revokedAt, ExpiresAt: expiresAt,
 	}
 }
+
+// convertCMSUploadGrant maps a storage upload grant onto its inspectable
+// GraphQL surface. The status query recomputes EXPIRED at read time from the
+// bounded expiry; presignedURL is populated only while the grant is minted.
+func (r *Resolver) convertCMSUploadGrant(grant *models.UploadGrant, presignedURL string) *model.UploadGrant {
+	if grant == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	status := model.UploadGrantStatusMinted
+	switch {
+	case grant.IsUsed():
+		status = model.UploadGrantStatusUsed
+	case grant.IsFailedDigest():
+		status = model.UploadGrantStatusFailedDigest
+	case grant.Expired(now):
+		status = model.UploadGrantStatusExpired
+	}
+	out := &model.UploadGrant{
+		ID:             grant.GrantID,
+		OwnerID:        grant.Owner,
+		ContentType:    grant.ContentType,
+		MaxSizeBytes:   int(grant.MaxSizeBytes),
+		DeclaredSha256: grant.ContentSHA256,
+		Status:         status,
+		GrantedAt:      model.Time(grant.GrantedAt),
+		ExpiresAt:      model.Time(grant.ExpiresAt),
+	}
+	if presignedURL != "" {
+		out.PresignedURL = &presignedURL
+	}
+	if grant.MediaID != "" {
+		mediaID := grant.MediaID
+		out.MediaID = &mediaID
+	}
+	if grant.UsedAt != nil {
+		usedAt := model.Time(*grant.UsedAt)
+		out.UsedAt = &usedAt
+	}
+	if grant.FailureReason != "" {
+		reason := grant.FailureReason
+		out.FailureReason = &reason
+	}
+	return out
+}
+
+// convertCMSUploadGrantMedia maps the admitted internal editorial media record
+// onto the finalize result surface (media ID for M1 draft binding, verified
+// content hash, and the M0 processing status).
+func (r *Resolver) convertCMSUploadGrantMedia(media *models.Media) *model.UploadGrantMedia {
+	if media == nil {
+		return nil
+	}
+	return &model.UploadGrantMedia{
+		MediaID:     media.MediaID,
+		ContentType: media.ContentType,
+		Size:        int(media.FileSize),
+		ContentHash: media.ContentHash,
+		Status:      media.Status,
+		Visibility:  string(media.Visibility),
+	}
+}

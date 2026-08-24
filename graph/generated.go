@@ -2237,6 +2237,7 @@ type ComplexityRoot struct {
 		ExportReputation                          func(childComplexity int) int
 		FinalizeSoulBootstrap                     func(childComplexity int, input model.FinalizeSoulBootstrapInput) int
 		FinalizeSoulPromotion                     func(childComplexity int, input model.FinalizeSoulPromotionInput) int
+		FinalizeUploadGrant                       func(childComplexity int, grantID string) int
 		FlagObject                                func(childComplexity int, input model.FlagInput) int
 		FollowActor                               func(childComplexity int, id string) int
 		FollowHashtag                             func(childComplexity int, hashtag string, notifyLevel *model.NotificationLevel) int
@@ -2246,6 +2247,7 @@ type ComplexityRoot struct {
 		LikeObject                                func(childComplexity int, id string) int
 		MarkConversationAsRead                    func(childComplexity int, id string) int
 		MarkNotificationGroupAsRead               func(childComplexity int, groupID string) int
+		MintUploadGrant                           func(childComplexity int, input model.MintUploadGrantInput) int
 		MuteActor                                 func(childComplexity int, id string, notifications *bool) int
 		MuteHashtag                               func(childComplexity int, hashtag string, until *model.Time) int
 		MuteStatus                                func(childComplexity int, id string, durationSeconds *int) int
@@ -2770,6 +2772,7 @@ type ComplexityRoot struct {
 		TrendingTags                   func(childComplexity int, limit *int) int
 		Trends                         func(childComplexity int, limit *int) int
 		TrustGraph                     func(childComplexity int, actorID string, category *models.TrustCategory) int
+		UploadGrant                    func(childComplexity int, grantID string) int
 		UserPreferences                func(childComplexity int) int
 		Viewer                         func(childComplexity int) int
 		ViewerRole                     func(childComplexity int) int
@@ -3596,6 +3599,35 @@ type ComplexityRoot struct {
 		Success        func(childComplexity int) int
 	}
 
+	UploadGrant struct {
+		ContentType    func(childComplexity int) int
+		DeclaredSha256 func(childComplexity int) int
+		ExpiresAt      func(childComplexity int) int
+		FailureReason  func(childComplexity int) int
+		GrantedAt      func(childComplexity int) int
+		ID             func(childComplexity int) int
+		MaxSizeBytes   func(childComplexity int) int
+		MediaID        func(childComplexity int) int
+		OwnerID        func(childComplexity int) int
+		PresignedURL   func(childComplexity int) int
+		Status         func(childComplexity int) int
+		UsedAt         func(childComplexity int) int
+	}
+
+	UploadGrantFinalizeResult struct {
+		Grant func(childComplexity int) int
+		Media func(childComplexity int) int
+	}
+
+	UploadGrantMedia struct {
+		ContentHash func(childComplexity int) int
+		ContentType func(childComplexity int) int
+		MediaID     func(childComplexity int) int
+		Size        func(childComplexity int) int
+		Status      func(childComplexity int) int
+		Visibility  func(childComplexity int) int
+	}
+
 	UploadMediaPayload struct {
 		Media    func(childComplexity int) int
 		UploadID func(childComplexity int) int
@@ -3826,6 +3858,8 @@ type MutationResolver interface {
 	SetDraftEditorialMedia(ctx context.Context, draftID string, media []*model.EditorialMediaUsageInput) (*model.Draft, error)
 	AutosaveDraft(ctx context.Context, id string, content string) (*model.Draft, error)
 	DeleteDraft(ctx context.Context, id string) (bool, error)
+	MintUploadGrant(ctx context.Context, input model.MintUploadGrantInput) (*model.UploadGrant, error)
+	FinalizeUploadGrant(ctx context.Context, grantID string) (*model.UploadGrantFinalizeResult, error)
 	PublishDraft(ctx context.Context, id string) (*model.Article, error)
 	ScheduleDraft(ctx context.Context, id string, scheduledAt model.Time) (*model.Draft, error)
 	CancelScheduledDraft(ctx context.Context, id string) (*model.Draft, error)
@@ -4017,6 +4051,7 @@ type QueryResolver interface {
 	SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
 	DraftReview(ctx context.Context, id string) (*model.DraftReview, error)
 	DraftEditorialMediaAccess(ctx context.Context, draftID string, mediaID string) (*model.EditorialMediaAccess, error)
+	UploadGrant(ctx context.Context, grantID string) (*model.UploadGrant, error)
 	Revisions(ctx context.Context, objectID string, first *int, after *model.Cursor) (*model.RevisionConnection, error)
 	Revision(ctx context.Context, objectID string, version int) (*model.Revision, error)
 	Article(ctx context.Context, id string) (*model.Article, error)
@@ -15006,6 +15041,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.FinalizeSoulPromotion(childComplexity, args["input"].(model.FinalizeSoulPromotionInput)), true
 
+	case "Mutation.finalizeUploadGrant":
+		if e.complexity.Mutation.FinalizeUploadGrant == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_finalizeUploadGrant_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.FinalizeUploadGrant(childComplexity, args["grantId"].(string)), true
+
 	case "Mutation.flagObject":
 		if e.complexity.Mutation.FlagObject == nil {
 			break
@@ -15113,6 +15160,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.MarkNotificationGroupAsRead(childComplexity, args["groupId"].(string)), true
+
+	case "Mutation.mintUploadGrant":
+		if e.complexity.Mutation.MintUploadGrant == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_mintUploadGrant_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.MintUploadGrant(childComplexity, args["input"].(model.MintUploadGrantInput)), true
 
 	case "Mutation.muteActor":
 		if e.complexity.Mutation.MuteActor == nil {
@@ -19270,6 +19329,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.TrustGraph(childComplexity, args["actorId"].(string), args["category"].(*models.TrustCategory)), true
 
+	case "Query.uploadGrant":
+		if e.complexity.Query.UploadGrant == nil {
+			break
+		}
+
+		args, err := ec.field_Query_uploadGrant_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.UploadGrant(childComplexity, args["grantId"].(string)), true
+
 	case "Query.userPreferences":
 		if e.complexity.Query.UserPreferences == nil {
 			break
@@ -23269,6 +23340,146 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.UpdateQuotePermissionsPayload.Success(childComplexity), true
 
+	case "UploadGrant.contentType":
+		if e.complexity.UploadGrant.ContentType == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.ContentType(childComplexity), true
+
+	case "UploadGrant.declaredSha256":
+		if e.complexity.UploadGrant.DeclaredSha256 == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.DeclaredSha256(childComplexity), true
+
+	case "UploadGrant.expiresAt":
+		if e.complexity.UploadGrant.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.ExpiresAt(childComplexity), true
+
+	case "UploadGrant.failureReason":
+		if e.complexity.UploadGrant.FailureReason == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.FailureReason(childComplexity), true
+
+	case "UploadGrant.grantedAt":
+		if e.complexity.UploadGrant.GrantedAt == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.GrantedAt(childComplexity), true
+
+	case "UploadGrant.id":
+		if e.complexity.UploadGrant.ID == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.ID(childComplexity), true
+
+	case "UploadGrant.maxSizeBytes":
+		if e.complexity.UploadGrant.MaxSizeBytes == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.MaxSizeBytes(childComplexity), true
+
+	case "UploadGrant.mediaId":
+		if e.complexity.UploadGrant.MediaID == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.MediaID(childComplexity), true
+
+	case "UploadGrant.ownerId":
+		if e.complexity.UploadGrant.OwnerID == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.OwnerID(childComplexity), true
+
+	case "UploadGrant.presignedUrl":
+		if e.complexity.UploadGrant.PresignedURL == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.PresignedURL(childComplexity), true
+
+	case "UploadGrant.status":
+		if e.complexity.UploadGrant.Status == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.Status(childComplexity), true
+
+	case "UploadGrant.usedAt":
+		if e.complexity.UploadGrant.UsedAt == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.UsedAt(childComplexity), true
+
+	case "UploadGrantFinalizeResult.grant":
+		if e.complexity.UploadGrantFinalizeResult.Grant == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantFinalizeResult.Grant(childComplexity), true
+
+	case "UploadGrantFinalizeResult.media":
+		if e.complexity.UploadGrantFinalizeResult.Media == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantFinalizeResult.Media(childComplexity), true
+
+	case "UploadGrantMedia.contentHash":
+		if e.complexity.UploadGrantMedia.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.ContentHash(childComplexity), true
+
+	case "UploadGrantMedia.contentType":
+		if e.complexity.UploadGrantMedia.ContentType == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.ContentType(childComplexity), true
+
+	case "UploadGrantMedia.mediaId":
+		if e.complexity.UploadGrantMedia.MediaID == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.MediaID(childComplexity), true
+
+	case "UploadGrantMedia.size":
+		if e.complexity.UploadGrantMedia.Size == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.Size(childComplexity), true
+
+	case "UploadGrantMedia.status":
+		if e.complexity.UploadGrantMedia.Status == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.Status(childComplexity), true
+
+	case "UploadGrantMedia.visibility":
+		if e.complexity.UploadGrantMedia.Visibility == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.Visibility(childComplexity), true
+
 	case "UploadMediaPayload.media":
 		if e.complexity.UploadMediaPayload.Media == nil {
 			break
@@ -23525,6 +23736,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputGroupingStrategyInput,
 		ec.unmarshalInputHashtagNotificationSettingsInput,
 		ec.unmarshalInputMediaFilterInput,
+		ec.unmarshalInputMintUploadGrantInput,
 		ec.unmarshalInputModerationFilter,
 		ec.unmarshalInputModerationPatternInput,
 		ec.unmarshalInputModerationReviewInput,
@@ -24802,6 +25014,17 @@ func (ec *executionContext) field_Mutation_finalizeSoulPromotion_args(ctx contex
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_finalizeUploadGrant_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "grantId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["grantId"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_flagObject_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -24918,6 +25141,17 @@ func (ec *executionContext) field_Mutation_markNotificationGroupAsRead_args(ctx 
 		return nil, err
 	}
 	args["groupId"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_mintUploadGrant_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNMintUploadGrantInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMintUploadGrantInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
 	return args, nil
 }
 
@@ -28351,6 +28585,17 @@ func (ec *executionContext) field_Query_trustGraph_args(ctx context.Context, raw
 		return nil, err
 	}
 	args["category"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_uploadGrant_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "grantId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["grantId"] = arg0
 	return args, nil
 }
 
@@ -101850,6 +102095,148 @@ func (ec *executionContext) fieldContext_Mutation_deleteDraft(ctx context.Contex
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_mintUploadGrant(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_mintUploadGrant(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().MintUploadGrant(rctx, fc.Args["input"].(model.MintUploadGrantInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrant)
+	fc.Result = res
+	return ec.marshalNUploadGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_mintUploadGrant(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_UploadGrant_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_UploadGrant_ownerId(ctx, field)
+			case "contentType":
+				return ec.fieldContext_UploadGrant_contentType(ctx, field)
+			case "maxSizeBytes":
+				return ec.fieldContext_UploadGrant_maxSizeBytes(ctx, field)
+			case "declaredSha256":
+				return ec.fieldContext_UploadGrant_declaredSha256(ctx, field)
+			case "status":
+				return ec.fieldContext_UploadGrant_status(ctx, field)
+			case "presignedUrl":
+				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "mediaId":
+				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
+			case "grantedAt":
+				return ec.fieldContext_UploadGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_UploadGrant_expiresAt(ctx, field)
+			case "usedAt":
+				return ec.fieldContext_UploadGrant_usedAt(ctx, field)
+			case "failureReason":
+				return ec.fieldContext_UploadGrant_failureReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrant", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_mintUploadGrant_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_finalizeUploadGrant(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_finalizeUploadGrant(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().FinalizeUploadGrant(rctx, fc.Args["grantId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrantFinalizeResult)
+	fc.Result = res
+	return ec.marshalNUploadGrantFinalizeResult2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantFinalizeResult(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_finalizeUploadGrant(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "grant":
+				return ec.fieldContext_UploadGrantFinalizeResult_grant(ctx, field)
+			case "media":
+				return ec.fieldContext_UploadGrantFinalizeResult_media(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrantFinalizeResult", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_finalizeUploadGrant_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_publishDraft(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_publishDraft(ctx, field)
 	if err != nil {
@@ -124164,6 +124551,87 @@ func (ec *executionContext) fieldContext_Query_draftEditorialMediaAccess(ctx con
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_draftEditorialMediaAccess_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_uploadGrant(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_uploadGrant(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().UploadGrant(rctx, fc.Args["grantId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrant)
+	fc.Result = res
+	return ec.marshalNUploadGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_uploadGrant(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_UploadGrant_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_UploadGrant_ownerId(ctx, field)
+			case "contentType":
+				return ec.fieldContext_UploadGrant_contentType(ctx, field)
+			case "maxSizeBytes":
+				return ec.fieldContext_UploadGrant_maxSizeBytes(ctx, field)
+			case "declaredSha256":
+				return ec.fieldContext_UploadGrant_declaredSha256(ctx, field)
+			case "status":
+				return ec.fieldContext_UploadGrant_status(ctx, field)
+			case "presignedUrl":
+				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "mediaId":
+				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
+			case "grantedAt":
+				return ec.fieldContext_UploadGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_UploadGrant_expiresAt(ctx, field)
+			case "usedAt":
+				return ec.fieldContext_UploadGrant_usedAt(ctx, field)
+			case "failureReason":
+				return ec.fieldContext_UploadGrant_failureReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrant", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_uploadGrant_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -156422,6 +156890,914 @@ func (ec *executionContext) fieldContext_UpdateQuotePermissionsPayload_affectedQ
 	return fc, nil
 }
 
+func (ec *executionContext) _UploadGrant_id(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_ownerId(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_ownerId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.OwnerID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_ownerId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_contentType(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_contentType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_contentType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_maxSizeBytes(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_maxSizeBytes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MaxSizeBytes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_maxSizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_declaredSha256(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_declaredSha256(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DeclaredSha256, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_declaredSha256(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_status(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.UploadGrantStatus)
+	fc.Result = res
+	return ec.marshalNUploadGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantStatus(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type UploadGrantStatus does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_presignedUrl(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PresignedURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_presignedUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOID2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_grantedAt(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_grantedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.GrantedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_grantedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_usedAt(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_usedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UsedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_usedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_failureReason(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_failureReason(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.FailureReason, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_failureReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantFinalizeResult_grant(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantFinalizeResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantFinalizeResult_grant(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Grant, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrant)
+	fc.Result = res
+	return ec.marshalNUploadGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantFinalizeResult_grant(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantFinalizeResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_UploadGrant_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_UploadGrant_ownerId(ctx, field)
+			case "contentType":
+				return ec.fieldContext_UploadGrant_contentType(ctx, field)
+			case "maxSizeBytes":
+				return ec.fieldContext_UploadGrant_maxSizeBytes(ctx, field)
+			case "declaredSha256":
+				return ec.fieldContext_UploadGrant_declaredSha256(ctx, field)
+			case "status":
+				return ec.fieldContext_UploadGrant_status(ctx, field)
+			case "presignedUrl":
+				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "mediaId":
+				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
+			case "grantedAt":
+				return ec.fieldContext_UploadGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_UploadGrant_expiresAt(ctx, field)
+			case "usedAt":
+				return ec.fieldContext_UploadGrant_usedAt(ctx, field)
+			case "failureReason":
+				return ec.fieldContext_UploadGrant_failureReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrant", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantFinalizeResult_media(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantFinalizeResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantFinalizeResult_media(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Media, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrantMedia)
+	fc.Result = res
+	return ec.marshalNUploadGrantMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantMedia(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantFinalizeResult_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantFinalizeResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_UploadGrantMedia_mediaId(ctx, field)
+			case "contentType":
+				return ec.fieldContext_UploadGrantMedia_contentType(ctx, field)
+			case "size":
+				return ec.fieldContext_UploadGrantMedia_size(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_UploadGrantMedia_contentHash(ctx, field)
+			case "status":
+				return ec.fieldContext_UploadGrantMedia_status(ctx, field)
+			case "visibility":
+				return ec.fieldContext_UploadGrantMedia_visibility(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrantMedia", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_contentType(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_contentType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_contentType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_size(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_size(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Size, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_status(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_visibility(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_visibility(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Visibility, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_visibility(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UploadMediaPayload_media(ctx context.Context, field graphql.CollectedField, obj *model.UploadMediaPayload) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_UploadMediaPayload_media(ctx, field)
 	if err != nil {
@@ -163134,6 +164510,47 @@ func (ec *executionContext) unmarshalInputMediaFilterInput(ctx context.Context, 
 				return it, err
 			}
 			it.Until = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputMintUploadGrantInput(ctx context.Context, obj any) (model.MintUploadGrantInput, error) {
+	var it model.MintUploadGrantInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"contentType", "maxSizeBytes", "sha256"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "contentType":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("contentType"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ContentType = data
+		case "maxSizeBytes":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxSizeBytes"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxSizeBytes = data
+		case "sha256":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sha256"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Sha256 = data
 		}
 	}
 
@@ -182547,6 +183964,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "mintUploadGrant":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_mintUploadGrant(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "finalizeUploadGrant":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_finalizeUploadGrant(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "publishDraft":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_publishDraft(ctx, field)
@@ -187115,6 +188546,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_draftEditorialMediaAccess(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "uploadGrant":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_uploadGrant(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -194286,6 +195739,196 @@ func (ec *executionContext) _UpdateQuotePermissionsPayload(ctx context.Context, 
 			}
 		case "affectedQuotes":
 			out.Values[i] = ec._UpdateQuotePermissionsPayload_affectedQuotes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var uploadGrantImplementors = []string{"UploadGrant"}
+
+func (ec *executionContext) _UploadGrant(ctx context.Context, sel ast.SelectionSet, obj *model.UploadGrant) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, uploadGrantImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UploadGrant")
+		case "id":
+			out.Values[i] = ec._UploadGrant_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "ownerId":
+			out.Values[i] = ec._UploadGrant_ownerId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentType":
+			out.Values[i] = ec._UploadGrant_contentType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxSizeBytes":
+			out.Values[i] = ec._UploadGrant_maxSizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "declaredSha256":
+			out.Values[i] = ec._UploadGrant_declaredSha256(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._UploadGrant_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "presignedUrl":
+			out.Values[i] = ec._UploadGrant_presignedUrl(ctx, field, obj)
+		case "mediaId":
+			out.Values[i] = ec._UploadGrant_mediaId(ctx, field, obj)
+		case "grantedAt":
+			out.Values[i] = ec._UploadGrant_grantedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._UploadGrant_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "usedAt":
+			out.Values[i] = ec._UploadGrant_usedAt(ctx, field, obj)
+		case "failureReason":
+			out.Values[i] = ec._UploadGrant_failureReason(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var uploadGrantFinalizeResultImplementors = []string{"UploadGrantFinalizeResult"}
+
+func (ec *executionContext) _UploadGrantFinalizeResult(ctx context.Context, sel ast.SelectionSet, obj *model.UploadGrantFinalizeResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, uploadGrantFinalizeResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UploadGrantFinalizeResult")
+		case "grant":
+			out.Values[i] = ec._UploadGrantFinalizeResult_grant(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "media":
+			out.Values[i] = ec._UploadGrantFinalizeResult_media(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var uploadGrantMediaImplementors = []string{"UploadGrantMedia"}
+
+func (ec *executionContext) _UploadGrantMedia(ctx context.Context, sel ast.SelectionSet, obj *model.UploadGrantMedia) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, uploadGrantMediaImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UploadGrantMedia")
+		case "mediaId":
+			out.Values[i] = ec._UploadGrantMedia_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentType":
+			out.Values[i] = ec._UploadGrantMedia_contentType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._UploadGrantMedia_size(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentHash":
+			out.Values[i] = ec._UploadGrantMedia_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._UploadGrantMedia_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "visibility":
+			out.Values[i] = ec._UploadGrantMedia_visibility(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -201561,6 +203204,11 @@ func (ec *executionContext) marshalNMetricsUpdate2ᚖgithubᚗcomᚋequaltoaiᚋ
 	return ec._MetricsUpdate(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNMintUploadGrantInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMintUploadGrantInput(ctx context.Context, v any) (model.MintUploadGrantInput, error) {
+	res, err := ec.unmarshalInputMintUploadGrantInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNModerationAction2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationAction(ctx context.Context, v any) (model.ModerationAction, error) {
 	var res model.ModerationAction
 	err := res.UnmarshalGQL(v)
@@ -205903,6 +207551,54 @@ func (ec *executionContext) marshalNUpload2githubᚗcomᚋ99designsᚋgqlgenᚋg
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) marshalNUploadGrant2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx context.Context, sel ast.SelectionSet, v model.UploadGrant) graphql.Marshaler {
+	return ec._UploadGrant(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNUploadGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx context.Context, sel ast.SelectionSet, v *model.UploadGrant) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UploadGrant(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNUploadGrantFinalizeResult2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantFinalizeResult(ctx context.Context, sel ast.SelectionSet, v model.UploadGrantFinalizeResult) graphql.Marshaler {
+	return ec._UploadGrantFinalizeResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNUploadGrantFinalizeResult2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantFinalizeResult(ctx context.Context, sel ast.SelectionSet, v *model.UploadGrantFinalizeResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UploadGrantFinalizeResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNUploadGrantMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantMedia(ctx context.Context, sel ast.SelectionSet, v *model.UploadGrantMedia) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UploadGrantMedia(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNUploadGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantStatus(ctx context.Context, v any) (model.UploadGrantStatus, error) {
+	var res model.UploadGrantStatus
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNUploadGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantStatus(ctx context.Context, sel ast.SelectionSet, v model.UploadGrantStatus) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) unmarshalNUploadMediaInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadMediaInput(ctx context.Context, v any) (model.UploadMediaInput, error) {

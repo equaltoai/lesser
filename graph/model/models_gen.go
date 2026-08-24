@@ -2062,6 +2062,13 @@ type MetricsUpdate struct {
 	InstanceDomain       *string             `json:"instanceDomain,omitempty"`
 }
 
+type MintUploadGrantInput struct {
+	ContentType  string `json:"contentType"`
+	MaxSizeBytes int    `json:"maxSizeBytes"`
+	// Hex-encoded sha256 of the exact bytes the caller will PUT.
+	Sha256 string `json:"sha256"`
+}
+
 type ModerationActionCounts struct {
 	None      int `json:"none"`
 	Flag      int `json:"flag"`
@@ -3513,6 +3520,45 @@ type UpdateUserPreferencesInput struct {
 	PersonalizedSearchEnabled *bool                      `json:"personalizedSearchEnabled,omitempty"`
 	ReblogFilters             []*ReblogFilterInput       `json:"reblogFilters,omitempty"`
 	Streaming                 *StreamingPreferencesInput `json:"streaming,omitempty"`
+}
+
+// A one-time, hash-bound, actor-scoped upload grant minted by the owner.
+type UploadGrant struct {
+	ID      string `json:"id"`
+	OwnerID string `json:"ownerId"`
+	// Declared media type, bound into the presigned PUT.
+	ContentType string `json:"contentType"`
+	// Declared size cap; finalize fails closed beyond it.
+	MaxSizeBytes int `json:"maxSizeBytes"`
+	// Hex-encoded sha256 of the exact bytes the caller will PUT.
+	DeclaredSha256 string            `json:"declaredSha256"`
+	Status         UploadGrantStatus `json:"status"`
+	// Presigned PUT URL. Populated at mint and refreshed while the grant is minted.
+	PresignedURL *string `json:"presignedUrl,omitempty"`
+	// Media ID minted with the grant; set once the finalize admits the asset.
+	MediaID   *string `json:"mediaId,omitempty"`
+	GrantedAt Time    `json:"grantedAt"`
+	// Bounded expiry; expired grants authorize no PUT or finalize.
+	ExpiresAt Time  `json:"expiresAt"`
+	UsedAt    *Time `json:"usedAt,omitempty"`
+	// Set on a digest-failure finalize so the owner can inspect why an upload was not admitted.
+	FailureReason *string `json:"failureReason,omitempty"`
+}
+
+type UploadGrantFinalizeResult struct {
+	Grant *UploadGrant      `json:"grant"`
+	Media *UploadGrantMedia `json:"media"`
+}
+
+// The internal editorial media record admitted by a successful finalize.
+type UploadGrantMedia struct {
+	MediaID     string `json:"mediaId"`
+	ContentType string `json:"contentType"`
+	Size        int    `json:"size"`
+	// Canonical sha256:<hex> content integrity of the exact admitted bytes.
+	ContentHash string `json:"contentHash"`
+	Status      string `json:"status"`
+	Visibility  string `json:"visibility"`
 }
 
 type UploadMediaInput struct {
@@ -7750,6 +7796,65 @@ func (e *TrendingItemType) UnmarshalJSON(b []byte) error {
 }
 
 func (e TrendingItemType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type UploadGrantStatus string
+
+const (
+	UploadGrantStatusMinted       UploadGrantStatus = "MINTED"
+	UploadGrantStatusUsed         UploadGrantStatus = "USED"
+	UploadGrantStatusExpired      UploadGrantStatus = "EXPIRED"
+	UploadGrantStatusFailedDigest UploadGrantStatus = "FAILED_DIGEST"
+)
+
+var AllUploadGrantStatus = []UploadGrantStatus{
+	UploadGrantStatusMinted,
+	UploadGrantStatusUsed,
+	UploadGrantStatusExpired,
+	UploadGrantStatusFailedDigest,
+}
+
+func (e UploadGrantStatus) IsValid() bool {
+	switch e {
+	case UploadGrantStatusMinted, UploadGrantStatusUsed, UploadGrantStatusExpired, UploadGrantStatusFailedDigest:
+		return true
+	}
+	return false
+}
+
+func (e UploadGrantStatus) String() string {
+	return string(e)
+}
+
+func (e *UploadGrantStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = UploadGrantStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid UploadGrantStatus", str)
+	}
+	return nil
+}
+
+func (e UploadGrantStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *UploadGrantStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e UploadGrantStatus) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
