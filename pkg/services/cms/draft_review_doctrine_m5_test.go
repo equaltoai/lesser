@@ -281,3 +281,85 @@ func TestDraftDoctrine_PrincipalIdentityMixedCaseAgreesAcrossGateAndReadState(t 
 	_, err = svc.SubmitDraftReview(ctx, "principal", "principal", "d2", DraftReviewApproved, "self-approval")
 	require.NoError(t, err, "the principal may self-review despite the casing divergence")
 }
+
+// TestDraftDoctrine_PrincipalFloorResolvesMixedCaseExternalApprover pins the
+// F1 floor-resolution lane on the article surface. The principal floor's
+// state.active[principal] / state.latest[principal] access is byte-keyed
+// against the reviewer strings recorded at share/submit time, while
+// principal-hood is case-insensitive (sameAccount). The principal string is
+// canonicalized to lowercase at the instancePrincipal choke point, so a
+// mixed-case principal config still resolves a real approval recorded under
+// the canonical lowercase share text — a non-principal release proceeds
+// instead of being blocked despite the recorded principal approval.
+func TestDraftDoctrine_PrincipalFloorResolvesMixedCaseExternalApprover(t *testing.T) {
+	repo := newReviewMemRepo()
+	svc := &DraftService{
+		draftRepo:      repo,
+		articleService: newMemArticleService(),
+		domain:         "example.test",
+		scheduling:     true,
+		logger:         zap.NewNop(),
+	}
+	// The stored primary-admin username keeps its original casing.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "PriNcIpAl", nil })
+	draft := &models.Draft{ID: "d1", AuthorID: "alice", ContentType: activitypub.ArticleType, Title: "Floor", Slug: "floor", Content: "draft", ContentFormat: "markdown", GeneratedBy: "agent"}
+	require.NoError(t, svc.CreateDraft(context.Background(), draft))
+	ctx := context.Background()
+
+	// The non-principal owner shares to the principal under the canonical
+	// lowercase text and the principal approves.
+	_, err := svc.ShareDraftForReview(ctx, "alice", "d1", "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "alice", "d1", DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
+
+	state, err := svc.DraftReviewState(ctx, "alice", "d1", nil)
+	require.NoError(t, err)
+	require.True(t, state.PrincipalApproved,
+		"the floor must see the principal approval recorded under the canonical lowercase share text")
+	require.True(t, state.PublishEligible)
+
+	article, err := svc.PublishDraft(ctx, "alice", "d1")
+	require.NoError(t, err, "a non-principal release proceeds once the floor resolves the recorded principal approval")
+	require.NotNil(t, article)
+}
+
+// TestDraftDoctrine_PrincipalCaseGrantWithoutResolutionFailsClosed pins the
+// F3 denial direction on the article surface: a grant recorded under a
+// principal-case text that the canonical floor cannot resolve (the share text
+// carries the configured casing rather than the canonical lowercase form) must
+// fail closed with the principal-required denial — never a silent pass.
+func TestDraftDoctrine_PrincipalCaseGrantWithoutResolutionFailsClosed(t *testing.T) {
+	repo := newReviewMemRepo()
+	svc := &DraftService{
+		draftRepo:      repo,
+		articleService: newMemArticleService(),
+		domain:         "example.test",
+		scheduling:     true,
+		logger:         zap.NewNop(),
+	}
+	// The stored primary-admin username keeps its original casing.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "PriNcIpAl", nil })
+	draft := &models.Draft{ID: "d1", AuthorID: "alice", ContentType: activitypub.ArticleType, Title: "Floor", Slug: "floor", Content: "draft", ContentFormat: "markdown", GeneratedBy: "agent"}
+	require.NoError(t, svc.CreateDraft(context.Background(), draft))
+	ctx := context.Background()
+
+	// The owner shares to the principal under the configured casing; the
+	// recorded grant/verdict text never equals the canonical form, so the
+	// byte-keyed floor cannot resolve an approval.
+	_, err := svc.ShareDraftForReview(ctx, "alice", "d1", "PriNcIpAl")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "PriNcIpAl", "alice", "d1", DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
+
+	state, err := svc.DraftReviewState(ctx, "alice", "d1", nil)
+	require.NoError(t, err)
+	require.False(t, state.PrincipalApproved, "the byte-keyed floor cannot resolve the recorded principal-case grant")
+	require.True(t, state.ReviewersApproved, "the reviewer requirement is met; only the floor blocks")
+	require.False(t, state.PublishEligible)
+	require.Contains(t, state.BlockingReasons, "PRINCIPAL_APPROVAL_REQUIRED")
+
+	_, err = svc.PublishDraft(ctx, "alice", "d1")
+	require.ErrorIs(t, err, ErrDraftReviewPrincipalApprovalRequired,
+		"the unresolvable principal-case grant denies with the principal-required error, never a silent pass")
+}

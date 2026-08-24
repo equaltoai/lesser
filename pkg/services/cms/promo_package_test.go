@@ -880,6 +880,81 @@ func TestPromoPrincipalIdentityMixedCaseAgreesAcrossGateReadStateAndSelfGrant(t 
 	require.NoError(t, err, "the principal may self-review despite the casing divergence")
 }
 
+// TestPromoPrincipalFloorResolvesMixedCaseExternalApprover pins the F1
+// floor-resolution lane on the promo surface. The principal floor's
+// state.active[principal] / state.latest[principal] access is byte-keyed
+// against the reviewer strings recorded at share/submit time, while
+// principal-hood is case-insensitive (sameAccount). The principal string is
+// canonicalized to lowercase at the instancePrincipal choke point, so a
+// mixed-case principal config still resolves a real approval recorded under
+// the canonical lowercase share text — a non-principal release proceeds
+// instead of being blocked despite the recorded principal approval.
+func TestPromoPrincipalFloorResolvesMixedCaseExternalApprover(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	// The stored primary-admin username keeps its original casing.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "PriNcIpAl", nil })
+	digest := promoDigest("2a")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+
+	// The non-principal owner shares to the principal under the canonical
+	// lowercase text and the principal approves the exact reviewed content.
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+
+	state, err := svc.PromoPackageReviewState(ctx, "alice", pkg.PackageID, nil)
+	require.NoError(t, err)
+	require.True(t, state.PrincipalApproved,
+		"the floor must see the principal approval recorded under the canonical lowercase share text")
+	require.True(t, state.ReleaseEligible)
+
+	release, err := svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err, "a non-principal release proceeds once the floor resolves the recorded principal approval")
+	require.NotEmpty(t, release.ReleasedStatusID)
+	require.Len(t, creator.commands, 1)
+}
+
+// TestPromoPrincipalCaseGrantWithoutResolutionFailsClosed pins the F3 denial
+// direction on the promo surface: a grant recorded under a principal-case text
+// that the canonical floor cannot resolve (the share text carries the
+// configured casing rather than the canonical lowercase form) must fail closed
+// with the principal-required denial — never a silent pass.
+func TestPromoPrincipalCaseGrantWithoutResolutionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	// The stored primary-admin username keeps its original casing.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "PriNcIpAl", nil })
+	digest := promoDigest("2b")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+
+	// The owner shares to the principal under the configured casing; the
+	// recorded grant/verdict text never equals the canonical form, so the
+	// byte-keyed floor cannot resolve an approval.
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "PriNcIpAl")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "PriNcIpAl", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+
+	state, err := svc.PromoPackageReviewState(ctx, "alice", pkg.PackageID, nil)
+	require.NoError(t, err)
+	require.False(t, state.PrincipalApproved, "the byte-keyed floor cannot resolve the recorded principal-case grant")
+	require.True(t, state.ReviewersApproved, "the reviewer requirement is met; only the floor blocks")
+	require.False(t, state.ReleaseEligible)
+
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorIs(t, err, ErrPromoPackagePrincipalApprovalRequired,
+		"the unresolvable principal-case grant denies with the principal-required error, never a silent pass")
+	require.Len(t, creator.commands, 0, "no post is created when the floor cannot resolve the principal approval")
+}
+
 // secondVerdictListPromoRepo wraps the in-memory promo repository and runs a
 // hook on the second ListPromoReviewVerdicts call. ReleasePromoPackage derives
 // the approval snapshot twice once the reservation re-derive lands: the first

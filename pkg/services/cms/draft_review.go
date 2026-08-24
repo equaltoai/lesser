@@ -586,6 +586,17 @@ func (s *DraftService) DraftReviewVerdicts(ctx context.Context, owner, draftID s
 	}
 	return repo.ListDraftReviewVerdicts(ctx, owner, draftID)
 }
+
+// instancePrincipal resolves the operator doctrine's designated principal
+// account in its canonical lowercase form. PrimaryAdminUsername is persisted
+// TrimSpace-only, so the configured principal string can carry casing that the
+// reviewer strings recorded at share/submit time do not — and the approval
+// state maps are keyed byte-wise by those recorded strings. Canonicalizing here
+// is the single choke point (both the draft and promo surfaces resolve through
+// this function): every downstream principal lookup — the byte-keyed
+// state.active/state.latest floor access and the sameAccount comparisons — sees
+// the same lowercase form, so a real principal approval recorded under the
+// canonical identity resolves regardless of the casing the operator configured.
 func (s *DraftService) instancePrincipal(ctx context.Context) (string, error) {
 	if s.principalUsername == nil {
 		return "", ErrInstancePrincipalUnavailable
@@ -594,7 +605,7 @@ func (s *DraftService) instancePrincipal(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", errors.Join(ErrInstancePrincipalUnavailable, err)
 	}
-	principal = strings.TrimSpace(principal)
+	principal = strings.ToLower(strings.TrimSpace(principal))
 	if principal == "" {
 		return "", ErrInstancePrincipalNotConfigured
 	}
