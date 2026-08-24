@@ -658,6 +658,7 @@ func TestVerifyUploadedObject(t *testing.T) {
 	require.Contains(t, verifyUploadedObject(grant, []byte("other bytes"), "image/png"), "digest")
 	require.Contains(t, verifyUploadedObject(grant, bytes.Repeat([]byte{0x01}, 101), "image/png"), "exceeds declared cap")
 	require.Contains(t, verifyUploadedObject(grant, data, "image/jpeg"), "content type")
+	require.Contains(t, verifyUploadedObject(grant, data, ""), "content type", "an empty stored type must fail closed, not pass")
 }
 
 func TestMintUploadGrantStoreUnavailableFailsClosed(t *testing.T) {
@@ -770,6 +771,29 @@ func TestFinalizeUploadGrantImageDecodeFailureMarksFailed(t *testing.T) {
 	require.Equal(t, models.StatusFailed, media.Status, "an image that fails dimension processing enters failed like the M0 pipeline")
 	require.NotNil(t, created)
 	require.Equal(t, models.StatusFailed, created.Status)
+}
+
+func TestFinalizeUploadGrantEmptyStoredTypeFailsClosed(t *testing.T) {
+	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	// The PUT carries the right bytes but S3 stores no Content-Type metadata; an
+	// empty stored type must fail closed rather than skip the comparison.
+	_, err = objectStore.UploadFile(ctx, grant.S3Bucket, grant.S3Key, tinyPNG, "")
+	require.NoError(t, err)
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.ErrorIs(t, err, ErrUploadGrantDigestMismatch)
+	require.Nil(t, media)
+	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+	stored, err := grantRepo.GetUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusFailedDigest, stored.Status)
+	require.Contains(t, stored.FailureReason, "content type")
+	require.Contains(t, objectStore.Deletes(), grant.S3Bucket+"/"+grant.S3Key)
 }
 
 func TestFinalizeUploadGrantStoredTypeMismatchFailsClosed(t *testing.T) {

@@ -402,7 +402,9 @@ func verifyUploadedObject(grant *models.UploadGrant, bytes []byte, storedType st
 		return "uploaded object digest does not match the declared sha256"
 	}
 	storedType = strings.TrimSpace(storedType)
-	if storedType != "" && !strings.EqualFold(storedType, strings.TrimSpace(grant.ContentType)) {
+	// Fail closed on an empty stored type: S3 returning no Content-Type is not
+	// evidence the bytes match the declared type, so treat it as a mismatch.
+	if storedType == "" || !strings.EqualFold(storedType, strings.TrimSpace(grant.ContentType)) {
 		return fmt.Sprintf("uploaded object content type %q does not match declared %q", storedType, grant.ContentType)
 	}
 	// SVG is XML that browsers execute scripts, event handlers, and CSS URLs in,
