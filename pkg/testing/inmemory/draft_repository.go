@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -155,6 +156,9 @@ func (r *DraftRepository) storeDraftLocked(authorID string, draft *models.Draft,
 	}
 	updatedDraft := *draft
 	updatedDraft.EditorialMedia = append([]models.DraftMediaUsage(nil), oldDraft.EditorialMedia...)
+	// The version attribute is owned by the field-scoped editorial-media writer
+	// (CAS); content writers preserve the stored version and never advance it.
+	updatedDraft.ModelVersion = oldDraft.ModelVersion
 	if stamp != nil {
 		cloned := *stamp
 		updatedDraft.PublishAttemptedAt = &cloned
@@ -166,7 +170,10 @@ func (r *DraftRepository) storeDraftLocked(authorID string, draft *models.Draft,
 }
 
 // UpdateDraftEditorialMedia replaces only the draft's editorial-media binding
-// and update timestamp, matching the production field-scoped writer.
+// and update timestamp, matching the production field-scoped writer, and
+// enforces the same version-conditioned CAS: a stale snapshot (version read
+// before a concurrent media-set landed) conflicts instead of silently losing
+// the update. The winner bumps the version.
 func (r *DraftRepository) UpdateDraftEditorialMedia(_ context.Context, authorID string, draft *models.Draft) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -182,8 +189,20 @@ func (r *DraftRepository) UpdateDraftEditorialMedia(_ context.Context, authorID 
 	if !exists {
 		return storage.ErrNotFound
 	}
+	if stored.ModelVersion != draft.ModelVersion {
+		return apperrors.DynamoDBConditionalCheckFailed("draft " + draft.ID).
+			WithInternalError(storage.ErrVersionConflict)
+	}
+	nextVersion := stored.ModelVersion + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
 	stored.EditorialMedia = append([]models.DraftMediaUsage(nil), draft.EditorialMedia...)
 	stored.UpdatedAt = draft.UpdatedAt
+	stored.ModelVersion = nextVersion
+	// Parity with the production repo: the winning caller's snapshot carries the
+	// bumped version so a follow-up media-set on the same snapshot CASes cleanly.
+	draft.ModelVersion = nextVersion
 	return nil
 }
 

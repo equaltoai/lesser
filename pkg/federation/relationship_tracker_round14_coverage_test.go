@@ -537,6 +537,7 @@ func (s *repoStorageStub) StreamingConnection() interfaces.StreamingConnectionRe
 func (s *repoStorageStub) Article() interfaces.ArticleRepository                     { return nil }
 func (s *repoStorageStub) Draft() interfaces.DraftRepository                         { return nil }
 func (s *repoStorageStub) UploadGrant() interfaces.UploadGrantRepository             { return nil }
+func (s *repoStorageStub) PromoPackage() interfaces.PromoPackageRepository           { return nil }
 func (s *repoStorageStub) Revision() interfaces.RevisionRepository                   { return nil }
 func (s *repoStorageStub) Series() interfaces.SeriesRepository                       { return nil }
 func (s *repoStorageStub) Category() interfaces.CategoryRepository                   { return nil }

@@ -119,6 +119,7 @@ func (m *MockAnalytics) StreamingConnection() interfaces.StreamingConnectionRepo
 func (m *MockAnalytics) Article() interfaces.ArticleRepository                            { return nil }
 func (m *MockAnalytics) Draft() interfaces.DraftRepository                                { return nil }
 func (m *MockAnalytics) UploadGrant() interfaces.UploadGrantRepository                    { return nil }
+func (m *MockAnalytics) PromoPackage() interfaces.PromoPackageRepository                  { return nil }
 func (m *MockAnalytics) Revision() interfaces.RevisionRepository                          { return nil }
 func (m *MockAnalytics) Series() interfaces.SeriesRepository                              { return nil }
 func (m *MockAnalytics) Category() interfaces.CategoryRepository                          { return nil }

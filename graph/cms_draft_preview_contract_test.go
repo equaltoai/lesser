@@ -30,7 +30,7 @@ func TestM45DraftPreviewReturnsCanonicalRenderedHTML(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, draft)
 
-	preview, err := qry.DraftPreview(ctx, draft.ID)
+	preview, err := qry.DraftPreview(ctx, draft.ID, nil)
 	require.NoError(t, err)
 	require.NotNil(t, preview)
 	require.True(t, preview.Success)
@@ -45,7 +45,7 @@ func TestM45DraftPreviewReturnsCanonicalRenderedHTML(t *testing.T) {
 	require.NotContains(t, *preview.RenderedHTML, "<script")
 	require.NotContains(t, *preview.RenderedHTML, "javascript:")
 
-	unauthorized, err := qry.DraftPreview(round12AuthContext("bob"), draft.ID)
+	unauthorized, err := qry.DraftPreview(round12AuthContext("bob"), draft.ID, nil)
 	require.Error(t, err)
 	require.Nil(t, unauthorized)
 }
@@ -103,7 +103,7 @@ func TestM45DraftPreviewReturnsDeterministicRenderErrors(t *testing.T) {
 			}
 			require.NoError(t, storage.Draft().CreateDraft(ctx, draft))
 
-			preview, err := qry.DraftPreview(round12AuthContext("alice"), draftID)
+			preview, err := qry.DraftPreview(round12AuthContext("alice"), draftID, nil)
 			require.NoError(t, err)
 			require.NotNil(t, preview)
 			require.False(t, preview.Success)

@@ -55,6 +55,8 @@ func (g *DraftReviewGrant) Expired(now time.Time) bool {
 }
 
 // UpdateKeys derives grant primary and sparse reviewer-queue keys.
+//
+//nolint:dupl // the review-grant key derivation mirrors its sibling review surface (M4 issue #1446)
 func (g *DraftReviewGrant) UpdateKeys() error {
 	if strings.TrimSpace(g.OwnerID) == "" || strings.TrimSpace(g.DraftID) == "" || strings.TrimSpace(g.Reviewer) == "" {
 		return fmt.Errorf("ownerID, draftID, and reviewer are required")
@@ -92,6 +94,8 @@ type DraftReviewVerdict struct {
 func (DraftReviewVerdict) TableName() string { return MainTableName }
 
 // UpdateKeys derives verdict primary keys.
+//
+//nolint:dupl // draft review verdict keys mirror the promo review verdict keys (M4 issue #1446)
 func (v *DraftReviewVerdict) UpdateKeys() error {
 	if strings.TrimSpace(v.OwnerID) == "" || strings.TrimSpace(v.DraftID) == "" || strings.TrimSpace(v.Reviewer) == "" || strings.TrimSpace(v.Verdict) == "" {
 		return fmt.Errorf("ownerID, draftID, reviewer, and verdict are required")

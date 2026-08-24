@@ -121,6 +121,8 @@ type DraftService struct {
 	principalUsername      func(context.Context) (string, error)
 	mediaRepo              editorialMediaRepository
 	editorialPublishMinter editorialPublishMinter
+	promoRepo              promoPackageRepository
+	promoStatusCreator     promoStatusCreator
 }
 
 // SetEditorialMediaRepository wires the media lookup used to enforce asset

@@ -2824,12 +2824,19 @@ type UploadGrantFinalizeResult {
 extend type Query {
   # Draft operations
   draft(id: ID!): Draft
-  draftPreview(id: ID!): DraftPreview!
+  """Renders a draft preview. includeAccessUrls mints the per-usage short-lived
+  media read URLs on this read; without it the projection returns no accessUrl
+  (use draftEditorialMediaAccess for one exact asset read)."""
+  draftPreview(id: ID!, includeAccessUrls: Boolean = false): DraftPreview!
   myDrafts(contentType: ObjectType, status: DraftStatus, first: Int, after: Cursor): DraftConnection!
   """Review assignments created by the authenticated draft owner."""
   myDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
-  draftReview(id: ID!): DraftReview
+  """Review state for the owner or an active reviewer. includeAccessUrls mints
+  the per-usage short-lived media read URLs on this read; without it the
+  projection returns no accessUrl (use draftEditorialMediaAccess for one exact
+  asset read)."""
+  draftReview(id: ID!, includeAccessUrls: Boolean = false): DraftReview
   """Issue a short-lived read for one exact asset bound to an authorized draft."""
   draftEditorialMediaAccess(draftId: ID!, mediaId: ID!): EditorialMediaAccess!
   """One upload grant with its inspectable lifecycle state (owner-scoped)."""
@@ -2881,9 +2888,15 @@ extend type Mutation {
   publishDraft(id: ID!): Article!
   scheduleDraft(id: ID!, scheduledAt: Time!): Draft!
   cancelScheduledDraft(id: ID!): Draft!
-  shareDraftForReview(draftId: ID!, reviewer: String!): DraftReview!
+  """Share a draft for review. includeAccessUrls mints the per-usage short-lived
+  media read URLs on the returned review; without it the projection returns no
+  accessUrl (use draftEditorialMediaAccess for one exact asset read)."""
+  shareDraftForReview(draftId: ID!, reviewer: String!, includeAccessUrls: Boolean = false): DraftReview!
   revokeDraftReview(draftId: ID!, reviewer: String!): Boolean!
-  submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String): DraftReview!
+  """Record a review verdict. includeAccessUrls mints the per-usage short-lived
+  media read URLs on the returned review; without it the projection returns no
+  accessUrl (use draftEditorialMediaAccess for one exact asset read)."""
+  submitDraftReview(draftId: ID!, verdict: DraftReviewVerdict!, notes: String, includeAccessUrls: Boolean = false): DraftReview!
 
   # Article operations
   createArticle(input: CreateArticleInput!): Article!
@@ -3049,6 +3062,174 @@ input UpdatePublicationInput {
   logoId: ID
   bannerId: ID
   customDomain: String
+}
+
+# ===== M4: Promotional packages =====
+# A reviewed promo package: outbound post text and an exact, ordered set of
+# PUBLISHED media assets attached to a public/unlisted post promoting a
+# published article. Pre-release packages are visible only to the owner and
+# holders of an active review grant. Only M2 PUBLISHED assets may attach
+# (their published URLs are already world-served by design); internal or
+# unpublished assets are structurally rejected at compose and release.
+
+enum PromoPackageVisibility {
+  PUBLIC
+  UNLISTED
+}
+
+enum PromoPackageStatus {
+  DRAFT
+  """Transient release reservation: the package is mid-release (or a release
+  crashed between reservation and stamp); release and composition are refused
+  until an operator reconciles the reservation."""
+  RELEASING
+  RELEASED
+}
+
+enum PromoPackageReviewVerdict {
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+enum PromoPackageAssetState {
+  PUBLISHED
+  MISSING
+  WITHDRAWN
+  SUPERSEDED
+  UNAVAILABLE
+  REJECTED
+}
+
+enum PromoPackageGrantStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+type PromoPackageAsset {
+  mediaId: ID!
+  """The canonical sha256 digest bound into the reviewed package at review time."""
+  contentHash: String
+  """The M2 durable published serving snapshotted at compose time."""
+  publishedUrl: String
+  state: PromoPackageAssetState!
+  width: Int
+  height: Int
+  mimeType: String
+  provenance: EditorialMediaProvenance
+}
+
+type PromoPackageReviewGrant {
+  reviewerId: ID!
+  grantedAt: Time!
+  """Bounded expiry; expired grants authorize no package reads or approval."""
+  expiresAt: Time
+  status: PromoPackageGrantStatus!
+  revokedAt: Time
+}
+
+type PromoPackageVerdictRecord {
+  verdict: PromoPackageReviewVerdict!
+  notes: String
+  contentHash: String
+  reviewerId: ID!
+  recordedAt: Time!
+  """True only when this verdict is valid for the current package content and active grant."""
+  current: Boolean!
+  stale: Boolean!
+}
+
+type PromoPackageReleaseEligibility {
+  eligible: Boolean!
+  blockingReasons: [String!]!
+  reviewersApproved: Boolean!
+  principalApprovalRequired: Boolean!
+  principalApproved: Boolean!
+}
+
+type PromoPackageReview {
+  packageId: ID!
+  """Canonical digest over the exact reviewed content (post text, visibility, article reference, ordered asset digests)."""
+  contentHash: String!
+  """Exact package-bound media visible to this owner or active reviewer."""
+  assets: [PromoPackageAsset!]!
+  activeReviewerIds: [ID!]!
+  releaseEligible: Boolean!
+  releaseBlockingReasons: [String!]!
+  reviewersApproved: Boolean!
+  principalApprovalRequired: Boolean!
+  principalApproved: Boolean!
+  grantCount: Int!
+  grantsTruncated: Boolean!
+  grants: [PromoPackageReviewGrant!]!
+  verdicts: [PromoPackageVerdictRecord!]!
+  releaseEligibility: PromoPackageReleaseEligibility!
+}
+
+type PromoPackage {
+  id: ID!
+  ownerId: ID!
+  """The published article this package promotes (canonical object URL)."""
+  articleId: ID!
+  postText: String!
+  visibility: PromoPackageVisibility!
+  contentHash: String!
+  status: PromoPackageStatus!
+  """Outbound Status created by the release transition; nil until released."""
+  releasedStatusId: ID
+  """Ordered PUBLISHED assets attached to the outbound post (attachment order)."""
+  assets: [PromoPackageAsset!]!
+  createdAt: Time!
+  updatedAt: Time!
+  """Caller-authorized review state (owner or active reviewer grant)."""
+  review: PromoPackageReview
+}
+
+type PromoPackageReleaseResult {
+  package: PromoPackage!
+  statusId: ID!
+  url: String
+}
+
+type PromoPackageEdge { node: PromoPackage!, cursor: Cursor! }
+type PromoPackageConnection { edges: [PromoPackageEdge!]!, pageInfo: PageInfo!, totalCount: Int! }
+type PromoPackageReviewEdge { node: PromoPackageReview!, cursor: Cursor! }
+type PromoPackageReviewConnection { edges: [PromoPackageReviewEdge!]!, pageInfo: PageInfo!, totalCount: Int! }
+
+input ComposePromoPackageInput {
+  """Set to replace an existing package's content (re-hashes and stales approvals); empty creates a new package."""
+  packageId: ID
+  articleId: ID!
+  postText: String!
+  visibility: PromoPackageVisibility!
+  """Ordered PUBLISHED asset IDs; order is the attachment order on the post."""
+  assetMediaIds: [ID!]!
+}
+
+extend type Query {
+  """One promo package for its owner or an active reviewer grant."""
+  promoPackage(id: ID!): PromoPackage
+  """The authenticated owner's promo packages."""
+  promoPackages(first: Int, after: Cursor): PromoPackageConnection!
+  """Packages shared for review with the authenticated reviewer."""
+  sharedPromoPackageReviews(first: Int, after: Cursor): PromoPackageReviewConnection!
+}
+
+extend type Mutation {
+  """Create a promo package or replace its content; every content change re-hashes and stales approvals."""
+  composePromoPackage(input: ComposePromoPackageInput!): PromoPackage!
+  """Share a promo package with a reviewer (7-day bounded grant)."""
+  sharePromoPackageForReview(packageId: ID!, reviewer: String!): PromoPackageReview!
+  revokePromoPackageReview(packageId: ID!, reviewer: String!): Boolean!
+  """Record a hash-bound reviewer verdict on the exact current package content.
+  contentHash carries the content hash the reviewer actually inspected; the
+  argument is REQUIRED (the promo surface has no deployed consumer, so the
+  advisory-binding gap is closed at the contract) and a mismatch (the package
+  was recomposed after inspection) rejects the submit with a conflict instead
+  of blessing unseen content."""
+  submitPromoPackageReview(packageId: ID!, verdict: PromoPackageReviewVerdict!, notes: String, contentHash: String!): PromoPackageReview!
+  """Release an approved package: creates the outbound public/unlisted Status with the exact approved PUBLISHED assets and AI-authorship disclosure intact."""
+  releasePromoPackage(packageId: ID!): PromoPackageReleaseResult!
 }
 
 # Lesser GraphQL Schema - Phase 2 Federation Enhancements

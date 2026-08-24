@@ -93,6 +93,7 @@ type RepositoryFactory struct {
 	articleRepo           *repositories.ArticleRepository
 	draftRepo             *repositories.DraftRepository
 	uploadGrantRepo       *repositories.UploadGrantRepository
+	promoPackageRepo      *repositories.PromoPackageRepository
 	revisionRepo          *repositories.RevisionRepository
 	seriesRepo            *repositories.SeriesRepository
 	categoryRepo          *repositories.CategoryRepository
@@ -226,6 +227,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.articleRepo = repositories.NewArticleRepository(f.db, f.tableName, f.logger, nil)
 	f.draftRepo = repositories.NewDraftRepository(f.db, f.tableName, f.logger, nil)
 	f.uploadGrantRepo = repositories.NewUploadGrantRepository(f.db, f.tableName, f.logger, nil)
+	f.promoPackageRepo = repositories.NewPromoPackageRepository(f.db, f.tableName, f.logger, nil)
 	f.revisionRepo = repositories.NewRevisionRepository(f.db, f.tableName, f.logger, nil)
 	f.seriesRepo = repositories.NewSeriesRepository(f.db, f.tableName, f.logger, nil)
 	f.categoryRepo = repositories.NewCategoryRepository(f.db, f.tableName, f.logger, nil)
@@ -618,6 +620,11 @@ func (f *RepositoryFactory) Draft() interfaces.DraftRepository {
 // UploadGrant returns the upload grant repository instance.
 func (f *RepositoryFactory) UploadGrant() interfaces.UploadGrantRepository {
 	return f.uploadGrantRepo
+}
+
+// PromoPackage returns the promo package repository instance.
+func (f *RepositoryFactory) PromoPackage() interfaces.PromoPackageRepository {
+	return f.promoPackageRepo
 }
 
 // Revision returns the Revision repository instance

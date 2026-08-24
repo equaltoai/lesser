@@ -92,6 +92,7 @@ type MockRepositoryStorage struct {
 	articleRepo           interfaces.ArticleRepository
 	draftRepo             interfaces.DraftRepository
 	uploadGrantRepo       interfaces.UploadGrantRepository
+	promoPackageRepo      interfaces.PromoPackageRepository
 	revisionRepo          interfaces.RevisionRepository
 	seriesRepo            interfaces.SeriesRepository
 	categoryRepo          interfaces.CategoryRepository
@@ -256,6 +257,15 @@ func WithUploadGrantRepository(repo interfaces.UploadGrantRepository) Option {
 	}
 }
 
+// WithPromoPackageRepository sets a custom promo package repository
+// implementation. Use this to inject the in-memory repository for exercising
+// the M4 promo compose/review/release lanes in tests.
+func WithPromoPackageRepository(repo interfaces.PromoPackageRepository) Option {
+	return func(s *MockRepositoryStorage) {
+		s.promoPackageRepo = repo
+	}
+}
+
 // WithRevisionRepository sets a custom revision repository implementation.
 // Use this to inject a mock for testing specific revision repository behavior.
 func WithRevisionRepository(repo interfaces.RevisionRepository) Option {
@@ -328,6 +338,8 @@ func NewMockRepositoryStorage(opts ...Option) *MockRepositoryStorage {
 		// CMS repositories
 		articleRepo:           inmemory.NewArticleRepository(),
 		draftRepo:             inmemory.NewDraftRepository(),
+		uploadGrantRepo:       inmemory.NewUploadGrantRepository(),
+		promoPackageRepo:      inmemory.NewPromoPackageRepository(),
 		revisionRepo:          inmemory.NewRevisionRepository(),
 		seriesRepo:            inmemory.NewSeriesRepository(),
 		categoryRepo:          inmemory.NewCategoryRepository(),
@@ -647,6 +659,13 @@ func (s *MockRepositoryStorage) Draft() interfaces.DraftRepository {
 // do not exercise them.
 func (s *MockRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository {
 	return s.uploadGrantRepo
+}
+
+// PromoPackage returns the promo package repository (interface type for
+// mockability). Nil by default so promo package paths fail closed in tests that
+// do not exercise them.
+func (s *MockRepositoryStorage) PromoPackage() interfaces.PromoPackageRepository {
+	return s.promoPackageRepo
 }
 
 // Revision returns the revision repository (interface type for mockability).

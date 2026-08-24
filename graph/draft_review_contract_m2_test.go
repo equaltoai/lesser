@@ -244,20 +244,20 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 	}
 	attach(assetA.UploadID, "A caption")
 
-	shared, err := mut.ShareDraftForReview(ctx, draft.ID, "reviewer")
+	shared, err := mut.ShareDraftForReview(ctx, draft.ID, "reviewer", nil)
 	require.NoError(t, err)
 	require.NotNil(t, shared)
 	require.NotNil(t, shared.Grant)
 	require.NotNil(t, shared.Grant.ExpiresAt, "grants are bounded by an explicit expiry")
 
-	approved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil)
+	approved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil)
 	require.NoError(t, err)
 	require.True(t, approved.PublishEligible, "the A revision is fully approved")
 
 	expectedHashA := "sha256:" + sha256Hex(pngBytes)
 	expectedHashB := "sha256:" + sha256Hex(pngBytesB)
 
-	review, err := qry.DraftReview(ctx, draft.ID)
+	review, err := qry.DraftReview(ctx, draft.ID, nil)
 	require.NoError(t, err)
 	require.True(t, review.PublishEligible)
 	require.Empty(t, review.PublishBlockingReasons)
@@ -268,7 +268,7 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 	// Swap image A for image B.
 	attach(assetB.UploadID, "B caption")
 
-	review, err = qry.DraftReview(ctx, draft.ID)
+	review, err = qry.DraftReview(ctx, draft.ID, nil)
 	require.NoError(t, err)
 	require.False(t, review.PublishEligible, "the byte swap must stale the prior approval")
 	require.Contains(t, review.PublishBlockingReasons, "REVIEW_APPROVAL_REQUIRED")
@@ -279,7 +279,7 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 	require.Contains(t, strings.ToLower(err.Error()), "approval")
 
 	// Re-review and authorize the B revision, then publish.
-	reapproved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil)
+	reapproved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil)
 	require.NoError(t, err)
 	require.True(t, reapproved.PublishEligible)
 
@@ -296,6 +296,90 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 		"the durable copy must land on the published serving prefix")
 	require.True(t, strings.HasSuffix(state.publishCopies[0].destination, assetB.UploadID+".png"),
 		"the durable copy must carry the exact approved B bytes")
+}
+
+// TestDraftReviewMutationsMintAccessUrlsOnlyOnOptIn pins F5: the
+// shareDraftForReview / submitDraftReview mutation responses stopped minting
+// per-asset access URLs with no argument to get them back. The additive
+// includeAccessUrls argument restores the opt-in: explicit true mints the
+// short-lived URLs on the returned review; absent/false keeps the projection
+// URL-free (the exact-asset draftEditorialMediaAccess lane remains the
+// recommended read).
+func TestDraftReviewMutationsMintAccessUrlsOnlyOnOptIn(t *testing.T) {
+	resolver, storage, _, _, state := newRound12GraphResolverWithMocks(t)
+	state.persistMedia = true
+	drafts := newWorkingReviewDraftRepository()
+	wrapped := &cursorResolverStorage{RepositoryStorage: storage, draft: drafts}
+	registry, err := services.NewRegistry(
+		services.WithStorage(wrapped),
+		services.WithPublisher(resolver.Registry.GetPublisher()),
+		services.WithLogger(resolver.Registry.GetLogger()),
+		services.WithMediaS3Service(round12MediaS3Service{state: state}),
+		services.WithConfig(resolver.Registry.GetConfig()),
+	)
+	require.NoError(t, err)
+	resolver.Registry = registry
+	resolver.Storage = wrapped
+	mut := resolver.Mutation()
+
+	ctx := round12AuthContext("alice")
+	reviewerCtx := round12AuthContext("reviewer")
+
+	pngBytes, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+	require.NoError(t, err)
+	desc := "mint opt-in"
+	asset, err := mut.UploadMedia(ctx, model.UploadMediaInput{
+		File:        graphql.Upload{File: &round12ReadSeekCloser{Reader: bytes.NewReader(pngBytes)}, Filename: "hero.png"},
+		Description: &desc,
+		EditorialProvenance: &model.EditorialMediaProvenanceInput{
+			Origin: model.EditorialMediaOriginIllustrated,
+			Tool:   &desc,
+		},
+	})
+	require.NoError(t, err)
+	require.Empty(t, asset.Media.URL, "internal media must not receive an unsigned CDN URL pre-publish")
+
+	title := "Mint opt-in"
+	draft, err := mut.CreateDraft(ctx, model.CreateDraftInput{
+		ContentType: model.ObjectTypeArticle,
+		Title:       &title,
+		Content:     "# Body",
+	})
+	require.NoError(t, err)
+	_, err = mut.SetDraftEditorialMedia(ctx, draft.ID, []*model.EditorialMediaUsageInput{{
+		MediaID: asset.UploadID,
+		Role:    model.EditorialMediaRoleHero,
+	}})
+	require.NoError(t, err)
+
+	// Default mutation response: URL-free, no mint.
+	require.Zero(t, state.presignCalls)
+	shared, err := mut.ShareDraftForReview(ctx, draft.ID, "reviewer", nil)
+	require.NoError(t, err)
+	require.Len(t, shared.EditorialMedia, 1)
+	require.Nil(t, shared.EditorialMedia[0].AccessURL)
+	require.Zero(t, state.presignCalls, "a default shareDraftForReview response must not mint bearer URLs")
+
+	// Explicit opt-in mints exactly the per-asset read URL on the response.
+	sharedWithAccess, err := mut.ShareDraftForReview(ctx, draft.ID, "reviewer", boolPtr(true))
+	require.NoError(t, err)
+	require.Len(t, sharedWithAccess.EditorialMedia, 1)
+	require.NotNil(t, sharedWithAccess.EditorialMedia[0].AccessURL)
+	require.NotNil(t, sharedWithAccess.EditorialMedia[0].AccessExpiresAt)
+	require.Equal(t, 1, state.presignCalls, "the opt-in share response mints one read URL")
+
+	// submitDraftReview likewise stays URL-free by default and mints on opt-in.
+	approved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, approved.EditorialMedia, 1)
+	require.Nil(t, approved.EditorialMedia[0].AccessURL)
+	require.Equal(t, 1, state.presignCalls, "a default submitDraftReview response must not mint bearer URLs")
+
+	approvedWithAccess, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, boolPtr(true))
+	require.NoError(t, err)
+	require.Len(t, approvedWithAccess.EditorialMedia, 1)
+	require.NotNil(t, approvedWithAccess.EditorialMedia[0].AccessURL)
+	require.Equal(t, 2, state.presignCalls, "the opt-in submit response mints one read URL")
 }
 
 func sha256Hex(data []byte) string {

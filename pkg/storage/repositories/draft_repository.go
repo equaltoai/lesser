@@ -87,11 +87,16 @@ func (r *DraftRepository) UpdateDraft(ctx context.Context, authorID string, draf
 	// publish-attempt stamp likewise has its own field-scoped writer (the
 	// publishing transition); content updates must not advance or clear it, or
 	// an author could re-arm the stale-publishing sweep by editing a
-	// crash-stuck draft. A nil omitempty field is unselected by the sparse
-	// update, so the stored attribute is left untouched.
+	// crash-stuck draft. ModelVersion likewise belongs to the field-scoped
+	// editorial-media writer (its version-conditioned CAS): a content save
+	// holding a pre-bump snapshot must not write the old version back, or a
+	// stale media-set CAS would match the downgraded stored version and reopen
+	// the lost-update seam. A nil/zero omitempty field is unselected by the
+	// sparse update, so the stored attribute is left untouched.
 	sparse := *draft
 	sparse.EditorialMedia = nil
 	sparse.PublishAttemptedAt = nil
+	sparse.ModelVersion = 0
 	return r.db.WithContext(ctx).Model(&sparse).Update()
 }
 
@@ -143,6 +148,13 @@ func (r *DraftRepository) TransitionDraftToPublishing(ctx context.Context, autho
 // UpdateDraftEditorialMedia atomically replaces only the editorial-media
 // association and its update timestamp. An empty association removes the
 // sparse attribute explicitly instead of relying on omitempty update behavior.
+// The write is version-conditioned: the ModelVersion captured at GetDraft time
+// must still hold (or the row may predate the M4 version surface — the
+// migration-safe first write stamps version 1), and the winner bumps the
+// version. A concurrent media-set loser receives a CONFLICT instead of
+// silently losing its update, closing the setDraftEditorialMedia lost-update
+// seam (M4 fold-in). ExecuteWithResult is required because Execute() compiles
+// every condition as AND and would drop the OR disjunct.
 func (r *DraftRepository) UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error {
 	if err := validateDraftWriteOwner(authorID, draft); err != nil {
 		return err
@@ -151,6 +163,10 @@ func (r *DraftRepository) UpdateDraftEditorialMedia(ctx context.Context, authorI
 		return err
 	}
 
+	nextVersion := draft.ModelVersion + 1
+	if nextVersion <= 0 {
+		nextVersion = 1
+	}
 	builder := r.db.WithContext(ctx).
 		Model(draft).
 		Where("PK", "=", draft.PK).
@@ -162,14 +178,21 @@ func (r *DraftRepository) UpdateDraftEditorialMedia(ctx context.Context, authorI
 		builder.Set("EditorialMedia", draft.EditorialMedia)
 	}
 	builder.Set("UpdatedAt", draft.UpdatedAt)
+	// The key-exists condition leads so a missing row fails closed instead of
+	// being upserted by the attribute_not_exists disjunct.
 	builder.ConditionExists("PK")
-	if err := builder.Execute(); err != nil {
+	builder.ConditionNotExists("ModelVersion")
+	builder.OrCondition("ModelVersion", "=", draft.ModelVersion)
+	builder.Set("ModelVersion", nextVersion)
+	var updated models.Draft
+	if err := builder.ExecuteWithResult(&updated); err != nil {
 		if dynamormerrors.IsConditionFailed(err) {
-			return apperrors.ItemNotFoundWithID("draft", draft.ID).
-				WithInternalError(errors.Join(err, storage.ErrNotFound))
+			return apperrors.DynamoDBConditionalCheckFailed("draft " + draft.ID).
+				WithInternalError(errors.Join(err, storage.ErrVersionConflict))
 		}
 		return ErrorHandler.HandleUpdateError(err, "draft", draft.ID)
 	}
+	draft.ModelVersion = nextVersion
 	return nil
 }
 
@@ -428,6 +451,8 @@ func (r *DraftRepository) GetDraftReviewGrant(ctx context.Context, ownerID, draf
 }
 
 // ListActiveDraftReviewGrants returns one page from the sparse reviewer queue.
+//
+//nolint:dupl // the draft reviewer queue mirrors the promo reviewer queue (M4 issue #1446)
 func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, reviewer string, limit int, cursor string) ([]*models.DraftReviewGrant, string, error) {
 	if limit <= 0 {
 		limit = 25
