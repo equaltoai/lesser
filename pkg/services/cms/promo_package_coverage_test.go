@@ -3,9 +3,11 @@ package cms
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -245,3 +247,30 @@ func (f *failingMediaRepo) GetMedia(ctx context.Context, mediaID string) (*model
 }
 
 var errFailingMediaLookup = errors.New("media lookup boom")
+
+func TestPromoServiceComposeGuardBranches(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, _ := promoServiceHarness(t)
+	digest := promoDigest("66")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	// Post text over the notes limit is rejected at compose.
+	tooLong := promoComposeInput(models.PromoPackageVisibilityPublic, "media-1")
+	tooLong.PostText = strings.Repeat("x", maxPromoPostTextBytes+1)
+	_, err := svc.ComposePromoPackage(ctx, "alice", tooLong)
+	require.ErrorContains(t, err, "exceeds")
+
+	// An unwired article service and an unwired media repository fail closed.
+	svc.articleService = nil
+	_, err = svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.ErrorContains(t, err, "article service is unavailable")
+	svc.articleService = newMemArticleService()
+	svc.articleService.(*memArticleService).items["https://example.test/articles/hello"] = &models.Article{
+		Object: models.Object{ID: "https://example.test/articles/hello", Type: activitypub.ArticleType, Published: time.Now().UTC()},
+		Slug:   "hello", UpdatedAt: time.Now().UTC(),
+	}
+	svc.SetEditorialMediaRepository(nil)
+	_, err = svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.ErrorContains(t, err, "editorial media repository is unavailable")
+	svc.SetEditorialMediaRepository(media)
+}

@@ -66,6 +66,9 @@ func promoPackageKeys(ownerID, packageID string) (string, string) {
 
 // CreatePromoPackage creates a first-time promo package.
 func (r *PromoPackageRepository) CreatePromoPackage(ctx context.Context, pkg *models.PromoPackage) error {
+	if pkg == nil {
+		return common.ValidationError{Field: "promo package", Message: "is required"}
+	}
 	if err := validatePromoPackageOwner(pkg.OwnerID, pkg); err != nil {
 		return err
 	}

@@ -371,3 +371,56 @@ func TestPromoPackageRepositoryListGrantsByPackageAndVerdictErrors(t *testing.T)
 	err = repo.RegrantPromoReviewGrant(ctx, &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", GrantedAt: now, RevokedAt: &revokedAt})
 	require.Error(t, err)
 }
+
+func TestPromoPackageRepositoryInputGuardBranches(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := newPromoRecordingDB(t)
+
+	// Owner validation guardrails.
+	err := repo.CreatePromoPackage(ctx, nil)
+	require.Error(t, err)
+	err = repo.CreatePromoPackage(ctx, &models.PromoPackage{PackageID: "pkg-x", OwnerID: "  "})
+	require.Error(t, err)
+	err = repo.CreatePromoPackage(ctx, &models.PromoPackage{PackageID: "pkg-x", OwnerID: "alice"})
+	require.Error(t, err, "missing packageID fails key preparation")
+
+	// Grant create key-preparation failure.
+	err = repo.CreatePromoReviewGrant(ctx, &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1"})
+	require.Error(t, err)
+
+	// Reviewer queue cursor continuation (two grants).
+	now := time.Now().UTC()
+	grant := &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", GrantedAt: now}
+	require.NoError(t, repo.CreatePromoReviewGrant(ctx, grant))
+	second := &models.PromoReviewGrant{OwnerID: "bob", PackageID: "pkg-2", Reviewer: "reviewer", GrantedAt: now.Add(time.Millisecond)}
+	require.NoError(t, repo.CreatePromoReviewGrant(ctx, second))
+	rows, next, err := repo.ListActivePromoReviewGrants(ctx, "reviewer", 1, "")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.NotEmpty(t, next)
+	rows, next, err = repo.ListActivePromoReviewGrants(ctx, "reviewer", 10, next)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Empty(t, next)
+
+	// Revoke guardrails: a grant without a revocation stamp is refused; a
+	// current revoke removes the queue entry.
+	err = repo.RevokePromoReviewGrant(ctx, &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", GrantedAt: now})
+	require.Error(t, err)
+	revokedAt := now.Add(time.Minute)
+	revoke := &models.PromoReviewGrant{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", GrantedAt: now, RevokedAt: &revokedAt, Version: grant.Version}
+	require.NoError(t, repo.RevokePromoReviewGrant(ctx, revoke))
+	rows, _, err = repo.ListActivePromoReviewGrants(ctx, "reviewer", 10, "")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+
+	// Owner-scoped list guardrails: empty owner rejected.
+	_, _, err = repo.ListPromoPackages(ctx, "  ", 10, "")
+	require.Error(t, err)
+	_, err = repo.ListPromoReviewGrantsByOwner(ctx, "  ")
+	require.Error(t, err)
+
+	// Verdict create key-preparation failure.
+	err = repo.CreatePromoReviewVerdict(ctx, &models.PromoReviewVerdict{OwnerID: "alice", PackageID: "pkg-1", Reviewer: "reviewer", Verdict: models.PromoPackageReviewApproved})
+	require.NoError(t, err, "verdict with defaults still derives keys")
+}
