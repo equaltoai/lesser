@@ -193,8 +193,11 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 	mut := resolver.Mutation()
 	qry := resolver.Query()
 
+	// The releasing owner is the instance principal, so the doctrine floor is
+	// implicit and the M2 flow needs only the reviewer's approval.
 	ctx := round12AuthContext("alice")
 	reviewerCtx := round12AuthContext("reviewer")
+	require.NoError(t, wrapped.Instance().SetPrimaryAdminUsername(ctx, "alice"))
 
 	uploadEditorial := func(filename string, data []byte, description string) *model.UploadMediaPayload {
 		t.Helper()
@@ -250,7 +253,7 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 	require.NotNil(t, shared.Grant)
 	require.NotNil(t, shared.Grant.ExpiresAt, "grants are bounded by an explicit expiry")
 
-	approved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil)
+	approved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil, nil)
 	require.NoError(t, err)
 	require.True(t, approved.PublishEligible, "the A revision is fully approved")
 
@@ -279,7 +282,7 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 	require.Contains(t, strings.ToLower(err.Error()), "approval")
 
 	// Re-review and authorize the B revision, then publish.
-	reapproved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil)
+	reapproved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil, nil)
 	require.NoError(t, err)
 	require.True(t, reapproved.PublishEligible)
 
@@ -369,13 +372,13 @@ func TestDraftReviewMutationsMintAccessUrlsOnlyOnOptIn(t *testing.T) {
 	require.Equal(t, 1, state.presignCalls, "the opt-in share response mints one read URL")
 
 	// submitDraftReview likewise stays URL-free by default and mints on opt-in.
-	approved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil)
+	approved, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, approved.EditorialMedia, 1)
 	require.Nil(t, approved.EditorialMedia[0].AccessURL)
 	require.Equal(t, 1, state.presignCalls, "a default submitDraftReview response must not mint bearer URLs")
 
-	approvedWithAccess, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, boolPtr(true))
+	approvedWithAccess, err := mut.SubmitDraftReview(reviewerCtx, draft.ID, model.DraftReviewVerdictApproved, nil, boolPtr(true), nil)
 	require.NoError(t, err)
 	require.Len(t, approvedWithAccess.EditorialMedia, 1)
 	require.NotNil(t, approvedWithAccess.EditorialMedia[0].AccessURL)

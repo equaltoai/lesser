@@ -1683,7 +1683,7 @@ func (r *mutationResolver) RevokeDraftReview(ctx context.Context, draftID string
 	}
 	return true, nil
 }
-func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool) (*model.DraftReview, error) {
+func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool, contentHash *string) (*model.DraftReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -1702,7 +1702,11 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 	if g == nil {
 		return nil, errors.New("draft owner cannot review their own draft")
 	}
-	if _, err = svc.SubmitDraftReview(ctx, caller, d.AuthorID, draftID, string(verdict), trimStringPtr(notes)); err != nil {
+	expectedContentHash := ""
+	if contentHash != nil {
+		expectedContentHash = strings.TrimSpace(*contentHash)
+	}
+	if _, err = svc.SubmitDraftReview(ctx, caller, d.AuthorID, draftID, string(verdict), trimStringPtr(notes), expectedContentHash); err != nil {
 		return nil, err
 	}
 	r.auditActAs(ctx, acting, "cms.draft.review_verdict", draftID, map[string]any{"verdict": string(verdict)})

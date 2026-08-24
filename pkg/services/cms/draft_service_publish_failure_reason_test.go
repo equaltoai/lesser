@@ -57,6 +57,12 @@ func TestInteractivePublishFailureRecordsClassifiedReason(t *testing.T) {
 		}))
 		_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
 		require.NoError(t, err)
+		// The releasing owner is not the instance principal, so the doctrine
+		// floor demands a current principal approval for the exact approved bytes.
+		_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+		require.NoError(t, err)
+		_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
+		require.NoError(t, err)
 		return svc, repo, media, minter
 	}
 
@@ -125,6 +131,12 @@ func TestInteractivePublishFailureRecordsClassifiedReason(t *testing.T) {
 			ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
 		}))
 		_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+		require.NoError(t, err)
+		// The releasing owner is not the instance principal, so the doctrine
+		// floor demands a current principal approval for the exact approved bytes.
+		_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+		require.NoError(t, err)
+		_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
 		require.NoError(t, err)
 
 		_, err = svc.PublishDraft(ctx, "owner", draft.ID)

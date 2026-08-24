@@ -48,6 +48,12 @@ func TestDraftReviewGrantExpiryFailsClosed(t *testing.T) {
 	require.NotNil(t, refreshed.ExpiresAt)
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved after refresh")
 	require.NoError(t, err)
+	// The releasing owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval for the exact approved bytes.
+	_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
 	state, err := svc.DraftReviewState(ctx, "owner", draft.ID, nil)
 	require.NoError(t, err)
 	require.True(t, state.PublishEligible)
@@ -78,6 +84,12 @@ func TestScheduleDraftBlocksUnreadyBoundMediaWithExplicitReason(t *testing.T) {
 	media.byID["hero"] = &withdrawn
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved while withdrawn")
 	require.NoError(t, err)
+	// The scheduling owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval for the exact reviewed bytes.
+	_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
 
 	err = svc.ScheduleDraft(ctx, "owner", draft.ID, time.Now().UTC().Add(time.Hour))
 	require.ErrorIs(t, err, ErrDraftReviewMediaRequired)
@@ -100,9 +112,13 @@ func TestScheduleDraftBlocksUnreadyBoundMediaWithExplicitReason(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, scheduled.ScheduledAt)
 
-	// Restoring a servable asset and re-approving lets the draft schedule.
+	// Restoring a servable asset and re-approving lets the draft schedule. The
+	// digest is bound again, so the principal's withdrawn-stage approval went
+	// stale with the restored bytes and must be re-recorded at the ready hash.
 	media.byID["hero"] = m2ReadyMedia("hero", "owner", digestA)
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved while ready")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
 	require.NoError(t, err)
 	require.NoError(t, svc.ScheduleDraft(ctx, "owner", draft.ID, time.Now().UTC().Add(time.Hour)))
 	scheduled, err = svc.GetDraft(ctx, "owner", draft.ID)

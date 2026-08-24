@@ -197,6 +197,12 @@ func TestDraftReviewMediaSwapStalesPriorApprovalAndBlocksPublish(t *testing.T) {
 	verdict, err := svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "A approved")
 	require.NoError(t, err)
 	require.Equal(t, draftReviewContentHash(mustDraft(t, svc, "owner", draft.ID), map[string]string{"asset-a": digestA}), verdict.ContentHash)
+	// The releasing owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval for the exact approved bytes.
+	_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
 
 	state, err := svc.DraftReviewState(ctx, "owner", draft.ID, nil)
 	require.NoError(t, err)
@@ -215,8 +221,11 @@ func TestDraftReviewMediaSwapStalesPriorApprovalAndBlocksPublish(t *testing.T) {
 	_, err = svc.PublishDraft(ctx, "owner", draft.ID)
 	require.ErrorIs(t, err, ErrDraftReviewApprovalRequired, "publish must block on the stale approval")
 
-	// Re-review and authorize the B revision.
+	// Re-review and authorize the B revision; the principal's A-revision approval
+	// went stale with the media swap, so the principal re-approves the B bytes.
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "B approved")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
 	require.NoError(t, err)
 	state, err = svc.DraftReviewState(ctx, "owner", draft.ID, nil)
 	require.NoError(t, err)
@@ -263,6 +272,14 @@ func TestDraftReviewPublishGateBlocksRequiredBoundMedia(t *testing.T) {
 
 	// Re-review the withdrawn revision: approvals pass but the media gate blocks.
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved while withdrawn")
+	require.NoError(t, err)
+	// The releasing owner is not the instance principal: the doctrine floor
+	// demands a current principal approval. The revision hash stays constant
+	// across the withdrawn/missing/pending stages below (no servable digest), so
+	// this one principal approval remains current through the rest of the test.
+	_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
 	require.NoError(t, err)
 	_, err = svc.PublishDraft(ctx, "owner", draft.ID)
 	require.ErrorIs(t, err, ErrDraftReviewMediaRequired)
@@ -314,6 +331,12 @@ func TestDraftReviewPublishMintVerifiesApprovedBytes(t *testing.T) {
 		ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
 	}))
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+	require.NoError(t, err)
+	// The releasing owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval for the exact approved bytes.
+	_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
 	require.NoError(t, err)
 
 	_, err = svc.PublishDraft(ctx, "owner", draft.ID)
@@ -389,6 +412,12 @@ func TestDraftReviewPublishFailureNeverUnpublishesPreexistingServing(t *testing.
 			ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
 		}))
 		_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+		require.NoError(t, err)
+		// The releasing owner is not the instance principal, so the doctrine
+		// floor demands a current principal approval for the exact approved bytes.
+		_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+		require.NoError(t, err)
+		_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
 		require.NoError(t, err)
 	}
 
@@ -499,6 +528,12 @@ func TestDraftReviewPublishRollsBackPriorMintsOnMultiAssetFailure(t *testing.T) 
 	}))
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
 	require.NoError(t, err)
+	// The releasing owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval for the exact approved bytes.
+	_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
 
 	_, err = svc.PublishDraft(ctx, "owner", draft.ID)
 	require.ErrorContains(t, err, "durable copy failed for card")
@@ -539,6 +574,12 @@ func TestDraftReviewPublishTransitionFailureMintsNothing(t *testing.T) {
 	}))
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
 	require.NoError(t, err)
+	// The releasing owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval for the exact approved bytes.
+	_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
+	require.NoError(t, err)
 
 	_, err = svc.PublishDraft(ctx, "owner", draft.ID)
 	require.ErrorContains(t, err, "transition write failed")
@@ -567,6 +608,12 @@ func TestDraftReviewPublishArticleFailureRollsBackMints(t *testing.T) {
 		ExpiresAt: ptrTime(time.Now().UTC().Add(time.Hour)),
 	}))
 	_, err = svc.SubmitDraftReview(ctx, "reviewer", "owner", draft.ID, DraftReviewApproved, "approved")
+	require.NoError(t, err)
+	// The releasing owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval for the exact approved bytes.
+	_, err = svc.ShareDraftForReview(ctx, "owner", draft.ID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", draft.ID, DraftReviewApproved, "operator approval")
 	require.NoError(t, err)
 
 	_, err = svc.PublishDraft(ctx, "owner", draft.ID)

@@ -247,6 +247,8 @@ func TestDraftServicePreviewUsesPublicationRenderer(t *testing.T) {
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-preview",
@@ -382,6 +384,8 @@ func TestDraftServiceScheduleAndCancelDraft(t *testing.T) {
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	draft := &models.Draft{
 		ID:              "draft-1",
@@ -443,6 +447,8 @@ func TestDraftServicePublishDraftCreatesArticleAndDeletesDraft(t *testing.T) {
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-1",
@@ -481,6 +487,8 @@ func TestDraftServicePublishDraftAlreadyExistsSameAuthorMarksFailed(t *testing.T
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	existing := &models.Article{
 		Object: models.Object{
@@ -532,6 +540,8 @@ func TestDraftServicePublishDraftAlreadyExistsDifferentAuthorMarksFailed(t *test
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	existing := &models.Article{
 		Object: models.Object{
@@ -575,6 +585,8 @@ func TestCMSSmokeDraftLifecycle(t *testing.T) {
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "smoke", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-smoke",

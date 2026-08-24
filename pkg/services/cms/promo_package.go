@@ -747,6 +747,8 @@ func (s *DraftService) PromoPackageReviewState(ctx context.Context, owner, packa
 // Each required reviewer is mapped to their latest grant record so the current
 // verdict can be dated against it (a re-grant requires a verdict recorded
 // after the new grant).
+//
+//nolint:dupl // the required-reviewer derivation mirrors the draft review surface (issue #1456); the record types differ
 func promoRequiredReviewers(grants []*models.PromoReviewGrant, verdicts []*models.PromoReviewVerdict, now time.Time) (active, required map[string]*models.PromoReviewGrant) {
 	active = make(map[string]*models.PromoReviewGrant, len(grants))
 	grantByReviewer := make(map[string]*models.PromoReviewGrant, len(grants))

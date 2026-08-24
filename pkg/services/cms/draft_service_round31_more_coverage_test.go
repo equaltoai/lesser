@@ -100,6 +100,8 @@ func TestDraftServicePublishDraft_PublishedCleanupPermissionDenied(t *testing.T)
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	draft := &models.Draft{
@@ -139,6 +141,8 @@ func TestDraftServicePublishDraft_PublishedCleanupDeleteFailureIsBestEffort(t *t
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	draft := &models.Draft{
@@ -217,6 +221,8 @@ func TestDraftServicePublishDraft_UpdateExistingArticlePermissionDeniedMarksFail
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	articles.items[objectID] = &models.Article{
@@ -264,6 +270,8 @@ func TestDraftServicePublishDraft_UpdateExistingArticleUpdateErrorMarksFailed(t 
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	baseArticles.items[objectID] = &models.Article{

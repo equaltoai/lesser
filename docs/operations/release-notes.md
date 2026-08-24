@@ -1,5 +1,19 @@
 # Release Notes
 
+## Article-gate doctrine: principal-unavailable fails closed on every publish and schedule
+
+The article publish/schedule gate requires a resolvable instance principal for **every** release: when `PrimaryAdminUsername` is unset or the instance-state read fails, publishing and scheduling fail closed (doctrine-intended) instead of proceeding without the principal floor. The gate surfaces `instance principal is unavailable` / `instance principal is not configured` until the principal is configured.
+
+### Operator impact
+
+- Publish and schedule requests are refused while the principal cannot be resolved, for every releasing actor — the doctrine cannot distinguish the principal from any other account when its identity is unavailable.
+- In-flight scheduled drafts owned by a non-principal account — scheduled before this deploy under pre-doctrine rules, or without a current principal approval — will fail at fire time post-deploy: the gate demands a current principal approval and the scheduler marks the draft `failed` with `PublishFailureReason = "scheduled publish suppressed: draft review approval required"` and clears `ScheduledAt`. Recover by re-reviewing the draft (share to the principal and obtain a current principal approval on the exact content) and re-scheduling.
+- Principal-unavailable at fire time instead surfaces `PublishFailureReason = "scheduled publish failed"`.
+
+### Pre-deploy check
+
+- Confirm `PrimaryAdminUsername` is set on every instance before deploying: `GetInstanceState` must return a non-empty `primaryAdminUsername`.
+
 ## Canonical local status-object fetchability
 
 Fresh local Lesser-authored Note IDs published as `https://<domain>/users/{username}/statuses/{id}` now stay backed by
