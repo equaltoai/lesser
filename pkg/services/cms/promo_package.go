@@ -59,6 +59,11 @@ var (
 	// version-conditioned content or release write loses a concurrent update;
 	// the caller re-reads and retries.
 	ErrPromoPackageConflict = errors.New("promo package changed concurrently")
+	// ErrPromoPackageReviewContentChanged is the additive conflict signal
+	// surfaced when a review submit carries an expected content hash that no
+	// longer matches the stored package: the owner recomposed after the reviewer
+	// inspected the package, so the verdict must not bless unseen content.
+	ErrPromoPackageReviewContentChanged = errors.New("promo package content changed since the reviewer inspected it")
 
 	errPromoReviewStorageUnavailable = errors.New("promo package review storage is not available")
 )
@@ -526,8 +531,13 @@ func (s *DraftService) PromoPackageForCaller(ctx context.Context, caller, packag
 }
 
 // SubmitPromoPackageReview records an immutable reviewer verdict bound to the
-// exact current package content hash.
-func (s *DraftService) SubmitPromoPackageReview(ctx context.Context, caller, owner, packageID, verdict, notes string) (*models.PromoReviewVerdict, error) {
+// exact package content hash. The caller carries the expectedContentHash it
+// actually inspected; when the stored package no longer matches (the owner
+// recomposed between the reviewer's read and this submit), the submit is
+// rejected with a conflict signal instead of silently blessing unseen content.
+// An empty expectedContentHash applies no constraint (legacy callers); the
+// GraphQL surface always supplies it.
+func (s *DraftService) SubmitPromoPackageReview(ctx context.Context, caller, owner, packageID, verdict, notes, expectedContentHash string) (*models.PromoReviewVerdict, error) {
 	caller = strings.TrimSpace(caller)
 	owner = strings.TrimSpace(owner)
 	packageID = strings.TrimSpace(packageID)
@@ -551,6 +561,9 @@ func (s *DraftService) SubmitPromoPackageReview(ctx context.Context, caller, own
 	pkg, err := repo.GetPromoPackage(ctx, owner, packageID)
 	if err != nil {
 		return nil, err
+	}
+	if expectedContentHash = strings.TrimSpace(expectedContentHash); expectedContentHash != "" && expectedContentHash != pkg.ContentHash {
+		return nil, errors.Join(ErrPromoPackageConflict, ErrPromoPackageReviewContentChanged)
 	}
 	v := &models.PromoReviewVerdict{
 		OwnerID:     owner,

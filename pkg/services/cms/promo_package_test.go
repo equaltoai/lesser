@@ -137,7 +137,7 @@ func TestPromoScenarioE_AIOriginAssetRequiresPrincipalAuthorization(t *testing.T
 	// Reviewer approves the exact package content.
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 
 	// Reviewer approval alone is not enough: the AI-origin asset requires the
@@ -156,7 +156,7 @@ func TestPromoScenarioE_AIOriginAssetRequiresPrincipalAuthorization(t *testing.T
 	// reviewer and approves the same package content hash.
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "authorized")
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "authorized", pkg.ContentHash)
 	require.NoError(t, err)
 
 	release, err := svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
@@ -208,7 +208,7 @@ func TestPromoScenarioE_SuppliedAssetReleasesAfterReviewerApproval(t *testing.T)
 	require.ErrorIs(t, err, ErrPromoPackageApprovalRequired)
 	require.Len(t, creator.commands, 0)
 
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 
 	release, err := svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
@@ -230,7 +230,7 @@ func TestPromoStaleOnChangeReBlocksApprovedPackage(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 
 	// Any content edit after approval re-hashes and stales the verdict.
@@ -247,7 +247,7 @@ func TestPromoStaleOnChangeReBlocksApprovedPackage(t *testing.T) {
 	require.Len(t, creator.commands, 0)
 
 	// Re-review of the changed package unblocks it.
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", updated.ContentHash)
 	require.NoError(t, err)
 	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
 	require.NoError(t, err)
@@ -367,7 +367,7 @@ func TestPromoAssetStateChangesBlockReviewEligibility(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 
 	// The media record changes after approval: digest replaced -> release
@@ -409,7 +409,7 @@ func TestPromoComposeAfterReleaseRefused(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
 	require.NoError(t, err)
@@ -432,7 +432,7 @@ func TestPromoOwnerCannotReviewOwnPackageUnlessPrincipal(t *testing.T) {
 
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "alice")
 	require.ErrorContains(t, err, "cannot review their own package")
-	_, err = svc.SubmitPromoPackageReview(ctx, "alice", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "alice", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.ErrorContains(t, err, "cannot review their own package")
 
 	// The instance principal may review their own package explicitly.
@@ -450,10 +450,51 @@ func TestPromoReleaseFailsClosedWhenStatusCreatorUnavailable(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 
 	svc.SetPromoStatusCreator(nil)
 	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
 	require.ErrorContains(t, err, "promo status creator is unavailable")
+}
+
+// TestPromoSubmitBindsToInspectedContentHash pins F2: a review submit must
+// carry the content hash the reviewer actually inspected. When the owner
+// recomposes between the reviewer's read and the submit, the submit is
+// rejected with the additive conflict signal and no verdict is recorded; a
+// matching hash records the verdict as before.
+func TestPromoSubmitBindsToInspectedContentHash(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, _ := promoServiceHarness(t)
+	digest := promoDigest("f2")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+
+	// The reviewer's client inspected the package (hash H1); the owner then
+	// recomposes, so the stored package no longer matches what was inspected.
+	read, err := svc.GetPromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	edited := promoComposeInput(models.PromoPackageVisibilityPublic, "media-1")
+	edited.PackageID = pkg.PackageID
+	edited.PostText = "changed after the reviewer read it"
+	updated, err := svc.ComposePromoPackage(ctx, "alice", edited)
+	require.NoError(t, err)
+	require.NotEqual(t, read.ContentHash, updated.ContentHash)
+
+	// Submit with the inspected hash -> explicit conflict, no verdict recorded.
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", read.ContentHash)
+	require.ErrorIs(t, err, ErrPromoPackageReviewContentChanged)
+	require.ErrorIs(t, err, ErrPromoPackageConflict, "the mismatch surfaces the additive conflict signal")
+	verdicts, err := svc.PromoPackageVerdicts(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.Empty(t, verdicts, "no verdict is recorded for unseen content")
+
+	// A submit carrying the current hash records the verdict as before.
+	v, err := svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", updated.ContentHash)
+	require.NoError(t, err)
+	require.Equal(t, updated.ContentHash, v.ContentHash, "the recorded verdict binds the reviewed hash")
 }

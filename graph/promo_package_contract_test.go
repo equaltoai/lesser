@@ -148,7 +148,7 @@ func TestPromoPackageScenarioE_BlockedReleaseThenAuthorizedRelease(t *testing.T)
 	review, err := mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer")
 	require.NoError(t, err)
 	require.False(t, review.ReviewersApproved)
-	review, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil)
+	review, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
 	require.NoError(t, err)
 	require.True(t, review.ReviewersApproved)
 	require.True(t, review.PrincipalApprovalRequired, "the AI-origin asset requires the instance principal")
@@ -164,7 +164,7 @@ func TestPromoPackageScenarioE_BlockedReleaseThenAuthorizedRelease(t *testing.T)
 	// same package content.
 	review, err = mut.SharePromoPackageForReview(alice, pkg.ID, "principal")
 	require.NoError(t, err)
-	review, err = mut.SubmitPromoPackageReview(principal, pkg.ID, model.PromoPackageReviewVerdictApproved, nil)
+	review, err = mut.SubmitPromoPackageReview(principal, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
 	require.NoError(t, err)
 	require.True(t, review.ReleaseEligible, "after principal authorization the package may release")
 
@@ -217,7 +217,7 @@ func TestPromoPackageContract_StaleOnChangeReBlocksAndUnpublishedAssetsRejected(
 	require.NoError(t, err)
 	_, err = mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer")
 	require.NoError(t, err)
-	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil)
+	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
 	require.NoError(t, err)
 
 	// Any content edit after approval re-hashes and stales the verdict.
@@ -317,4 +317,51 @@ func TestPromoPackageContract_ActorIsolationAndReviewerQueue(t *testing.T) {
 	require.Empty(t, queue.Edges)
 	_, err = qry.PromoPackage(reviewer, pkg.ID)
 	require.Error(t, err, "a revoked grant stops authorizing reads")
+}
+
+// TestPromoPackageContract_SubmitBindsInspectedContentHash pins the F2
+// expected-content-hash argument at the contract: a submit carrying the hash
+// the reviewer's client inspected is rejected with a conflict when the owner
+// recomposes after inspection, and no verdict is recorded for the unseen
+// content.
+func TestPromoPackageContract_SubmitBindsInspectedContentHash(t *testing.T) {
+	resolver, _, state, _ := newPromoGraphHarness(t)
+	mut := resolver.Mutation()
+	alice := round12AuthContext("alice")
+	reviewer := round12AuthContext("reviewer")
+
+	digest := graphPromoDigest("f2")
+	state.seededMedia["m1"] = graphPublishedPromoMedia("m1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := mut.ComposePromoPackage(alice, model.ComposePromoPackageInput{
+		ArticleID:     "https://localhost/articles/hello",
+		PostText:      "Read our launch article",
+		Visibility:    model.PromoPackageVisibilityPublic,
+		AssetMediaIds: []string{"m1"},
+	})
+	require.NoError(t, err)
+	_, err = mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer")
+	require.NoError(t, err)
+
+	// The reviewer's client inspected this content hash; the owner recomposes
+	// before the submit lands.
+	inspectedHash := pkg.ContentHash
+	edited, err := mut.ComposePromoPackage(alice, model.ComposePromoPackageInput{
+		PackageID:     &pkg.ID,
+		ArticleID:     "https://localhost/articles/hello",
+		PostText:      "changed after the reviewer read it",
+		Visibility:    model.PromoPackageVisibilityPublic,
+		AssetMediaIds: []string{"m1"},
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, inspectedHash, edited.ContentHash)
+
+	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, &inspectedHash)
+	require.Error(t, err)
+	require.Contains(t, strings.ToLower(err.Error()), "changed",
+		"the conflict names the content change between inspection and submit")
+
+	// A submit with the current content hash records the verdict.
+	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
+	require.NoError(t, err)
 }

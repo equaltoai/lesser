@@ -44,7 +44,7 @@ func TestPromoServiceListAndVerdictHelpers(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, owned, 1)
 
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "ok")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "ok", pkg.ContentHash)
 	require.NoError(t, err)
 	verdicts, err := svc.PromoPackageVerdicts(ctx, "alice", pkg.PackageID)
 	require.NoError(t, err)
@@ -80,7 +80,7 @@ func TestPromoServiceReviewGuardrails(t *testing.T) {
 	// Invalid verdicts are rejected.
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, "MAYBE", "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, "MAYBE", "", "")
 	require.ErrorContains(t, err, "invalid promo package review verdict")
 
 	// Expired grants fail closed.
@@ -135,7 +135,7 @@ func TestPromoServiceUnwiredAndFailClosed(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 
 	// A failing status creator blocks release without stamping.
@@ -171,7 +171,7 @@ func TestPromoServicePrincipalUnavailableBlocksAIOriginRelease(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 
 	// Without a principal provider, the AI-origin gate reports the principal
@@ -303,7 +303,7 @@ func TestPromoServiceFinalSmallBranches(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
 	require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestPromoServiceGateRemainingBranches(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 	_, err = svc.ReleasePromoPackage(ctx, "alice", "missing")
 	require.Error(t, err)
@@ -343,7 +343,7 @@ func TestPromoServiceGateRemainingBranches(t *testing.T) {
 	require.NoError(t, err)
 	g.ExpiresAt = &expired
 	require.NoError(t, svc.promoRepo.RegrantPromoReviewGrant(ctx, g))
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.Error(t, err)
 
 	// An AI-origin release without a configured domain fails closed at the
@@ -353,11 +353,11 @@ func TestPromoServiceGateRemainingBranches(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", aiPkg.PackageID, "reviewer")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", aiPkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", aiPkg.PackageID, models.PromoPackageReviewApproved, "", aiPkg.ContentHash)
 	require.NoError(t, err)
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", aiPkg.PackageID, "principal")
 	require.NoError(t, err)
-	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", aiPkg.PackageID, models.PromoPackageReviewApproved, "")
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", aiPkg.PackageID, models.PromoPackageReviewApproved, "", aiPkg.ContentHash)
 	require.NoError(t, err)
 	svc.domain = ""
 	_, err = svc.ReleasePromoPackage(ctx, "alice", aiPkg.PackageID)
