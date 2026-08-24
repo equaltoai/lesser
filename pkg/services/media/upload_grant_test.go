@@ -455,6 +455,64 @@ func TestFinalizeUploadGrantSizeBoundaryExactlyAtCapPasses(t *testing.T) {
 	require.Len(t, objectStore.Downloads(), 1, "an at-cap object is downloaded exactly once for digest verification")
 }
 
+func TestFinalizeUploadGrantUnwiredFailsClosed(t *testing.T) {
+	service, _, _, _ := newUploadGrantTestService(t)
+	service.SetUploadGrantRepository(nil)
+	_, err := service.FinalizeUploadGrant(context.Background(), "alice", "grant-x")
+	require.ErrorIs(t, err, ErrUploadGrantUnavailable)
+}
+
+func TestFinalizeUploadGrantRejectsBlankIdentity(t *testing.T) {
+	service, _, _, mediaRepo := newUploadGrantTestService(t)
+	_, err := service.FinalizeUploadGrant(context.Background(), "  ", "")
+	require.Error(t, err)
+	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+}
+
+func TestFinalizeUploadGrantStoreUnavailableFailsClosed(t *testing.T) {
+	service, grantRepo, _, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(tinyPNG),
+	})
+	require.NoError(t, err)
+	// A store without the presigned-PUT capability must fail closed at finalize.
+	service.SetS3Service(newFakeMediaS3Service())
+
+	_, err = service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.ErrorIs(t, err, ErrUploadGrantUnavailable)
+	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+	stored, err := grantRepo.GetUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusMinted, stored.Status)
+}
+
+func TestFinalizeUploadGrantExpiredDeleteFailureStillFailsClosed(t *testing.T) {
+	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	expired := &models.UploadGrant{
+		Owner: "alice", GrantID: "grant-expired-del", ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024,
+		ContentSHA256: uploadGrantDigest(tinyPNG), S3Bucket: "media-private", S3Key: "media/2026/08/24/expired-del.png",
+		MediaID: "media-expired-del", FileName: "expired-del.png", Status: models.UploadGrantStatusMinted,
+		GrantedAt: now.Add(-time.Hour), ExpiresAt: now.Add(-time.Minute), Version: 0,
+	}
+	require.NoError(t, expired.UpdateKeys())
+	grantRepo.SeedUploadGrant(expired)
+	require.NoError(t, objectStore.SimulateUpload(expired, tinyPNG))
+	objectStore.deleteErr = fmt.Errorf("delete failed")
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", "grant-expired-del")
+	require.ErrorIs(t, err, ErrUploadGrantExpired)
+	require.Nil(t, media)
+	mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+	// A delete failure is logged, not fatal: the expired error still surfaces
+	// and the grant is never consumed.
+	stored, err := grantRepo.GetUploadGrant(ctx, "alice", "grant-expired-del")
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusMinted, stored.Status)
+}
+
 func TestFinalizeUploadGrantExpiredFailsClosed(t *testing.T) {
 	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
 	ctx := context.Background()

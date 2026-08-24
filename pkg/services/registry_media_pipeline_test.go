@@ -79,6 +79,17 @@ func (f *fakeMediaS3API) CopyObject(
 	return &s3.CopyObjectOutput{}, nil
 }
 
+// headNilMediaS3API is a fake whose HeadObject reports neither a
+// ContentLength nor a ContentType, exercising the fail-closed nil branches of
+// mediaS3ObjectStore.HeadFile.
+type headNilMediaS3API struct {
+	*fakeMediaS3API
+}
+
+func (h *headNilMediaS3API) HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+	return &s3.HeadObjectOutput{}, nil
+}
+
 type fakeRegistryMediaStore struct {
 	objects map[string][]byte
 }
@@ -147,6 +158,54 @@ func TestMediaS3ObjectStoreUsesKMSForInternalEditorialBytes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "aws:kms", string(fakeClient.putInput.ServerSideEncryption))
 	require.Equal(t, "alias/lesser-shared-encryption", aws.ToString(fakeClient.putInput.SSEKMSKeyId))
+}
+
+func TestMediaS3ObjectStoreHeadFileReportsLengthAndType(t *testing.T) {
+	fakeClient := &fakeMediaS3API{}
+	fakeClient.putData = []byte("exact-head-bytes")
+	store := &mediaS3ObjectStore{client: fakeClient}
+
+	length, contentType, err := store.HeadFile(context.Background(), "media-bucket", "media/key.png")
+	require.NoError(t, err)
+	require.Equal(t, int64(len("exact-head-bytes")), length)
+	require.Equal(t, "image/png", contentType)
+}
+
+func TestMediaS3ObjectStoreHeadFileNilMetadataFailsClosed(t *testing.T) {
+	store := &mediaS3ObjectStore{client: &headNilMediaS3API{fakeMediaS3API: &fakeMediaS3API{}}}
+	length, contentType, err := store.HeadFile(context.Background(), "media-bucket", "media/key.png")
+	require.NoError(t, err)
+	require.Zero(t, length, "a missing ContentLength is reported as zero")
+	require.Empty(t, contentType, "a missing ContentType is reported as empty")
+}
+
+func TestMediaS3ObjectStoreHeadFileUnavailableFailsClosed(t *testing.T) {
+	store := &mediaS3ObjectStore{}
+	_, _, err := store.HeadFile(context.Background(), "media-bucket", "media/key.png")
+	require.Error(t, err)
+}
+
+func TestMediaS3ObjectStoreDownloadFileBounded(t *testing.T) {
+	fakeClient := &fakeMediaS3API{}
+	fakeClient.putData = bytes.Repeat([]byte{0xAB}, 64)
+	store := &mediaS3ObjectStore{client: fakeClient}
+
+	// An at-cap body downloads fully with its stored type.
+	data, contentType, err := store.DownloadFile(context.Background(), "media-bucket", "media/key.png", 64)
+	require.NoError(t, err)
+	require.Len(t, data, 64)
+	require.Equal(t, "image/png", contentType)
+
+	// A body past the bound is refused: the read aborts at maxBytes+1.
+	_, _, err = store.DownloadFile(context.Background(), "media-bucket", "media/key.png", 63)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds the declared size cap")
+}
+
+func TestMediaS3ObjectStoreDownloadFileUnavailableFailsClosed(t *testing.T) {
+	store := &mediaS3ObjectStore{}
+	_, _, err := store.DownloadFile(context.Background(), "media-bucket", "media/key.png", 10)
+	require.Error(t, err)
 }
 
 func TestRegistryMediaWiresObjectStoreAndProcessingQueue(t *testing.T) {
