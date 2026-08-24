@@ -72,7 +72,7 @@ func TestEditorialMediaGraphQLDraftExercise(t *testing.T) {
 	require.Equal(t, alt, *draft.EditorialMedia[0].EffectiveAltText)
 	require.NotNil(t, draft.EditorialMedia[0].Provenance)
 
-	preview, err := qry.DraftPreview(ctx, draft.ID)
+	preview, err := qry.DraftPreview(ctx, draft.ID, boolPtr(true))
 	require.NoError(t, err)
 	require.Len(t, preview.EditorialMedia, 1)
 	hero := preview.EditorialMedia[0]
@@ -179,12 +179,26 @@ func TestEditorialMediaMintingGranularityForListAndSingleDraftContexts(t *testin
 	requireEditorialMediaWithoutAccess(t, shared.Edges[0].Node.EditorialMedia)
 	require.Zero(t, state.presignCalls, "shared review lists must not mint bearer URLs")
 
-	single, err := resolver.Query().DraftReview(round12AuthContext("owner"), draft.ID)
+	// Default reads do NOT mint per-asset URLs (fold-in a): the projection is
+	// URL-free unless the caller explicitly requests includeAccessUrls.
+	defaultReview, err := resolver.Query().DraftReview(round12AuthContext("owner"), draft.ID, nil)
+	require.NoError(t, err)
+	requireEditorialMediaWithoutAccess(t, defaultReview.EditorialMedia)
+	require.Zero(t, state.presignCalls, "a default draftReview read must not mint bearer URLs")
+
+	defaultPreview, err := resolver.Query().DraftPreview(round12AuthContext("owner"), draft.ID, nil)
+	require.NoError(t, err)
+	requireEditorialMediaWithoutAccess(t, defaultPreview.EditorialMedia)
+	require.Zero(t, state.presignCalls, "a default draftPreview read must not mint bearer URLs")
+
+	// An explicit includeAccessUrls=true read mints only for the present
+	// internal bindings (one per read), never for the missing binding.
+	single, err := resolver.Query().DraftReview(round12AuthContext("owner"), draft.ID, boolPtr(true))
 	require.NoError(t, err, "one failed binding mint must not fail a single-draft review")
 	requireEditorialMediaWithoutAccess(t, single.EditorialMedia)
 	require.Equal(t, 1, state.presignCalls, "only the present internal binding should attempt a mint")
 
-	preview, err := resolver.Query().DraftPreview(round12AuthContext("owner"), draft.ID)
+	preview, err := resolver.Query().DraftPreview(round12AuthContext("owner"), draft.ID, boolPtr(true))
 	require.NoError(t, err, "one failed binding mint must not fail a draft preview")
 	requireEditorialMediaWithoutAccess(t, preview.EditorialMedia)
 	require.Equal(t, 2, state.presignCalls)
@@ -224,4 +238,9 @@ func requireEditorialMediaWithoutAccess(t *testing.T, usages []*model.EditorialM
 	require.Equal(t, model.EditorialMediaStateMissing, usages[1].State)
 	require.Nil(t, usages[1].AccessURL)
 	require.Nil(t, usages[1].AccessExpiresAt)
+}
+
+// boolPtr converts a bool to a pointer for resolver argument calls.
+func boolPtr(value bool) *bool {
+	return &value
 }

@@ -2824,12 +2824,19 @@ type UploadGrantFinalizeResult {
 extend type Query {
   # Draft operations
   draft(id: ID!): Draft
-  draftPreview(id: ID!): DraftPreview!
+  """Renders a draft preview. includeAccessUrls mints the per-usage short-lived
+  media read URLs on this read; without it the projection returns no accessUrl
+  (use draftEditorialMediaAccess for one exact asset read)."""
+  draftPreview(id: ID!, includeAccessUrls: Boolean = false): DraftPreview!
   myDrafts(contentType: ObjectType, status: DraftStatus, first: Int, after: Cursor): DraftConnection!
   """Review assignments created by the authenticated draft owner."""
   myDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
   sharedDraftReviews(first: Int, after: Cursor): DraftReviewConnection!
-  draftReview(id: ID!): DraftReview
+  """Review state for the owner or an active reviewer. includeAccessUrls mints
+  the per-usage short-lived media read URLs on this read; without it the
+  projection returns no accessUrl (use draftEditorialMediaAccess for one exact
+  asset read)."""
+  draftReview(id: ID!, includeAccessUrls: Boolean = false): DraftReview
   """Issue a short-lived read for one exact asset bound to an authorized draft."""
   draftEditorialMediaAccess(draftId: ID!, mediaId: ID!): EditorialMediaAccess!
   """One upload grant with its inspectable lifecycle state (owner-scoped)."""

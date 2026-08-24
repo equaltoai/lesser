@@ -113,6 +113,7 @@ func (r *Resolver) convertCMSDraftPreview(
 	bindings []cms.DraftEditorialMediaBinding,
 	rendered cmsrender.RenderedArticleContent,
 	renderErr error,
+	includeAccessUrls bool,
 ) (*model.DraftPreview, error) {
 	if draft == nil {
 		return nil, nil
@@ -140,7 +141,16 @@ func (r *Resolver) convertCMSDraftPreview(
 		sourceFormat = cmsrender.FormatMarkdown
 	}
 
-	editorialMedia := r.convertCMSEditorialMediaBindingsWithAccess(ctx, bindings)
+	// URL minting is scoped: ordinary preview reads do not mint a short-lived
+	// S3 URL per bound asset; only callers that explicitly request
+	// includeAccessUrls (or use the exact-asset draftEditorialMediaAccess lane)
+	// pay the mint cost.
+	var editorialMedia []*model.EditorialMediaUsage
+	if includeAccessUrls {
+		editorialMedia = r.convertCMSEditorialMediaBindingsWithAccess(ctx, bindings)
+	} else {
+		editorialMedia = r.convertCMSEditorialMediaBindings(ctx, bindings, false)
+	}
 	return &model.DraftPreview{
 		DraftID:        draft.ID,
 		Success:        renderErr == nil,

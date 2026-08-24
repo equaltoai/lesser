@@ -257,7 +257,7 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 	expectedHashA := "sha256:" + sha256Hex(pngBytes)
 	expectedHashB := "sha256:" + sha256Hex(pngBytesB)
 
-	review, err := qry.DraftReview(ctx, draft.ID)
+	review, err := qry.DraftReview(ctx, draft.ID, nil)
 	require.NoError(t, err)
 	require.True(t, review.PublishEligible)
 	require.Empty(t, review.PublishBlockingReasons)
@@ -268,7 +268,7 @@ func TestDraftReviewScenarioCByteBoundApprovalEndToEnd(t *testing.T) {
 	// Swap image A for image B.
 	attach(assetB.UploadID, "B caption")
 
-	review, err = qry.DraftReview(ctx, draft.ID)
+	review, err = qry.DraftReview(ctx, draft.ID, nil)
 	require.NoError(t, err)
 	require.False(t, review.PublishEligible, "the byte swap must stale the prior approval")
 	require.Contains(t, review.PublishBlockingReasons, "REVIEW_APPROVAL_REQUIRED")

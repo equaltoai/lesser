@@ -2670,8 +2670,8 @@ type ComplexityRoot struct {
 		DomainBlocks                   func(childComplexity int, first *int, after *model.Cursor) int
 		Draft                          func(childComplexity int, id string) int
 		DraftEditorialMediaAccess      func(childComplexity int, draftID string, mediaID string) int
-		DraftPreview                   func(childComplexity int, id string) int
-		DraftReview                    func(childComplexity int, id string) int
+		DraftPreview                   func(childComplexity int, id string, includeAccessUrls *bool) int
+		DraftReview                    func(childComplexity int, id string, includeAccessUrls *bool) int
 		DroneWorkflow                  func(childComplexity int, username string) int
 		Endorsements                   func(childComplexity int) int
 		ExplainObject                  func(childComplexity int, id string) int
@@ -4045,11 +4045,11 @@ type QueryResolver interface {
 	SeveredRelationships(ctx context.Context, instance *string, first *int, after *string) (*model.SeveredRelationshipConnection, error)
 	AffectedRelationships(ctx context.Context, severedRelationshipID string) (*model.AffectedRelationshipConnection, error)
 	Draft(ctx context.Context, id string) (*model.Draft, error)
-	DraftPreview(ctx context.Context, id string) (*model.DraftPreview, error)
+	DraftPreview(ctx context.Context, id string, includeAccessUrls *bool) (*model.DraftPreview, error)
 	MyDrafts(ctx context.Context, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) (*model.DraftConnection, error)
 	MyDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
 	SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
-	DraftReview(ctx context.Context, id string) (*model.DraftReview, error)
+	DraftReview(ctx context.Context, id string, includeAccessUrls *bool) (*model.DraftReview, error)
 	DraftEditorialMediaAccess(ctx context.Context, draftID string, mediaID string) (*model.EditorialMediaAccess, error)
 	UploadGrant(ctx context.Context, grantID string) (*model.UploadGrant, error)
 	Revisions(ctx context.Context, objectID string, first *int, after *model.Cursor) (*model.RevisionConnection, error)
@@ -18185,7 +18185,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.DraftPreview(childComplexity, args["id"].(string)), true
+		return e.complexity.Query.DraftPreview(childComplexity, args["id"].(string), args["includeAccessUrls"].(*bool)), true
 
 	case "Query.draftReview":
 		if e.complexity.Query.DraftReview == nil {
@@ -18197,7 +18197,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.DraftReview(childComplexity, args["id"].(string)), true
+		return e.complexity.Query.DraftReview(childComplexity, args["id"].(string), args["includeAccessUrls"].(*bool)), true
 
 	case "Query.droneWorkflow":
 		if e.complexity.Query.DroneWorkflow == nil {
@@ -27297,6 +27297,11 @@ func (ec *executionContext) field_Query_draftPreview_args(ctx context.Context, r
 		return nil, err
 	}
 	args["id"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "includeAccessUrls", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["includeAccessUrls"] = arg1
 	return args, nil
 }
 
@@ -27308,6 +27313,11 @@ func (ec *executionContext) field_Query_draftReview_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["id"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "includeAccessUrls", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["includeAccessUrls"] = arg1
 	return args, nil
 }
 
@@ -124124,7 +124134,7 @@ func (ec *executionContext) _Query_draftPreview(ctx context.Context, field graph
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().DraftPreview(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Query().DraftPreview(rctx, fc.Args["id"].(string), fc.Args["includeAccessUrls"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -124386,7 +124396,7 @@ func (ec *executionContext) _Query_draftReview(ctx context.Context, field graphq
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().DraftReview(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Query().DraftReview(rctx, fc.Args["id"].(string), fc.Args["includeAccessUrls"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

@@ -347,7 +347,7 @@ func (r *queryResolver) Draft(ctx context.Context, id string) (*model.Draft, err
 	return r.convertCMSDraft(ctx, draft), nil
 }
 
-func (r *queryResolver) DraftPreview(ctx context.Context, id string) (*model.DraftPreview, error) {
+func (r *queryResolver) DraftPreview(ctx context.Context, id string, includeAccessUrls *bool) (*model.DraftPreview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -368,7 +368,7 @@ func (r *queryResolver) DraftPreview(ctx context.Context, id string) (*model.Dra
 	}
 
 	rendered, renderErr := cms.RenderDraftPreview(draft)
-	return r.convertCMSDraftPreview(ctx, draft, bindings, rendered, renderErr)
+	return r.convertCMSDraftPreview(ctx, draft, bindings, rendered, renderErr, cmsIncludeAccessUrls(includeAccessUrls))
 }
 
 // DraftEditorialMediaAccess is the resolver for the draftEditorialMediaAccess field.
@@ -1542,7 +1542,7 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 	}
 	return &model.DraftReviewConnection{Edges: edges, PageInfo: pageInfo, TotalCount: totalCount}, nil
 }
-func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.DraftReview, error) {
+func (r *queryResolver) DraftReview(ctx context.Context, id string, includeAccessUrls *bool) (*model.DraftReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -1562,7 +1562,14 @@ func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.Draf
 	if err != nil {
 		return nil, err
 	}
-	return r.buildCMSDraftReview(ctx, d, g, vs, true)
+	return r.buildCMSDraftReview(ctx, d, g, vs, cmsIncludeAccessUrls(includeAccessUrls))
+}
+
+// cmsIncludeAccessUrls resolves the nullable includeAccessUrls argument: absent
+// (nil) or false keeps the projection URL-free; only an explicit true mints the
+// per-usage short-lived media read URLs.
+func cmsIncludeAccessUrls(includeAccessUrls *bool) bool {
+	return includeAccessUrls != nil && *includeAccessUrls
 }
 
 func (r *queryResolver) UploadGrant(ctx context.Context, grantID string) (*model.UploadGrant, error) {

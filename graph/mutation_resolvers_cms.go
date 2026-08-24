@@ -1661,7 +1661,9 @@ func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID stri
 	if err != nil {
 		return nil, err
 	}
-	return r.buildCMSDraftReview(ctx, d, g, vs, true)
+	// Write-path responses do not mint per-asset read URLs; the reviewer reads
+	// exact assets through draftEditorialMediaAccess (fold-in a).
+	return r.buildCMSDraftReview(ctx, d, g, vs, false)
 }
 func (r *mutationResolver) RevokeDraftReview(ctx context.Context, draftID string, reviewer string) (bool, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
@@ -1707,7 +1709,9 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 	if err != nil {
 		return nil, err
 	}
-	return r.buildCMSDraftReview(ctx, d, g, vs, true)
+	// Write-path responses do not mint per-asset read URLs (fold-in a); the
+	// reviewer reads exact assets through draftEditorialMediaAccess.
+	return r.buildCMSDraftReview(ctx, d, g, vs, false)
 }
 
 func (r *mutationResolver) MintUploadGrant(ctx context.Context, input model.MintUploadGrantInput) (*model.UploadGrant, error) {
