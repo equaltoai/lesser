@@ -142,7 +142,9 @@ func TestPromoPackageScenarioE_BlockedReleaseThenAuthorizedRelease(t *testing.T)
 	require.Equal(t, model.PromoPackageAssetStatePublished, pkg.Assets[0].State)
 	require.Equal(t, digest, *pkg.Assets[0].ContentHash, "the digest is bound at compose time")
 	require.NotNil(t, pkg.Review)
-	require.False(t, pkg.Review.ReleaseEligible, "unreviewed package cannot release")
+	require.False(t, pkg.Review.ReleaseEligible, "a non-principal release is blocked before authorization")
+	require.Equal(t, []string{"PRINCIPAL_APPROVAL_REQUIRED"}, pkg.Review.ReleaseBlockingReasons,
+		"the block is the operator-doctrine principal floor (alice is not the instance principal), not an unreviewed state: no reviewer has ever been granted")
 
 	// Internal review: the reviewer approves the exact reviewed content.
 	review, err := mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer")

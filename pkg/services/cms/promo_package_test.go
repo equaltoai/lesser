@@ -211,6 +211,16 @@ func TestPromoScenarioE_SuppliedAssetReleasesAfterReviewerApproval(t *testing.T)
 	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 
+	// Doctrine floor: alice is not the instance principal, so the principal
+	// must approve even though no asset is AI-origin.
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorIs(t, err, ErrPromoPackagePrincipalApprovalRequired)
+	require.Len(t, creator.commands, 0)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+
 	release, err := svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
 	require.NoError(t, err)
 	require.NotEmpty(t, release.ReleasedStatusID)
@@ -246,8 +256,14 @@ func TestPromoStaleOnChangeReBlocksApprovedPackage(t *testing.T) {
 	require.ErrorIs(t, err, ErrPromoPackageApprovalRequired)
 	require.Len(t, creator.commands, 0)
 
-	// Re-review of the changed package unblocks it.
+	// Re-review of the changed package unblocks the reviewer requirement; the
+	// principal floor still needs the principal's approval (alice is not the
+	// instance principal).
 	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", updated.ContentHash)
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", updated.ContentHash)
 	require.NoError(t, err)
 	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
 	require.NoError(t, err)
@@ -369,6 +385,12 @@ func TestPromoAssetStateChangesBlockReviewEligibility(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
+	// The principal floor is satisfied up front so the asset-state assertions
+	// below exercise the asset gate, not the approval gate.
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
 
 	// The media record changes after approval: digest replaced -> release
 	// blocked, the exact reviewed bytes are no longer attachable.
@@ -410,6 +432,10 @@ func TestPromoComposeAfterReleaseRefused(t *testing.T) {
 	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
 	require.NoError(t, err)
 	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
 	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
 	require.NoError(t, err)
@@ -497,4 +523,128 @@ func TestPromoSubmitBindsToInspectedContentHash(t *testing.T) {
 	v, err := svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", updated.ContentHash)
 	require.NoError(t, err)
 	require.Equal(t, updated.ContentHash, v.ContentHash, "the recorded verdict binds the reviewed hash")
+}
+
+// The OPERATOR CONTENT DOCTRINE matrix (2026-08-24) pinned as tests:
+//
+//	principal releaser + zero ever-granted reviewers -> allowed
+//	principal releaser + granted reviewers -> all required
+//	non-principal releaser -> principal required, plus all requested approvals
+//
+// plus the requested = required rule: every reviewer who ever recorded a
+// verdict must hold a current approving verdict even after their grant is
+// revoked or expires — revocation cannot delete a required approval.
+
+func TestPromoDoctrine_PrincipalReleaserZeroReviewersAllowed(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	digest := promoDigest("d1")
+	media.byID["media-p"] = publishedPromoMedia("media-p", "principal", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := svc.ComposePromoPackage(ctx, "principal", promoComposeInput(models.PromoPackageVisibilityPublic, "media-p"))
+	require.NoError(t, err)
+
+	// The principal releasing their own package is the implicit approval: with
+	// zero ever-granted reviewers the package releases without any verdicts.
+	release, err := svc.ReleasePromoPackage(ctx, "principal", pkg.PackageID)
+	require.NoError(t, err)
+	require.NotEmpty(t, release.ReleasedStatusID)
+	require.Len(t, creator.commands, 1)
+}
+
+func TestPromoDoctrine_PrincipalReleaserGrantedReviewersAllRequired(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	digest := promoDigest("d2")
+	media.byID["media-p"] = publishedPromoMedia("media-p", "principal", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := svc.ComposePromoPackage(ctx, "principal", promoComposeInput(models.PromoPackageVisibilityPublic, "media-p"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "principal", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+
+	// A granted reviewer without a current approval blocks even the principal.
+	_, err = svc.ReleasePromoPackage(ctx, "principal", pkg.PackageID)
+	require.ErrorIs(t, err, ErrPromoPackageApprovalRequired)
+	require.Len(t, creator.commands, 0)
+
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "principal", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+	release, err := svc.ReleasePromoPackage(ctx, "principal", pkg.PackageID)
+	require.NoError(t, err)
+	require.NotEmpty(t, release.ReleasedStatusID)
+	require.Len(t, creator.commands, 1)
+}
+
+func TestPromoDoctrine_NonPrincipalReleaserPrincipalFloor(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	digest := promoDigest("d3")
+	// Deliberately NOT AI-origin: the floor applies regardless of provenance.
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+
+	// Reviewer approval alone is not enough: alice is not the instance
+	// principal, so the principal floor demands a current principal approval.
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorIs(t, err, ErrPromoPackagePrincipalApprovalRequired)
+	require.Len(t, creator.commands, 0)
+
+	state, err := svc.PromoPackageReviewState(ctx, "alice", pkg.PackageID, nil)
+	require.NoError(t, err)
+	require.True(t, state.PrincipalApprovalRequired)
+	require.False(t, state.PrincipalApproved)
+	require.True(t, state.ReviewersApproved, "the reviewer requirement is met; only the floor blocks")
+
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+	release, err := svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.NotEmpty(t, release.ReleasedStatusID)
+	require.Len(t, creator.commands, 1)
+}
+
+func TestPromoDoctrine_RevokedGrantCannotDeleteRequiredApproval(t *testing.T) {
+	ctx := context.Background()
+	svc, _, media, creator := promoServiceHarness(t)
+	digest := promoDigest("d4")
+	media.byID["media-1"] = publishedPromoMedia("media-1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := svc.ComposePromoPackage(ctx, "alice", promoComposeInput(models.PromoPackageVisibilityPublic, "media-1"))
+	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+	// The reviewer demands changes; the owner revokes the grant to be rid of
+	// them, then the principal approves. The changes-requested verdict binds:
+	// revocation cannot delete the required approval.
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewChangesRequested, "fix the copy", pkg.ContentHash)
+	require.NoError(t, err)
+	require.NoError(t, svc.RevokePromoPackageReview(ctx, "alice", pkg.PackageID, "reviewer"))
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+
+	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.ErrorIs(t, err, ErrPromoPackageApprovalRequired,
+		"the ever-recorded-verdict reviewer stays required even after revocation")
+	require.Len(t, creator.commands, 0)
+
+	// The owner re-grants and the reviewer approves; the package can release.
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "reviewer")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
+	release, err := svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
+	require.NoError(t, err)
+	require.NotEmpty(t, release.ReleasedStatusID)
+	require.Len(t, creator.commands, 1)
 }

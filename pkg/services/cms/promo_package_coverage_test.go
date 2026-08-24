@@ -137,6 +137,12 @@ func TestPromoServiceUnwiredAndFailClosed(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
+	// Satisfy the principal floor so the release passes the gate and reaches
+	// the status-creator failure paths below.
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
 
 	// A failing status creator blocks release without stamping.
 	creator.err = errors.New("status creator boom")
@@ -279,7 +285,7 @@ func TestPromoServiceFinalSmallBranches(t *testing.T) {
 	ctx := context.Background()
 
 	// Approval helper nil-state fails closed.
-	require.False(t, allActiveReviewersApprovedPromo(nil))
+	require.False(t, allRequiredReviewersApprovedPromo(nil))
 
 	// Disclosure helper: AI-origin with an empty principal yields no
 	// attribution; non-AI origin yields none either.
@@ -305,6 +311,10 @@ func TestPromoServiceFinalSmallBranches(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.SubmitPromoPackageReview(ctx, "reviewer", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
 	require.NoError(t, err)
+	_, err = svc.SharePromoPackageForReview(ctx, "alice", pkg.PackageID, "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitPromoPackageReview(ctx, "principal", "alice", pkg.PackageID, models.PromoPackageReviewApproved, "", pkg.ContentHash)
+	require.NoError(t, err)
 	_, err = svc.ReleasePromoPackage(ctx, "alice", pkg.PackageID)
 	require.NoError(t, err)
 	state, err := svc.PromoPackageReviewState(ctx, "alice", pkg.PackageID, nil)
@@ -316,10 +326,13 @@ func TestPromoServiceFinalSmallBranches(t *testing.T) {
 func TestPromoServiceGateRemainingBranches(t *testing.T) {
 	ctx := context.Background()
 
-	// Gate-side blocking-reasons helper with the principal-blocked flag.
+	// Gate-side blocking-reasons helper with the principal-blocked flag. The
+	// fixture reviewer is in the required set (ever-granted) without a current
+	// verdict, so the approval-required reason renders.
 	reasons := promoBlockingReasonsForGate(&promoReviewApprovalState{
-		active: map[string]*models.PromoReviewGrant{"r": {Reviewer: "r"}},
-		latest: map[string]*models.PromoReviewVerdict{},
+		active:   map[string]*models.PromoReviewGrant{"r": {Reviewer: "r"}},
+		required: map[string]*models.PromoReviewGrant{"r": {Reviewer: "r"}},
+		latest:   map[string]*models.PromoReviewVerdict{},
 	}, true)
 	require.Contains(t, reasons, PromoPackageReviewReasonApprovalRequired)
 	require.Contains(t, reasons, PromoPackageReviewReasonPrincipalRequired)
@@ -369,7 +382,7 @@ func TestPromoGateNilSnapshotFetchFailsClosed(t *testing.T) {
 	svc, _, _, _ := promoServiceHarness(t)
 	// A nil snapshot forces the gate to fetch the package, which fails closed
 	// for a package that does not exist.
-	approved, principalApproved, state, err := svc.promoReviewGateApprovals(ctx, "alice", "missing", nil)
+	approved, principalApproved, state, err := svc.promoReviewGateApprovals(ctx, "alice", "alice", "missing", nil)
 	require.Error(t, err)
 	require.False(t, approved)
 	require.False(t, principalApproved)

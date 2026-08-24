@@ -63,21 +63,33 @@ draft-review records.
 
 ## Gate: internal review before release
 
-Release reuses the draft-review machinery's shape:
+Release reuses the draft-review machinery's shape, with the M4 release gate
+governed by the **operator content doctrine** (2026-08-24, binding):
+
+> "No content shall be published by agents without principal approval;
+> additional approvals, once requested, are also required."
 
 1. The owner composes the package (`composePromoPackage`); every content change
    re-hashes and makes prior verdicts stale through the verdict-vs-hash
    comparison.
 2. The owner shares the package with reviewers (bounded grants) and reviewers
-   submit hash-bound verdicts (`submitPromoPackageReview`).
-3. Release requires unanimous current approval from every active reviewer.
-4. When **any bound asset is AI-origin per provenance** (`ai_generated` or
-   `ai_edited`), release additionally requires an active approval from the
-   **instance principal** — the same human-authorization posture the article
-   surface applies to generated content, extended to AI-origin assets. Until
-   then, release is blocked with explicit reasons (`PRINCIPAL_APPROVAL_REQUIRED`
-   and friends).
-5. The release gate re-verifies each asset is still PUBLISHED and still carries
+   submit hash-bound verdicts (`submitPromoPackageReview`), each carrying the
+   content hash the reviewer actually inspected (a recomposed package rejects
+   the submit with a conflict instead of blessing unseen content).
+3. **Requested = required.** Release requires a current approving verdict from
+   every reviewer who holds an active grant, **and from every reviewer who has
+   ever recorded a verdict on the package — even if their grant was later
+   revoked or expired. Revocation cannot delete a required approval.**
+4. **Principal floor.** If the releasing actor is NOT the instance principal
+   (an agent/act-as release), an active current principal approval is REQUIRED
+   — regardless of asset provenance. The principal releasing themselves is the
+   implicit approval (their action is the approval).
+5. The doctrine matrix: principal releaser + zero ever-granted reviewers →
+   allowed; principal releaser + granted reviewers → all required; non-principal
+   releaser → principal required, plus all requested approvals. Until the
+   applicable approvals are current, release is blocked with explicit reasons
+   (`REVIEW_APPROVAL_REQUIRED` / `PRINCIPAL_APPROVAL_REQUIRED` and friends).
+6. The release gate re-verifies each asset is still PUBLISHED and still carries
    the digest bound into the reviewed package (no substitution): `ASSET_MISSING`
    / `ASSET_NOT_PUBLISHED` / `ASSET_DIGEST_CHANGED` block release until the
    package is re-composed or re-reviewed.

@@ -40,13 +40,14 @@ const (
 )
 
 var (
-	// ErrPromoPackageApprovalRequired means an active reviewer is missing a
+	// ErrPromoPackageApprovalRequired means a required reviewer is missing a
 	// current approval for the exact reviewed package content.
-	ErrPromoPackageApprovalRequired = errors.New("promo package requires approval from every active reviewer")
-	// ErrPromoPackagePrincipalApprovalRequired means the package binds an
-	// AI-origin asset (per provenance) and the instance principal is missing a
-	// current approval.
-	ErrPromoPackagePrincipalApprovalRequired = errors.New("promo package with AI-origin assets requires an active approval from the instance principal")
+	ErrPromoPackageApprovalRequired = errors.New("promo package requires approval from every required reviewer")
+	// ErrPromoPackagePrincipalApprovalRequired means the release gate's operator
+	// doctrine floor is unmet: the releasing actor is not the instance
+	// principal, and the principal does not hold a current approving verdict
+	// (regardless of asset provenance).
+	ErrPromoPackagePrincipalApprovalRequired = errors.New("promo package release requires an active approval from the instance principal")
 	// ErrPromoPackageAssetUnavailable means a bound asset cannot serve the exact
 	// approved bytes (missing, not owned, not in the PUBLISHED durable state, or
 	// its digest changed after review). The wrapped message names the reasons.
@@ -590,7 +591,14 @@ func (s *DraftService) PromoPackageVerdicts(ctx context.Context, owner, packageI
 }
 
 type promoReviewApprovalState struct {
-	active       map[string]*models.PromoReviewGrant
+	// active maps every currently active grant (not revoked, not expired) to
+	// its grant record.
+	active map[string]*models.PromoReviewGrant
+	// required maps every reviewer whose approval the release gate demands:
+	// holders of an active grant plus every reviewer who EVER recorded a
+	// verdict — revocation or expiry cannot delete a required approval
+	// (operator doctrine, "requested = required").
+	required map[string]*models.PromoReviewGrant
 	latest       map[string]*models.PromoReviewVerdict
 	contentHash  string
 	resolved     []PromoPackageResolvedAsset
@@ -638,17 +646,19 @@ func (s *DraftService) PromoPackageReviewState(ctx context.Context, owner, packa
 		return nil, err
 	}
 
-	reviewersApproved := allActiveReviewersApprovedPromo(approval)
-	principalUnavailable := false
+	// The owner is the presumed releaser when rendering the read state; the
+	// doctrine answers are derived for that actor (a principal owner releases
+	// with implicit approval, a non-principal owner triggers the principal
+	// floor).
+	principal, principalErr := s.instancePrincipal(ctx)
+	principalUnavailable := principalErr != nil
 	principalApproved := false
-	if approval.aiOrigin {
-		principal, principalErr := s.instancePrincipal(ctx)
-		if principalErr != nil {
-			principalUnavailable = true
-		} else {
-			verdict := approval.latest[principal]
-			principalApproved = approval.active[principal] != nil && verdict != nil && verdict.Verdict == models.PromoPackageReviewApproved
-		}
+	principalRequired := principalUnavailable || !strings.EqualFold(strings.TrimSpace(owner), principal)
+	var reviewersApproved bool
+	if principalUnavailable {
+		reviewersApproved = allRequiredReviewersApprovedPromo(approval)
+	} else {
+		reviewersApproved, principalApproved = promoApprovalAnswers(approval, owner, principal)
 	}
 
 	blockingReasons := make([]string, 0, 8)
@@ -658,12 +668,10 @@ func (s *DraftService) PromoPackageReviewState(ctx context.Context, owner, packa
 	if !reviewersApproved {
 		blockingReasons = append(blockingReasons, PromoPackageReviewReasonApprovalRequired)
 	}
-	if approval.aiOrigin {
-		if principalUnavailable {
-			blockingReasons = append(blockingReasons, PromoPackageReviewReasonPrincipalMissing)
-		} else if !principalApproved {
-			blockingReasons = append(blockingReasons, PromoPackageReviewReasonPrincipalRequired)
-		}
+	if principalUnavailable {
+		blockingReasons = append(blockingReasons, PromoPackageReviewReasonPrincipalMissing)
+	} else if principalRequired && !principalApproved {
+		blockingReasons = append(blockingReasons, PromoPackageReviewReasonPrincipalRequired)
 	}
 	blockingReasons = append(blockingReasons, approval.assetReasons...)
 	return &PromoPackageReviewReadState{
@@ -673,7 +681,7 @@ func (s *DraftService) PromoPackageReviewState(ctx context.Context, owner, packa
 		GrantsTruncated:           grantsTruncated,
 		CurrentVerdicts:           approval.latest,
 		ReviewersApproved:         reviewersApproved,
-		PrincipalApprovalRequired: approval.aiOrigin,
+		PrincipalApprovalRequired: principalRequired,
 		PrincipalApproved:         principalApproved,
 		PrincipalUnavailable:      principalUnavailable,
 		ResolvedAssets:            approval.resolved,
@@ -693,8 +701,13 @@ func (s *DraftService) promoReviewApprovalState(ctx context.Context, owner, pack
 	}
 	now := time.Now().UTC()
 	active := make(map[string]*models.PromoReviewGrant, len(grants))
+	grantByReviewer := make(map[string]*models.PromoReviewGrant, len(grants))
 	for _, grant := range grants {
-		if grant != nil && grant.IsActive(now) {
+		if grant == nil || strings.TrimSpace(grant.Reviewer) == "" {
+			continue
+		}
+		grantByReviewer[grant.Reviewer] = grant
+		if grant.IsActive(now) {
 			active[grant.Reviewer] = grant
 		}
 	}
@@ -709,29 +722,48 @@ func (s *DraftService) promoReviewApprovalState(ctx context.Context, owner, pack
 		return nil, resolveErr
 	}
 	currentHash := models.PromoPackageContentHash(pkg)
-	latest := make(map[string]*models.PromoReviewVerdict, len(active))
-	if len(active) > 0 {
-		verdicts, listErr := repo.ListPromoReviewVerdicts(ctx, owner, packageID)
-		if listErr != nil {
-			return nil, listErr
+	verdicts, listErr := repo.ListPromoReviewVerdicts(ctx, owner, packageID)
+	if listErr != nil {
+		return nil, listErr
+	}
+	// "Requested = required" (operator doctrine): every active grant is
+	// required, and every reviewer who ever recorded a verdict stays required
+	// even when their grant was later revoked or expired — revocation cannot
+	// delete a required approval.
+	required := make(map[string]*models.PromoReviewGrant, len(grantByReviewer))
+	for reviewer, grant := range grantByReviewer {
+		if _, ok := active[reviewer]; ok {
+			required[reviewer] = grant
 		}
-		for _, verdict := range verdicts {
-			if verdict == nil {
-				continue
+	}
+	for _, verdict := range verdicts {
+		if verdict == nil || strings.TrimSpace(verdict.Reviewer) == "" {
+			continue
+		}
+		if _, ok := required[verdict.Reviewer]; !ok {
+			if grant := grantByReviewer[verdict.Reviewer]; grant != nil {
+				required[verdict.Reviewer] = grant
 			}
-			grant := active[verdict.Reviewer]
-			// A re-grant deliberately requires a verdict recorded after the new
-			// grant; a hash mismatch stales the approval on any content change.
-			if grant != nil && verdict.RecordedAt.After(grant.GrantedAt) &&
-				verdict.ContentHash == currentHash {
-				if current := latest[verdict.Reviewer]; current == nil || verdict.RecordedAt.After(current.RecordedAt) {
-					latest[verdict.Reviewer] = verdict
-				}
+		}
+	}
+	latest := make(map[string]*models.PromoReviewVerdict, len(required))
+	for _, verdict := range verdicts {
+		if verdict == nil {
+			continue
+		}
+		grant := required[verdict.Reviewer]
+		// A re-grant deliberately requires a verdict recorded after the new
+		// grant; a hash mismatch stales the approval on any content change.
+		if grant != nil && verdict.RecordedAt.After(grant.GrantedAt) &&
+			verdict.ContentHash == currentHash {
+			if current := latest[verdict.Reviewer]; current == nil || verdict.RecordedAt.After(current.RecordedAt) {
+				latest[verdict.Reviewer] = verdict
 			}
 		}
 	}
 	return &promoReviewApprovalState{
 		active:       active,
+		required:     required,
 		latest:       latest,
 		contentHash:  currentHash,
 		resolved:     resolved,
@@ -740,11 +772,14 @@ func (s *DraftService) promoReviewApprovalState(ctx context.Context, owner, pack
 	}, nil
 }
 
-func allActiveReviewersApprovedPromo(state *promoReviewApprovalState) bool {
+// allRequiredReviewersApprovedPromo reports whether every required reviewer
+// (active grants plus ever-recorded-verdict reviewers) holds a current
+// approving verdict for the exact reviewed content.
+func allRequiredReviewersApprovedPromo(state *promoReviewApprovalState) bool {
 	if state == nil {
 		return false
 	}
-	for reviewer := range state.active {
+	for reviewer := range state.required {
 		if verdict := state.latest[reviewer]; verdict == nil || verdict.Verdict != models.PromoPackageReviewApproved {
 			return false
 		}
@@ -752,10 +787,54 @@ func allActiveReviewersApprovedPromo(state *promoReviewApprovalState) bool {
 	return true
 }
 
+// promoApprovalAnswers applies the operator doctrine matrix to an already
+// derived approval snapshot for one releasing actor. When the releaser IS the
+// principal, their own requirement is implicit (their action is the approval)
+// and only other required reviewers must approve; for a non-principal releaser
+// the principal floor demands an active grant with a current approving verdict,
+// regardless of asset provenance.
+func promoApprovalAnswers(state *promoReviewApprovalState, releaser, principal string) (reviewersApproved, principalApproved bool) {
+	required := state.required
+	if releaser == principal {
+		required = promoRequiredWithoutPrincipal(state.required, principal)
+	}
+	for reviewer := range required {
+		if verdict := state.latest[reviewer]; verdict == nil || verdict.Verdict != models.PromoPackageReviewApproved {
+			return false, false
+		}
+	}
+	if releaser == principal {
+		return true, true
+	}
+	grant := state.active[principal]
+	verdict := state.latest[principal]
+	return true, grant != nil && verdict != nil && verdict.Verdict == models.PromoPackageReviewApproved
+}
+
+// promoRequiredWithoutPrincipal returns the required set with the principal's
+// own requirement dropped (their release action is the implicit approval).
+func promoRequiredWithoutPrincipal(required map[string]*models.PromoReviewGrant, principal string) map[string]*models.PromoReviewGrant {
+	if required == nil {
+		return nil
+	}
+	out := make(map[string]*models.PromoReviewGrant, len(required))
+	for reviewer, grant := range required {
+		if reviewer == principal {
+			continue
+		}
+		out[reviewer] = grant
+	}
+	return out
+}
+
 // promoReviewGateApprovals derives the approval snapshot once for the release
-// gate: unanimous active-reviewer approval plus, when any bound asset is
-// AI-origin per provenance, an active approval from the instance principal.
-func (s *DraftService) promoReviewGateApprovals(ctx context.Context, owner, packageID string, pkg *models.PromoPackage) (bool, bool, *promoReviewApprovalState, error) {
+// gate, then answers the reviewer-approval and principal-approval requirements
+// of the operator doctrine from that same snapshot: every required reviewer
+// (active grants plus ever-recorded-verdict reviewers — revocation cannot
+// delete a required approval) must hold a current approving verdict, and the
+// principal is required for any non-principal release regardless of asset
+// provenance.
+func (s *DraftService) promoReviewGateApprovals(ctx context.Context, releaser, owner, packageID string, pkg *models.PromoPackage) (bool, bool, *promoReviewApprovalState, error) {
 	if pkg == nil {
 		var err error
 		pkg, err = s.GetPromoPackage(ctx, owner, packageID)
@@ -767,19 +846,12 @@ func (s *DraftService) promoReviewGateApprovals(ctx context.Context, owner, pack
 	if err != nil {
 		return false, false, nil, err
 	}
-	if !allActiveReviewersApprovedPromo(state) {
-		return false, false, state, nil
-	}
-	if !state.aiOrigin {
-		return true, true, state, nil
-	}
 	principal, err := s.instancePrincipal(ctx)
 	if err != nil {
 		return false, false, state, err
 	}
-	grant := state.active[principal]
-	verdict := state.latest[principal]
-	return true, grant != nil && verdict != nil && verdict.Verdict == models.PromoPackageReviewApproved, state, nil
+	reviewersApproved, principalApproved := promoApprovalAnswers(state, strings.TrimSpace(releaser), principal)
+	return reviewersApproved, principalApproved, state, nil
 }
 
 // promoDisclosureForPackage builds the outbound AI-authorship disclosure for a
@@ -800,15 +872,18 @@ func promoDisclosureForPackage(principal string, aiOrigin bool) *activitypub.Age
 	}
 }
 
-// ReleasePromoPackage releases an approved package: the gate (unanimous
-// active-reviewer approval plus principal approval when any bound asset is
-// AI-origin per provenance) must be current for the exact reviewed content, and
-// every bound asset must still be in the PUBLISHED durable state carrying the
-// digest bound at review time. The outbound Status is then created with the
-// exact approved assets attached (reusing the M2 published serving, no
-// re-upload) and AI-authorship disclosure intact; the release stamps the
-// created Status on the package and creates nothing else (no boosts, likes, or
-// synthetic engagement). A released package cannot release again.
+// ReleasePromoPackage releases an approved package: the operator doctrine gate
+// (every required reviewer holds a current approving verdict — active grants
+// plus ever-recorded-verdict reviewers, since revocation cannot delete a
+// required approval — and the instance principal holds a current approval for
+// any non-principal release, regardless of asset provenance) must be current
+// for the exact reviewed content, and every bound asset must still be in the
+// PUBLISHED durable state carrying the digest bound at review time. The
+// outbound Status is then created with the exact approved assets attached
+// (reusing the M2 published serving, no re-upload) and AI-authorship disclosure
+// intact; the release stamps the created Status on the package and creates
+// nothing else (no boosts, likes, or synthetic engagement). A released package
+// cannot release again.
 func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID string) (*PromoPackageRelease, error) {
 	owner = strings.TrimSpace(owner)
 	packageID = strings.TrimSpace(packageID)
@@ -826,7 +901,7 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 	if pkg.IsReleased() {
 		return nil, ErrPromoPackageAlreadyReleased
 	}
-	approved, principalApproved, approval, err := s.promoReviewGateApprovals(ctx, owner, packageID, pkg)
+	approved, principalApproved, approval, err := s.promoReviewGateApprovals(ctx, owner, owner, packageID, pkg)
 	if err != nil {
 		return nil, err
 	}
@@ -898,7 +973,7 @@ func (s *DraftService) ReleasePromoPackage(ctx context.Context, owner, packageID
 // release gate failed on principal approval.
 func promoBlockingReasonsForGate(state *promoReviewApprovalState, principalBlocked bool) []string {
 	reasons := make([]string, 0, 4)
-	if state != nil && !allActiveReviewersApprovedPromo(state) {
+	if state != nil && !allRequiredReviewersApprovedPromo(state) {
 		reasons = append(reasons, PromoPackageReviewReasonApprovalRequired)
 	}
 	if principalBlocked {
