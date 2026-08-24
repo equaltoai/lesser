@@ -365,3 +365,61 @@ func TestPromoPackageContract_SubmitBindsInspectedContentHash(t *testing.T) {
 	_, err = mut.SubmitPromoPackageReview(reviewer, pkg.ID, model.PromoPackageReviewVerdictApproved, nil, nil)
 	require.NoError(t, err)
 }
+
+// TestPromoPackageContract_ReviewerSeesOnlyOwnGrantAndVerdict pins F6: the
+// promo review surface must apply the same owner-or-self viewer filter as the
+// draft-review surface. A non-owner (active reviewer) sees only their own grant
+// and verdict records — other reviewers' identities and notes stay private —
+// while the owner sees the full surface.
+func TestPromoPackageContract_ReviewerSeesOnlyOwnGrantAndVerdict(t *testing.T) {
+	resolver, _, state, _ := newPromoGraphHarness(t)
+	mut := resolver.Mutation()
+	qry := resolver.Query()
+	alice := round12AuthContext("alice")
+	reviewerOne := round12AuthContext("reviewer-1")
+	reviewerTwo := round12AuthContext("reviewer-2")
+
+	digest := graphPromoDigest("f6")
+	state.seededMedia["m1"] = graphPublishedPromoMedia("m1", "alice", digest, models.EditorialMediaOriginSupplied)
+
+	pkg, err := mut.ComposePromoPackage(alice, model.ComposePromoPackageInput{
+		ArticleID:     "https://localhost/articles/hello",
+		PostText:      "private review notes",
+		Visibility:    model.PromoPackageVisibilityPublic,
+		AssetMediaIds: []string{"m1"},
+	})
+	require.NoError(t, err)
+
+	_, err = mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer-1")
+	require.NoError(t, err)
+	noteOne := "confidential note from reviewer-1"
+	_, err = mut.SubmitPromoPackageReview(reviewerOne, pkg.ID, model.PromoPackageReviewVerdictApproved, &noteOne, nil)
+	require.NoError(t, err)
+	_, err = mut.SharePromoPackageForReview(alice, pkg.ID, "reviewer-2")
+	require.NoError(t, err)
+	noteTwo := "confidential note from reviewer-2"
+	_, err = mut.SubmitPromoPackageReview(reviewerTwo, pkg.ID, model.PromoPackageReviewVerdictChangesRequested, &noteTwo, nil)
+	require.NoError(t, err)
+
+	// The owner sees the full surface: both grants and both verdicts.
+	ownerView, err := qry.PromoPackage(alice, pkg.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, ownerView.Review.GrantCount)
+	require.Len(t, ownerView.Review.Grants, 2)
+	require.Len(t, ownerView.Review.Verdicts, 2)
+
+	// Reviewer-1 sees only their own grant and verdict: reviewer-2's identity
+	// and notes are never exposed to another reviewer.
+	reviewerView, err := qry.PromoPackage(reviewerOne, pkg.ID)
+	require.NoError(t, err)
+	require.Len(t, reviewerView.Review.Grants, 1, "a reviewer must not see other reviewers' grants")
+	require.Equal(t, "reviewer-1", reviewerView.Review.Grants[0].ReviewerID)
+	require.Equal(t, 1, reviewerView.Review.GrantCount, "grant count is adjusted to the caller-visible set")
+	require.False(t, reviewerView.Review.GrantsTruncated)
+	require.Equal(t, []string{"reviewer-1"}, reviewerView.Review.ActiveReviewerIds,
+		"active reviewer ids are filtered to the caller")
+	require.Len(t, reviewerView.Review.Verdicts, 1, "a reviewer must not see other reviewers' verdicts")
+	require.Equal(t, "reviewer-1", reviewerView.Review.Verdicts[0].ReviewerID)
+	require.Equal(t, "confidential note from reviewer-1", *reviewerView.Review.Verdicts[0].Notes)
+	require.NotContains(t, reviewerView.Review.Verdicts, model.PromoPackageVerdictRecord{ReviewerID: "reviewer-2"})
+}

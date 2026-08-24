@@ -36,7 +36,7 @@ func (r *queryResolver) PromoPackage(ctx context.Context, id string) (*model.Pro
 		return nil, err
 	}
 	return r.convertCMSPromoPackage(ctx, pkg, state.ResolvedAssets,
-		r.buildCMSPromoReview(ctx, pkg.PackageID, state, verdicts)), nil
+		r.buildCMSPromoReview(ctx, pkg.OwnerID, pkg.PackageID, state, verdicts)), nil
 }
 
 // PromoPackages lists the authenticated owner's promo packages.
@@ -69,7 +69,7 @@ func (r *queryResolver) PromoPackages(ctx context.Context, first *int, after *mo
 		}
 		edges = append(edges, &model.PromoPackageEdge{
 			Node: r.convertCMSPromoPackage(ctx, pkg, state.ResolvedAssets,
-				r.buildCMSPromoReview(ctx, pkg.PackageID, state, verdicts)),
+				r.buildCMSPromoReview(ctx, pkg.OwnerID, pkg.PackageID, state, verdicts)),
 			Cursor: model.Cursor(pkg.SK),
 		})
 	}
@@ -131,7 +131,7 @@ func (r *queryResolver) SharedPromoPackageReviews(ctx context.Context, first *in
 			return nil, verdictErr
 		}
 		edges = append(edges, &model.PromoPackageReviewEdge{
-			Node:   r.buildCMSPromoReview(ctx, grant.PackageID, state, verdicts),
+			Node:   r.buildCMSPromoReview(ctx, grant.OwnerID, grant.PackageID, state, verdicts),
 			Cursor: model.Cursor(grant.GSI2SK),
 		})
 	}

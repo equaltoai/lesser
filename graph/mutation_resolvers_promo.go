@@ -57,7 +57,7 @@ func (r *mutationResolver) ComposePromoPackage(ctx context.Context, input model.
 		return nil, err
 	}
 	return r.convertCMSPromoPackage(ctx, pkg, state.ResolvedAssets,
-		r.buildCMSPromoReview(ctx, pkg.PackageID, state, verdicts)), nil
+		r.buildCMSPromoReview(ctx, owner, pkg.PackageID, state, verdicts)), nil
 }
 
 // SharePromoPackageForReview shares a package with a reviewer (7-day bounded
@@ -166,7 +166,7 @@ func (r *mutationResolver) ReleasePromoPackage(ctx context.Context, packageID st
 	}
 	return &model.PromoPackageReleaseResult{
 		Package: r.convertCMSPromoPackage(ctx, release.Package, state.ResolvedAssets,
-			r.buildCMSPromoReview(ctx, release.Package.PackageID, state, verdicts)),
+			r.buildCMSPromoReview(ctx, owner, release.Package.PackageID, state, verdicts)),
 		StatusID: release.ReleasedStatusID,
 		URL:      cmsOptionalString(release.StatusURL),
 	}, nil
@@ -187,5 +187,5 @@ func (r *Resolver) promoPackageReviewForOwner(ctx context.Context, svc *cms.Draf
 	if err != nil {
 		return nil, err
 	}
-	return r.buildCMSPromoReview(ctx, packageID, state, verdicts), nil
+	return r.buildCMSPromoReview(ctx, owner, packageID, state, verdicts), nil
 }

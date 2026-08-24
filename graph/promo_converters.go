@@ -117,15 +117,20 @@ func convertCMSPromoVerdict(v *models.PromoReviewVerdict, state *cms.PromoPackag
 }
 
 // buildCMSPromoReview maps the service review state plus the ordered verdict
-// history onto the GraphQL review surface.
-func (r *Resolver) buildCMSPromoReview(ctx context.Context, packageID string, state *cms.PromoPackageReviewReadState, verdicts []*models.PromoReviewVerdict) *model.PromoPackageReview {
+// history onto the GraphQL review surface. Non-owner callers (active reviewers)
+// see only their own grant and verdict records — other reviewers' identities
+// and notes stay private, mirroring the draft-review viewer filter; the owner
+// sees the full surface.
+func (r *Resolver) buildCMSPromoReview(ctx context.Context, ownerID, packageID string, state *cms.PromoPackageReviewReadState, verdicts []*models.PromoReviewVerdict) *model.PromoPackageReview {
 	if state == nil {
 		return nil
 	}
+	viewer := strings.TrimSpace(getUsernameFromContext(ctx))
+	viewerIsOwner := strings.EqualFold(viewer, strings.TrimSpace(ownerID))
 	grants := make([]*model.PromoPackageReviewGrant, 0, len(state.Grants))
 	activeReviewerIDs := make([]string, 0, len(state.Grants))
 	for _, grant := range state.Grants {
-		if grant == nil {
+		if grant == nil || (!viewerIsOwner && !strings.EqualFold(grant.Reviewer, viewer)) {
 			continue
 		}
 		grants = append(grants, convertCMSPromoGrant(grant))
@@ -133,8 +138,17 @@ func (r *Resolver) buildCMSPromoReview(ctx context.Context, packageID string, st
 			activeReviewerIDs = append(activeReviewerIDs, grant.Reviewer)
 		}
 	}
+	grantCount := state.GrantCount
+	grantsTruncated := state.GrantsTruncated
+	if !viewerIsOwner {
+		grantCount = len(grants)
+		grantsTruncated = false
+	}
 	verdictRecords := make([]*model.PromoPackageVerdictRecord, 0, len(verdicts))
 	for _, verdict := range verdicts {
+		if verdict == nil || (!viewerIsOwner && !strings.EqualFold(verdict.Reviewer, viewer)) {
+			continue
+		}
 		verdictRecords = append(verdictRecords, convertCMSPromoVerdict(verdict, state))
 	}
 	return &model.PromoPackageReview{
@@ -147,8 +161,8 @@ func (r *Resolver) buildCMSPromoReview(ctx context.Context, packageID string, st
 		ReviewersApproved:         state.ReviewersApproved,
 		PrincipalApprovalRequired: state.PrincipalApprovalRequired,
 		PrincipalApproved:         state.PrincipalApproved,
-		GrantCount:                state.GrantCount,
-		GrantsTruncated:           state.GrantsTruncated,
+		GrantCount:                grantCount,
+		GrantsTruncated:           grantsTruncated,
 		Grants:                    grants,
 		Verdicts:                  verdictRecords,
 		ReleaseEligibility: &model.PromoPackageReleaseEligibility{
