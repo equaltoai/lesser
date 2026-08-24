@@ -116,7 +116,11 @@ double-release can never create two posts:
    IS live but the package is not stamped: the created Status ID is surfaced
    (`PromoPackageStampError`) so the caller cannot blindly retry into a second
    post, and the package stays in the `releasing` reservation — release and
-   composition are refused until an operator reconciles it.
+   composition are refused until an operator reconciles it. Reconciliation is
+   a narrow, version-conditioned write (never a re-release): see the
+   [promo package release recovery runbook](../../operations/promo-package-release-recovery-runbook.md)
+   for the exact reconciliation writes for each wedge (stamp-failure post-live
+   vs. crash/rollback no-post).
 
 **AI-authorship disclosure mechanism.** The article surface discloses AI
 authorship through `generatedBy`/`reviewedBy` attribution plus the
