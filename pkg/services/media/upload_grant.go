@@ -374,9 +374,11 @@ func (s *Service) rejectUploadedObject(ctx context.Context, grant *models.Upload
 }
 
 // verifyUploadedObject returns "" when the uploaded bytes satisfy the grant's
-// declared size and digest bounds (and the stored content type agrees), or a
-// human-readable reason for the mismatch. The digest is computed here from the
-// actual stored bytes: neither Content-Length nor any client claim is trusted.
+// declared size and digest bounds, the stored content type agrees, and the
+// bytes pass the SVG active-content gate (mirroring the M0 pipeline's
+// ValidateSVGUpload), or a human-readable reason for the mismatch. The digest
+// is computed here from the actual stored bytes: neither Content-Length nor
+// any client claim is trusted.
 func verifyUploadedObject(grant *models.UploadGrant, bytes []byte, storedType string) string {
 	if grant == nil {
 		return "upload grant is missing"
@@ -392,6 +394,12 @@ func verifyUploadedObject(grant *models.UploadGrant, bytes []byte, storedType st
 	storedType = strings.TrimSpace(storedType)
 	if storedType != "" && !strings.EqualFold(storedType, strings.TrimSpace(grant.ContentType)) {
 		return fmt.Sprintf("uploaded object content type %q does not match declared %q", storedType, grant.ContentType)
+	}
+	// SVG is XML that browsers execute scripts, event handlers, and CSS URLs in,
+	// so an upload grant must apply the same active-content gate as the M0
+	// pipeline before admitting an SVG as an internal editorial asset.
+	if err := ValidateSVGUpload(grant.ContentType, bytes); err != nil {
+		return fmt.Sprintf("uploaded SVG failed safety validation: %v", err)
 	}
 	return ""
 }

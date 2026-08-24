@@ -319,6 +319,67 @@ func TestFinalizeUploadGrantDigestMismatchConsumesAndDeletes(t *testing.T) {
 	require.Contains(t, objectStore.Deletes(), grant.S3Bucket+"/"+grant.S3Key)
 }
 
+func TestFinalizeUploadGrantUnsafeSVGConsumesAndDeletes(t *testing.T) {
+	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+
+	unsafeSVGs := map[string][]byte{
+		"script tag":    []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`),
+		"event handler": []byte(`<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>`),
+		"external ref":  []byte(`<svg xmlns="http://www.w3.org/2000/svg"><a href="https://evil.example/x">x</a></svg>`),
+	}
+	for name, payload := range unsafeSVGs {
+		t.Run(name, func(t *testing.T) {
+			grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+				Owner: "alice", ContentType: "image/svg+xml", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(payload),
+			})
+			require.NoError(t, err)
+			require.NoError(t, objectStore.SimulateUpload(grant, payload))
+
+			media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+			require.ErrorIs(t, err, ErrUploadGrantDigestMismatch)
+			require.Nil(t, media)
+			mediaRepo.AssertNotCalled(t, "CreateMedia", mock.Anything, mock.Anything)
+
+			// The unsafe SVG is consumed to FAILED_DIGEST with an inspectable
+			// reason and the object is deleted; no media record is ever created.
+			stored, err := grantRepo.GetUploadGrant(ctx, "alice", grant.GrantID)
+			require.NoError(t, err)
+			require.Equal(t, models.UploadGrantStatusFailedDigest, stored.Status)
+			require.Contains(t, stored.FailureReason, "SVG")
+			require.Contains(t, objectStore.Deletes(), grant.S3Bucket+"/"+grant.S3Key)
+		})
+	}
+}
+
+func TestFinalizeUploadGrantCleanSVGPasses(t *testing.T) {
+	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
+	ctx := context.Background()
+
+	cleanSVG := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h10v10z"/></svg>`)
+	grant, _, err := service.MintUploadGrant(ctx, MintUploadGrantInput{
+		Owner: "alice", ContentType: "image/svg+xml", MaxSizeBytes: 5 * 1024 * 1024, ContentSHA256: uploadGrantDigest(cleanSVG),
+	})
+	require.NoError(t, err)
+	require.NoError(t, objectStore.SimulateUpload(grant, cleanSVG))
+
+	mediaRepo.On("CreateMedia", ctx, mock.MatchedBy(func(media *models.Media) bool {
+		return media.IsInternalEditorial() && media.ContentType == "image/svg+xml"
+	})).Return(nil).Once()
+
+	media, err := service.FinalizeUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.NotNil(t, media)
+	require.Equal(t, "image/svg+xml", media.ContentType)
+
+	// The inert SVG is admitted: grant consumed to USED, object retained (it is
+	// the asset's backing bytes).
+	stored, err := grantRepo.GetUploadGrant(ctx, "alice", grant.GrantID)
+	require.NoError(t, err)
+	require.Equal(t, models.UploadGrantStatusUsed, stored.Status)
+	require.Len(t, objectStore.Deletes(), 0)
+}
+
 func TestFinalizeUploadGrantSizeCapViolationConsumesAndDeletes(t *testing.T) {
 	service, grantRepo, objectStore, mediaRepo := newUploadGrantTestService(t)
 	ctx := context.Background()
