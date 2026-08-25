@@ -23,7 +23,8 @@ surfaced.
 `gosec -exclude-generated github.com/equaltoai/lesser/pkg/services/cms`. gosec resolves
 import-path arguments to zero files (it needs directory paths or package patterns).
 
-Before/after proof (gosec v2.22.11, the CI pin resolved by `./lesser sec-scan`):
+Before/after proof (gosec **v2.28.0** — the version the gate resolved from `$GOPATH/bin`
+when this scan was captured; see the toolchain note below):
 
 | invocation | Files | Issues | exit |
 |---|---|---|---|
@@ -39,9 +40,26 @@ govulncheck keeps import-path targets (it resolves them correctly). Batching is 
 `-exclude-dir` flag only filters directories during package-pattern expansion, not explicit
 directory arguments — the flags' intent is preserved.
 
-Scan environment (must match the gate): `GOTOOLCHAIN=auto` and `$GOPATH/bin` prepended to
-`PATH` (the CLI does this for every subprocess via `mergeEnvForDir`); the gosec binary is
-v2.22.11 (CI pin, first on PATH).
+Scan environment and toolchain (must match the gate): `GOTOOLCHAIN=auto` and `$GOPATH/bin`
+prepended to `PATH` (the CLI does this for every subprocess via `mergeEnvForDir` in
+`cmd/lesser/exec.go`). The 97-finding capture above ran under gosec **v2.28.0** resolved from
+`$GOPATH/bin`.
+
+**Toolchain-hazard note (why the environment had to be pinned):** the CI installer
+(`scripts/install_ci_tools.sh`) originally pinned gosec **v2.22.11** — a release without the
+taint rules — while the local `$GOPATH/bin` binary (the one the gate's `mergeEnvForDir` PATH
+prepend resolves first, ahead of any other PATH entry) was v2.28.0. The triage therefore ran
+under v2.28.0 (95 root findings, including G703/G702/G117/G710/G704), while CI enforcement
+ran v2.22.11 (only 22 root findings, none of the taint rules): CI silently enforced a subset
+of the triaged set, and any machine with a newer gosec would fail the gate on untriaged
+rules. (Re-verified for this remediation with the gate's exact flags: v2.28.0 → 94–95 root
+findings across runs, v2.22.11 → 22, zero taint rules; the G703 taint count varies ±1
+run-to-run under the same version, with no effect on the excluded set.) Remediation: the
+gate now **pins and asserts** gosec v2.28.0 —
+`scripts/install_ci_tools.sh` installs the version named by the `pinnedGosecVersion`
+constant in `cmd/lesser/security_cmd.go` (one source of truth), and `sec-scan` fails closed
+if the resolved binary's `go version -m` module version differs (`assertPinnedGosecVersion`),
+so the enforcement environment cannot silently drift from the triaged toolchain again.
 
 ## 2. Classification methodology
 
@@ -84,14 +102,25 @@ encrypted payload), not a leak.
 
 ## 4. Exclusion map (every exclusion traces to entries above)
 
-The sec-scan gate (direct gosec, v2.22.11) supports only rule-level exclusion
-(`-exclude=...`); per-line `#nosec` annotations across ~50 files are out of scope for this
-milestone (allowed write scope is `cmd/lesser/security_cmd.go`, the draft-review G115 fix,
-and this record). Rule-level excludes are therefore the narrowest honest mechanism, and each
-excluded rule maps 1:1 to the uniformly-false-positive class in §3. The lint surface
-(`golangci-lint` gosec, `.golangci.yml`) is unchanged and continues to enforce its own
-config — including G115 — so new genuine findings in these rules remain visible to
-`./lesser lint`.
+The sec-scan gate (direct gosec, v2.28.0, pinned and asserted by `sec-scan`) supports only
+rule-level exclusion (`-exclude=...`); per-line `#nosec` annotations across ~50 files are
+out of scope for this milestone (allowed write scope is `cmd/lesser/security_cmd.go`, the
+draft-review G115 fix, and this record). Rule-level excludes are therefore the narrowest
+honest mechanism, and each excluded rule maps 1:1 to the uniformly-false-positive class in
+§3.
+
+Residual visibility is the honest caveat of rule-level exclusion, and it differs per rule:
+
+- **G101 has zero automated coverage.** It is excluded here AND pre-existing in
+  `.golangci.yml` (the gosec linter's `excludes` list), so neither `sec-scan` nor
+  `./lesser lint` reports it. The 3 triaged G101 rows above were verified by hand to be
+  credential **names**, not values (env-var names in `pkg/config/validator.go`, a DynamoDB
+  partition-key format string, OAuth scope names); a future genuine hardcoded-credential
+  finding would be invisible to every automated gate until the lint config changes.
+- For the other **12** excluded rules, the lint surface (`golangci-lint` gosec,
+  `.golangci.yml`, which enforces G115 and the rest of the excluded rules) still reports new
+  genuine findings — but only where the flagged line carries no `//nolint:gosec`
+  annotation; annotated lines remain invisible to lint while direct gosec would flag them.
 
 | gate | exclude | traces to (§3 entries) |
 |---|---|---|
@@ -111,8 +140,6 @@ config — including G115 — so new genuine findings in these rules remain visi
 
 ## 6. Full per-finding table (97 rows)
 
-| location | rule | severity | classification |
-|---|---|---|---|
 | location | rule | severity | classification |
 |---|---|---|---|
 | `cmd/cloudfront-keygen/main.go:118` | G117 | MEDIUM | false-positive |
