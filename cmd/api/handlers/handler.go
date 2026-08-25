@@ -56,6 +56,11 @@ type Handler struct {
 	oauthRefreshSleep     func(context.Context, time.Duration) error
 	oauthRefreshJitter    func(time.Duration) time.Duration
 	oauthRefreshBeforeCAS func()
+
+	// instanceStatsCacheTTL-gated caches for the public instance usage/stats
+	// blocks (see instance_counts_cache.go).
+	instanceCountsCache   instanceCountsCache
+	activeMonthUsersCache activeMonthUsersCache
 }
 
 type liftAuthResponder func(*apptheory.Context) (*apptheory.Response, error)

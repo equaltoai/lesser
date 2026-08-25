@@ -79,6 +79,7 @@ func TestActorRepository_more_error_branches(t *testing.T) {
 	assert.Error(t, repo.SetActorFields(ctx, "alice", []storage.ActorField{{Name: "n", Value: "v"}}))
 
 	// DeleteActor generic error path
+	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once() // domain pre-read
 	mockQuery.On("Delete").Return(errors.New("delete failed")).Once()
 	assert.Error(t, repo.DeleteActor(ctx, "alice"))
 

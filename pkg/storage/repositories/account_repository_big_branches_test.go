@@ -138,7 +138,8 @@ func TestAccountRepository_DeleteAccount_UserDeleteError(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 
 	// Actor delete and numeric mapping cleanup succeed, then user delete fails.
-	mockQuery.On("Delete").Return(nil).Twice()
+	// (Delete sequence: actor row, drained-domain counter, numeric mapping, user.)
+	mockQuery.On("Delete").Return(nil).Times(3)
 	mockQuery.On("Delete").Return(fmt.Errorf("boom")).Once()
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 

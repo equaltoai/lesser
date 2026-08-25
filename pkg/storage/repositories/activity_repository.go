@@ -76,6 +76,14 @@ func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activ
 		return ErrorHandler.HandleCreateError(err, "activity", activity.ID)
 	}
 
+	// Maintain the O(1) active-month rollup: count the actor once for its UTC
+	// day (best-effort, never fails the create — see instance_counts.go).
+	day := models.DayFormat(time.Now())
+	if activity.Published != nil {
+		day = models.DayFormat(*activity.Published)
+	}
+	recordActivityActorDay(ctx, r.db, r.logger, activity.Actor, day)
+
 	r.logger.Info("activity created successfully",
 		zap.String("activity_id", activity.ID),
 		zap.String("username", username),

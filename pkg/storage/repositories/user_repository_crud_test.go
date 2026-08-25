@@ -28,6 +28,7 @@ func TestUserRepository_CreateUser_Success(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
 	mockQuery.On("Create").Return(nil)
+	permitInstanceCountMaintenance(mockDB, mockQuery)
 
 	user := &storage.User{
 		Username: "testuser",
@@ -48,6 +49,7 @@ func TestUserRepository_CreateUser_MissingEmail(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
 	mockQuery.On("Create").Return(nil)
+	permitInstanceCountMaintenance(mockDB, mockQuery)
 
 	user := &storage.User{
 		Username: "testuser",
@@ -208,6 +210,7 @@ func TestUserRepository_DeleteUser_Success(t *testing.T) {
 	mockQuery.On("Where", "PK", "=", "USER#testuser").Return(mockQuery)
 	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
 	mockQuery.On("Delete").Return(nil)
+	permitInstanceCountMaintenance(mockDB, mockQuery)
 
 	err := repo.DeleteUser(ctx, "testuser")
 
@@ -227,6 +230,7 @@ func TestUserRepository_DeleteUser_NotFound(t *testing.T) {
 	mockQuery.On("Where", "PK", "=", "USER#unknownuser").Return(mockQuery)
 	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
 	mockQuery.On("Delete").Return(dynamormerrors.ErrItemNotFound)
+	permitInstanceCountMaintenance(mockDB, mockQuery)
 
 	err := repo.DeleteUser(ctx, "unknownuser")
 

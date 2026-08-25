@@ -29,6 +29,7 @@ type baseline struct {
 	GoInsecureSkipVerify map[string]int `yaml:"goInsecureSkipVerify"`
 	GoDynamoDBQueryScan  map[string]int `yaml:"goDynamoDBQueryScan"`
 	GoDynamoDBBadPKWhere map[string]int `yaml:"goDynamoDBBadPKWhere"`
+	GoDynamoDBAllNoKey   map[string]int `yaml:"goDynamoDBAllNoKey"`
 
 	InfraCdkCspUnsafeInline map[string]int `yaml:"infraCdkCspUnsafeInline"`
 	InfraCdkCspUnsafeEval   map[string]int `yaml:"infraCdkCspUnsafeEval"`
@@ -95,6 +96,10 @@ func run(opts options) error {
 	}
 
 	if err := checkGoDynamoDBBadPKWhere(b); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if err := checkGoDynamoDBAllNoKey(b); err != nil {
 		problems = append(problems, err.Error())
 	}
 
@@ -206,11 +211,22 @@ func dumpDynamoDBBaseline() error {
 		return err
 	}
 
+	allNoKeyCounts, err := countGoUnkeyedAllCalls([]string{"cmd", "pkg", "graph"}, scanOptions{
+		IncludeTests: false,
+		Skips:        skips,
+	})
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("goDynamoDBQueryScan:")
 	printYAMLCountMap(scanCounts)
 	fmt.Println()
 	fmt.Println("goDynamoDBBadPKWhere:")
 	printYAMLCountMap(badPKCounts)
+	fmt.Println()
+	fmt.Println("goDynamoDBAllNoKey:")
+	printYAMLCountMap(allNoKeyCounts)
 	return nil
 }
 
@@ -412,6 +428,108 @@ func checkGoDynamoDBBadPKWhere(b baseline) error {
 	}
 
 	return compareCounts("DynamoDB partition-key misuse in Where(...)", actual, b.GoDynamoDBBadPKWhere)
+}
+
+// checkGoDynamoDBAllNoKey catches key-less TableTheory All(...) calls — All
+// without a preceding Where key condition — which compile to DynamoDB Scans.
+// These are the seed-once migration scans and offline maintenance tools; they
+// are baselined in baseline.yml with the deliberate one-time justification in
+// docs/architecture/dynamodb-scan-inventory.md.
+func checkGoDynamoDBAllNoKey(b baseline) error {
+	skips := defaultSkips()
+	skips["tools"] = struct{}{} // allowlist cmd/tools one-time backfills
+
+	actual, err := countGoUnkeyedAllCalls([]string{"cmd", "pkg", "graph"}, scanOptions{
+		IncludeTests: false,
+		Skips:        skips,
+	})
+	if err != nil {
+		return err
+	}
+
+	return compareCounts("key-less TableTheory All(...) occurrences", actual, b.GoDynamoDBAllNoKey)
+}
+
+// countGoUnkeyedAllCalls counts All(...) calls on freshly-built query chains
+// that contain no Where(...) call — i.e. queries compiled to a DynamoDB Scan
+// with no key condition. All(...) chained onto a pre-built query variable
+// (query.Limit(n).All(...)) or a field receiver is statically indeterminate
+// and is deliberately NOT flagged; the gate targets new inline key-less scan
+// callsites like the instance-count seed scans.
+func countGoUnkeyedAllCalls(roots []string, opts scanOptions) (map[string]int, error) {
+	counts := make(map[string]int)
+	for _, root := range roots {
+		if err := walkGoFiles(root, opts, func(path string) error {
+			n, err := countGoUnkeyedAllCallsInFile(path)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				counts[normalizePath(path)] = n
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return counts, nil
+}
+
+func countGoUnkeyedAllCallsInFile(path string) (int, error) {
+	content, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+	if err != nil {
+		return 0, err
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, path, content, 0)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %q: %w", path, err)
+	}
+
+	n := 0
+	ast.Inspect(f, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil || sel.Sel.Name != "All" {
+			return true
+		}
+		if isUnkeyedFreshChain(sel.X) {
+			n++
+		}
+		return true
+	})
+	return n, nil
+}
+
+// isUnkeyedFreshChain reports whether the All receiver is a freshly-built query
+// chain: it contains a Model(...) or WithContext(...) construction call and no
+// Where(...) call anywhere in the chain, so it compiles to an unkeyed Scan.
+func isUnkeyedFreshChain(receiver ast.Expr) bool {
+	hasConstruct := false
+	hasWhere := false
+	ast.Inspect(receiver, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Model", "WithContext":
+			hasConstruct = true
+		case "Where":
+			hasWhere = true
+			return false
+		}
+		return true
+	})
+	return hasConstruct && !hasWhere
 }
 
 func checkInfraCdkCspUnsafe(b baseline) error {

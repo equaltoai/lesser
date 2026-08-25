@@ -12,6 +12,20 @@ func applySchemaOverrides(spec *openAPISpec) {
 	overrideOAuthClientSchemas(spec.Components.Schemas)
 	overrideCommunityNoteSchemas(spec.Components.Schemas)
 	overrideSoulMintConversationSchemas(spec.Components.Schemas)
+	overrideNodeInfoSchemas(spec.Components.Schemas)
+}
+
+// overrideNodeInfoSchemas documents the active_month approximation on the
+// public NodeInfo usage surface: the value is the SUM of per-UTC-day distinct
+// actor counts, so an actor active on multiple days is counted once per day.
+func overrideNodeInfoSchemas(schemas map[string]any) {
+	overrideSchemaProperty(
+		schemas,
+		"NodeInfoUsers",
+		"activeMonth",
+		"Sum of per-UTC-day distinct-actor counts over the trailing 30 days. An actor active on multiple days is counted once per day, so the value can overcount the true window-distinct user count; it is bounded by days x monthly-active-users and is an approximation accepted for this surface.",
+		false,
+	)
 }
 
 func overrideAccountRegistrationRequest(schemas map[string]any) {

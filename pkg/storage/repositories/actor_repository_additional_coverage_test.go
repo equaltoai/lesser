@@ -677,13 +677,28 @@ func TestActorRepository_misc_methods(t *testing.T) {
 		m.SK = "PROFILE"
 		m.Username = "alice"
 		m.Actor = &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}, PreferredUsername: "alice"}
-	}).Times(2)
+	}).Times(3) // status time + set fields + DeleteActor domain pre-read
 	expectActorLastStatusUpdateBuilder(mockQuery, nil)
 	mockQuery.On("Update", mock.Anything).Return(nil).Once()
 
 	assert.NoError(t, repo.UpdateActorLastStatusTime(ctx, "alice"))
 	assert.NoError(t, repo.SetActorFields(ctx, "alice", []storage.ActorField{{Name: "n", Value: "v"}}))
 
-	mockQuery.On("Delete").Return(nil).Twice()
+	// DeleteActor additionally maintains the TOTAL_DOMAINS counter: the domain
+	// pre-read above, the actor/numeric-mapping deletes, and the best-effort
+	// counter release (Add + Condition + ExecuteWithResult + empty-domain
+	// delete + global decrement).
+	releaseBuilder := new(mocks.MockUpdateBuilder)
+	mockQuery.On("UpdateBuilder").Return(releaseBuilder).Maybe()
+	releaseBuilder.On("Add", mock.Anything, mock.Anything).Return(releaseBuilder).Maybe()
+	releaseBuilder.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(releaseBuilder).Maybe()
+	releaseBuilder.On("Set", mock.Anything, mock.Anything).Return(releaseBuilder).Maybe()
+	releaseBuilder.On("Execute").Return(nil).Maybe()
+	releaseBuilder.On("ExecuteWithResult", mock.Anything).Run(func(args mock.Arguments) {
+		if dest, ok := args.Get(0).(*models.DomainCounter); ok {
+			dest.Value = 0 // drained domain: empty-domain delete path runs
+		}
+	}).Return(nil).Maybe()
+	mockQuery.On("Delete").Return(nil).Times(3) // actor + drained domain counter + numeric mapping
 	assert.NoError(t, repo.DeleteActor(ctx, "alice"))
 }

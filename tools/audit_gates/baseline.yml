@@ -69,6 +69,32 @@ goDynamoDBQueryScan:
 goDynamoDBBadPKWhere:
   pkg/storage/repositories/analytics_repository.go: 1
 
+# Key-less TableTheory `All(...)` on freshly-built query chains (a Model(...)/
+# WithContext(...) chain with no Where(...)), which compiles to a DynamoDB Scan
+# with no key condition (tracked by count per file).
+# This gate exists to prevent adding new unkeyed scan callsites to production
+# code paths. All(...) chained onto a pre-built query variable is statically
+# indeterminate and deliberately not flagged.
+#
+# Dispositions (see docs/architecture/dynamodb-scan-inventory.md):
+# - pkg/storage/repositories/instance_counts.go: 6 — DELIBERATE one-time
+#   migration paths (3 lazy seed scans: TOTAL_USERS, TOTAL_DOMAINS,
+#   active_month) + 3 bounded offline recount reads (key-only projections of
+#   the recount tool). Seed scans are marker-gated on success and backoff-gated
+#   on failure; the recount is invoked manually offline. Tracked under umbrella
+#   issue "Eliminate baselined unbounded scans — operator doctrine 2026-08-25".
+# - The other 9 calls are pre-existing unkeyed scans baselined for tracking,
+#   scheduled for elimination under the same umbrella issue.
+goDynamoDBAllNoKey:
+  pkg/storage/repositories/announcement_repository.go: 1
+  pkg/storage/repositories/dlq_repository.go: 1
+  pkg/storage/repositories/instance_counts.go: 6
+  pkg/storage/repositories/media_repository.go: 1
+  pkg/storage/repositories/moderation_repository.go: 1
+  pkg/storage/repositories/rate_limit_repository.go: 1
+  pkg/storage/repositories/search_cost_repository.go: 2
+  pkg/storage/repositories/search_repository.go: 2
+
 # Exact occurrences of unsafe CSP directives in CloudFront/CDK code (tracked by count per file).
 infraCdkCspUnsafeInline:
   {}

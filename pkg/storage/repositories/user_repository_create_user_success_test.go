@@ -34,6 +34,17 @@ func TestUserRepository_CreateUser_SuccessPathSetsStorageTimestamps(t *testing.T
 	}).Return(mockQuery)
 	mockQuery.On("Create").Return(nil)
 
+	// O(1) instance-count maintenance is best-effort after the create
+	// (see instance_counts.go).
+	ub := new(mocks.MockUpdateBuilder)
+	mockDB.On("Model", mock.AnythingOfType("*models.InstanceMetrics")).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("UpdateBuilder").Return(ub).Maybe()
+	ub.On("Add", mock.Anything, mock.Anything).Return(ub).Maybe()
+	ub.On("Set", mock.Anything, mock.Anything).Return(ub).Maybe()
+	ub.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(ub).Maybe()
+	ub.On("Execute").Return(nil).Maybe()
+
 	user := &storage.User{
 		Username: "alice",
 		Email:    "alice@example.com",
