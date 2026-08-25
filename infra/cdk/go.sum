@@ -22,8 +22,8 @@ github.com/mattn/go-isatty v0.0.23 h1:cYwCQTQf3HB6xUC+BtyCLZNr7IzbOmoZbmssVNzSyi
 github.com/mattn/go-isatty v0.0.23/go.mod h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI3HqDio6A=
 github.com/stretchr/testify v1.12.0 h1:K6Mr6jO9JICuend/5xzTM03ydSV3vdNRYAdPSukj8uI=
 github.com/stretchr/testify v1.12.0/go.mod h1:bOYBZb5qJ00vPzWfIqBUZPaxK8jWiXc6d3ErP4Ca9Gw=
-github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v4 v4.0.0 h1:UyV4etAkzxNEwrz3Ceufx6rsc9IWfFKnH+BtT9qnaQw=
-github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v4 v4.0.0/go.mod h1:8AdZ7X8IvK2b3FAVWj5EGnkAVi1D2VshyJnY0UaM750=
+github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v4 v4.1.0 h1:h5teg0NXtEM8FBFeDBioPDEEkz5eT8bhU9IDRoItD+o=
+github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v4 v4.1.0/go.mod h1:8AdZ7X8IvK2b3FAVWj5EGnkAVi1D2VshyJnY0UaM750=
 github.com/yuin/goldmark v1.7.17 h1:p36OVWwRb246iHxA/U4p8OPEpOTESm4n+g+8t0EE5uA=
 github.com/yuin/goldmark v1.7.17/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
