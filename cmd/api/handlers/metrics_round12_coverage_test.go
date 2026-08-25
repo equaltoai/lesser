@@ -49,6 +49,8 @@ func TestMetricsHelpers_Round12Coverage(t *testing.T) {
 		instanceMetrics: map[string]storagemodels.InstanceMetrics{
 			// InstanceRepository.GetStorageUsage uses PK=INSTANCE#METRICS, SK=STORAGE_USAGE.
 			"INSTANCE#METRICS#STORAGE_USAGE": {Value: int64(10 * bytesPerGB)},
+			// O(1) TOTAL_USERS counter feeds calculateUserGrowthRateLift.
+			"INSTANCE#METRICS#TOTAL_USERS": {TotalUsers: 2},
 		},
 		// Instance history is used by both GetStorageHistory and GetUserGrowthHistory formatters.
 		instanceHistories: []storagemodels.InstanceHistory{
@@ -193,8 +195,8 @@ func TestMetricsHelpers_Round12Coverage(t *testing.T) {
 
 	t.Run("calculateUserProjectionLift returns fallback on MAU error", func(t *testing.T) {
 		state := &round10QueryState{
-			allErrorByType: map[string]error{
-				"*[]models.Activity": errors.New("boom"),
+			firstErrorByType: map[string]error{
+				"*models.InstanceMetrics": errors.New("boom"),
 			},
 		}
 		h, _, _ := round11NewHandlerSliceC(t, state)

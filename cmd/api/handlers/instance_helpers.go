@@ -101,6 +101,12 @@ func (h *Handler) instanceCounts(ctx context.Context) (int, int64, int64) {
 		return 0, 0, 0
 	}
 
+	// 60s single-flight cache: bursts collapse to one compute, and only fully
+	// successful reads are cached so transient errors never stick.
+	if users, statuses, domains, ok := h.instanceCountsCache.get(); ok {
+		return users, statuses, domains
+	}
+
 	userCount, err := h.repos.Analytics().GetTotalUserCount(ctx)
 	if err != nil {
 		if h.logger != nil {
@@ -124,6 +130,8 @@ func (h *Handler) instanceCounts(ctx context.Context) (int, int64, int64) {
 		}
 		domainCount = 0
 	}
+
+	h.instanceCountsCache.set(userCount, statusCount, domainCount)
 
 	return userCount, statusCount, domainCount
 }

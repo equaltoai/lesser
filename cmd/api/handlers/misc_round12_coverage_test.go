@@ -638,7 +638,11 @@ func TestMisc_NotificationFiltersAndGroupingOptions_Round12(t *testing.T) {
 
 	t.Run("active monthly users returns fallback on analytics error", func(t *testing.T) {
 		cfg := round11TestConfig()
-		state := &round10QueryState{allErrorOnce: errors.New("boom")}
+		state := &round10QueryState{
+			firstErrorByType: map[string]error{
+				"*models.InstanceMetrics": errors.New("boom"),
+			},
+		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/test", nil, nil, nil)

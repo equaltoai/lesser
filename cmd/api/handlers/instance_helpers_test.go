@@ -120,6 +120,7 @@ func TestHandler_instanceCountsAndContactAccountAndTipsConfig(t *testing.T) {
 			instanceMetrics: map[string]storagemodels.InstanceMetrics{
 				"INSTANCE#METRICS#TOTAL_STATUSES": {TotalStatuses: 7},
 				"INSTANCE#METRICS#TOTAL_DOMAINS":  {Value: 3},
+				"INSTANCE#METRICS#TOTAL_USERS":    {TotalUsers: 2},
 			},
 		}
 		h, _, _ := round11NewHandler(t, round11TestConfig(), state)

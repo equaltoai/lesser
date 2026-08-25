@@ -553,6 +553,12 @@ func (r *InstanceRepository) GetRulesByCategory(ctx context.Context, category st
 // GetTotalUserCount returns the total number of users
 // Since legacy doesn't implement this, use instance metrics pattern
 func (r *InstanceRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
+	// Lazy one-time seed: computes the counter from a scan on first read and
+	// persists it; afterwards this is a point read (see instance_counts.go).
+	if err := ensureTotalUsersSeeded(ctx, r.metricsRepo.GetDB(), r.logger); err != nil {
+		return 0, err
+	}
+
 	metric := &models.InstanceMetrics{}
 	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "TOTAL_USERS", metric)
 
@@ -585,6 +591,12 @@ func (r *InstanceRepository) GetTotalStatusCount(ctx context.Context) (int64, er
 
 // GetTotalDomainCount returns the total number of known domains
 func (r *InstanceRepository) GetTotalDomainCount(ctx context.Context) (int64, error) {
+	// Lazy one-time seed: computes the counter from a scan on first read and
+	// persists it; afterwards this is a point read (see instance_counts.go).
+	if err := ensureTotalDomainsSeeded(ctx, r.metricsRepo.GetDB(), r.logger); err != nil {
+		return 0, err
+	}
+
 	metric := &models.InstanceMetrics{}
 	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "TOTAL_DOMAINS", metric)
 

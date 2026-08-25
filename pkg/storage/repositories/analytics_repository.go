@@ -2474,83 +2474,59 @@ func (r *TrendingRepository) GetReportTrends(ctx context.Context, reportTypes []
 	return trends, nil
 }
 
-// GetActiveUserCount returns the number of active users in the last N days
+// GetActiveUserCount returns the number of active users in the last N days.
+//
+// O(1) read: sums the maintained per-UTC-day distinct-actor counters over the
+// window (see instance_counts.go). The sum is an upper bound on the true
+// window-distinct count — an actor active on multiple days is counted once per
+// day — documented as acceptable for the public instance stats surface. The
+// per-day rollup is maintained by the activity write path and seeded lazily
+// once from a bounded scan on first read.
 func (r *TrendingRepository) GetActiveUserCount(ctx context.Context, days int) (int, error) {
-	// Calculate the cutoff time for active users
-	cutoff := time.Now().AddDate(0, 0, -days)
-
-	// Query for unique users who had activity after the cutoff
-	// This is a simplified implementation - in production, you'd want proper indexing
-	var activities []models.Activity
-	err := r.db.WithContext(ctx).Model(&models.Activity{}).
-		Filter("PublishedAt", ">", cutoff).
-		All(&activities)
-	if err != nil {
-		r.logger.Error("failed to get active users", zap.Error(err))
-		return 0, err
-	}
-
-	// Count unique actors
-	uniqueActors := make(map[string]bool)
-	for _, activity := range activities {
-		if activity.Activity != nil && activity.Activity.Actor != "" {
-			uniqueActors[activity.Activity.Actor] = true
-		}
-	}
-
-	return len(uniqueActors), nil
+	return readActiveMonthCount(ctx, r.db, r.logger, days)
 }
 
-// GetTotalUserCount returns the total number of users
+// GetTotalUserCount returns the total number of users.
+//
+// O(1) read: returns the maintained TOTAL_USERS counter, seeded lazily once
+// from a one-time scan and kept current by the user/account write paths.
 func (r *TrendingRepository) GetTotalUserCount(ctx context.Context) (int, error) {
-	var users []models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
-		All(&users)
-	if err != nil {
-		r.logger.Error("failed to get total user count", zap.Error(err))
+	if err := ensureTotalUsersSeeded(ctx, r.db, r.logger); err != nil {
 		return 0, err
 	}
-
-	return len(users), nil
+	count, err := readTotalUsersCount(ctx, r.db, r.logger)
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
 }
 
-// GetTotalStatusCount returns the total number of statuses
+// GetTotalStatusCount returns the total number of statuses.
+//
+// O(1) read: returns the maintained TOTAL_STATUSES counter, kept current by
+// the status write path.
 func (r *TrendingRepository) GetTotalStatusCount(ctx context.Context) (*int, error) {
-	var objects []models.Object
-	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Filter("Type", "=", "Note"). // Only count Note objects (statuses)
-		All(&objects)
+	count, err := readTotalStatusesCount(ctx, r.db, r.logger)
 	if err != nil {
-		r.logger.Error("failed to get total status count", zap.Error(err))
 		return nil, err
 	}
-
-	count := len(objects)
-	return &count, nil
+	c := int(count)
+	return &c, nil
 }
 
-// GetTotalDomainCount returns the total number of federated domains
+// GetTotalDomainCount returns the total number of known domains.
+//
+// O(1) read: returns the maintained TOTAL_DOMAINS counter, seeded lazily once
+// from a one-time scan and kept current by the actor/account write paths.
 func (r *TrendingRepository) GetTotalDomainCount(ctx context.Context) (int, error) {
-	var actors []models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		All(&actors)
-	if err != nil {
-		r.logger.Error("failed to get total domain count", zap.Error(err))
+	if err := ensureTotalDomainsSeeded(ctx, r.db, r.logger); err != nil {
 		return 0, err
 	}
-
-	// Count unique domains from actor URLs
-	uniqueDomains := make(map[string]bool)
-	for _, actor := range actors {
-		if actor.Actor != nil && actor.Actor.ID != "" {
-			// Extract domain from actor ID (typically a URL)
-			if u, err := url.Parse(actor.Actor.ID); err == nil && u.Host != "" {
-				uniqueDomains[u.Host] = true
-			}
-		}
+	count, err := readTotalDomainsCount(ctx, r.db, r.logger)
+	if err != nil {
+		return 0, err
 	}
-
-	return len(uniqueDomains), nil
+	return int(count), nil
 }
 
 // ========== Popular Query Atomic Counter Methods ==========

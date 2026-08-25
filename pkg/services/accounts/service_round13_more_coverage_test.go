@@ -124,6 +124,8 @@ type permissiveDBOptions struct {
 	firstDeleteError         error
 	firstAllError            error
 	allErrorTimes            int
+	firstMetricError         error
+	metricErrorTimes         int
 	firstScanError           error
 	firstCountError          error
 
@@ -283,6 +285,16 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 	}
 	if opts.firstScanError != nil {
 		q.On("Scan", mock.Anything).Return(opts.firstScanError).Once()
+	}
+
+	// O(1) instance-count reads (see instance_counts.go) fail on the counter
+	// item's First when injected, exercising the service error fallbacks.
+	if opts.firstMetricError != nil {
+		if opts.metricErrorTimes > 0 {
+			q.On("First", mock.AnythingOfType("*models.InstanceMetrics")).Return(opts.firstMetricError).Times(opts.metricErrorTimes)
+		} else {
+			q.On("First", mock.AnythingOfType("*models.InstanceMetrics")).Return(opts.firstMetricError).Once()
+		}
 	}
 
 	if opts.forceUserNotFound {
@@ -2053,9 +2065,9 @@ func TestService_Round13_MoreBranchCoverage(t *testing.T) {
 
 	t.Run("GetInstanceStats error fallbacks", func(t *testing.T) {
 		svc, _ := newPermissiveAccountsService(t, permissiveDBOptions{
-			domain:        "example.com",
-			firstAllError: errors.New("all failed"),
-			allErrorTimes: 3,
+			domain:           "example.com",
+			firstMetricError: errors.New("metrics down"),
+			metricErrorTimes: 3,
 		})
 		stats, err := svc.GetInstanceStats(ctx, &GetInstanceStatsQuery{})
 		require.NoError(t, err)

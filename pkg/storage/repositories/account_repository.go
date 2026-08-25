@@ -328,6 +328,13 @@ func (r *AccountRepository) createAccount(ctx context.Context, account *storage.
 		}
 	}
 
+	// Maintain the O(1) instance counters (best-effort, never fails the
+	// create — see instance_counts.go).
+	bumpInstanceTotalUsers(ctx, r.db, r.logger, 1)
+	if actor != nil {
+		recordActorDomain(ctx, r.db, r.logger, domainFromActorID(actor.ID))
+	}
+
 	r.logger.Info("created account with enhanced validation",
 		zap.String("username", user.Username),
 		zap.Bool("with_actor", actor != nil),
@@ -479,6 +486,10 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 		r.logger.Error("failed to delete user", zap.Error(err), zap.String("username", username))
 		return ErrorHandler.HandleDeleteError(err, EntityUser, username)
 	}
+
+	// Maintain the O(1) instance TOTAL_USERS counter (best-effort, never
+	// fails the delete — see instance_counts.go).
+	bumpInstanceTotalUsers(ctx, r.db, r.logger, -1)
 
 	r.logger.Info("deleted account", zap.String("username", username))
 	return nil
@@ -1066,6 +1077,18 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 
 // deleteActor deletes an actor (internal helper)
 func (r *AccountRepository) deleteActor(ctx context.Context, username string) error {
+	// Capture the actor's domain before the row is gone so the O(1)
+	// TOTAL_DOMAINS counter can be released on delete (best-effort read).
+	var actorModel models.Actor
+	_ = r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", models.SKProfile).
+		First(&actorModel)
+	domain := ""
+	if actorModel.Actor != nil {
+		domain = domainFromActorID(actorModel.Actor.ID)
+	}
+
 	// Use key utilities for consistent key generation
 	pk := fmt.Sprintf(models.KeyPatternActor, username)
 
@@ -1077,6 +1100,12 @@ func (r *AccountRepository) deleteActor(ctx context.Context, username string) er
 	// Use error utility for consistent error handling (delete doesn't fail on not found)
 	if handled := ErrorHandler.HandleDeleteError(err, EntityActor, username); handled != nil {
 		return handled
+	}
+
+	// Maintain the O(1) instance TOTAL_DOMAINS counter (best-effort, never
+	// fails the delete — see instance_counts.go).
+	if domain != "" {
+		releaseActorDomain(ctx, r.db, r.logger, domain)
 	}
 
 	return r.deleteNumericIDMapping(ctx, common.GenerateNumericID(username))

@@ -60,10 +60,17 @@ func setupPermissiveAnalyticsRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.Mo
 	mockQuery.On("Delete").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Count").Return(int64(1), nil).Maybe()
+	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
 
 	mockQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Maybe()
 	mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Add", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("ConditionNotExists", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("ConditionVersion", mock.Anything).Return(mockUpdateBuilder).Maybe()
 	mockUpdateBuilder.On("Execute").Return(nil).Maybe()
+	mockUpdateBuilder.On("ExecuteWithResult", mock.Anything).Return(nil).Maybe()
 }
 
 func populateAnalyticsSliceForCoverage(target any, baseTime time.Time) {
@@ -595,8 +602,9 @@ func TestTrendingRepository_GetTotalUserCount_QueryError(t *testing.T) {
 	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("db down")).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.InstanceMetrics")).Return(mockQuery)
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("First", mock.Anything).Return(fmt.Errorf("db down")).Once()
 
 	_, err := repo.GetTotalUserCount(ctx)
 	require.Error(t, err)
@@ -963,9 +971,9 @@ func TestTrendingRepository_GetTotalStatusCount_QueryError(t *testing.T) {
 	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.InstanceMetrics")).Return(mockQuery)
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("First", mock.Anything).Return(errors.New("query failed")).Once()
 
 	_, err := repo.GetTotalStatusCount(ctx)
 	require.Error(t, err)

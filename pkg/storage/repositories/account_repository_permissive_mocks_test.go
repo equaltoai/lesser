@@ -44,15 +44,29 @@ func setupPermissiveAccountRepositoryMocks(mockDB *mocks.MockDB, mockQuery *mock
 	mockQuery.On("Delete", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()
 
-	if mockUpdateBuilder != nil {
-		mockQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("Remove", mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("ConditionNotExists", mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("ConditionVersion", mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("Execute").Return(nil).Maybe()
+	// O(1) instance-count ops (see instance_counts.go): the counter
+	// maintenance paths are best-effort, so permissive expectations keep
+	// mock-based tests focused on the behavior they pin.
+	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
+	if mockUpdateBuilder == nil {
+		mockUpdateBuilder = new(mocks.MockUpdateBuilder)
 	}
+	mockQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Remove", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Add", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("ConditionNotExists", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("ConditionVersion", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Execute").Return(nil).Maybe()
+	mockUpdateBuilder.On("ExecuteWithResult", mock.Anything).Run(func(args mock.Arguments) {
+		// Best-effort post-update result: report zero so release paths treat
+		// the domain as drained without touching real state.
+		if dest, ok := args.Get(0).(*models.DomainCounter); ok {
+			dest.Value = 0
+		}
+	}).Return(nil).Maybe()
 }
 
 func populateAccountRepositorySliceForCoverage(target any, baseTime time.Time) {

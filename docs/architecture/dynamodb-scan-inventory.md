@@ -164,6 +164,16 @@ This leverages the existing schema and eliminates the entire class of “wrong m
    - **Current (fixed):** query the existing `WebSocketConnection` GSI2 state partitions (`gsi2PK = STATE#<state>`) and filter by `LastActivity` / `ttl` in memory (no scans).
    - **Future enhancement:** if ordering by `LastActivity` becomes necessary at scale, add a time-bucketed listing key (unused GSI) rather than scanning.
 
+23) Public instance stats counts (issue #1467) – `TrendingRepository.GetActiveUserCount` / `GetTotalUserCount` / `GetTotalStatusCount` / `GetTotalDomainCount` (previously `analytics_repository.go` scans of every Activity/User/Object/Actor row into memory, unique-counted in Go) and `InstanceRepository.GetTotalUserCount` / `GetTotalDomainCount` (reads of unmaintained metrics items)
+   - **Current (fixed):** all four public counts are O(1) point reads of maintained counter items:
+     - `active_month` → sum of per-UTC-day `ActivityDayCounter` items (`PK=ACTIVITY_DAY#<date>`, `SK=COUNTER`), maintained by the activity write path via `ActivityActorDay` markers (`PK=ACTIVITY_ACTOR#<actor>`, `SK=DAY#<date>`) so an actor counts once per day.
+     - `TOTAL_USERS` → `InstanceMetrics` item `SK=TOTAL_USERS` (`totalUsers` attr), bumped on user/account create/delete.
+     - `TOTAL_STATUSES` → `InstanceMetrics` item `SK=TOTAL_STATUSES` (existing counter, see entry 17).
+     - `TOTAL_DOMAINS` → `InstanceMetrics` item `SK=TOTAL_DOMAINS` (`value` attr), maintained via per-domain `DomainCounter` items (`PK=DOMAIN#<host>`, `SK=COUNTER`) on actor create/delete.
+   - **Lazy one-time seed:** each counter is computed from a single scan and persisted on first read (single-flight, marker-gated). The active-month seed buckets a one-time scan by day in memory (the legacy `publishedAt` filter attribute does not resolve portably).
+   - **Approximation (disclosed):** active_month is the SUM of per-day distinct actor counts — an actor active on multiple days counts once per day, so the sum can exceed the true window-distinct count. Documented as acceptable for the public stats surface. Totals can drift ±1 in the deploy-to-first-read window (seed vs. concurrent write); the error is bounded and does not accumulate.
+   - **Cache:** the public `/api/v1/instance` and `/api/v2/instance` count blocks are additionally gated by a 60s instance-local TTL cache (success-only) so bursts collapse to one compute.
+
 ### P1 – Partition-key prefix/range misuse (guaranteed scans)
 
 23) `pkg/storage/repositories/trust_repository.go:240` – `TrustRepository.GetTrustRelationships`

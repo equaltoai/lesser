@@ -2011,12 +2011,19 @@ func (h *Handler) getUniqueAccountsForDay(ctx *apptheory.Context, day string) st
 
 // getActiveMonthlyUsers returns the count of active users in the current month
 func (h *Handler) getActiveMonthlyUsers(ctx *apptheory.Context) int {
+	// 60s single-flight cache: bursts collapse to one compute, and only
+	// successful reads are cached so transient errors never stick.
+	if count, ok := h.activeMonthUsersCache.get(); ok {
+		return count
+	}
+
 	// Get count of users who have been active in the last 30 days
 	count, err := h.repos.Analytics().GetActiveUserCount(ctx.Context(), 30)
 	if err != nil {
 		h.logger.Error("failed to get active monthly users", zap.Error(err))
 		return 1 // Default fallback
 	}
+	h.activeMonthUsersCache.set(count)
 	return count
 }
 

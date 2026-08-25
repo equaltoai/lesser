@@ -323,6 +323,14 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 	mockUpdate.On("Remove", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionNotExists", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
+	// O(1) instance-count maintenance (see instance_counts.go).
+	mockUpdate.On("Add", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ExecuteWithResult", mock.Anything).Run(func(args mock.Arguments) {
+		if dest, ok := args.Get(0).(*storageModels.DomainCounter); ok {
+			dest.Value = 0 // drained domain: empty-domain delete path runs
+		}
+	}).Return(nil).Maybe()
 	mockUpdate.On("Execute").Run(func(mock.Arguments) {
 		state.storeCreate(currentModel)
 	}).Return(nil).Maybe()
