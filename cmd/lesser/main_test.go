@@ -165,6 +165,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevMigrateNumericIDs := runMigrateNumericIDsFn
 	prevMigrateMCPAuthCutover := runMigrateMCPAuthCutoverFn
 	prevMigrateRemoteNoteStatuses := runMigrateRemoteNoteStatusesFn
+	prevRecountInstanceCounts := runRecountInstanceCountsFn
 	t.Cleanup(func() {
 		runUpFn = prevUp
 		runDownFn = prevDown
@@ -202,6 +203,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 		runMigrateNumericIDsFn = prevMigrateNumericIDs
 		runMigrateMCPAuthCutoverFn = prevMigrateMCPAuthCutover
 		runMigrateRemoteNoteStatusesFn = prevMigrateRemoteNoteStatuses
+		runRecountInstanceCountsFn = prevRecountInstanceCounts
 	})
 
 	type call struct {
@@ -251,6 +253,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	runMigrateNumericIDsFn = stub("migrate-numeric-ids")
 	runMigrateMCPAuthCutoverFn = stub("migrate-mcp-auth-cutover")
 	runMigrateRemoteNoteStatusesFn = stub("migrate-remote-note-statuses")
+	runRecountInstanceCountsFn = stub("recount-instance-counts")
 
 	var buf bytes.Buffer
 	require.Equal(t, 0, runCLI([]string{"lesser", helpFlagShort}, &buf))
@@ -370,6 +373,9 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-remote-note-statuses", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-remote-note-statuses"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "recount-instance-counts", "--env", "dev", "--apply"}, &buf))
+	require.Equal(t, []string{"--env", "dev", "--apply"}, calls["recount-instance-counts"].argv)
 }
 
 func TestExitCodeFromErr(t *testing.T) {
