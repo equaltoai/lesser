@@ -115,6 +115,40 @@ func TestHandler_resolveVAPIDPublicKey(t *testing.T) {
 func TestHandler_instanceCountsAndContactAccountAndTipsConfig(t *testing.T) {
 	ctx := context.Background()
 
+	t.Run("instance_counts_nil_handler_guard_returns_zeros", func(t *testing.T) {
+		var h *Handler
+		users, statuses, domains := h.instanceCounts(ctx)
+		require.Zero(t, users)
+		require.Zero(t, statuses)
+		require.Zero(t, domains)
+	})
+
+	t.Run("instance_counts_error_read_is_not_cached", func(t *testing.T) {
+		// The user-count read errors once (first InstanceMetrics First). The
+		// failed compute must NOT be cached as zeros: a second call within the
+		// TTL recomputes (and now succeeds, since the injected error was
+		// one-shot) instead of serving pinned zeros.
+		state := &round10QueryState{
+			firstErrorByType: map[string]error{
+				"*models.InstanceMetrics": errors.New("boom"),
+			},
+		}
+		h, _, _ := round11NewHandler(t, round11TestConfig(), state)
+
+		users, statuses, domains := h.instanceCounts(ctx)
+		require.Equal(t, 0, users) // user read failed -> documented default 0
+		require.Equal(t, int64(0), statuses)
+		require.Equal(t, int64(0), domains)
+
+		// Nothing was cached from the failed compute: the next call recomputes
+		// and now succeeds (harness defaults: users 0, statuses 0, domains 1024).
+		users2, statuses2, domains2 := h.instanceCounts(ctx)
+		require.Equal(t, 0, users2)
+		require.Equal(t, int64(0), statuses2)
+		require.Equal(t, int64(1024), domains2)
+		require.NotEqual(t, domains, domains2) // recomputed, not cached zeros
+	})
+
 	t.Run("instance_counts_handles_success_and_errors", func(t *testing.T) {
 		state := &round10QueryState{
 			instanceMetrics: map[string]storagemodels.InstanceMetrics{

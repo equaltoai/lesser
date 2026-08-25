@@ -117,7 +117,8 @@ func TestInstanceCountsCache_GetOrCompute_SuccessOnly(t *testing.T) {
 }
 
 // TestInstanceCountsCache_GetOrCompute_ComputeUnderLock pins F4: concurrent
-// misses collapse to a single compute under the per-process mutex.
+// misses collapse to a single compute under the per-process mutex, and the
+// losers of the race hit the under-lock fresh re-check instead of recomputing.
 func TestInstanceCountsCache_GetOrCompute_ComputeUnderLock(t *testing.T) {
 	var c instanceCountsCache
 
@@ -137,15 +138,27 @@ func TestInstanceCountsCache_GetOrCompute_ComputeUnderLock(t *testing.T) {
 
 	const goroutines = 8
 	results := make(chan [3]any, goroutines)
+	ready := make(chan struct{}, goroutines)
+	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := 0; i < goroutines; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			ready <- struct{}{}
+			<-start
 			u, s, d := c.getOrCompute(compute)
 			results <- [3]any{u, s, d}
 		}()
 	}
+
+	// Release all goroutines at once so the losers of the lock race queue on
+	// the mutex while the winner computes; after the winner caches, each queued
+	// goroutine acquires the lock and hits the under-lock fresh re-check.
+	for i := 0; i < goroutines; i++ {
+		<-ready
+	}
+	close(start)
 
 	// Wait until the first goroutine is inside compute, then let it finish.
 	<-computeStarted
@@ -179,6 +192,58 @@ func TestActiveMonthUsersCache_TTLAndValues(t *testing.T) {
 	_, ok = c.get()
 	require.False(t, ok)
 	require.Equal(t, 42, c.getOrCompute(func() (int, bool) { return 1, false }))
+}
+
+// TestActiveMonthUsersCache_GetOrCompute_ComputeUnderLock pins F4 for the
+// active-month cache: concurrent misses collapse to a single compute and the
+// losers hit the under-lock fresh re-check.
+func TestActiveMonthUsersCache_GetOrCompute_ComputeUnderLock(t *testing.T) {
+	var c activeMonthUsersCache
+
+	var mu sync.Mutex
+	computeCalls := 0
+	computeStarted := make(chan struct{})
+	releaseCompute := make(chan struct{})
+
+	compute := func() (int, bool) {
+		mu.Lock()
+		computeCalls++
+		mu.Unlock()
+		close(computeStarted)
+		<-releaseCompute
+		return 42, true
+	}
+
+	const goroutines = 6
+	results := make(chan int, goroutines)
+	ready := make(chan struct{}, goroutines)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ready <- struct{}{}
+			<-start
+			results <- c.getOrCompute(compute)
+		}()
+	}
+	for i := 0; i < goroutines; i++ {
+		<-ready
+	}
+	close(start)
+
+	<-computeStarted
+	close(releaseCompute)
+	wg.Wait()
+	close(results)
+
+	for r := range results {
+		require.Equal(t, 42, r)
+	}
+	mu.Lock()
+	require.Equal(t, 1, computeCalls)
+	mu.Unlock()
 }
 
 // TestActiveMonthUsersCache_GetOrCompute_SuccessOnly pins the F3 semantics for

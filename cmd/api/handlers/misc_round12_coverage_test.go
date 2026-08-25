@@ -636,6 +636,11 @@ func TestMisc_NotificationFiltersAndGroupingOptions_Round12(t *testing.T) {
 		require.Equal(t, "Cost tracking not configured", body["error"])
 	})
 
+	t.Run("active monthly users nil handler guard returns fallback", func(t *testing.T) {
+		var handler *Handler
+		require.Equal(t, 1, handler.getActiveMonthlyUsers(nil))
+	})
+
 	t.Run("active monthly users returns fallback on analytics error", func(t *testing.T) {
 		cfg := round11TestConfig()
 		state := &round10QueryState{
