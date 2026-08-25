@@ -97,6 +97,7 @@ func TestArticleService_UpdateArticle_AllowsBlankSlugAndSetsUpdatedFields(t *tes
 	ctx := context.Background()
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
 	repo := &fakeArticleRepo{
@@ -136,6 +137,7 @@ func TestArticleService_UpdateArticle_RejectsCanonicalPublishedSlugChange(t *tes
 	ctx := context.Background()
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
 	repo := &fakeArticleRepo{
@@ -252,6 +254,7 @@ func TestArticleService_federateArticleWriteActivity_ReturnsWhenActorLookupFails
 	ctx := context.Background()
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
 	repo := &fakeArticleRepo{db: db, articles: map[string]*models.Article{}}

@@ -8,7 +8,7 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 // mockOAuthService is a stub implementation of OAuthServiceInterface for testing

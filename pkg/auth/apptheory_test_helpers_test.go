@@ -3,7 +3,7 @@ package auth
 import (
 	"strings"
 
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 type apptheoryContextOption func(*apptheory.Context)

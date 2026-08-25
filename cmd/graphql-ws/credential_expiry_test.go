@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	appTheory "github.com/theory-cloud/apptheory/v3/runtime"
+	appTheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"

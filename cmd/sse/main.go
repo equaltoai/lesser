@@ -23,7 +23,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
@@ -129,8 +129,16 @@ func initializeSSE() {
 }
 
 func runSSE() {
-	app := apptheory.New(
-		apptheory.WithCORS(apptheory.CORSConfig{
+	app := buildSSEApp()
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
+}
+
+func buildSSEApp() *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier: apptheory.TierP2,
+		CORS: apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
 			AllowCredentials: false,
 			AllowHeaders: []string{
@@ -143,33 +151,58 @@ func runSSE() {
 				"X-Forwarded-For",
 				"X-Forwarded-Proto",
 			},
-		}),
-		apptheory.WithLimits(apptheory.Limits{
+		},
+		Limits: apptheory.Limits{
 			MaxRequestBytes:  64 * 1024,
 			MaxResponseBytes: 0,
-		}),
-	)
+		},
+		PrincipalResolver: resolveSSEPrincipal,
+	})
 
 	app.Use(ssePanicRecovery(logger))
 	app.Use(sseLoggingMiddleware(logger))
 
-	app.Get("/api/v1/streaming", handleStreamingRoot)
-	app.Get("/api/v1/streaming/health", handleHealth)
+	app.Get("/api/v1/streaming", handleStreamingRoot, apptheory.Public())
+	app.Get("/api/v1/streaming/health", handleHealth, apptheory.Public())
 
-	app.Get("/api/v1/streaming/user", handleUserStream)
-	app.Get("/api/v1/streaming/user/notification", handleUserNotificationStream)
-	app.Get("/api/v1/streaming/public", handlePublicStream(streaming.PublicStream))
-	app.Get("/api/v1/streaming/public/local", handlePublicStream(streaming.PublicLocalStream))
-	app.Get("/api/v1/streaming/public/remote", handlePublicStream(streaming.PublicRemoteStream))
-	app.Get("/api/v1/streaming/hashtag", handleHashtagStream(false))
-	app.Get("/api/v1/streaming/hashtag/local", handleHashtagStream(true))
-	app.Get("/api/v1/streaming/list", handleListStream)
-	app.Get("/api/v1/streaming/direct", handleDirectStream)
-	app.Get("/api/v1/streaming/oauth/device", handleOAuthDeviceStream)
+	// These nine Mastodon streaming routes deliberately retain handler-owned
+	// authentication. Public() means only that SecureApp does not preempt the
+	// handlers' legacy 401 payloads; every handler calls requireClaims before it
+	// performs authorization or opens a stream.
+	app.Get("/api/v1/streaming/user", handleUserStream, apptheory.Public())
+	app.Get("/api/v1/streaming/user/notification", handleUserNotificationStream, apptheory.Public())
+	app.Get("/api/v1/streaming/public", handlePublicStream(streaming.PublicStream), apptheory.Public())
+	app.Get("/api/v1/streaming/public/local", handlePublicStream(streaming.PublicLocalStream), apptheory.Public())
+	app.Get("/api/v1/streaming/public/remote", handlePublicStream(streaming.PublicRemoteStream), apptheory.Public())
+	app.Get("/api/v1/streaming/hashtag", handleHashtagStream(false), apptheory.Public())
+	app.Get("/api/v1/streaming/hashtag/local", handleHashtagStream(true), apptheory.Public())
+	app.Get("/api/v1/streaming/list", handleListStream, apptheory.Public())
+	app.Get("/api/v1/streaming/direct", handleDirectStream, apptheory.Public())
+	app.Get("/api/v1/streaming/oauth/device", handleOAuthDeviceStream, apptheory.Public())
 
-	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
-		return app.HandleLambda(ctx, event)
-	})
+	return app
+}
+
+func resolveSSEPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	if ctx == nil || authService == nil {
+		return nil, nil
+	}
+	value := strings.TrimSpace(sseHeaderValue(ctx, "authorization"))
+	token, err := auth.ExtractBearerToken(value)
+	if err != nil || strings.TrimSpace(token) == "" {
+		return nil, nil
+	}
+	claims, err := authService.ValidateAccessToken(token)
+	if err != nil || claims == nil {
+		return nil, nil
+	}
+	principal := auth.PrincipalFromClaims(claims)
+	return &apptheory.SecurePrincipal{
+		Identity: principal.Identity,
+		Scopes:   principal.Scopes,
+		Claims:   principal.Claims,
+		Kind:     apptheory.PrincipalExternal,
+	}, nil
 }
 
 func handleStreamingRoot(*apptheory.Context) (*apptheory.Response, error) {

@@ -101,13 +101,13 @@ func TestRound10_DNSCacheRepository_SetGetInvalidate(t *testing.T) {
 		require.Equal(t, int64(60), entry.TTL)
 	})
 
-	t.Run("set create error is wrapped", func(t *testing.T) {
+	t.Run("set upsert error is wrapped", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(errors.New("boom"))
+		mockQuery.On("CreateOrUpdate").Return(errors.New("boom"))
 
 		repo := NewDNSCacheRepository(mockDB, "test-table", zap.NewNop(), nil)
 		err := repo.SetDNSCache(ctx, &storage.DNSCacheEntry{Hostname: "example.com", IPs: []string{"127.0.0.1"}, ResolvedAt: time.Now(), TTL: 60})

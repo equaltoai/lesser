@@ -145,6 +145,54 @@ func (r *BaseRepository[T]) Create(ctx context.Context, item T) error {
 	return nil
 }
 
+// CreateOrUpdate stores an item with explicit overwrite/upsert semantics.
+// TableTheory's Create is conditional as of v3.0.5, so callers that own a
+// deterministic projection, cache, or aggregate key must opt in here rather
+// than relying on Create to replace an existing row.
+func (r *BaseRepository[T]) CreateOrUpdate(ctx context.Context, item T) error {
+	if r == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("repository is nil"))
+	}
+	if r.db == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("%s database client is nil", r.repoName))
+	}
+
+	if err := item.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "base entity keys", item.GetPK())
+	}
+
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "PutItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: 1,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_create_or_update_%d", r.repoName, time.Now().UnixNano()),
+		}
+
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB create-or-update operation cost",
+					zap.String("repository", r.repoName),
+					zap.String("pk", item.GetPK()),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	if err := r.db.WithContext(ctx).Model(item).CreateOrUpdate(); err != nil {
+		r.logger.Error("failed to create or update item",
+			zap.Error(err),
+			zap.String("pk", item.GetPK()),
+			zap.String("sk", item.GetSK()))
+		return ErrorHandler.HandleCreateError(err, "base entity", item.GetPK())
+	}
+
+	return nil
+}
+
 // CreateIfNotExists stores a new item in the database only if its primary key does not already exist.
 func (r *BaseRepository[T]) CreateIfNotExists(ctx context.Context, item T) error {
 	// Update keys before saving

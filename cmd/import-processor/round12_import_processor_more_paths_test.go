@@ -16,9 +16,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	tablecore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
@@ -247,6 +249,42 @@ func TestImportProcessor_ActivityPubImport_Round12(t *testing.T) {
 		require.NoError(t, err)
 		require.Greater(t, result.Success, 0)
 		require.Greater(t, result.Failed, 0)
+	})
+
+	t.Run("duplicate follow like and announce count as successful re-imports", func(t *testing.T) {
+		duplicateErr := repositories.NewRepositoryError(apperrors.CodeAlreadyExists, "object already exists")
+		duplicateProcessor := &ImportProcessor{
+			baseURL:    "https://example.com",
+			logger:     zap.NewNop(),
+			importRepo: &importRepoRecorder{},
+			repos: importStorageStub{
+				object: objectCreatorFunc(func(_ context.Context, _ any) error { return duplicateErr }),
+				actor: actorGetterFunc(func(_ context.Context, username string) (*activitypub.Actor, error) {
+					return &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/" + username}}, nil
+				}),
+				activity: activityCreatorFunc(func(_ context.Context, _ *activitypub.Activity) error { return nil }),
+			},
+		}
+		items := []any{
+			map[string]any{"type": "Follow", "object": "https://remote.example/users/bob"},
+			map[string]any{"type": "Like", "object": "https://remote.example/objects/liked"},
+			map[string]any{"type": "Announce", "object": "https://remote.example/objects/boosted"},
+		}
+
+		result, err := duplicateProcessor.processActivityPubItems(
+			context.Background(),
+			ImportProcessorEvent{ImportID: "imp-repeat", Username: "alice", Type: "archive"},
+			items,
+			&models.ImportCostTracking{},
+		)
+		require.NoError(t, err)
+		require.Equal(t, 3, result.Success)
+		require.Zero(t, result.Failed)
+		require.Empty(t, result.Errors)
+
+		storageErr := errors.New("storage unavailable")
+		require.ErrorIs(t, tolerateActivityPubImportReplay(storageErr), storageErr,
+			"non-conflict storage failures must not be swallowed")
 	})
 }
 

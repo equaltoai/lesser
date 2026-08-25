@@ -15,7 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -46,7 +46,7 @@ func TestReportTrustService_UpdateReporterTrustOnDecision_Round12(t *testing.T) 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 
 	var createdRel *models.TrustRelationship
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe().Run(func(args mock.Arguments) {

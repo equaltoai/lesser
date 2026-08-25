@@ -809,6 +809,25 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "invalid_client", body["error"])
 	})
 
+	t.Run("authorization_code unauthorized_client", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					RedirectURIs: []string{"https://example.com/callback"},
+					GrantTypes:   []string{auth.GrantTypeRefreshToken},
+					Scopes:       []string{auth.ScopeRead},
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "unauthorized_client", body["error"])
+	})
+
 	t.Run("authorization_code invalid_target when resource does not match authorization request", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
@@ -947,7 +966,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 	})
 
 	t.Run("authorization_code PKCE verification failed", func(t *testing.T) {
-		verifier := "good-verifier"
+		verifier := "good-verifier-rfc7636-minimum-length-43-characters"
 		sum := sha256.Sum256([]byte(verifier))
 		challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 
@@ -974,19 +993,19 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Contains(t, body["error_description"], "PKCE")
 	})
 
-	t.Run("authorization_code success even when refresh token storage fails", func(t *testing.T) {
+	t.Run("authorization_code storage failure is retryable and returns no refresh token", func(t *testing.T) {
 		state := &round10QueryState{
-			createErrorOnce: errors.New("create failed"),
+			transactionErrorOnce: errors.New("transaction failed"),
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
-		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
-		var body apimodels.OAuthTokenResponse
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.NotEmpty(t, body.AccessToken)
-		require.NotEmpty(t, body.RefreshToken)
-		require.Equal(t, "read write", body.Scope)
+		require.Equal(t, "temporarily_unavailable", body["error"])
+		require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+		require.Empty(t, state.refreshTokensByToken)
 	})
 
 	t.Run("authorization_code success preserves resource in audience and refresh token", func(t *testing.T) {
@@ -1124,7 +1143,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, auth.ClientClassOperator, refreshClaims.ClientClass)
 		require.Contains(t, refreshClaims.Scopes, auth.ScopeAdmin)
 
-		require.NotContains(t, state.refreshTokensByToken, body.RefreshToken)
+		oldStoredRefresh := state.refreshTokensByToken[body.RefreshToken]
+		require.True(t, oldStoredRefresh.Revoked)
+		require.False(t, oldStoredRefresh.Current)
 		newStoredRefresh, ok := state.refreshTokensByToken[refreshBody.RefreshToken]
 		require.True(t, ok)
 		require.Equal(t, auth.ClientClassOperator, newStoredRefresh.ClientClass)
@@ -1185,9 +1206,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, agent1Resource, storedRefresh.Resource)
 		require.NotEmpty(t, storedRefresh.SessionID)
 		require.Equal(t, claims.SessionID, storedRefresh.SessionID)
-		require.Empty(t, storedRefresh.FamilyID)
-		require.False(t, storedRefresh.Current)
-		require.Zero(t, storedRefresh.Generation)
+		require.NotEmpty(t, storedRefresh.FamilyID)
+		require.True(t, storedRefresh.Current)
+		require.Equal(t, 1, storedRefresh.Generation)
 		require.Empty(t, storedRefresh.DeviceLabel)
 		require.Zero(t, storedRefresh.AccessTTLSeconds)
 		require.True(t, storedRefresh.SessionCreatedAt.IsZero())
@@ -1234,22 +1255,24 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, token.SessionID, claims.SessionID)
 		require.Equal(t, []string{agent1Resource}, []string(claims.Audience))
 
-		_, ok := state.refreshTokensByToken["rt-agent-connector"]
-		require.False(t, ok)
+		oldToken, ok := state.refreshTokensByToken["rt-agent-connector"]
+		require.True(t, ok)
+		require.True(t, oldToken.Revoked)
+		require.False(t, oldToken.Current)
 
 		newToken, ok := state.refreshTokensByToken[body.RefreshToken]
 		require.True(t, ok)
 		require.Equal(t, auth.ClientClassAgent, newToken.ClientClass)
 		require.Equal(t, token.SessionID, newToken.SessionID)
 		require.Equal(t, agent1Resource, newToken.Resource)
-		require.Empty(t, newToken.FamilyID)
-		require.Equal(t, 1, newToken.Generation)
+		require.Equal(t, token.FamilyID, newToken.FamilyID)
+		require.Equal(t, token.Generation+1, newToken.Generation)
 		require.True(t, newToken.Current)
-		require.Empty(t, newToken.DeviceLabel)
+		require.Equal(t, token.DeviceLabel, newToken.DeviceLabel)
 		require.Equal(t, token.AccessTTLSeconds, newToken.AccessTTLSeconds)
-		require.WithinDuration(t, newToken.CreatedAt, newToken.SessionCreatedAt, 2*time.Second)
-		require.WithinDuration(t, newToken.ExpiresAt, newToken.IdleExpiresAt, 2*time.Second)
-		require.WithinDuration(t, newToken.ExpiresAt, newToken.AbsoluteExpiresAt, 2*time.Second)
+		require.WithinDuration(t, token.SessionCreatedAt, newToken.SessionCreatedAt, 2*time.Second)
+		require.WithinDuration(t, token.IdleExpiresAt, newToken.IdleExpiresAt, 2*time.Second)
+		require.WithinDuration(t, token.AbsoluteExpiresAt, newToken.AbsoluteExpiresAt, 2*time.Second)
 		require.WithinDuration(t, token.ExpiresAt, newToken.ExpiresAt, 2*time.Second)
 	})
 
@@ -1364,21 +1387,23 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NotNil(t, claims.ExpiresAt)
 		require.InDelta(t, auth.AgentAccessTokenTTL(cfg).Seconds(), claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time).Seconds(), 5)
 
-		_, ok := state.refreshTokensByToken["rt-agent-aged"]
-		require.False(t, ok)
+		oldToken, ok := state.refreshTokensByToken["rt-agent-aged"]
+		require.True(t, ok)
+		require.True(t, oldToken.Revoked)
+		require.False(t, oldToken.Current)
 
 		newToken, ok := state.refreshTokensByToken[body.RefreshToken]
 		require.True(t, ok)
 		require.Equal(t, token.SessionID, newToken.SessionID)
 		require.Equal(t, token.Resource, newToken.Resource)
-		require.Empty(t, newToken.FamilyID)
-		require.Equal(t, 1, newToken.Generation)
+		require.Equal(t, token.FamilyID, newToken.FamilyID)
+		require.Equal(t, token.Generation+1, newToken.Generation)
 		require.True(t, newToken.Current)
-		require.Empty(t, newToken.DeviceLabel)
+		require.Equal(t, token.DeviceLabel, newToken.DeviceLabel)
 		require.Equal(t, token.AccessTTLSeconds, newToken.AccessTTLSeconds)
-		require.WithinDuration(t, newToken.CreatedAt, newToken.SessionCreatedAt, 2*time.Second)
-		require.WithinDuration(t, newToken.ExpiresAt, newToken.IdleExpiresAt, 2*time.Second)
-		require.WithinDuration(t, newToken.ExpiresAt, newToken.AbsoluteExpiresAt, 2*time.Second)
+		require.WithinDuration(t, token.SessionCreatedAt, newToken.SessionCreatedAt, 2*time.Second)
+		require.WithinDuration(t, token.IdleExpiresAt, newToken.IdleExpiresAt, 2*time.Second)
+		require.WithinDuration(t, token.AbsoluteExpiresAt, newToken.AbsoluteExpiresAt, 2*time.Second)
 		require.WithinDuration(t, token.ExpiresAt, newToken.ExpiresAt, 2*time.Second)
 		require.False(t, newToken.ExpiresAt.After(token.IdleExpiresAt))
 		require.False(t, newToken.ExpiresAt.After(token.AbsoluteExpiresAt))
@@ -1433,10 +1458,14 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 				h, _, _ := round11NewHandler(t, cfg, state)
 
 				ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token="+url.QueryEscape(token.Token)+"&client_id=client-agent"))
-				resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+				wantStatus, wantError := http.StatusBadRequest, "invalid_grant"
+				if tc.revoked {
+					wantStatus, wantError = http.StatusServiceUnavailable, "temporarily_unavailable"
+				}
+				resp := requireStatus(t, wantStatus)(h.HandleOAuthTokenLift(ctx))
 				var body map[string]string
 				require.NoError(t, json.Unmarshal(resp.Body, &body))
-				require.Equal(t, "invalid_grant", body["error"])
+				require.Equal(t, wantError, body["error"])
 			})
 		}
 	})
@@ -1489,17 +1518,18 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.WithinDuration(t, token.ExpiresAt, newToken.ExpiresAt, 2*time.Second)
 	})
 
-	t.Run("authorization_code invalid_grant when code consumption fails", func(t *testing.T) {
+	t.Run("authorization_code consumption infrastructure failure is retryable", func(t *testing.T) {
 		state := &round10QueryState{
 			deleteErrorOnce: errors.New("delete failed"),
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&client_secret=secret&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
-		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.Equal(t, "invalid_grant", body["error"])
+		require.Equal(t, "temporarily_unavailable", body["error"])
+		require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
 	})
 
 	t.Run("refresh_token missing params", func(t *testing.T) {
@@ -1647,7 +1677,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "invalid_grant", body["error"])
 	})
 
-	t.Run("refresh_token returns invalid_grant when storing new token fails", func(t *testing.T) {
+	t.Run("refresh_token rotation storage failure is retryable", func(t *testing.T) {
 		state := &round10QueryState{
 			refreshTokensByToken: map[string]storagemodels.RefreshToken{
 				"rt-3": {Token: "rt-3", ClientID: "client-1", Username: "alice", ExpiresAt: time.Now().Add(1 * time.Hour), Scopes: []string{auth.ScopeRead}},
@@ -1657,18 +1687,19 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-3&client_id=client-1&client_secret=secret"))
-		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		resp := requireStatus(t, http.StatusServiceUnavailable)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
-		require.Equal(t, "invalid_grant", body["error"])
+		require.Equal(t, "temporarily_unavailable", body["error"])
+		require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+		require.False(t, state.refreshTokensByToken["rt-3"].Revoked)
 	})
 
-	t.Run("refresh_token success even when deleting old token fails", func(t *testing.T) {
+	t.Run("refresh_token rotation retains revoked predecessor", func(t *testing.T) {
 		state := &round10QueryState{
 			refreshTokensByToken: map[string]storagemodels.RefreshToken{
 				"rt-4": {Token: "rt-4", ClientID: "client-1", Username: "alice", ExpiresAt: time.Now().Add(1 * time.Hour), Scopes: []string{auth.ScopeRead}},
 			},
-			deleteErrorOnce: errors.New("delete failed"),
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-4&client_id=client-1&client_secret=secret"))
@@ -1678,6 +1709,10 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NotEmpty(t, body.AccessToken)
 		require.NotEmpty(t, body.RefreshToken)
 		require.Equal(t, "read", body.Scope)
+		predecessor := state.refreshTokensByToken["rt-4"]
+		require.True(t, predecessor.Revoked)
+		require.False(t, predecessor.Current)
+		require.Equal(t, "rotated", predecessor.RevokedReason)
 	})
 
 	t.Run("refresh_token preserves stored resource audience", func(t *testing.T) {

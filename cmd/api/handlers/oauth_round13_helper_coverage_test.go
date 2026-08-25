@@ -2,31 +2,142 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
+func TestOAuthAuthorizationCodeExchangeErrorResponsePinsExistingMapperArms(t *testing.T) {
+	t.Parallel()
+	typedInvalidRequest := &oauthAuthorizationCodeRequestValidationError{
+		validationErr: common.ValidateMultipleRequiredParams(map[string]string{"code": ""}),
+	}
+
+	tests := []struct {
+		name            string
+		err             error
+		wantStatus      int
+		wantCode        string
+		wantDescription string
+		wantRetryAfter  bool
+	}{
+		{
+			name:            "temporarily unavailable",
+			err:             auth.ErrOAuthTemporarilyUnavailable,
+			wantStatus:      http.StatusServiceUnavailable,
+			wantCode:        "temporarily_unavailable",
+			wantDescription: "Authorization code exchange is temporarily unavailable",
+			wantRetryAfter:  true,
+		},
+		{
+			name:            "invalid target",
+			err:             errOAuthInvalidTarget,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_target",
+			wantDescription: "resource must match the original authorization request",
+		},
+		{
+			name:            "typed invalid request",
+			err:             typedInvalidRequest,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_request",
+			wantDescription: "validation failed for parameters: missing required parameters: code",
+		},
+		{
+			name:            "unregistered redirect invalid request",
+			err:             auth.ErrInvalidRequest,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_request",
+			wantDescription: "Invalid redirect_uri",
+		},
+		{
+			name:            "invalid scope",
+			err:             auth.ErrInvalidScope,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_scope",
+			wantDescription: "Authorization code scope is invalid or no longer permitted",
+		},
+		{
+			name:            "invalid grant",
+			err:             auth.ErrInvalidGrant,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_grant",
+			wantDescription: "Invalid authorization code or expired",
+		},
+		{
+			name:            "invalid client",
+			err:             auth.ErrInvalidClient,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_client",
+			wantDescription: "Invalid client credentials",
+		},
+		{
+			name:            "unauthorized client",
+			err:             auth.ErrUnauthorizedClient,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "unauthorized_client",
+			wantDescription: "This client is not allowed to use authorization_code",
+		},
+		{
+			name:            "invalid code challenge",
+			err:             auth.ErrInvalidCodeChallenge,
+			wantStatus:      http.StatusBadRequest,
+			wantCode:        "invalid_grant",
+			wantDescription: "PKCE verification failed",
+		},
+		{
+			name:            "unexpected failure",
+			err:             errors.New("unexpected exchange failure"),
+			wantStatus:      http.StatusInternalServerError,
+			wantCode:        "server_error",
+			wantDescription: "Authorization code exchange failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := requireStatus(t, tt.wantStatus)(oauthAuthorizationCodeExchangeErrorResponse(tt.err))
+			var body map[string]string
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, tt.wantCode, body["error"])
+			require.Equal(t, tt.wantDescription, body["error_description"])
+			if tt.wantRetryAfter {
+				require.Equal(t, []string{"1"}, resp.Headers["retry-after"])
+			} else {
+				require.Empty(t, resp.Headers["retry-after"])
+			}
+		})
+	}
+}
+
 func TestValidateAuthorizationCodeExchangeRedirect(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		client      *storage.OAuthClient
-		clientID    string
-		redirectURI string
-		wantErr     error
+		name                      string
+		client                    *storage.OAuthClient
+		clientID                  string
+		redirectURI               string
+		wantErr                   error
+		wantValidationDescription string
 	}{
 		{
-			name:        "missing client id",
-			client:      &storage.OAuthClient{RedirectURIs: []string{"https://example.com/callback"}},
-			redirectURI: "https://example.com/callback",
-			wantErr:     auth.ErrInvalidRequest,
+			name:                      "missing client id",
+			client:                    &storage.OAuthClient{RedirectURIs: []string{"https://example.com/callback"}},
+			redirectURI:               "https://example.com/callback",
+			wantErr:                   auth.ErrInvalidRequest,
+			wantValidationDescription: "validation failed for parameters: missing required parameters: client_id",
 		},
 		{
 			name:        "exact match",
@@ -69,6 +180,13 @@ func TestValidateAuthorizationCodeExchangeRedirect(t *testing.T) {
 			err := validateAuthorizationCodeExchangeRedirect(tt.client, tt.clientID, tt.redirectURI, "code")
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
+				if tt.wantValidationDescription != "" {
+					var requestValidationErr *oauthAuthorizationCodeRequestValidationError
+					require.ErrorAs(t, err, &requestValidationErr)
+					require.Equal(t, tt.wantValidationDescription, requestValidationErr.Error())
+					var validationErr common.ValidationError
+					require.ErrorAs(t, err, &validationErr)
+				}
 				return
 			}
 			require.NoError(t, err)
@@ -93,13 +211,14 @@ func TestLoadAndValidateAuthorizationCodeRequiresStoredPKCE(t *testing.T) {
 	handler, _, _ := round11NewHandler(t, cfg, state)
 	oauthSvc := auth.NewOAuthService(cfg.JWTSecret, cfg, handler.repos, nil)
 
-	_, err := handler.loadAndValidateAuthorizationCodeForExchange(
+	_, err := handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(
 		context.Background(),
 		oauthSvc,
 		"legacy-code",
 		"client-public",
 		"https://example.com/callback",
 		"verifier",
+		nil,
 	)
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 }
@@ -150,8 +269,9 @@ func TestBuildAuthorizationCodeRefreshToken(t *testing.T) {
 	require.Equal(t, "alice", base.Username)
 	require.Equal(t, "client-1", base.ClientID)
 	require.Equal(t, "web", base.ClientClass)
-	require.Empty(t, base.FamilyID)
-	require.False(t, base.Current)
+	require.NotEmpty(t, base.FamilyID)
+	require.True(t, base.Current)
+	require.Equal(t, 1, base.Generation)
 
 	agentToken := buildAuthorizationCodeRefreshToken(now, "refresh-2", "client-agent", &storage.OAuthClient{
 		Name: "agent-app",
@@ -161,8 +281,9 @@ func TestBuildAuthorizationCodeRefreshToken(t *testing.T) {
 	}, auth.ClientClassAgent, "sess-1", 45*time.Minute)
 	require.Equal(t, auth.ClientClassAgent, agentToken.ClientClass)
 	require.Equal(t, "sess-1", agentToken.SessionID)
-	require.Empty(t, agentToken.FamilyID)
-	require.False(t, agentToken.Current)
+	require.NotEmpty(t, agentToken.FamilyID)
+	require.True(t, agentToken.Current)
+	require.Equal(t, 1, agentToken.Generation)
 	require.Empty(t, agentToken.DeviceLabel)
 	require.Zero(t, agentToken.AccessTTLSeconds)
 	require.True(t, agentToken.SessionCreatedAt.IsZero())
@@ -237,9 +358,9 @@ func TestValidateAuthorizationCodeExchangeClientSecret(t *testing.T) {
 
 	oauthSvc := auth.NewOAuthService(handler.cfg.JWTSecret, handler.cfg, repos, nil)
 
-	require.ErrorIs(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, confidentialClient.ClientID, ""), auth.ErrInvalidClient)
-	require.NoError(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, confidentialClient.ClientID, confidentialClient.ClientSecret))
-	require.ErrorIs(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, confidentialClient.ClientID, "wrong-secret"), auth.ErrInvalidClient)
+	require.ErrorIs(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, ""), auth.ErrInvalidClient)
+	require.NoError(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, confidentialClient.ClientSecret))
+	require.ErrorIs(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, confidentialClient, "wrong-secret"), auth.ErrInvalidClient)
 
 	publicClient := &storage.OAuthClient{
 		Name:         "Public App",
@@ -247,7 +368,7 @@ func TestValidateAuthorizationCodeExchangeClientSecret(t *testing.T) {
 		Confidential: false,
 	}
 	require.NoError(t, repos.account.CreateOAuthClient(ctx, publicClient))
-	require.NoError(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, publicClient, publicClient.ClientID, ""))
+	require.NoError(t, validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, publicClient, ""))
 }
 
 func TestValidateAuthorizationCodeExchangeClient(t *testing.T) {
@@ -290,16 +411,16 @@ func TestLoadAndValidateAuthorizationCodeForExchange(t *testing.T) {
 	}
 	require.NoError(t, repos.account.CreateAuthorizationCode(ctx, code))
 
-	got, err := handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+	got, err := handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", nil)
 	require.NoError(t, err)
 	require.Equal(t, code.Code, got.Code)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, "other-client", code.RedirectURI, "")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code.Code, "other-client", code.RedirectURI, "", nil)
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, "https://example.com/other", "")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code.Code, code.ClientID, "https://example.com/other", "", nil)
 	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 
-	_, err = handler.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "wrong-verifier")
+	_, err = handler.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code.Code, code.ClientID, code.RedirectURI, "wrong-verifier", nil)
 	require.Error(t, err)
 }

@@ -709,7 +709,7 @@ func (r *AICostRepository) sumCosts(costs []float64) float64 {
 // CreateOrUpdateAggregatedCost creates or updates aggregated cost records
 func (r *AICostRepository) CreateOrUpdateAggregatedCost(ctx context.Context, aggregatedCost *models.AIAggregatedCost) error {
 	// Note: This uses the AIAggregatedCost model directly since BaseRepository is typed for AICost
-	err := r.db.WithContext(ctx).Model(aggregatedCost).Create()
+	err := r.db.WithContext(ctx).Model(aggregatedCost).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to create/update aggregated AI cost",
 			zap.String("period", aggregatedCost.Period),

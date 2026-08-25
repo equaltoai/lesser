@@ -22,6 +22,15 @@ type DraftRepository interface {
 	// UpdateDraft updates an existing draft owned by authorID
 	UpdateDraft(ctx context.Context, authorID string, draft *models.Draft) error
 
+	// UpdateDraftEditorialMedia replaces only the draft's editorial-media association and update timestamp.
+	UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error
+
+	// TransitionDraftToPublishing atomically applies only the fields that enter
+	// the publishing status, including the PublishAttemptedAt stamp. It is the
+	// only writer of that stamp; content writers cannot re-arm the
+	// stale-publishing sweep horizon.
+	TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error
+
 	// DeleteDraft deletes a draft
 	DeleteDraft(ctx context.Context, authorID, draftID string) error
 
@@ -37,4 +46,9 @@ type DraftRepository interface {
 
 	// ListScheduledDraftsDuePaginated lists drafts scheduled to publish at or before the provided time
 	ListScheduledDraftsDuePaginated(ctx context.Context, dueBefore time.Time, limit int, cursor string) ([]*models.Draft, string, error)
+
+	// ListDraftsByStatusPaginated lists drafts in one status (for example the
+	// terminally failed drafts whose bound media mints orphan reconciliation
+	// re-examines), paginated by GSI4SK cursor values.
+	ListDraftsByStatusPaginated(ctx context.Context, status string, limit int, cursor string) ([]*models.Draft, string, error)
 }

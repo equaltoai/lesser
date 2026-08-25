@@ -147,7 +147,7 @@ func TestActivityHandler_ErrorBranches(t *testing.T) {
 		mockQuery := new(dynamock.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(errors.New("boom"))
+		mockQuery.On("CreateOrUpdate").Return(errors.New("boom"))
 
 		objectRepo := testmocks.NewMockObjectRepository()
 		objectRepo.On("GetObject", mock.Anything, "https://example.com/objects/1").Return(&models.Object{

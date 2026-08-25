@@ -21,7 +21,7 @@ import (
 )
 
 func oauthActorGranteePKCE() (verifier, challenge string) {
-	verifier = "lesser-grantee-mcp-verifier"
+	verifier = "lesser-grantee-mcp-verifier-rfc7636-43-characters"
 	sum := sha256.Sum256([]byte(verifier))
 	return verifier, base64.RawURLEncoding.EncodeToString(sum[:])
 }

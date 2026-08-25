@@ -6,7 +6,7 @@ import (
 
 	apiHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -14,7 +14,7 @@ func TestConfigureRoutes(t *testing.T) {
 	logger = zaptest.NewLogger(t)
 	apiHandler = &apiHandlers.Handler{}
 
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 	configureRoutes(app)
 }
 
@@ -22,12 +22,13 @@ func TestConfigureRoutes_CORSPreflightHandledByRuntime(t *testing.T) {
 	logger = zaptest.NewLogger(t)
 	apiHandler = &apiHandlers.Handler{}
 
-	app := apptheory.New(
-		apptheory.WithCORS(apptheory.CORSConfig{
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier: apptheory.TierP2,
+		CORS: apptheory.CORSConfig{
 			AllowedOrigins: []string{"*"},
 			AllowHeaders:   []string{"Authorization", "Content-Type"},
-		}),
-	)
+		},
+	})
 	configureRoutes(app)
 
 	resp := app.Serve(context.Background(), apptheory.Request{

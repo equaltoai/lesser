@@ -53,7 +53,7 @@ func NewRoutingMetricsRepositoryWithCostTracking(db core.DB, tableName string, l
 
 // StoreRouteMetricsWindow stores aggregated route metrics for a time window
 func (r *RoutingMetricsRepository) StoreRouteMetricsWindow(ctx context.Context, window *models.RouteMetricsWindow) error {
-	err := r.routeMetricsRepo.Create(ctx, window)
+	err := r.routeMetricsRepo.ValidateAndCreateOrUpdate(ctx, window)
 	if err != nil {
 		r.logger.Error("Failed to store route metrics window",
 			zap.String("routeID", window.RouteID),
@@ -110,7 +110,7 @@ func (r *RoutingMetricsRepository) GetRouteMetricsWindows(ctx context.Context, r
 
 // StoreGlobalMetricsWindow stores aggregated global metrics for a time window
 func (r *RoutingMetricsRepository) StoreGlobalMetricsWindow(ctx context.Context, window *models.GlobalMetricsWindow) error {
-	err := r.globalMetricsRepo.Create(ctx, window)
+	err := r.globalMetricsRepo.ValidateAndCreateOrUpdate(ctx, window)
 	if err != nil {
 		r.logger.Error("Failed to store global metrics window",
 			zap.Time("windowStart", window.WindowStart),
@@ -155,7 +155,7 @@ func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, 
 
 // StoreInstanceMetricsWindow stores aggregated instance metrics for a time window
 func (r *RoutingMetricsRepository) StoreInstanceMetricsWindow(ctx context.Context, window *models.InstanceMetricsWindow) error {
-	err := r.instanceMetricsRepo.Create(ctx, window)
+	err := r.instanceMetricsRepo.ValidateAndCreateOrUpdate(ctx, window)
 	if err != nil {
 		r.logger.Error("Failed to store instance metrics window",
 			zap.String("instanceID", window.InstanceID),
@@ -188,10 +188,10 @@ func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 	instanceWindows []*models.InstanceMetricsWindow,
 	globalWindow *models.GlobalMetricsWindow) error {
 
-	// Use BaseRepository batch create operations if available, or fall back to individual creates
+	// BatchCreate is conditionally create-only in TableTheory v3.0.5. These
+	// deterministic windows are recomputed, so write each as an explicit upsert.
 	if len(routeWindows) > 0 {
-		err := r.routeMetricsRepo.BatchCreate(ctx, routeWindows)
-		if err != nil {
+		if err := validateAndUpsertMetricsWindows(ctx, r.routeMetricsRepo, routeWindows); err != nil {
 			r.logger.Error("Failed to batch store route metrics windows",
 				zap.Error(err))
 			return ErrorHandler.HandleCreateError(err, EntityRoutingMetrics, "route batch")
@@ -200,8 +200,7 @@ func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 
 	// Store instance windows
 	if len(instanceWindows) > 0 {
-		err := r.instanceMetricsRepo.BatchCreate(ctx, instanceWindows)
-		if err != nil {
+		if err := validateAndUpsertMetricsWindows(ctx, r.instanceMetricsRepo, instanceWindows); err != nil {
 			r.logger.Error("Failed to batch store instance metrics windows",
 				zap.Error(err))
 			return ErrorHandler.HandleCreateError(err, EntityRoutingMetrics, "instance batch")
@@ -210,7 +209,7 @@ func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 
 	// Store global window
 	if globalWindow != nil {
-		err := r.globalMetricsRepo.Create(ctx, globalWindow)
+		err := r.globalMetricsRepo.ValidateAndCreateOrUpdate(ctx, globalWindow)
 		if err != nil {
 			r.logger.Error("Failed to store global metrics window in batch",
 				zap.Error(err))
@@ -223,6 +222,15 @@ func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 		zap.Int("instanceWindows", len(instanceWindows)),
 		zap.Bool("globalWindow", globalWindow != nil))
 
+	return nil
+}
+
+func validateAndUpsertMetricsWindows[T BaseModel](ctx context.Context, repo *EnhancedBaseRepository[T], windows []T) error {
+	for _, window := range windows {
+		if err := repo.ValidateAndCreateOrUpdate(ctx, window); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

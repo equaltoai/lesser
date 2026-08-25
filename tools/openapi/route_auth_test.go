@@ -97,6 +97,80 @@ func TestApplyQuoteListOverridePublishesDynamicOffsetBound(t *testing.T) {
 	}
 }
 
+func TestApplyOperationOverridesPublishesBootstrapProofResponses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		route            routeDef
+		initialResponses []string
+		wantResponses    []string
+	}{
+		{
+			name:             "bootstrap challenge",
+			route:            routeDef{Method: methodPOST, Path: "/setup/bootstrap/challenge"},
+			initialResponses: []string{"200", "400", "422", "429", "500"},
+			wantResponses:    []string{"200", "400", "403", "409", "429", "500"},
+		},
+		{
+			name:             "bootstrap verify",
+			route:            routeDef{Method: methodPOST, Path: "/setup/bootstrap/verify"},
+			initialResponses: []string{"200", "400", "422", "429", "500"},
+			wantResponses:    []string{"200", "400", "401", "403", "409", "429", "500"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			op := &operation{Responses: make(map[string]response, len(tt.initialResponses))}
+			for _, status := range tt.initialResponses {
+				op.Responses[status] = response{}
+			}
+
+			applyOperationOverrides(op, tt.route)
+
+			gotResponses := make([]string, 0, len(op.Responses))
+			for status := range op.Responses {
+				gotResponses = append(gotResponses, status)
+			}
+			slices.Sort(gotResponses)
+			if !slices.Equal(gotResponses, tt.wantResponses) {
+				t.Fatalf("responses = %v, want only reachable %v", gotResponses, tt.wantResponses)
+			}
+		})
+	}
+}
+
+func TestValidateStrictGeneratedSpecRejectsAnonymousAPIOperationWithoutExplicitSecurity(t *testing.T) {
+	t.Parallel()
+
+	spec := &openAPISpec{
+		Paths: map[string]*pathItem{
+			"/api/v1/announcements": {
+				Get: &operation{
+					Responses: map[string]response{
+						"200": {Description: "OK"},
+					},
+				},
+			},
+		},
+	}
+	ensureFoundationResponses(spec)
+
+	err := validateStrictGeneratedSpec(spec, []routeDef{{
+		Method: methodGET,
+		Path:   "/api/v1/announcements",
+		Lambda: lambdaAPI,
+		Auth:   authModePublic,
+	}})
+	if err == nil {
+		t.Fatal("expected strict validation error for missing explicit public security")
+	}
+	if !strings.Contains(err.Error(), "GET /api/v1/announcements: expected explicit public security []") {
+		t.Fatalf("error = %q, want missing explicit public security", err)
+	}
+}
+
 func TestExtractAPIRouteMetaInfersRouteMiddlewareAuth(t *testing.T) {
 	t.Parallel()
 
@@ -146,6 +220,47 @@ func TestExtractAPIRouteMetaInfersRouteMiddlewareAuth(t *testing.T) {
 			wantPath:    "/api/v1/announcements",
 			wantHandler: "HandleGetAnnouncementsLift",
 			wantAuth:    authModePublic,
+		},
+		{
+			name:        "secure public posture remains public",
+			expr:        `app.Get("/api/v1/announcements", apiHandler.HandleGetAnnouncementsLift, apptheory.Public())`,
+			wantMethod:  methodGET,
+			wantPath:    "/api/v1/announcements",
+			wantHandler: "HandleGetAnnouncementsLift",
+			wantAuth:    authModePublic,
+		},
+		{
+			name:        "secure optional posture is bearer optional",
+			expr:        `app.Get("/api/v1/accounts/search", apiHandler.HandleAccountSearchLift, apptheory.Optional())`,
+			wantMethod:  methodGET,
+			wantPath:    "/api/v1/accounts/search",
+			wantHandler: "HandleAccountSearchLift",
+			wantAuth:    authModeBearerOptional,
+		},
+		{
+			name:        "secure authenticated posture is bearer required",
+			expr:        `app.Get("/api/v1/blocks", apiHandler.HandleGetBlocksLift, apptheory.Authenticated("read"))`,
+			wantMethod:  methodGET,
+			wantPath:    "/api/v1/blocks",
+			wantHandler: "HandleGetBlocksLift",
+			wantAuth:    authModeBearerRequired,
+		},
+		{
+			name:        "secure internal posture is bearer required",
+			expr:        `app.Post("/api/v1/notifications/deliver", apiHandler.HandleNotificationDeliveryLift, apptheory.InternalOnly())`,
+			wantMethod:  methodPOST,
+			wantPath:    "/api/v1/notifications/deliver",
+			wantHandler: "HandleNotificationDeliveryLift",
+			wantAuth:    authModeBearerRequired,
+		},
+		{
+			name: "secure any-scope wrapper preserves handler metadata",
+			expr: `app.Post("/api/v1/accounts/{id}/follow", requireAnySecureScope(
+				apiHandler.HandleFollowLift, "write:follows", "write"), apptheory.Authenticated())`,
+			wantMethod:  methodPOST,
+			wantPath:    "/api/v1/accounts/{id}/follow",
+			wantHandler: "HandleFollowLift",
+			wantAuth:    authModeBearerRequired,
 		},
 		{
 			name:        "app handle route guard is bearer required",

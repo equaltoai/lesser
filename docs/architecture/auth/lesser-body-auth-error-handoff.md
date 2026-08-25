@@ -20,7 +20,8 @@ The source-of-truth client-visible contract lives in [auth-error-contract.md](/h
 | `401` + `error=invalid_token` on `/api/*` | MCP clients treat this as the refresh bucket. |
 | `403` + `error=insufficient_scope` on `/api/*` | MCP clients must not downgrade this into a refreshable error. |
 | `400` + `error=invalid_grant` on `/oauth/token` | Signals refresh exhaustion or stale auth artifacts. |
-| `401` + `error=invalid_client` on `/oauth/token` | Signals public client-auth configuration failure. |
+| `400` + `error=invalid_client` on `/oauth/token` | Signals an authoritative public client-auth configuration failure. |
+| `503` + `error=temporarily_unavailable` on `/oauth/token` | Signals a retryable authority/storage failure; preserve `Retry-After`. |
 | `429` + `error=slow_down` | Preserves backoff semantics and `Retry-After`. |
 
 ### Allowed wrapping rules
@@ -37,7 +38,7 @@ Preferred pattern: embed Lesser’s body unchanged and add transport metadata ar
 
 ### API bearer refresh case
 
-Status: `401`
+Status: `400`
 
 ```json
 {
@@ -87,6 +88,21 @@ Status: `401`
 ```
 
 Expected MCP action: `reconfigure`
+
+### Refresh authority temporarily unavailable
+
+Status: `503`
+
+Header: `Retry-After: 1`
+
+```json
+{
+  "error": "temporarily_unavailable",
+  "error_description": "Refresh token exchange is temporarily unavailable"
+}
+```
+
+Expected MCP action: `backoff`, then retry the same refresh credential.
 
 ### Rate-limited auth path
 

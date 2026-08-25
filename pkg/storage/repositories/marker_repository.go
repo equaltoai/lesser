@@ -63,7 +63,7 @@ func (r *MarkerRepository) SaveMarker(ctx context.Context, username, timeline st
 	}
 
 	// Save using enhanced validation and creation - this will call UpdateKeys() and BeforeCreate hooks
-	err = r.ValidateAndCreate(ctx, markerModel)
+	err = r.ValidateAndCreateOrUpdate(ctx, markerModel)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrMarkerSaveFailed, err)
 	}

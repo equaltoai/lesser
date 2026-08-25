@@ -164,7 +164,7 @@ func TestFederationRepository_UpsertInstanceInfo_Success(t *testing.T) {
 	// Set up mock expectations
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.FederationInstance")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	// Execute
 	err := repo.UpsertInstanceInfo(ctx, info)
@@ -192,7 +192,7 @@ func TestFederationRepository_UpsertInstanceInfo_CreateError(t *testing.T) {
 	// Set up mock expectations
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.FederationInstance")).Return(mockQuery)
-	mockQuery.On("Create").Return(testErr)
+	mockQuery.On("CreateOrUpdate").Return(testErr)
 
 	// Execute
 	err := repo.UpsertInstanceInfo(ctx, info)

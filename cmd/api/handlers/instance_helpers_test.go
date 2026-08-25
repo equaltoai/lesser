@@ -8,7 +8,7 @@ import (
 
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
@@ -68,6 +68,19 @@ func TestHandler_resolveVAPIDPublicKey(t *testing.T) {
 	t.Run("production_missing_keys_returns_500", func(t *testing.T) {
 		cfg := round11TestConfig()
 		cfg.Stage = EnvProduction
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{forceVapidNotFound: true})
+
+		liftCtx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/"}}
+		pub, resp, err := h.resolveVAPIDPublicKey(liftCtx, false)
+		require.Empty(t, pub)
+		require.NotNil(t, resp)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
+	})
+
+	t.Run("live_missing_keys_returns_500", func(t *testing.T) {
+		cfg := round11TestConfig()
+		cfg.Stage = "live"
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{forceVapidNotFound: true})
 
 		liftCtx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/"}}

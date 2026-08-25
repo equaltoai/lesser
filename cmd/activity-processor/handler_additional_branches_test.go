@@ -113,7 +113,7 @@ func TestActivityHandler_ProcessDeleteActivity_MoreBranches(t *testing.T) {
 		mockQuery := new(dynamock.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(nil)
+		mockQuery.On("CreateOrUpdate").Return(nil)
 
 		timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
 		timelineRepo.On("RemoveFromTimelines", mock.Anything, "https://example.com/objects/1").Return(errors.New("boom")).Once()
@@ -146,7 +146,7 @@ func TestActivityHandler_ProcessDeleteActivity_MoreBranches(t *testing.T) {
 		mockQuery := new(dynamock.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(nil)
+		mockQuery.On("CreateOrUpdate").Return(nil)
 
 		timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
 		timelineRepo.On("RemoveFromTimelines", mock.Anything, "https://example.com/objects/2").Return(nil).Once()

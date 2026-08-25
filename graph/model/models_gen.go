@@ -929,6 +929,16 @@ type CompleteSoulBootstrapConversationInput struct {
 	CorrelationKey *string `json:"correlationKey,omitempty"`
 }
 
+type ComposePromoPackageInput struct {
+	// Set to replace an existing package's content (re-hashes and stales approvals); empty creates a new package.
+	PackageID  *string                `json:"packageId,omitempty"`
+	ArticleID  string                 `json:"articleId"`
+	PostText   string                 `json:"postText"`
+	Visibility PromoPackageVisibility `json:"visibility"`
+	// Ordered PUBLISHED asset IDs; order is the attachment order on the post.
+	AssetMediaIds []string `json:"assetMediaIds"`
+}
+
 type ContentMap struct {
 	Language string `json:"language"`
 	Content  string `json:"content"`
@@ -1213,6 +1223,8 @@ type DraftPreview struct {
 	SourceBytes   int      `json:"sourceBytes"`
 	RenderedBytes int      `json:"renderedBytes"`
 	Errors        []string `json:"errors"`
+	// Canonical structured media preview, including missing/processing/rejected placeholders.
+	EditorialMedia []*EditorialMediaUsage `json:"editorialMedia"`
 }
 
 type DraftPublishEligibility struct {
@@ -1230,30 +1242,32 @@ type DraftReview struct {
 	Slug    *string `json:"slug,omitempty"`
 	Content string  `json:"content"`
 	// Canonical sanitized preview for the exact source and contentHash in this response.
-	RenderedHTML              *string             `json:"renderedHtml,omitempty"`
-	RenderErrors              []string            `json:"renderErrors"`
-	Subtitle                  *string             `json:"subtitle,omitempty"`
-	Excerpt                   *string             `json:"excerpt,omitempty"`
-	ContentFormat             ContentFormat       `json:"contentFormat"`
-	Status                    DraftStatus         `json:"status"`
-	ScheduledAt               *Time               `json:"scheduledAt,omitempty"`
-	UpdatedAt                 Time                `json:"updatedAt"`
-	CreatedAt                 Time                `json:"createdAt"`
-	GeneratedBy               *activitypub.Actor  `json:"generatedBy,omitempty"`
-	ReviewedBy                *activitypub.Actor  `json:"reviewedBy,omitempty"`
-	ReviewStatus              *string             `json:"reviewStatus,omitempty"`
-	EditorNotes               *string             `json:"editorNotes,omitempty"`
-	ContentHash               string              `json:"contentHash"`
-	Revision                  int                 `json:"revision"`
-	ActiveReviewerIds         []string            `json:"activeReviewerIds"`
-	PublishEligible           bool                `json:"publishEligible"`
-	PublishBlockingReasons    []string            `json:"publishBlockingReasons"`
-	ReviewersApproved         bool                `json:"reviewersApproved"`
-	PrincipalApprovalRequired bool                `json:"principalApprovalRequired"`
-	PrincipalApproved         bool                `json:"principalApproved"`
-	GrantCount                int                 `json:"grantCount"`
-	GrantsTruncated           bool                `json:"grantsTruncated"`
-	Grants                    []*DraftReviewGrant `json:"grants"`
+	RenderedHTML  *string            `json:"renderedHtml,omitempty"`
+	RenderErrors  []string           `json:"renderErrors"`
+	Subtitle      *string            `json:"subtitle,omitempty"`
+	Excerpt       *string            `json:"excerpt,omitempty"`
+	ContentFormat ContentFormat      `json:"contentFormat"`
+	Status        DraftStatus        `json:"status"`
+	ScheduledAt   *Time              `json:"scheduledAt,omitempty"`
+	UpdatedAt     Time               `json:"updatedAt"`
+	CreatedAt     Time               `json:"createdAt"`
+	GeneratedBy   *activitypub.Actor `json:"generatedBy,omitempty"`
+	ReviewedBy    *activitypub.Actor `json:"reviewedBy,omitempty"`
+	ReviewStatus  *string            `json:"reviewStatus,omitempty"`
+	EditorNotes   *string            `json:"editorNotes,omitempty"`
+	ContentHash   string             `json:"contentHash"`
+	// Exact draft-bound media visible to this owner or active reviewer.
+	EditorialMedia            []*EditorialMediaUsage `json:"editorialMedia"`
+	Revision                  int                    `json:"revision"`
+	ActiveReviewerIds         []string               `json:"activeReviewerIds"`
+	PublishEligible           bool                   `json:"publishEligible"`
+	PublishBlockingReasons    []string               `json:"publishBlockingReasons"`
+	ReviewersApproved         bool                   `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool                   `json:"principalApprovalRequired"`
+	PrincipalApproved         bool                   `json:"principalApproved"`
+	GrantCount                int                    `json:"grantCount"`
+	GrantsTruncated           bool                   `json:"grantsTruncated"`
+	Grants                    []*DraftReviewGrant    `json:"grants"`
 	// Caller-specific grant retained for backwards compatibility.
 	Grant              *DraftReviewGrant           `json:"grant,omitempty"`
 	Verdicts           []*DraftReviewVerdictRecord `json:"verdicts"`
@@ -1272,11 +1286,13 @@ type DraftReviewEdge struct {
 }
 
 type DraftReviewGrant struct {
-	ReviewerID string                 `json:"reviewerId"`
-	Reviewer   *activitypub.Actor     `json:"reviewer"`
-	GrantedAt  Time                   `json:"grantedAt"`
-	Status     DraftReviewGrantStatus `json:"status"`
-	RevokedAt  *Time                  `json:"revokedAt,omitempty"`
+	ReviewerID string             `json:"reviewerId"`
+	Reviewer   *activitypub.Actor `json:"reviewer"`
+	GrantedAt  Time               `json:"grantedAt"`
+	// Bounded expiry; expired grants authorize no reads, URL minting, or approval.
+	ExpiresAt *Time                  `json:"expiresAt,omitempty"`
+	Status    DraftReviewGrantStatus `json:"status"`
+	RevokedAt *Time                  `json:"revokedAt,omitempty"`
 }
 
 type DraftReviewVerdictRecord struct {
@@ -1294,6 +1310,78 @@ type DraftReviewVerdictRecord struct {
 type DroneWorkflowMutationPayload struct {
 	Agent    *Agent                `json:"agent"`
 	Workflow *AgentWorkflowSurface `json:"workflow"`
+}
+
+type EditorialMediaAccess struct {
+	MediaID     string `json:"mediaId"`
+	URL         string `json:"url"`
+	ExpiresAt   Time   `json:"expiresAt"`
+	ContentHash string `json:"contentHash"`
+}
+
+type EditorialMediaLifecyclePayload struct {
+	MediaID             string                  `json:"mediaId"`
+	Lifecycle           EditorialMediaLifecycle `json:"lifecycle"`
+	SupersededByMediaID *string                 `json:"supersededByMediaId,omitempty"`
+}
+
+type EditorialMediaProvenance struct {
+	Origin             EditorialMediaOrigin `json:"origin"`
+	Tool               *string              `json:"tool,omitempty"`
+	ResponsibleActorID string               `json:"responsibleActorId"`
+	ResponsibleActor   *activitypub.Actor   `json:"responsibleActor,omitempty"`
+	SourceReferences   []string             `json:"sourceReferences"`
+	RightsLicenseNotes *string              `json:"rightsLicenseNotes,omitempty"`
+	CreatedAt          *Time                `json:"createdAt,omitempty"`
+	UpdatedAt          *Time                `json:"updatedAt,omitempty"`
+	RecordedAt         Time                 `json:"recordedAt"`
+	ContentIntegrity   string               `json:"contentIntegrity"`
+}
+
+type EditorialMediaProvenanceInput struct {
+	Origin             EditorialMediaOrigin `json:"origin"`
+	Tool               *string              `json:"tool,omitempty"`
+	ResponsibleActorID *string              `json:"responsibleActorId,omitempty"`
+	SourceReferences   []string             `json:"sourceReferences,omitempty"`
+	RightsLicenseNotes *string              `json:"rightsLicenseNotes,omitempty"`
+	CreatedAt          *Time                `json:"createdAt,omitempty"`
+	UpdatedAt          *Time                `json:"updatedAt,omitempty"`
+}
+
+type EditorialMediaUsage struct {
+	MediaID string             `json:"mediaId"`
+	Role    EditorialMediaRole `json:"role"`
+	// Zero-based insertion point for INLINE media; null for other roles.
+	InlinePosition *int    `json:"inlinePosition,omitempty"`
+	Caption        *string `json:"caption,omitempty"`
+	// Reader-facing attribution, distinct from internal provenance.
+	CreditLine *string `json:"creditLine,omitempty"`
+	// Per-usage override; effectiveAltText falls back to the media-global description.
+	AltText          *string             `json:"altText,omitempty"`
+	EffectiveAltText *string             `json:"effectiveAltText,omitempty"`
+	Focus            *string             `json:"focus,omitempty"`
+	State            EditorialMediaState `json:"state"`
+	Width            *int                `json:"width,omitempty"`
+	Height           *int                `json:"height,omitempty"`
+	MimeType         *string             `json:"mimeType,omitempty"`
+	ContentHash      *string             `json:"contentHash,omitempty"`
+	// Durable published serving minted at the publish transition; absent pre-publish.
+	PublishedURL *string `json:"publishedUrl,omitempty"`
+	PublishedAt  *Time   `json:"publishedAt,omitempty"`
+	// Short-lived exact-asset URL, only issued to an owner or active reviewer.
+	AccessURL       *string                   `json:"accessUrl,omitempty"`
+	AccessExpiresAt *Time                     `json:"accessExpiresAt,omitempty"`
+	Provenance      *EditorialMediaProvenance `json:"provenance,omitempty"`
+}
+
+type EditorialMediaUsageInput struct {
+	MediaID        string             `json:"mediaId"`
+	Role           EditorialMediaRole `json:"role"`
+	InlinePosition *int               `json:"inlinePosition,omitempty"`
+	Caption        *string            `json:"caption,omitempty"`
+	CreditLine     *string            `json:"creditLine,omitempty"`
+	AltText        *string            `json:"altText,omitempty"`
+	Focus          *string            `json:"focus,omitempty"`
 }
 
 type Entity struct {
@@ -1984,6 +2072,13 @@ type MetricsUpdate struct {
 	InstanceDomain       *string             `json:"instanceDomain,omitempty"`
 }
 
+type MintUploadGrantInput struct {
+	ContentType  string `json:"contentType"`
+	MaxSizeBytes int    `json:"maxSizeBytes"`
+	// Hex-encoded sha256 of the exact bytes the caller will PUT.
+	Sha256 string `json:"sha256"`
+}
+
 type ModerationActionCounts struct {
 	None      int `json:"none"`
 	Flag      int `json:"flag"`
@@ -2389,6 +2484,113 @@ type ProfileFieldInput struct {
 	Name       string `json:"name"`
 	Value      string `json:"value"`
 	VerifiedAt *Time  `json:"verifiedAt,omitempty"`
+}
+
+type PromoPackage struct {
+	ID      string `json:"id"`
+	OwnerID string `json:"ownerId"`
+	// The published article this package promotes (canonical object URL).
+	ArticleID   string                 `json:"articleId"`
+	PostText    string                 `json:"postText"`
+	Visibility  PromoPackageVisibility `json:"visibility"`
+	ContentHash string                 `json:"contentHash"`
+	Status      PromoPackageStatus     `json:"status"`
+	// Outbound Status created by the release transition; nil until released.
+	ReleasedStatusID *string `json:"releasedStatusId,omitempty"`
+	// Ordered PUBLISHED assets attached to the outbound post (attachment order).
+	Assets    []*PromoPackageAsset `json:"assets"`
+	CreatedAt Time                 `json:"createdAt"`
+	UpdatedAt Time                 `json:"updatedAt"`
+	// Caller-authorized review state (owner or active reviewer grant).
+	Review *PromoPackageReview `json:"review,omitempty"`
+}
+
+type PromoPackageAsset struct {
+	MediaID string `json:"mediaId"`
+	// The canonical sha256 digest bound into the reviewed package at review time.
+	ContentHash *string `json:"contentHash,omitempty"`
+	// The M2 durable published serving snapshotted at compose time.
+	PublishedURL *string                   `json:"publishedUrl,omitempty"`
+	State        PromoPackageAssetState    `json:"state"`
+	Width        *int                      `json:"width,omitempty"`
+	Height       *int                      `json:"height,omitempty"`
+	MimeType     *string                   `json:"mimeType,omitempty"`
+	Provenance   *EditorialMediaProvenance `json:"provenance,omitempty"`
+}
+
+type PromoPackageConnection struct {
+	Edges      []*PromoPackageEdge `json:"edges"`
+	PageInfo   *PageInfo           `json:"pageInfo"`
+	TotalCount int                 `json:"totalCount"`
+}
+
+type PromoPackageEdge struct {
+	Node   *PromoPackage `json:"node"`
+	Cursor Cursor        `json:"cursor"`
+}
+
+type PromoPackageReleaseEligibility struct {
+	Eligible                  bool     `json:"eligible"`
+	BlockingReasons           []string `json:"blockingReasons"`
+	ReviewersApproved         bool     `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool     `json:"principalApprovalRequired"`
+	PrincipalApproved         bool     `json:"principalApproved"`
+}
+
+type PromoPackageReleaseResult struct {
+	Package  *PromoPackage `json:"package"`
+	StatusID string        `json:"statusId"`
+	URL      *string       `json:"url,omitempty"`
+}
+
+type PromoPackageReview struct {
+	PackageID string `json:"packageId"`
+	// Canonical digest over the exact reviewed content (post text, visibility, article reference, ordered asset digests).
+	ContentHash string `json:"contentHash"`
+	// Exact package-bound media visible to this owner or active reviewer.
+	Assets                    []*PromoPackageAsset            `json:"assets"`
+	ActiveReviewerIds         []string                        `json:"activeReviewerIds"`
+	ReleaseEligible           bool                            `json:"releaseEligible"`
+	ReleaseBlockingReasons    []string                        `json:"releaseBlockingReasons"`
+	ReviewersApproved         bool                            `json:"reviewersApproved"`
+	PrincipalApprovalRequired bool                            `json:"principalApprovalRequired"`
+	PrincipalApproved         bool                            `json:"principalApproved"`
+	GrantCount                int                             `json:"grantCount"`
+	GrantsTruncated           bool                            `json:"grantsTruncated"`
+	Grants                    []*PromoPackageReviewGrant      `json:"grants"`
+	Verdicts                  []*PromoPackageVerdictRecord    `json:"verdicts"`
+	ReleaseEligibility        *PromoPackageReleaseEligibility `json:"releaseEligibility"`
+}
+
+type PromoPackageReviewConnection struct {
+	Edges      []*PromoPackageReviewEdge `json:"edges"`
+	PageInfo   *PageInfo                 `json:"pageInfo"`
+	TotalCount int                       `json:"totalCount"`
+}
+
+type PromoPackageReviewEdge struct {
+	Node   *PromoPackageReview `json:"node"`
+	Cursor Cursor              `json:"cursor"`
+}
+
+type PromoPackageReviewGrant struct {
+	ReviewerID string `json:"reviewerId"`
+	GrantedAt  Time   `json:"grantedAt"`
+	// Bounded expiry; expired grants authorize no package reads or approval.
+	ExpiresAt *Time                   `json:"expiresAt,omitempty"`
+	Status    PromoPackageGrantStatus `json:"status"`
+	RevokedAt *Time                   `json:"revokedAt,omitempty"`
+}
+
+type PromoPackageVerdictRecord struct {
+	Verdict     PromoPackageReviewVerdict `json:"verdict"`
+	Notes       *string                   `json:"notes,omitempty"`
+	ContentHash *string                   `json:"contentHash,omitempty"`
+	ReviewerID  string                    `json:"reviewerId"`
+	RecordedAt  Time                      `json:"recordedAt"`
+	// True only when this verdict is valid for the current package content and active grant.
+	Current bool `json:"current"`
+	Stale   bool `json:"stale"`
 }
 
 type PublishHostedSoulInput struct {
@@ -3437,6 +3639,45 @@ type UpdateUserPreferencesInput struct {
 	Streaming                 *StreamingPreferencesInput `json:"streaming,omitempty"`
 }
 
+// A one-time, hash-bound, actor-scoped upload grant minted by the owner.
+type UploadGrant struct {
+	ID      string `json:"id"`
+	OwnerID string `json:"ownerId"`
+	// Declared media type, bound into the presigned PUT.
+	ContentType string `json:"contentType"`
+	// Declared size cap; finalize fails closed beyond it.
+	MaxSizeBytes int `json:"maxSizeBytes"`
+	// Hex-encoded sha256 of the exact bytes the caller will PUT.
+	DeclaredSha256 string            `json:"declaredSha256"`
+	Status         UploadGrantStatus `json:"status"`
+	// Presigned PUT URL. Populated at mint and refreshed while the grant is minted.
+	PresignedURL *string `json:"presignedUrl,omitempty"`
+	// Media ID minted with the grant; set once the finalize admits the asset.
+	MediaID   *string `json:"mediaId,omitempty"`
+	GrantedAt Time    `json:"grantedAt"`
+	// Bounded expiry; expired grants authorize no PUT or finalize.
+	ExpiresAt Time  `json:"expiresAt"`
+	UsedAt    *Time `json:"usedAt,omitempty"`
+	// Set on a digest-failure finalize so the owner can inspect why an upload was not admitted.
+	FailureReason *string `json:"failureReason,omitempty"`
+}
+
+type UploadGrantFinalizeResult struct {
+	Grant *UploadGrant      `json:"grant"`
+	Media *UploadGrantMedia `json:"media"`
+}
+
+// The internal editorial media record admitted by a successful finalize.
+type UploadGrantMedia struct {
+	MediaID     string `json:"mediaId"`
+	ContentType string `json:"contentType"`
+	Size        int    `json:"size"`
+	// Canonical sha256:<hex> content integrity of the exact admitted bytes.
+	ContentHash string `json:"contentHash"`
+	Status      string `json:"status"`
+	Visibility  string `json:"visibility"`
+}
+
 type UploadMediaInput struct {
 	File        graphql.Upload `json:"file"`
 	Filename    *string        `json:"filename,omitempty"`
@@ -3445,6 +3686,8 @@ type UploadMediaInput struct {
 	Sensitive   *bool          `json:"sensitive,omitempty"`
 	SpoilerText *string        `json:"spoilerText,omitempty"`
 	MediaType   *MediaCategory `json:"mediaType,omitempty"`
+	// When supplied, bytes begin internal and provenance is integrity-bound to their SHA-256 digest.
+	EditorialProvenance *EditorialMediaProvenanceInput `json:"editorialProvenance,omitempty"`
 }
 
 type UploadMediaPayload struct {
@@ -4405,16 +4648,18 @@ type DraftReviewGrantStatus string
 const (
 	DraftReviewGrantStatusActive  DraftReviewGrantStatus = "ACTIVE"
 	DraftReviewGrantStatusRevoked DraftReviewGrantStatus = "REVOKED"
+	DraftReviewGrantStatusExpired DraftReviewGrantStatus = "EXPIRED"
 )
 
 var AllDraftReviewGrantStatus = []DraftReviewGrantStatus{
 	DraftReviewGrantStatusActive,
 	DraftReviewGrantStatusRevoked,
+	DraftReviewGrantStatusExpired,
 }
 
 func (e DraftReviewGrantStatus) IsValid() bool {
 	switch e {
-	case DraftReviewGrantStatusActive, DraftReviewGrantStatusRevoked:
+	case DraftReviewGrantStatusActive, DraftReviewGrantStatusRevoked, DraftReviewGrantStatusExpired:
 		return true
 	}
 	return false
@@ -4505,6 +4750,252 @@ func (e *DraftReviewVerdict) UnmarshalJSON(b []byte) error {
 }
 
 func (e DraftReviewVerdict) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+// Explicit editorial lifecycle of an internal asset, distinct from the processing-pipeline status.
+type EditorialMediaLifecycle string
+
+const (
+	EditorialMediaLifecycleAvailable   EditorialMediaLifecycle = "AVAILABLE"
+	EditorialMediaLifecycleWithdrawn   EditorialMediaLifecycle = "WITHDRAWN"
+	EditorialMediaLifecycleSuperseded  EditorialMediaLifecycle = "SUPERSEDED"
+	EditorialMediaLifecycleUnavailable EditorialMediaLifecycle = "UNAVAILABLE"
+)
+
+var AllEditorialMediaLifecycle = []EditorialMediaLifecycle{
+	EditorialMediaLifecycleAvailable,
+	EditorialMediaLifecycleWithdrawn,
+	EditorialMediaLifecycleSuperseded,
+	EditorialMediaLifecycleUnavailable,
+}
+
+func (e EditorialMediaLifecycle) IsValid() bool {
+	switch e {
+	case EditorialMediaLifecycleAvailable, EditorialMediaLifecycleWithdrawn, EditorialMediaLifecycleSuperseded, EditorialMediaLifecycleUnavailable:
+		return true
+	}
+	return false
+}
+
+func (e EditorialMediaLifecycle) String() string {
+	return string(e)
+}
+
+func (e *EditorialMediaLifecycle) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = EditorialMediaLifecycle(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid EditorialMediaLifecycle", str)
+	}
+	return nil
+}
+
+func (e EditorialMediaLifecycle) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *EditorialMediaLifecycle) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e EditorialMediaLifecycle) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type EditorialMediaOrigin string
+
+const (
+	EditorialMediaOriginAiGenerated  EditorialMediaOrigin = "AI_GENERATED"
+	EditorialMediaOriginAiEdited     EditorialMediaOrigin = "AI_EDITED"
+	EditorialMediaOriginPhotographed EditorialMediaOrigin = "PHOTOGRAPHED"
+	EditorialMediaOriginIllustrated  EditorialMediaOrigin = "ILLUSTRATED"
+	EditorialMediaOriginSupplied     EditorialMediaOrigin = "SUPPLIED"
+)
+
+var AllEditorialMediaOrigin = []EditorialMediaOrigin{
+	EditorialMediaOriginAiGenerated,
+	EditorialMediaOriginAiEdited,
+	EditorialMediaOriginPhotographed,
+	EditorialMediaOriginIllustrated,
+	EditorialMediaOriginSupplied,
+}
+
+func (e EditorialMediaOrigin) IsValid() bool {
+	switch e {
+	case EditorialMediaOriginAiGenerated, EditorialMediaOriginAiEdited, EditorialMediaOriginPhotographed, EditorialMediaOriginIllustrated, EditorialMediaOriginSupplied:
+		return true
+	}
+	return false
+}
+
+func (e EditorialMediaOrigin) String() string {
+	return string(e)
+}
+
+func (e *EditorialMediaOrigin) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = EditorialMediaOrigin(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid EditorialMediaOrigin", str)
+	}
+	return nil
+}
+
+func (e EditorialMediaOrigin) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *EditorialMediaOrigin) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e EditorialMediaOrigin) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type EditorialMediaRole string
+
+const (
+	EditorialMediaRoleHero       EditorialMediaRole = "HERO"
+	EditorialMediaRoleInline     EditorialMediaRole = "INLINE"
+	EditorialMediaRoleSocialCard EditorialMediaRole = "SOCIAL_CARD"
+)
+
+var AllEditorialMediaRole = []EditorialMediaRole{
+	EditorialMediaRoleHero,
+	EditorialMediaRoleInline,
+	EditorialMediaRoleSocialCard,
+}
+
+func (e EditorialMediaRole) IsValid() bool {
+	switch e {
+	case EditorialMediaRoleHero, EditorialMediaRoleInline, EditorialMediaRoleSocialCard:
+		return true
+	}
+	return false
+}
+
+func (e EditorialMediaRole) String() string {
+	return string(e)
+}
+
+func (e *EditorialMediaRole) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = EditorialMediaRole(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid EditorialMediaRole", str)
+	}
+	return nil
+}
+
+func (e EditorialMediaRole) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *EditorialMediaRole) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e EditorialMediaRole) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type EditorialMediaState string
+
+const (
+	EditorialMediaStateMissing    EditorialMediaState = "MISSING"
+	EditorialMediaStateProcessing EditorialMediaState = "PROCESSING"
+	EditorialMediaStateReady      EditorialMediaState = "READY"
+	EditorialMediaStateRejected   EditorialMediaState = "REJECTED"
+	// Editorial lifecycle withdrew the asset; publication stays blocked until re-review.
+	EditorialMediaStateWithdrawn EditorialMediaState = "WITHDRAWN"
+	// A named successor asset replaced this binding; publication stays blocked until re-review.
+	EditorialMediaStateSuperseded EditorialMediaState = "SUPERSEDED"
+	// The asset's bytes are not servable; publication stays blocked until re-review.
+	EditorialMediaStateUnavailable EditorialMediaState = "UNAVAILABLE"
+)
+
+var AllEditorialMediaState = []EditorialMediaState{
+	EditorialMediaStateMissing,
+	EditorialMediaStateProcessing,
+	EditorialMediaStateReady,
+	EditorialMediaStateRejected,
+	EditorialMediaStateWithdrawn,
+	EditorialMediaStateSuperseded,
+	EditorialMediaStateUnavailable,
+}
+
+func (e EditorialMediaState) IsValid() bool {
+	switch e {
+	case EditorialMediaStateMissing, EditorialMediaStateProcessing, EditorialMediaStateReady, EditorialMediaStateRejected, EditorialMediaStateWithdrawn, EditorialMediaStateSuperseded, EditorialMediaStateUnavailable:
+		return true
+	}
+	return false
+}
+
+func (e EditorialMediaState) String() string {
+	return string(e)
+}
+
+func (e *EditorialMediaState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = EditorialMediaState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid EditorialMediaState", str)
+	}
+	return nil
+}
+
+func (e EditorialMediaState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *EditorialMediaState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e EditorialMediaState) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -5997,6 +6488,296 @@ func (e Priority) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type PromoPackageAssetState string
+
+const (
+	PromoPackageAssetStatePublished   PromoPackageAssetState = "PUBLISHED"
+	PromoPackageAssetStateMissing     PromoPackageAssetState = "MISSING"
+	PromoPackageAssetStateWithdrawn   PromoPackageAssetState = "WITHDRAWN"
+	PromoPackageAssetStateSuperseded  PromoPackageAssetState = "SUPERSEDED"
+	PromoPackageAssetStateUnavailable PromoPackageAssetState = "UNAVAILABLE"
+	PromoPackageAssetStateRejected    PromoPackageAssetState = "REJECTED"
+)
+
+var AllPromoPackageAssetState = []PromoPackageAssetState{
+	PromoPackageAssetStatePublished,
+	PromoPackageAssetStateMissing,
+	PromoPackageAssetStateWithdrawn,
+	PromoPackageAssetStateSuperseded,
+	PromoPackageAssetStateUnavailable,
+	PromoPackageAssetStateRejected,
+}
+
+func (e PromoPackageAssetState) IsValid() bool {
+	switch e {
+	case PromoPackageAssetStatePublished, PromoPackageAssetStateMissing, PromoPackageAssetStateWithdrawn, PromoPackageAssetStateSuperseded, PromoPackageAssetStateUnavailable, PromoPackageAssetStateRejected:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageAssetState) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageAssetState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageAssetState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageAssetState", str)
+	}
+	return nil
+}
+
+func (e PromoPackageAssetState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageAssetState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageAssetState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageGrantStatus string
+
+const (
+	PromoPackageGrantStatusActive  PromoPackageGrantStatus = "ACTIVE"
+	PromoPackageGrantStatusRevoked PromoPackageGrantStatus = "REVOKED"
+	PromoPackageGrantStatusExpired PromoPackageGrantStatus = "EXPIRED"
+)
+
+var AllPromoPackageGrantStatus = []PromoPackageGrantStatus{
+	PromoPackageGrantStatusActive,
+	PromoPackageGrantStatusRevoked,
+	PromoPackageGrantStatusExpired,
+}
+
+func (e PromoPackageGrantStatus) IsValid() bool {
+	switch e {
+	case PromoPackageGrantStatusActive, PromoPackageGrantStatusRevoked, PromoPackageGrantStatusExpired:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageGrantStatus) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageGrantStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageGrantStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageGrantStatus", str)
+	}
+	return nil
+}
+
+func (e PromoPackageGrantStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageGrantStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageGrantStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageReviewVerdict string
+
+const (
+	PromoPackageReviewVerdictApproved         PromoPackageReviewVerdict = "APPROVED"
+	PromoPackageReviewVerdictChangesRequested PromoPackageReviewVerdict = "CHANGES_REQUESTED"
+)
+
+var AllPromoPackageReviewVerdict = []PromoPackageReviewVerdict{
+	PromoPackageReviewVerdictApproved,
+	PromoPackageReviewVerdictChangesRequested,
+}
+
+func (e PromoPackageReviewVerdict) IsValid() bool {
+	switch e {
+	case PromoPackageReviewVerdictApproved, PromoPackageReviewVerdictChangesRequested:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageReviewVerdict) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageReviewVerdict) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageReviewVerdict(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageReviewVerdict", str)
+	}
+	return nil
+}
+
+func (e PromoPackageReviewVerdict) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageReviewVerdict) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageReviewVerdict) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageStatus string
+
+const (
+	PromoPackageStatusDraft PromoPackageStatus = "DRAFT"
+	// Transient release reservation: the package is mid-release (or a release
+	//   crashed between reservation and stamp); release and composition are refused
+	//   until an operator reconciles the reservation.
+	PromoPackageStatusReleasing PromoPackageStatus = "RELEASING"
+	PromoPackageStatusReleased  PromoPackageStatus = "RELEASED"
+)
+
+var AllPromoPackageStatus = []PromoPackageStatus{
+	PromoPackageStatusDraft,
+	PromoPackageStatusReleasing,
+	PromoPackageStatusReleased,
+}
+
+func (e PromoPackageStatus) IsValid() bool {
+	switch e {
+	case PromoPackageStatusDraft, PromoPackageStatusReleasing, PromoPackageStatusReleased:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageStatus) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageStatus", str)
+	}
+	return nil
+}
+
+func (e PromoPackageStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PromoPackageVisibility string
+
+const (
+	PromoPackageVisibilityPublic   PromoPackageVisibility = "PUBLIC"
+	PromoPackageVisibilityUnlisted PromoPackageVisibility = "UNLISTED"
+)
+
+var AllPromoPackageVisibility = []PromoPackageVisibility{
+	PromoPackageVisibilityPublic,
+	PromoPackageVisibilityUnlisted,
+}
+
+func (e PromoPackageVisibility) IsValid() bool {
+	switch e {
+	case PromoPackageVisibilityPublic, PromoPackageVisibilityUnlisted:
+		return true
+	}
+	return false
+}
+
+func (e PromoPackageVisibility) String() string {
+	return string(e)
+}
+
+func (e *PromoPackageVisibility) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PromoPackageVisibility(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PromoPackageVisibility", str)
+	}
+	return nil
+}
+
+func (e PromoPackageVisibility) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PromoPackageVisibility) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PromoPackageVisibility) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type QuotePermission string
 
 const (
@@ -7422,6 +8203,65 @@ func (e *TrendingItemType) UnmarshalJSON(b []byte) error {
 }
 
 func (e TrendingItemType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type UploadGrantStatus string
+
+const (
+	UploadGrantStatusMinted       UploadGrantStatus = "MINTED"
+	UploadGrantStatusUsed         UploadGrantStatus = "USED"
+	UploadGrantStatusExpired      UploadGrantStatus = "EXPIRED"
+	UploadGrantStatusFailedDigest UploadGrantStatus = "FAILED_DIGEST"
+)
+
+var AllUploadGrantStatus = []UploadGrantStatus{
+	UploadGrantStatusMinted,
+	UploadGrantStatusUsed,
+	UploadGrantStatusExpired,
+	UploadGrantStatusFailedDigest,
+}
+
+func (e UploadGrantStatus) IsValid() bool {
+	switch e {
+	case UploadGrantStatusMinted, UploadGrantStatusUsed, UploadGrantStatusExpired, UploadGrantStatusFailedDigest:
+		return true
+	}
+	return false
+}
+
+func (e UploadGrantStatus) String() string {
+	return string(e)
+}
+
+func (e *UploadGrantStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = UploadGrantStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid UploadGrantStatus", str)
+	}
+	return nil
+}
+
+func (e UploadGrantStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *UploadGrantStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e UploadGrantStatus) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

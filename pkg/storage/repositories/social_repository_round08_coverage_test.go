@@ -61,6 +61,7 @@ func TestSocialRepository_Round08_SweepHappyPaths(t *testing.T) {
 	mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
 	mockQuery.On("Count").Return(int64(1), nil).Maybe()
@@ -999,16 +1000,16 @@ func TestSocialRepository_Round08_FinalBoost(t *testing.T) {
 		mockQuery.AssertExpectations(t)
 	})
 
-	t.Run("Account note create/update map create errors", func(t *testing.T) {
+	t.Run("Account note create/update map upsert errors", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQueryCreate1 := new(mocks.MockQuery)
 		mockQueryCreate2 := new(mocks.MockQuery)
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Twice()
 		mockDB.On("Model", mock.Anything).Return(mockQueryCreate1).Once()
-		mockQueryCreate1.On("Create").Return(assert.AnError).Once()
+		mockQueryCreate1.On("CreateOrUpdate").Return(assert.AnError).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQueryCreate2).Once()
-		mockQueryCreate2.On("Create").Return(assert.AnError).Once()
+		mockQueryCreate2.On("CreateOrUpdate").Return(assert.AnError).Once()
 
 		repo := NewSocialRepository(mockDB, "table", zap.NewNop(), nil)
 		disableSocialEnhancedServices(repo)

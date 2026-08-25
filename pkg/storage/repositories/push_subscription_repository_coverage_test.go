@@ -133,7 +133,7 @@ func TestRound07_PushSubscriptionRepository_DeleteAllPushSubscriptions_Continues
 func TestRound07_PushSubscriptionRepository_VAPIDSecretHelpers_Errors(t *testing.T) {
 	repoNil := NewPushSubscriptionRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil, nil, "", "mailto:default@example.com")
 	keys, err := repoNil.getVAPIDKeysFromSecret(context.Background())
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "requires a Secrets Manager client and VAPID secret ARN")
 	require.Nil(t, keys)
 
 	secretARN := "arn:aws:secretsmanager:us-east-1:000000000000:secret:test"
@@ -236,6 +236,7 @@ func TestRound07_PushSubscriptionRepository_VAPIDSecretAndFallbackBranches(t *te
 
 	secretARN := "arn:aws:secretsmanager:us-east-1:000000000000:secret:test"
 	defaultSubject := "mailto:default@example.com"
+	putErr := stdErrors.New("put-failed")
 
 	repo := NewPushSubscriptionRepository(
 		mockDB,
@@ -257,7 +258,7 @@ func TestRound07_PushSubscriptionRepository_VAPIDSecretAndFallbackBranches(t *te
 				return &secretsmanager.GetSecretValueOutput{SecretString: aws.String(str)}, nil
 			},
 			put: func(_ context.Context, _ *secretsmanager.PutSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error) {
-				return nil, stdErrors.New("put-failed")
+				return nil, putErr
 			},
 		},
 		secretARN,
@@ -277,7 +278,9 @@ func TestRound07_PushSubscriptionRepository_VAPIDSecretAndFallbackBranches(t *te
 	require.True(t, parseVAPIDTimestamp("").IsZero())
 	require.True(t, parseVAPIDTimestamp("not-a-time").IsZero())
 
-	require.NoError(t, repo.SetVAPIDKeys(context.Background(), &storage.VAPIDKeys{PublicKey: "p", PrivateKey: "s"}))
+	err = repo.SetVAPIDKeys(context.Background(), &storage.VAPIDKeys{PublicKey: "p", PrivateKey: "s"})
+	require.Error(t, err)
+	require.ErrorIs(t, err, putErr)
 }
 
 func TestRound07_PushSubscriptionRepository_VAPIDFallbackAndTypeAssertionError(t *testing.T) {
@@ -308,7 +311,72 @@ func TestRound07_PushSubscriptionRepository_SetVAPIDKeys_NilAndUpdateFallback(t 
 	mockQuery.On("Update", mock.Anything).Return(ddbErrors.ErrItemNotFound).Once()
 	mockQuery.On("Create").Return(nil).Once()
 
-	repo := NewPushSubscriptionRepository(mockDB, "test-table", zap.NewNop(), nil, nil, "", "mailto:default@example.com")
+	repo := NewPushSubscriptionRepository(
+		mockDB,
+		"test-table",
+		zap.NewNop(),
+		nil,
+		fakeSecretsClient{
+			put: func(_ context.Context, _ *secretsmanager.PutSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error) {
+				return &secretsmanager.PutSecretValueOutput{}, nil
+			},
+		},
+		"arn:aws:secretsmanager:us-east-1:000000000000:secret:test",
+		"mailto:default@example.com",
+	)
 	require.Error(t, repo.SetVAPIDKeys(context.Background(), nil))
 	require.NoError(t, repo.SetVAPIDKeys(context.Background(), &storage.VAPIDKeys{PublicKey: "p", PrivateKey: "s"}))
+}
+
+func TestPushSubscriptionRepository_SetVAPIDKeysRequiresDurableSecretConfiguration(t *testing.T) {
+	t.Parallel()
+
+	secretARN := "arn:aws:secretsmanager:us-east-1:000000000000:secret:test"
+	client := fakeSecretsClient{
+		put: func(_ context.Context, _ *secretsmanager.PutSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.PutSecretValueOutput, error) {
+			return nil, stdErrors.New("unexpected PutSecretValue call with incomplete secret configuration")
+		},
+	}
+
+	tests := []struct {
+		name       string
+		client     SecretsManagerClient
+		secretARN  string
+		wantDetail string
+	}{
+		{
+			name:       "missing client and ARN",
+			wantDetail: "requires a Secrets Manager client and VAPID secret ARN",
+		},
+		{
+			name:       "missing client",
+			secretARN:  secretARN,
+			wantDetail: "requires a Secrets Manager client",
+		},
+		{
+			name:       "missing ARN",
+			client:     client,
+			wantDetail: "requires a VAPID secret ARN",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := NewPushSubscriptionRepository(
+				new(mocks.MockDB),
+				"test-table",
+				zap.NewNop(),
+				nil,
+				tt.client,
+				tt.secretARN,
+				"mailto:default@example.com",
+			)
+
+			keys := &storage.VAPIDKeys{PublicKey: "public", PrivateKey: "private"}
+			err := repo.SetVAPIDKeys(context.Background(), keys)
+			require.ErrorContains(t, err, tt.wantDetail)
+		})
+	}
 }

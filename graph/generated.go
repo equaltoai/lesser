@@ -1175,6 +1175,7 @@ type ComplexityRoot struct {
 		ContentHash     func(childComplexity int) int
 		ContentType     func(childComplexity int) int
 		CreatedAt       func(childComplexity int) int
+		EditorialMedia  func(childComplexity int) int
 		GeneratedBy     func(childComplexity int) int
 		ID              func(childComplexity int) int
 		LastSavedAt     func(childComplexity int) int
@@ -1201,13 +1202,14 @@ type ComplexityRoot struct {
 	}
 
 	DraftPreview struct {
-		DraftID       func(childComplexity int) int
-		Errors        func(childComplexity int) int
-		RenderedBytes func(childComplexity int) int
-		RenderedHTML  func(childComplexity int) int
-		SourceBytes   func(childComplexity int) int
-		SourceFormat  func(childComplexity int) int
-		Success       func(childComplexity int) int
+		DraftID        func(childComplexity int) int
+		EditorialMedia func(childComplexity int) int
+		Errors         func(childComplexity int) int
+		RenderedBytes  func(childComplexity int) int
+		RenderedHTML   func(childComplexity int) int
+		SourceBytes    func(childComplexity int) int
+		SourceFormat   func(childComplexity int) int
+		Success        func(childComplexity int) int
 	}
 
 	DraftPublishEligibility struct {
@@ -1226,6 +1228,7 @@ type ComplexityRoot struct {
 		CreatedAt                 func(childComplexity int) int
 		DraftID                   func(childComplexity int) int
 		EditorNotes               func(childComplexity int) int
+		EditorialMedia            func(childComplexity int) int
 		Excerpt                   func(childComplexity int) int
 		GeneratedBy               func(childComplexity int) int
 		Grant                     func(childComplexity int) int
@@ -1265,6 +1268,7 @@ type ComplexityRoot struct {
 	}
 
 	DraftReviewGrant struct {
+		ExpiresAt  func(childComplexity int) int
 		GrantedAt  func(childComplexity int) int
 		Reviewer   func(childComplexity int) int
 		ReviewerID func(childComplexity int) int
@@ -1294,6 +1298,53 @@ type ComplexityRoot struct {
 	DroneWorkflowMutationPayload struct {
 		Agent    func(childComplexity int) int
 		Workflow func(childComplexity int) int
+	}
+
+	EditorialMediaAccess struct {
+		ContentHash func(childComplexity int) int
+		ExpiresAt   func(childComplexity int) int
+		MediaID     func(childComplexity int) int
+		URL         func(childComplexity int) int
+	}
+
+	EditorialMediaLifecyclePayload struct {
+		Lifecycle           func(childComplexity int) int
+		MediaID             func(childComplexity int) int
+		SupersededByMediaID func(childComplexity int) int
+	}
+
+	EditorialMediaProvenance struct {
+		ContentIntegrity   func(childComplexity int) int
+		CreatedAt          func(childComplexity int) int
+		Origin             func(childComplexity int) int
+		RecordedAt         func(childComplexity int) int
+		ResponsibleActor   func(childComplexity int) int
+		ResponsibleActorID func(childComplexity int) int
+		RightsLicenseNotes func(childComplexity int) int
+		SourceReferences   func(childComplexity int) int
+		Tool               func(childComplexity int) int
+		UpdatedAt          func(childComplexity int) int
+	}
+
+	EditorialMediaUsage struct {
+		AccessExpiresAt  func(childComplexity int) int
+		AccessURL        func(childComplexity int) int
+		AltText          func(childComplexity int) int
+		Caption          func(childComplexity int) int
+		ContentHash      func(childComplexity int) int
+		CreditLine       func(childComplexity int) int
+		EffectiveAltText func(childComplexity int) int
+		Focus            func(childComplexity int) int
+		Height           func(childComplexity int) int
+		InlinePosition   func(childComplexity int) int
+		MediaID          func(childComplexity int) int
+		MimeType         func(childComplexity int) int
+		Provenance       func(childComplexity int) int
+		PublishedAt      func(childComplexity int) int
+		PublishedURL     func(childComplexity int) int
+		Role             func(childComplexity int) int
+		State            func(childComplexity int) int
+		Width            func(childComplexity int) int
 	}
 
 	Entity struct {
@@ -2141,6 +2192,7 @@ type ComplexityRoot struct {
 		ClearNotifications                        func(childComplexity int) int
 		CompleteHostedSoulGenesis                 func(childComplexity int, input model.CompleteHostedSoulGenesisInput) int
 		CompleteSoulBootstrapConversation         func(childComplexity int, input model.CompleteSoulBootstrapConversationInput) int
+		ComposePromoPackage                       func(childComplexity int, input model.ComposePromoPackageInput) int
 		CreateAgentAccessLease                    func(childComplexity int, username string, input model.CreateAgentAccessLeaseInput) int
 		CreateAgentAccessLeaseAgentChallenge      func(childComplexity int, username string, input model.AgentAccessLeaseChallengeInput) int
 		CreateAgentAccessLeasePrincipalChallenge  func(childComplexity int, username string, input model.AgentAccessLeaseChallengeInput) int
@@ -2186,6 +2238,7 @@ type ComplexityRoot struct {
 		ExportReputation                          func(childComplexity int) int
 		FinalizeSoulBootstrap                     func(childComplexity int, input model.FinalizeSoulBootstrapInput) int
 		FinalizeSoulPromotion                     func(childComplexity int, input model.FinalizeSoulPromotionInput) int
+		FinalizeUploadGrant                       func(childComplexity int, grantID string) int
 		FlagObject                                func(childComplexity int, input model.FlagInput) int
 		FollowActor                               func(childComplexity int, id string) int
 		FollowHashtag                             func(childComplexity int, hashtag string, notifyLevel *model.NotificationLevel) int
@@ -2195,6 +2248,7 @@ type ComplexityRoot struct {
 		LikeObject                                func(childComplexity int, id string) int
 		MarkConversationAsRead                    func(childComplexity int, id string) int
 		MarkNotificationGroupAsRead               func(childComplexity int, groupID string) int
+		MintUploadGrant                           func(childComplexity int, input model.MintUploadGrantInput) int
 		MuteActor                                 func(childComplexity int, id string, notifications *bool) int
 		MuteHashtag                               func(childComplexity int, hashtag string, until *model.Time) int
 		MuteStatus                                func(childComplexity int, id string, durationSeconds *int) int
@@ -2211,6 +2265,7 @@ type ComplexityRoot struct {
 		RegisterAgent                             func(childComplexity int, input model.RegisterAgentInput) int
 		RegisterPushSubscription                  func(childComplexity int, input model.RegisterPushSubscriptionInput) int
 		RejectFollowRequest                       func(childComplexity int, accountID string) int
+		ReleasePromoPackage                       func(childComplexity int, packageID string) int
 		RemoveAccountsFromList                    func(childComplexity int, id string, accountIds []string) int
 		RemoveAnnouncementReaction                func(childComplexity int, id string, name string) int
 		RemoveArticleFromCategory                 func(childComplexity int, categoryID string, articleID string) int
@@ -2230,6 +2285,7 @@ type ComplexityRoot struct {
 		RevokeAgentRuntimeSession                 func(childComplexity int, username string, sessionID string, reason *string) int
 		RevokeAgentToken                          func(childComplexity int, username string) int
 		RevokeDraftReview                         func(childComplexity int, draftID string, reviewer string) int
+		RevokePromoPackageReview                  func(childComplexity int, packageID string, reviewer string) int
 		RevokeVouch                               func(childComplexity int, id string) int
 		SaveMarkers                               func(childComplexity int, input []*model.SaveMarkerInput) int
 		ScheduleDraft                             func(childComplexity int, id string, scheduledAt model.Time) int
@@ -2238,13 +2294,16 @@ type ComplexityRoot struct {
 		SendHostedSoulGenesisMessage              func(childComplexity int, input model.SendHostedSoulGenesisMessageInput) int
 		SendMessage                               func(childComplexity int, conversationID string, content string, mediaIds []string, sensitive *bool, spoilerText *string, language *string, inReplyToID *string, agentAttribution *model.AgentPostAttributionInput) int
 		SendSoulBootstrapConversationMessage      func(childComplexity int, input model.SendSoulBootstrapConversationMessageInput) int
+		SetDraftEditorialMedia                    func(childComplexity int, draftID string, media []*model.EditorialMediaUsageInput) int
 		SetFederationLimit                        func(childComplexity int, domain string, limit model.FederationLimitInput) int
 		SetInstanceBudget                         func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
-		ShareDraftForReview                       func(childComplexity int, draftID string, reviewer string) int
+		ShareDraftForReview                       func(childComplexity int, draftID string, reviewer string, includeAccessUrls *bool) int
 		ShareObject                               func(childComplexity int, id string) int
+		SharePromoPackageForReview                func(childComplexity int, packageID string, reviewer string) int
 		StartHostedSoulBootstrap                  func(childComplexity int, input model.StartHostedSoulBootstrapInput) int
-		SubmitDraftReview                         func(childComplexity int, draftID string, verdict model.DraftReviewVerdict, notes *string) int
+		SubmitDraftReview                         func(childComplexity int, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool, contentHash *string) int
 		SubmitModerationReview                    func(childComplexity int, input model.ModerationReviewInput) int
+		SubmitPromoPackageReview                  func(childComplexity int, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash string) int
 		SyncMissingReplies                        func(childComplexity int, noteID string) int
 		SyncThread                                func(childComplexity int, noteURL string, depth *int) int
 		TestFilters                               func(childComplexity int, input model.FilterTestInput) int
@@ -2266,6 +2325,7 @@ type ComplexityRoot struct {
 		UpdateArticle                             func(childComplexity int, id string, input model.UpdateArticleInput) int
 		UpdateCategory                            func(childComplexity int, id string, input model.UpdateCategoryInput) int
 		UpdateDraft                               func(childComplexity int, id string, input model.UpdateDraftInput) int
+		UpdateEditorialMediaLifecycle             func(childComplexity int, mediaID string, lifecycle model.EditorialMediaLifecycle, supersededByMediaID *string) int
 		UpdateEmoji                               func(childComplexity int, shortcode string, input model.UpdateEmojiInput) int
 		UpdateFilter                              func(childComplexity int, id string, input model.UpdateFilterInput) int
 		UpdateHashtagNotifications                func(childComplexity int, hashtag string, settings model.HashtagNotificationSettingsInput) int
@@ -2497,6 +2557,103 @@ type ComplexityRoot struct {
 		TotalCount func(childComplexity int) int
 	}
 
+	PromoPackage struct {
+		ArticleID        func(childComplexity int) int
+		Assets           func(childComplexity int) int
+		ContentHash      func(childComplexity int) int
+		CreatedAt        func(childComplexity int) int
+		ID               func(childComplexity int) int
+		OwnerID          func(childComplexity int) int
+		PostText         func(childComplexity int) int
+		ReleasedStatusID func(childComplexity int) int
+		Review           func(childComplexity int) int
+		Status           func(childComplexity int) int
+		UpdatedAt        func(childComplexity int) int
+		Visibility       func(childComplexity int) int
+	}
+
+	PromoPackageAsset struct {
+		ContentHash  func(childComplexity int) int
+		Height       func(childComplexity int) int
+		MediaID      func(childComplexity int) int
+		MimeType     func(childComplexity int) int
+		Provenance   func(childComplexity int) int
+		PublishedURL func(childComplexity int) int
+		State        func(childComplexity int) int
+		Width        func(childComplexity int) int
+	}
+
+	PromoPackageConnection struct {
+		Edges      func(childComplexity int) int
+		PageInfo   func(childComplexity int) int
+		TotalCount func(childComplexity int) int
+	}
+
+	PromoPackageEdge struct {
+		Cursor func(childComplexity int) int
+		Node   func(childComplexity int) int
+	}
+
+	PromoPackageReleaseEligibility struct {
+		BlockingReasons           func(childComplexity int) int
+		Eligible                  func(childComplexity int) int
+		PrincipalApprovalRequired func(childComplexity int) int
+		PrincipalApproved         func(childComplexity int) int
+		ReviewersApproved         func(childComplexity int) int
+	}
+
+	PromoPackageReleaseResult struct {
+		Package  func(childComplexity int) int
+		StatusID func(childComplexity int) int
+		URL      func(childComplexity int) int
+	}
+
+	PromoPackageReview struct {
+		ActiveReviewerIds         func(childComplexity int) int
+		Assets                    func(childComplexity int) int
+		ContentHash               func(childComplexity int) int
+		GrantCount                func(childComplexity int) int
+		Grants                    func(childComplexity int) int
+		GrantsTruncated           func(childComplexity int) int
+		PackageID                 func(childComplexity int) int
+		PrincipalApprovalRequired func(childComplexity int) int
+		PrincipalApproved         func(childComplexity int) int
+		ReleaseBlockingReasons    func(childComplexity int) int
+		ReleaseEligibility        func(childComplexity int) int
+		ReleaseEligible           func(childComplexity int) int
+		ReviewersApproved         func(childComplexity int) int
+		Verdicts                  func(childComplexity int) int
+	}
+
+	PromoPackageReviewConnection struct {
+		Edges      func(childComplexity int) int
+		PageInfo   func(childComplexity int) int
+		TotalCount func(childComplexity int) int
+	}
+
+	PromoPackageReviewEdge struct {
+		Cursor func(childComplexity int) int
+		Node   func(childComplexity int) int
+	}
+
+	PromoPackageReviewGrant struct {
+		ExpiresAt  func(childComplexity int) int
+		GrantedAt  func(childComplexity int) int
+		ReviewerID func(childComplexity int) int
+		RevokedAt  func(childComplexity int) int
+		Status     func(childComplexity int) int
+	}
+
+	PromoPackageVerdictRecord struct {
+		ContentHash func(childComplexity int) int
+		Current     func(childComplexity int) int
+		Notes       func(childComplexity int) int
+		RecordedAt  func(childComplexity int) int
+		ReviewerID  func(childComplexity int) int
+		Stale       func(childComplexity int) int
+		Verdict     func(childComplexity int) int
+	}
+
 	Publication struct {
 		Actor        func(childComplexity int) int
 		BannerURL    func(childComplexity int) int
@@ -2614,8 +2771,9 @@ type ComplexityRoot struct {
 		CustomEmojis                   func(childComplexity int) int
 		DomainBlocks                   func(childComplexity int, first *int, after *model.Cursor) int
 		Draft                          func(childComplexity int, id string) int
-		DraftPreview                   func(childComplexity int, id string) int
-		DraftReview                    func(childComplexity int, id string) int
+		DraftEditorialMediaAccess      func(childComplexity int, draftID string, mediaID string) int
+		DraftPreview                   func(childComplexity int, id string, includeAccessUrls *bool) int
+		DraftReview                    func(childComplexity int, id string, includeAccessUrls *bool) int
 		DroneWorkflow                  func(childComplexity int, username string) int
 		Endorsements                   func(childComplexity int) int
 		ExplainObject                  func(childComplexity int, id string) int
@@ -2681,6 +2839,8 @@ type ComplexityRoot struct {
 		PerformanceMetrics             func(childComplexity int, service model.ServiceCategory) int
 		PopularStreams                 func(childComplexity int, first int, after *string) int
 		ProfileDirectory               func(childComplexity int, filters *model.DirectoryFiltersInput, first *int, after *model.Cursor) int
+		PromoPackage                   func(childComplexity int, id string) int
+		PromoPackages                  func(childComplexity int, first *int, after *model.Cursor) int
 		Publication                    func(childComplexity int, id string) int
 		PublicationBySlug              func(childComplexity int, slug string) int
 		PushSubscription               func(childComplexity int) int
@@ -2698,6 +2858,7 @@ type ComplexityRoot struct {
 		SeriesBySlug                   func(childComplexity int, slug string) int
 		SeveredRelationships           func(childComplexity int, instance *string, first *int, after *string) int
 		SharedDraftReviews             func(childComplexity int, first *int, after *model.Cursor) int
+		SharedPromoPackageReviews      func(childComplexity int, first *int, after *model.Cursor) int
 		SlowQueries                    func(childComplexity int, threshold model.Duration) int
 		SoulBootstrap                  func(childComplexity int, username string) int
 		StatusFavouritedBy             func(childComplexity int, id string, first *int, after *model.Cursor) int
@@ -2716,6 +2877,7 @@ type ComplexityRoot struct {
 		TrendingTags                   func(childComplexity int, limit *int) int
 		Trends                         func(childComplexity int, limit *int) int
 		TrustGraph                     func(childComplexity int, actorID string, category *models.TrustCategory) int
+		UploadGrant                    func(childComplexity int, grantID string) int
 		UserPreferences                func(childComplexity int) int
 		Viewer                         func(childComplexity int) int
 		ViewerRole                     func(childComplexity int) int
@@ -3542,6 +3704,35 @@ type ComplexityRoot struct {
 		Success        func(childComplexity int) int
 	}
 
+	UploadGrant struct {
+		ContentType    func(childComplexity int) int
+		DeclaredSha256 func(childComplexity int) int
+		ExpiresAt      func(childComplexity int) int
+		FailureReason  func(childComplexity int) int
+		GrantedAt      func(childComplexity int) int
+		ID             func(childComplexity int) int
+		MaxSizeBytes   func(childComplexity int) int
+		MediaID        func(childComplexity int) int
+		OwnerID        func(childComplexity int) int
+		PresignedURL   func(childComplexity int) int
+		Status         func(childComplexity int) int
+		UsedAt         func(childComplexity int) int
+	}
+
+	UploadGrantFinalizeResult struct {
+		Grant func(childComplexity int) int
+		Media func(childComplexity int) int
+	}
+
+	UploadGrantMedia struct {
+		ContentHash func(childComplexity int) int
+		ContentType func(childComplexity int) int
+		MediaID     func(childComplexity int) int
+		Size        func(childComplexity int) int
+		Status      func(childComplexity int) int
+		Visibility  func(childComplexity int) int
+	}
+
 	UploadMediaPayload struct {
 		Media    func(childComplexity int) int
 		UploadID func(childComplexity int) int
@@ -3718,6 +3909,7 @@ type MutationResolver interface {
 	UploadMedia(ctx context.Context, input model.UploadMediaInput) (*model.UploadMediaPayload, error)
 	UpdateMedia(ctx context.Context, id string, input model.UpdateMediaInput) (*model.Media, error)
 	DeleteMedia(ctx context.Context, id string) (bool, error)
+	UpdateEditorialMediaLifecycle(ctx context.Context, mediaID string, lifecycle model.EditorialMediaLifecycle, supersededByMediaID *string) (*model.EditorialMediaLifecyclePayload, error)
 	DismissNotification(ctx context.Context, id string) (bool, error)
 	ClearNotifications(ctx context.Context) (bool, error)
 	MarkNotificationGroupAsRead(ctx context.Context, groupID string) (bool, error)
@@ -3768,14 +3960,17 @@ type MutationResolver interface {
 	AttemptReconnection(ctx context.Context, id string) (*model.ReconnectionPayload, error)
 	CreateDraft(ctx context.Context, input model.CreateDraftInput) (*model.Draft, error)
 	UpdateDraft(ctx context.Context, id string, input model.UpdateDraftInput) (*model.Draft, error)
+	SetDraftEditorialMedia(ctx context.Context, draftID string, media []*model.EditorialMediaUsageInput) (*model.Draft, error)
 	AutosaveDraft(ctx context.Context, id string, content string) (*model.Draft, error)
 	DeleteDraft(ctx context.Context, id string) (bool, error)
+	MintUploadGrant(ctx context.Context, input model.MintUploadGrantInput) (*model.UploadGrant, error)
+	FinalizeUploadGrant(ctx context.Context, grantID string) (*model.UploadGrantFinalizeResult, error)
 	PublishDraft(ctx context.Context, id string) (*model.Article, error)
 	ScheduleDraft(ctx context.Context, id string, scheduledAt model.Time) (*model.Draft, error)
 	CancelScheduledDraft(ctx context.Context, id string) (*model.Draft, error)
-	ShareDraftForReview(ctx context.Context, draftID string, reviewer string) (*model.DraftReview, error)
+	ShareDraftForReview(ctx context.Context, draftID string, reviewer string, includeAccessUrls *bool) (*model.DraftReview, error)
 	RevokeDraftReview(ctx context.Context, draftID string, reviewer string) (bool, error)
-	SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string) (*model.DraftReview, error)
+	SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool, contentHash *string) (*model.DraftReview, error)
 	CreateArticle(ctx context.Context, input model.CreateArticleInput) (*model.Article, error)
 	UpdateArticle(ctx context.Context, id string, input model.UpdateArticleInput) (*model.Article, error)
 	DeleteArticle(ctx context.Context, id string) (bool, error)
@@ -3796,6 +3991,11 @@ type MutationResolver interface {
 	InvitePublicationMember(ctx context.Context, publicationID string, userID string, role model.PublicationRole) (*model.PublicationMember, error)
 	RemovePublicationMember(ctx context.Context, publicationID string, userID string) (bool, error)
 	UpdatePublicationMemberRole(ctx context.Context, publicationID string, userID string, role model.PublicationRole) (*model.PublicationMember, error)
+	ComposePromoPackage(ctx context.Context, input model.ComposePromoPackageInput) (*model.PromoPackage, error)
+	SharePromoPackageForReview(ctx context.Context, packageID string, reviewer string) (*model.PromoPackageReview, error)
+	RevokePromoPackageReview(ctx context.Context, packageID string, reviewer string) (bool, error)
+	SubmitPromoPackageReview(ctx context.Context, packageID string, verdict model.PromoPackageReviewVerdict, notes *string, contentHash string) (*model.PromoPackageReview, error)
+	ReleasePromoPackage(ctx context.Context, packageID string) (*model.PromoPackageReleaseResult, error)
 	RequestStreamingURL(ctx context.Context, mediaID string, quality *model.StreamQuality) (*model.MediaStream, error)
 	PreloadMedia(ctx context.Context, mediaIds []string) ([]*model.MediaStream, error)
 	CreateModerationPattern(ctx context.Context, input model.ModerationPatternInput) (*moderation.ModerationPattern, error)
@@ -3955,11 +4155,13 @@ type QueryResolver interface {
 	SeveredRelationships(ctx context.Context, instance *string, first *int, after *string) (*model.SeveredRelationshipConnection, error)
 	AffectedRelationships(ctx context.Context, severedRelationshipID string) (*model.AffectedRelationshipConnection, error)
 	Draft(ctx context.Context, id string) (*model.Draft, error)
-	DraftPreview(ctx context.Context, id string) (*model.DraftPreview, error)
+	DraftPreview(ctx context.Context, id string, includeAccessUrls *bool) (*model.DraftPreview, error)
 	MyDrafts(ctx context.Context, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) (*model.DraftConnection, error)
 	MyDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
 	SharedDraftReviews(ctx context.Context, first *int, after *model.Cursor) (*model.DraftReviewConnection, error)
-	DraftReview(ctx context.Context, id string) (*model.DraftReview, error)
+	DraftReview(ctx context.Context, id string, includeAccessUrls *bool) (*model.DraftReview, error)
+	DraftEditorialMediaAccess(ctx context.Context, draftID string, mediaID string) (*model.EditorialMediaAccess, error)
+	UploadGrant(ctx context.Context, grantID string) (*model.UploadGrant, error)
 	Revisions(ctx context.Context, objectID string, first *int, after *model.Cursor) (*model.RevisionConnection, error)
 	Revision(ctx context.Context, objectID string, version int) (*model.Revision, error)
 	Article(ctx context.Context, id string) (*model.Article, error)
@@ -3975,6 +4177,9 @@ type QueryResolver interface {
 	Publication(ctx context.Context, id string) (*model.Publication, error)
 	PublicationBySlug(ctx context.Context, slug string) (*model.Publication, error)
 	MyPublications(ctx context.Context) ([]*model.Publication, error)
+	PromoPackage(ctx context.Context, id string) (*model.PromoPackage, error)
+	PromoPackages(ctx context.Context, first *int, after *model.Cursor) (*model.PromoPackageConnection, error)
+	SharedPromoPackageReviews(ctx context.Context, first *int, after *model.Cursor) (*model.PromoPackageReviewConnection, error)
 	FederationCosts(ctx context.Context, first *int, after *string, orderBy *model.CostOrderBy) (*model.FederationCostConnection, error)
 	InstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error)
 	CostProjections(ctx context.Context, period model.Period) (*model.CostProjection, error)
@@ -9285,6 +9490,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Draft.CreatedAt(childComplexity), true
 
+	case "Draft.editorialMedia":
+		if e.complexity.Draft.EditorialMedia == nil {
+			break
+		}
+
+		return e.complexity.Draft.EditorialMedia(childComplexity), true
+
 	case "Draft.generatedBy":
 		if e.complexity.Draft.GeneratedBy == nil {
 			break
@@ -9411,6 +9623,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.DraftPreview.DraftID(childComplexity), true
 
+	case "DraftPreview.editorialMedia":
+		if e.complexity.DraftPreview.EditorialMedia == nil {
+			break
+		}
+
+		return e.complexity.DraftPreview.EditorialMedia(childComplexity), true
+
 	case "DraftPreview.errors":
 		if e.complexity.DraftPreview.Errors == nil {
 			break
@@ -9536,6 +9755,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DraftReview.EditorNotes(childComplexity), true
+
+	case "DraftReview.editorialMedia":
+		if e.complexity.DraftReview.EditorialMedia == nil {
+			break
+		}
+
+		return e.complexity.DraftReview.EditorialMedia(childComplexity), true
 
 	case "DraftReview.excerpt":
 		if e.complexity.DraftReview.Excerpt == nil {
@@ -9747,6 +9973,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.DraftReviewEdge.Node(childComplexity), true
 
+	case "DraftReviewGrant.expiresAt":
+		if e.complexity.DraftReviewGrant.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.DraftReviewGrant.ExpiresAt(childComplexity), true
+
 	case "DraftReviewGrant.grantedAt":
 		if e.complexity.DraftReviewGrant.GrantedAt == nil {
 			break
@@ -9886,6 +10119,251 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DroneWorkflowMutationPayload.Workflow(childComplexity), true
+
+	case "EditorialMediaAccess.contentHash":
+		if e.complexity.EditorialMediaAccess.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaAccess.ContentHash(childComplexity), true
+
+	case "EditorialMediaAccess.expiresAt":
+		if e.complexity.EditorialMediaAccess.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaAccess.ExpiresAt(childComplexity), true
+
+	case "EditorialMediaAccess.mediaId":
+		if e.complexity.EditorialMediaAccess.MediaID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaAccess.MediaID(childComplexity), true
+
+	case "EditorialMediaAccess.url":
+		if e.complexity.EditorialMediaAccess.URL == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaAccess.URL(childComplexity), true
+
+	case "EditorialMediaLifecyclePayload.lifecycle":
+		if e.complexity.EditorialMediaLifecyclePayload.Lifecycle == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaLifecyclePayload.Lifecycle(childComplexity), true
+
+	case "EditorialMediaLifecyclePayload.mediaId":
+		if e.complexity.EditorialMediaLifecyclePayload.MediaID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaLifecyclePayload.MediaID(childComplexity), true
+
+	case "EditorialMediaLifecyclePayload.supersededByMediaId":
+		if e.complexity.EditorialMediaLifecyclePayload.SupersededByMediaID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaLifecyclePayload.SupersededByMediaID(childComplexity), true
+
+	case "EditorialMediaProvenance.contentIntegrity":
+		if e.complexity.EditorialMediaProvenance.ContentIntegrity == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.ContentIntegrity(childComplexity), true
+
+	case "EditorialMediaProvenance.createdAt":
+		if e.complexity.EditorialMediaProvenance.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.CreatedAt(childComplexity), true
+
+	case "EditorialMediaProvenance.origin":
+		if e.complexity.EditorialMediaProvenance.Origin == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.Origin(childComplexity), true
+
+	case "EditorialMediaProvenance.recordedAt":
+		if e.complexity.EditorialMediaProvenance.RecordedAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.RecordedAt(childComplexity), true
+
+	case "EditorialMediaProvenance.responsibleActor":
+		if e.complexity.EditorialMediaProvenance.ResponsibleActor == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.ResponsibleActor(childComplexity), true
+
+	case "EditorialMediaProvenance.responsibleActorId":
+		if e.complexity.EditorialMediaProvenance.ResponsibleActorID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.ResponsibleActorID(childComplexity), true
+
+	case "EditorialMediaProvenance.rightsLicenseNotes":
+		if e.complexity.EditorialMediaProvenance.RightsLicenseNotes == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.RightsLicenseNotes(childComplexity), true
+
+	case "EditorialMediaProvenance.sourceReferences":
+		if e.complexity.EditorialMediaProvenance.SourceReferences == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.SourceReferences(childComplexity), true
+
+	case "EditorialMediaProvenance.tool":
+		if e.complexity.EditorialMediaProvenance.Tool == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.Tool(childComplexity), true
+
+	case "EditorialMediaProvenance.updatedAt":
+		if e.complexity.EditorialMediaProvenance.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaProvenance.UpdatedAt(childComplexity), true
+
+	case "EditorialMediaUsage.accessExpiresAt":
+		if e.complexity.EditorialMediaUsage.AccessExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.AccessExpiresAt(childComplexity), true
+
+	case "EditorialMediaUsage.accessUrl":
+		if e.complexity.EditorialMediaUsage.AccessURL == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.AccessURL(childComplexity), true
+
+	case "EditorialMediaUsage.altText":
+		if e.complexity.EditorialMediaUsage.AltText == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.AltText(childComplexity), true
+
+	case "EditorialMediaUsage.caption":
+		if e.complexity.EditorialMediaUsage.Caption == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Caption(childComplexity), true
+
+	case "EditorialMediaUsage.contentHash":
+		if e.complexity.EditorialMediaUsage.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.ContentHash(childComplexity), true
+
+	case "EditorialMediaUsage.creditLine":
+		if e.complexity.EditorialMediaUsage.CreditLine == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.CreditLine(childComplexity), true
+
+	case "EditorialMediaUsage.effectiveAltText":
+		if e.complexity.EditorialMediaUsage.EffectiveAltText == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.EffectiveAltText(childComplexity), true
+
+	case "EditorialMediaUsage.focus":
+		if e.complexity.EditorialMediaUsage.Focus == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Focus(childComplexity), true
+
+	case "EditorialMediaUsage.height":
+		if e.complexity.EditorialMediaUsage.Height == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Height(childComplexity), true
+
+	case "EditorialMediaUsage.inlinePosition":
+		if e.complexity.EditorialMediaUsage.InlinePosition == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.InlinePosition(childComplexity), true
+
+	case "EditorialMediaUsage.mediaId":
+		if e.complexity.EditorialMediaUsage.MediaID == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.MediaID(childComplexity), true
+
+	case "EditorialMediaUsage.mimeType":
+		if e.complexity.EditorialMediaUsage.MimeType == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.MimeType(childComplexity), true
+
+	case "EditorialMediaUsage.provenance":
+		if e.complexity.EditorialMediaUsage.Provenance == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Provenance(childComplexity), true
+
+	case "EditorialMediaUsage.publishedAt":
+		if e.complexity.EditorialMediaUsage.PublishedAt == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.PublishedAt(childComplexity), true
+
+	case "EditorialMediaUsage.publishedUrl":
+		if e.complexity.EditorialMediaUsage.PublishedURL == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.PublishedURL(childComplexity), true
+
+	case "EditorialMediaUsage.role":
+		if e.complexity.EditorialMediaUsage.Role == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Role(childComplexity), true
+
+	case "EditorialMediaUsage.state":
+		if e.complexity.EditorialMediaUsage.State == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.State(childComplexity), true
+
+	case "EditorialMediaUsage.width":
+		if e.complexity.EditorialMediaUsage.Width == nil {
+			break
+		}
+
+		return e.complexity.EditorialMediaUsage.Width(childComplexity), true
 
 	case "Entity.score":
 		if e.complexity.Entity.Score == nil {
@@ -14146,6 +14624,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.CompleteSoulBootstrapConversation(childComplexity, args["input"].(model.CompleteSoulBootstrapConversationInput)), true
 
+	case "Mutation.composePromoPackage":
+		if e.complexity.Mutation.ComposePromoPackage == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_composePromoPackage_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.ComposePromoPackage(childComplexity, args["input"].(model.ComposePromoPackageInput)), true
+
 	case "Mutation.createAgentAccessLease":
 		if e.complexity.Mutation.CreateAgentAccessLease == nil {
 			break
@@ -14676,6 +15166,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.FinalizeSoulPromotion(childComplexity, args["input"].(model.FinalizeSoulPromotionInput)), true
 
+	case "Mutation.finalizeUploadGrant":
+		if e.complexity.Mutation.FinalizeUploadGrant == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_finalizeUploadGrant_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.FinalizeUploadGrant(childComplexity, args["grantId"].(string)), true
+
 	case "Mutation.flagObject":
 		if e.complexity.Mutation.FlagObject == nil {
 			break
@@ -14783,6 +15285,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.MarkNotificationGroupAsRead(childComplexity, args["groupId"].(string)), true
+
+	case "Mutation.mintUploadGrant":
+		if e.complexity.Mutation.MintUploadGrant == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_mintUploadGrant_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.MintUploadGrant(childComplexity, args["input"].(model.MintUploadGrantInput)), true
 
 	case "Mutation.muteActor":
 		if e.complexity.Mutation.MuteActor == nil {
@@ -14975,6 +15489,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.RejectFollowRequest(childComplexity, args["accountId"].(string)), true
+
+	case "Mutation.releasePromoPackage":
+		if e.complexity.Mutation.ReleasePromoPackage == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_releasePromoPackage_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.ReleasePromoPackage(childComplexity, args["packageId"].(string)), true
 
 	case "Mutation.removeAccountsFromList":
 		if e.complexity.Mutation.RemoveAccountsFromList == nil {
@@ -15204,6 +15730,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.RevokeDraftReview(childComplexity, args["draftId"].(string), args["reviewer"].(string)), true
 
+	case "Mutation.revokePromoPackageReview":
+		if e.complexity.Mutation.RevokePromoPackageReview == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_revokePromoPackageReview_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.RevokePromoPackageReview(childComplexity, args["packageId"].(string), args["reviewer"].(string)), true
+
 	case "Mutation.revokeVouch":
 		if e.complexity.Mutation.RevokeVouch == nil {
 			break
@@ -15300,6 +15838,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.SendSoulBootstrapConversationMessage(childComplexity, args["input"].(model.SendSoulBootstrapConversationMessageInput)), true
 
+	case "Mutation.setDraftEditorialMedia":
+		if e.complexity.Mutation.SetDraftEditorialMedia == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setDraftEditorialMedia_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.SetDraftEditorialMedia(childComplexity, args["draftId"].(string), args["media"].([]*model.EditorialMediaUsageInput)), true
+
 	case "Mutation.setFederationLimit":
 		if e.complexity.Mutation.SetFederationLimit == nil {
 			break
@@ -15334,7 +15884,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.ShareDraftForReview(childComplexity, args["draftId"].(string), args["reviewer"].(string)), true
+		return e.complexity.Mutation.ShareDraftForReview(childComplexity, args["draftId"].(string), args["reviewer"].(string), args["includeAccessUrls"].(*bool)), true
 
 	case "Mutation.shareObject":
 		if e.complexity.Mutation.ShareObject == nil {
@@ -15347,6 +15897,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.ShareObject(childComplexity, args["id"].(string)), true
+
+	case "Mutation.sharePromoPackageForReview":
+		if e.complexity.Mutation.SharePromoPackageForReview == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_sharePromoPackageForReview_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.SharePromoPackageForReview(childComplexity, args["packageId"].(string), args["reviewer"].(string)), true
 
 	case "Mutation.startHostedSoulBootstrap":
 		if e.complexity.Mutation.StartHostedSoulBootstrap == nil {
@@ -15370,7 +15932,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.SubmitDraftReview(childComplexity, args["draftId"].(string), args["verdict"].(model.DraftReviewVerdict), args["notes"].(*string)), true
+		return e.complexity.Mutation.SubmitDraftReview(childComplexity, args["draftId"].(string), args["verdict"].(model.DraftReviewVerdict), args["notes"].(*string), args["includeAccessUrls"].(*bool), args["contentHash"].(*string)), true
 
 	case "Mutation.submitModerationReview":
 		if e.complexity.Mutation.SubmitModerationReview == nil {
@@ -15383,6 +15945,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.SubmitModerationReview(childComplexity, args["input"].(model.ModerationReviewInput)), true
+
+	case "Mutation.submitPromoPackageReview":
+		if e.complexity.Mutation.SubmitPromoPackageReview == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_submitPromoPackageReview_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.SubmitPromoPackageReview(childComplexity, args["packageId"].(string), args["verdict"].(model.PromoPackageReviewVerdict), args["notes"].(*string), args["contentHash"].(string)), true
 
 	case "Mutation.syncMissingReplies":
 		if e.complexity.Mutation.SyncMissingReplies == nil {
@@ -15635,6 +16209,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UpdateDraft(childComplexity, args["id"].(string), args["input"].(model.UpdateDraftInput)), true
+
+	case "Mutation.updateEditorialMediaLifecycle":
+		if e.complexity.Mutation.UpdateEditorialMediaLifecycle == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateEditorialMediaLifecycle_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateEditorialMediaLifecycle(childComplexity, args["mediaId"].(string), args["lifecycle"].(model.EditorialMediaLifecycle), args["supersededByMediaId"].(*string)), true
 
 	case "Mutation.updateEmoji":
 		if e.complexity.Mutation.UpdateEmoji == nil {
@@ -16860,6 +17446,454 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.ProfileDirectory.TotalCount(childComplexity), true
 
+	case "PromoPackage.articleId":
+		if e.complexity.PromoPackage.ArticleID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.ArticleID(childComplexity), true
+
+	case "PromoPackage.assets":
+		if e.complexity.PromoPackage.Assets == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.Assets(childComplexity), true
+
+	case "PromoPackage.contentHash":
+		if e.complexity.PromoPackage.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.ContentHash(childComplexity), true
+
+	case "PromoPackage.createdAt":
+		if e.complexity.PromoPackage.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.CreatedAt(childComplexity), true
+
+	case "PromoPackage.id":
+		if e.complexity.PromoPackage.ID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.ID(childComplexity), true
+
+	case "PromoPackage.ownerId":
+		if e.complexity.PromoPackage.OwnerID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.OwnerID(childComplexity), true
+
+	case "PromoPackage.postText":
+		if e.complexity.PromoPackage.PostText == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.PostText(childComplexity), true
+
+	case "PromoPackage.releasedStatusId":
+		if e.complexity.PromoPackage.ReleasedStatusID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.ReleasedStatusID(childComplexity), true
+
+	case "PromoPackage.review":
+		if e.complexity.PromoPackage.Review == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.Review(childComplexity), true
+
+	case "PromoPackage.status":
+		if e.complexity.PromoPackage.Status == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.Status(childComplexity), true
+
+	case "PromoPackage.updatedAt":
+		if e.complexity.PromoPackage.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.UpdatedAt(childComplexity), true
+
+	case "PromoPackage.visibility":
+		if e.complexity.PromoPackage.Visibility == nil {
+			break
+		}
+
+		return e.complexity.PromoPackage.Visibility(childComplexity), true
+
+	case "PromoPackageAsset.contentHash":
+		if e.complexity.PromoPackageAsset.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageAsset.ContentHash(childComplexity), true
+
+	case "PromoPackageAsset.height":
+		if e.complexity.PromoPackageAsset.Height == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageAsset.Height(childComplexity), true
+
+	case "PromoPackageAsset.mediaId":
+		if e.complexity.PromoPackageAsset.MediaID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageAsset.MediaID(childComplexity), true
+
+	case "PromoPackageAsset.mimeType":
+		if e.complexity.PromoPackageAsset.MimeType == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageAsset.MimeType(childComplexity), true
+
+	case "PromoPackageAsset.provenance":
+		if e.complexity.PromoPackageAsset.Provenance == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageAsset.Provenance(childComplexity), true
+
+	case "PromoPackageAsset.publishedUrl":
+		if e.complexity.PromoPackageAsset.PublishedURL == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageAsset.PublishedURL(childComplexity), true
+
+	case "PromoPackageAsset.state":
+		if e.complexity.PromoPackageAsset.State == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageAsset.State(childComplexity), true
+
+	case "PromoPackageAsset.width":
+		if e.complexity.PromoPackageAsset.Width == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageAsset.Width(childComplexity), true
+
+	case "PromoPackageConnection.edges":
+		if e.complexity.PromoPackageConnection.Edges == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageConnection.Edges(childComplexity), true
+
+	case "PromoPackageConnection.pageInfo":
+		if e.complexity.PromoPackageConnection.PageInfo == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageConnection.PageInfo(childComplexity), true
+
+	case "PromoPackageConnection.totalCount":
+		if e.complexity.PromoPackageConnection.TotalCount == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageConnection.TotalCount(childComplexity), true
+
+	case "PromoPackageEdge.cursor":
+		if e.complexity.PromoPackageEdge.Cursor == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageEdge.Cursor(childComplexity), true
+
+	case "PromoPackageEdge.node":
+		if e.complexity.PromoPackageEdge.Node == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageEdge.Node(childComplexity), true
+
+	case "PromoPackageReleaseEligibility.blockingReasons":
+		if e.complexity.PromoPackageReleaseEligibility.BlockingReasons == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReleaseEligibility.BlockingReasons(childComplexity), true
+
+	case "PromoPackageReleaseEligibility.eligible":
+		if e.complexity.PromoPackageReleaseEligibility.Eligible == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReleaseEligibility.Eligible(childComplexity), true
+
+	case "PromoPackageReleaseEligibility.principalApprovalRequired":
+		if e.complexity.PromoPackageReleaseEligibility.PrincipalApprovalRequired == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReleaseEligibility.PrincipalApprovalRequired(childComplexity), true
+
+	case "PromoPackageReleaseEligibility.principalApproved":
+		if e.complexity.PromoPackageReleaseEligibility.PrincipalApproved == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReleaseEligibility.PrincipalApproved(childComplexity), true
+
+	case "PromoPackageReleaseEligibility.reviewersApproved":
+		if e.complexity.PromoPackageReleaseEligibility.ReviewersApproved == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReleaseEligibility.ReviewersApproved(childComplexity), true
+
+	case "PromoPackageReleaseResult.package":
+		if e.complexity.PromoPackageReleaseResult.Package == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReleaseResult.Package(childComplexity), true
+
+	case "PromoPackageReleaseResult.statusId":
+		if e.complexity.PromoPackageReleaseResult.StatusID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReleaseResult.StatusID(childComplexity), true
+
+	case "PromoPackageReleaseResult.url":
+		if e.complexity.PromoPackageReleaseResult.URL == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReleaseResult.URL(childComplexity), true
+
+	case "PromoPackageReview.activeReviewerIds":
+		if e.complexity.PromoPackageReview.ActiveReviewerIds == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.ActiveReviewerIds(childComplexity), true
+
+	case "PromoPackageReview.assets":
+		if e.complexity.PromoPackageReview.Assets == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.Assets(childComplexity), true
+
+	case "PromoPackageReview.contentHash":
+		if e.complexity.PromoPackageReview.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.ContentHash(childComplexity), true
+
+	case "PromoPackageReview.grantCount":
+		if e.complexity.PromoPackageReview.GrantCount == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.GrantCount(childComplexity), true
+
+	case "PromoPackageReview.grants":
+		if e.complexity.PromoPackageReview.Grants == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.Grants(childComplexity), true
+
+	case "PromoPackageReview.grantsTruncated":
+		if e.complexity.PromoPackageReview.GrantsTruncated == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.GrantsTruncated(childComplexity), true
+
+	case "PromoPackageReview.packageId":
+		if e.complexity.PromoPackageReview.PackageID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.PackageID(childComplexity), true
+
+	case "PromoPackageReview.principalApprovalRequired":
+		if e.complexity.PromoPackageReview.PrincipalApprovalRequired == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.PrincipalApprovalRequired(childComplexity), true
+
+	case "PromoPackageReview.principalApproved":
+		if e.complexity.PromoPackageReview.PrincipalApproved == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.PrincipalApproved(childComplexity), true
+
+	case "PromoPackageReview.releaseBlockingReasons":
+		if e.complexity.PromoPackageReview.ReleaseBlockingReasons == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.ReleaseBlockingReasons(childComplexity), true
+
+	case "PromoPackageReview.releaseEligibility":
+		if e.complexity.PromoPackageReview.ReleaseEligibility == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.ReleaseEligibility(childComplexity), true
+
+	case "PromoPackageReview.releaseEligible":
+		if e.complexity.PromoPackageReview.ReleaseEligible == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.ReleaseEligible(childComplexity), true
+
+	case "PromoPackageReview.reviewersApproved":
+		if e.complexity.PromoPackageReview.ReviewersApproved == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.ReviewersApproved(childComplexity), true
+
+	case "PromoPackageReview.verdicts":
+		if e.complexity.PromoPackageReview.Verdicts == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReview.Verdicts(childComplexity), true
+
+	case "PromoPackageReviewConnection.edges":
+		if e.complexity.PromoPackageReviewConnection.Edges == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewConnection.Edges(childComplexity), true
+
+	case "PromoPackageReviewConnection.pageInfo":
+		if e.complexity.PromoPackageReviewConnection.PageInfo == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewConnection.PageInfo(childComplexity), true
+
+	case "PromoPackageReviewConnection.totalCount":
+		if e.complexity.PromoPackageReviewConnection.TotalCount == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewConnection.TotalCount(childComplexity), true
+
+	case "PromoPackageReviewEdge.cursor":
+		if e.complexity.PromoPackageReviewEdge.Cursor == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewEdge.Cursor(childComplexity), true
+
+	case "PromoPackageReviewEdge.node":
+		if e.complexity.PromoPackageReviewEdge.Node == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewEdge.Node(childComplexity), true
+
+	case "PromoPackageReviewGrant.expiresAt":
+		if e.complexity.PromoPackageReviewGrant.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewGrant.ExpiresAt(childComplexity), true
+
+	case "PromoPackageReviewGrant.grantedAt":
+		if e.complexity.PromoPackageReviewGrant.GrantedAt == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewGrant.GrantedAt(childComplexity), true
+
+	case "PromoPackageReviewGrant.reviewerId":
+		if e.complexity.PromoPackageReviewGrant.ReviewerID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewGrant.ReviewerID(childComplexity), true
+
+	case "PromoPackageReviewGrant.revokedAt":
+		if e.complexity.PromoPackageReviewGrant.RevokedAt == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewGrant.RevokedAt(childComplexity), true
+
+	case "PromoPackageReviewGrant.status":
+		if e.complexity.PromoPackageReviewGrant.Status == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageReviewGrant.Status(childComplexity), true
+
+	case "PromoPackageVerdictRecord.contentHash":
+		if e.complexity.PromoPackageVerdictRecord.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageVerdictRecord.ContentHash(childComplexity), true
+
+	case "PromoPackageVerdictRecord.current":
+		if e.complexity.PromoPackageVerdictRecord.Current == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageVerdictRecord.Current(childComplexity), true
+
+	case "PromoPackageVerdictRecord.notes":
+		if e.complexity.PromoPackageVerdictRecord.Notes == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageVerdictRecord.Notes(childComplexity), true
+
+	case "PromoPackageVerdictRecord.recordedAt":
+		if e.complexity.PromoPackageVerdictRecord.RecordedAt == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageVerdictRecord.RecordedAt(childComplexity), true
+
+	case "PromoPackageVerdictRecord.reviewerId":
+		if e.complexity.PromoPackageVerdictRecord.ReviewerID == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageVerdictRecord.ReviewerID(childComplexity), true
+
+	case "PromoPackageVerdictRecord.stale":
+		if e.complexity.PromoPackageVerdictRecord.Stale == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageVerdictRecord.Stale(childComplexity), true
+
+	case "PromoPackageVerdictRecord.verdict":
+		if e.complexity.PromoPackageVerdictRecord.Verdict == nil {
+			break
+		}
+
+		return e.complexity.PromoPackageVerdictRecord.Verdict(childComplexity), true
+
 	case "Publication.actor":
 		if e.complexity.Publication.Actor == nil {
 			break
@@ -17750,6 +18784,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.Draft(childComplexity, args["id"].(string)), true
 
+	case "Query.draftEditorialMediaAccess":
+		if e.complexity.Query.DraftEditorialMediaAccess == nil {
+			break
+		}
+
+		args, err := ec.field_Query_draftEditorialMediaAccess_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.DraftEditorialMediaAccess(childComplexity, args["draftId"].(string), args["mediaId"].(string)), true
+
 	case "Query.draftPreview":
 		if e.complexity.Query.DraftPreview == nil {
 			break
@@ -17760,7 +18806,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.DraftPreview(childComplexity, args["id"].(string)), true
+		return e.complexity.Query.DraftPreview(childComplexity, args["id"].(string), args["includeAccessUrls"].(*bool)), true
 
 	case "Query.draftReview":
 		if e.complexity.Query.DraftReview == nil {
@@ -17772,7 +18818,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.DraftReview(childComplexity, args["id"].(string)), true
+		return e.complexity.Query.DraftReview(childComplexity, args["id"].(string), args["includeAccessUrls"].(*bool)), true
 
 	case "Query.droneWorkflow":
 		if e.complexity.Query.DroneWorkflow == nil {
@@ -18499,6 +19545,30 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.ProfileDirectory(childComplexity, args["filters"].(*model.DirectoryFiltersInput), args["first"].(*int), args["after"].(*model.Cursor)), true
 
+	case "Query.promoPackage":
+		if e.complexity.Query.PromoPackage == nil {
+			break
+		}
+
+		args, err := ec.field_Query_promoPackage_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.PromoPackage(childComplexity, args["id"].(string)), true
+
+	case "Query.promoPackages":
+		if e.complexity.Query.PromoPackages == nil {
+			break
+		}
+
+		args, err := ec.field_Query_promoPackages_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.PromoPackages(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
+
 	case "Query.publication":
 		if e.complexity.Query.Publication == nil {
 			break
@@ -18692,6 +19762,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.SharedDraftReviews(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
+
+	case "Query.sharedPromoPackageReviews":
+		if e.complexity.Query.SharedPromoPackageReviews == nil {
+			break
+		}
+
+		args, err := ec.field_Query_sharedPromoPackageReviews_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.SharedPromoPackageReviews(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
 
 	case "Query.slowQueries":
 		if e.complexity.Query.SlowQueries == nil {
@@ -18903,6 +19985,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.TrustGraph(childComplexity, args["actorId"].(string), args["category"].(*models.TrustCategory)), true
+
+	case "Query.uploadGrant":
+		if e.complexity.Query.UploadGrant == nil {
+			break
+		}
+
+		args, err := ec.field_Query_uploadGrant_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.UploadGrant(childComplexity, args["grantId"].(string)), true
 
 	case "Query.userPreferences":
 		if e.complexity.Query.UserPreferences == nil {
@@ -22903,6 +23997,146 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.UpdateQuotePermissionsPayload.Success(childComplexity), true
 
+	case "UploadGrant.contentType":
+		if e.complexity.UploadGrant.ContentType == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.ContentType(childComplexity), true
+
+	case "UploadGrant.declaredSha256":
+		if e.complexity.UploadGrant.DeclaredSha256 == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.DeclaredSha256(childComplexity), true
+
+	case "UploadGrant.expiresAt":
+		if e.complexity.UploadGrant.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.ExpiresAt(childComplexity), true
+
+	case "UploadGrant.failureReason":
+		if e.complexity.UploadGrant.FailureReason == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.FailureReason(childComplexity), true
+
+	case "UploadGrant.grantedAt":
+		if e.complexity.UploadGrant.GrantedAt == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.GrantedAt(childComplexity), true
+
+	case "UploadGrant.id":
+		if e.complexity.UploadGrant.ID == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.ID(childComplexity), true
+
+	case "UploadGrant.maxSizeBytes":
+		if e.complexity.UploadGrant.MaxSizeBytes == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.MaxSizeBytes(childComplexity), true
+
+	case "UploadGrant.mediaId":
+		if e.complexity.UploadGrant.MediaID == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.MediaID(childComplexity), true
+
+	case "UploadGrant.ownerId":
+		if e.complexity.UploadGrant.OwnerID == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.OwnerID(childComplexity), true
+
+	case "UploadGrant.presignedUrl":
+		if e.complexity.UploadGrant.PresignedURL == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.PresignedURL(childComplexity), true
+
+	case "UploadGrant.status":
+		if e.complexity.UploadGrant.Status == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.Status(childComplexity), true
+
+	case "UploadGrant.usedAt":
+		if e.complexity.UploadGrant.UsedAt == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.UsedAt(childComplexity), true
+
+	case "UploadGrantFinalizeResult.grant":
+		if e.complexity.UploadGrantFinalizeResult.Grant == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantFinalizeResult.Grant(childComplexity), true
+
+	case "UploadGrantFinalizeResult.media":
+		if e.complexity.UploadGrantFinalizeResult.Media == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantFinalizeResult.Media(childComplexity), true
+
+	case "UploadGrantMedia.contentHash":
+		if e.complexity.UploadGrantMedia.ContentHash == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.ContentHash(childComplexity), true
+
+	case "UploadGrantMedia.contentType":
+		if e.complexity.UploadGrantMedia.ContentType == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.ContentType(childComplexity), true
+
+	case "UploadGrantMedia.mediaId":
+		if e.complexity.UploadGrantMedia.MediaID == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.MediaID(childComplexity), true
+
+	case "UploadGrantMedia.size":
+		if e.complexity.UploadGrantMedia.Size == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.Size(childComplexity), true
+
+	case "UploadGrantMedia.status":
+		if e.complexity.UploadGrantMedia.Status == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.Status(childComplexity), true
+
+	case "UploadGrantMedia.visibility":
+		if e.complexity.UploadGrantMedia.Visibility == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantMedia.Visibility(childComplexity), true
+
 	case "UploadMediaPayload.media":
 		if e.complexity.UploadMediaPayload.Media == nil {
 			break
@@ -23126,6 +24360,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputCommunityNoteInput,
 		ec.unmarshalInputCompleteHostedSoulGenesisInput,
 		ec.unmarshalInputCompleteSoulBootstrapConversationInput,
+		ec.unmarshalInputComposePromoPackageInput,
 		ec.unmarshalInputContentMapInput,
 		ec.unmarshalInputCreateAgentAccessLeaseInput,
 		ec.unmarshalInputCreateArticleInput,
@@ -23146,6 +24381,8 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputDateRangeInput,
 		ec.unmarshalInputDelegateToAgentInput,
 		ec.unmarshalInputDirectoryFiltersInput,
+		ec.unmarshalInputEditorialMediaProvenanceInput,
+		ec.unmarshalInputEditorialMediaUsageInput,
 		ec.unmarshalInputExchangeAgentAccessLeaseTokenInput,
 		ec.unmarshalInputFederationLimitInput,
 		ec.unmarshalInputFilterTestInput,
@@ -23157,6 +24394,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputGroupingStrategyInput,
 		ec.unmarshalInputHashtagNotificationSettingsInput,
 		ec.unmarshalInputMediaFilterInput,
+		ec.unmarshalInputMintUploadGrantInput,
 		ec.unmarshalInputModerationFilter,
 		ec.unmarshalInputModerationPatternInput,
 		ec.unmarshalInputModerationReviewInput,
@@ -23911,6 +25149,17 @@ func (ec *executionContext) field_Mutation_completeSoulBootstrapConversation_arg
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_composePromoPackage_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNComposePromoPackageInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐComposePromoPackageInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_createAgentAccessLeaseAgentChallenge_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -24434,6 +25683,17 @@ func (ec *executionContext) field_Mutation_finalizeSoulPromotion_args(ctx contex
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_finalizeUploadGrant_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "grantId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["grantId"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_flagObject_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -24550,6 +25810,17 @@ func (ec *executionContext) field_Mutation_markNotificationGroupAsRead_args(ctx 
 		return nil, err
 	}
 	args["groupId"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_mintUploadGrant_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNMintUploadGrantInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMintUploadGrantInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
 	return args, nil
 }
 
@@ -24751,6 +26022,17 @@ func (ec *executionContext) field_Mutation_rejectFollowRequest_args(ctx context.
 		return nil, err
 	}
 	args["accountId"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_releasePromoPackage_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "packageId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["packageId"] = arg0
 	return args, nil
 }
 
@@ -25038,6 +26320,22 @@ func (ec *executionContext) field_Mutation_revokeDraftReview_args(ctx context.Co
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_revokePromoPackageReview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "packageId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["packageId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "reviewer", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["reviewer"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_revokeVouch_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -25201,6 +26499,22 @@ func (ec *executionContext) field_Mutation_sendSoulBootstrapConversationMessage_
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_setDraftEditorialMedia_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "draftId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["draftId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "media", ec.unmarshalNEditorialMediaUsageInput2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageInputᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["media"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_setFederationLimit_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -25251,6 +26565,11 @@ func (ec *executionContext) field_Mutation_shareDraftForReview_args(ctx context.
 		return nil, err
 	}
 	args["reviewer"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "includeAccessUrls", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["includeAccessUrls"] = arg2
 	return args, nil
 }
 
@@ -25262,6 +26581,22 @@ func (ec *executionContext) field_Mutation_shareObject_args(ctx context.Context,
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_sharePromoPackageForReview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "packageId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["packageId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "reviewer", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["reviewer"] = arg1
 	return args, nil
 }
 
@@ -25294,6 +26629,16 @@ func (ec *executionContext) field_Mutation_submitDraftReview_args(ctx context.Co
 		return nil, err
 	}
 	args["notes"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "includeAccessUrls", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["includeAccessUrls"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "contentHash", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["contentHash"] = arg4
 	return args, nil
 }
 
@@ -25305,6 +26650,32 @@ func (ec *executionContext) field_Mutation_submitModerationReview_args(ctx conte
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_submitPromoPackageReview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "packageId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["packageId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "verdict", ec.unmarshalNPromoPackageReviewVerdict2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewVerdict)
+	if err != nil {
+		return nil, err
+	}
+	args["verdict"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "notes", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["notes"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "contentHash", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["contentHash"] = arg3
 	return args, nil
 }
 
@@ -25566,6 +26937,27 @@ func (ec *executionContext) field_Mutation_updateDraft_args(ctx context.Context,
 		return nil, err
 	}
 	args["input"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_updateEditorialMediaLifecycle_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "mediaId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "lifecycle", ec.unmarshalNEditorialMediaLifecycle2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecycle)
+	if err != nil {
+		return nil, err
+	}
+	args["lifecycle"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "supersededByMediaId", ec.unmarshalOID2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["supersededByMediaId"] = arg2
 	return args, nil
 }
 
@@ -26634,6 +28026,22 @@ func (ec *executionContext) field_Query_domainBlocks_args(ctx context.Context, r
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_draftEditorialMediaAccess_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "draftId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["draftId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "mediaId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaId"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_draftPreview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -26642,6 +28050,11 @@ func (ec *executionContext) field_Query_draftPreview_args(ctx context.Context, r
 		return nil, err
 	}
 	args["id"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "includeAccessUrls", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["includeAccessUrls"] = arg1
 	return args, nil
 }
 
@@ -26653,6 +28066,11 @@ func (ec *executionContext) field_Query_draftReview_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["id"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "includeAccessUrls", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["includeAccessUrls"] = arg1
 	return args, nil
 }
 
@@ -27461,6 +28879,33 @@ func (ec *executionContext) field_Query_profileDirectory_args(ctx context.Contex
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_promoPackage_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_promoPackages_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_publicationBySlug_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -27661,6 +29106,22 @@ func (ec *executionContext) field_Query_severedRelationships_args(ctx context.Co
 }
 
 func (ec *executionContext) field_Query_sharedDraftReviews_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_sharedPromoPackageReviews_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
@@ -27930,6 +29391,17 @@ func (ec *executionContext) field_Query_trustGraph_args(ctx context.Context, raw
 		return nil, err
 	}
 	args["category"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_uploadGrant_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "grantId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["grantId"] = arg0
 	return args, nil
 }
 
@@ -63683,6 +65155,88 @@ func (ec *executionContext) fieldContext_Draft_reviewVerdict(_ context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _Draft_editorialMedia(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Draft_editorialMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EditorialMedia, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.EditorialMediaUsage)
+	fc.Result = res
+	return ec.marshalNEditorialMediaUsage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Draft_editorialMedia(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Draft",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaUsage_mediaId(ctx, field)
+			case "role":
+				return ec.fieldContext_EditorialMediaUsage_role(ctx, field)
+			case "inlinePosition":
+				return ec.fieldContext_EditorialMediaUsage_inlinePosition(ctx, field)
+			case "caption":
+				return ec.fieldContext_EditorialMediaUsage_caption(ctx, field)
+			case "creditLine":
+				return ec.fieldContext_EditorialMediaUsage_creditLine(ctx, field)
+			case "altText":
+				return ec.fieldContext_EditorialMediaUsage_altText(ctx, field)
+			case "effectiveAltText":
+				return ec.fieldContext_EditorialMediaUsage_effectiveAltText(ctx, field)
+			case "focus":
+				return ec.fieldContext_EditorialMediaUsage_focus(ctx, field)
+			case "state":
+				return ec.fieldContext_EditorialMediaUsage_state(ctx, field)
+			case "width":
+				return ec.fieldContext_EditorialMediaUsage_width(ctx, field)
+			case "height":
+				return ec.fieldContext_EditorialMediaUsage_height(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "publishedUrl":
+				return ec.fieldContext_EditorialMediaUsage_publishedUrl(ctx, field)
+			case "publishedAt":
+				return ec.fieldContext_EditorialMediaUsage_publishedAt(ctx, field)
+			case "accessUrl":
+				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
+			case "accessExpiresAt":
+				return ec.fieldContext_EditorialMediaUsage_accessExpiresAt(ctx, field)
+			case "provenance":
+				return ec.fieldContext_EditorialMediaUsage_provenance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaUsage", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Draft_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.Draft) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Draft_contentHash(ctx, field)
 	if err != nil {
@@ -64164,6 +65718,8 @@ func (ec *executionContext) fieldContext_DraftEdge_node(_ context.Context, field
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -64527,6 +66083,88 @@ func (ec *executionContext) fieldContext_DraftPreview_errors(_ context.Context, 
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftPreview_editorialMedia(ctx context.Context, field graphql.CollectedField, obj *model.DraftPreview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftPreview_editorialMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EditorialMedia, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.EditorialMediaUsage)
+	fc.Result = res
+	return ec.marshalNEditorialMediaUsage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftPreview_editorialMedia(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftPreview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaUsage_mediaId(ctx, field)
+			case "role":
+				return ec.fieldContext_EditorialMediaUsage_role(ctx, field)
+			case "inlinePosition":
+				return ec.fieldContext_EditorialMediaUsage_inlinePosition(ctx, field)
+			case "caption":
+				return ec.fieldContext_EditorialMediaUsage_caption(ctx, field)
+			case "creditLine":
+				return ec.fieldContext_EditorialMediaUsage_creditLine(ctx, field)
+			case "altText":
+				return ec.fieldContext_EditorialMediaUsage_altText(ctx, field)
+			case "effectiveAltText":
+				return ec.fieldContext_EditorialMediaUsage_effectiveAltText(ctx, field)
+			case "focus":
+				return ec.fieldContext_EditorialMediaUsage_focus(ctx, field)
+			case "state":
+				return ec.fieldContext_EditorialMediaUsage_state(ctx, field)
+			case "width":
+				return ec.fieldContext_EditorialMediaUsage_width(ctx, field)
+			case "height":
+				return ec.fieldContext_EditorialMediaUsage_height(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "publishedUrl":
+				return ec.fieldContext_EditorialMediaUsage_publishedUrl(ctx, field)
+			case "publishedAt":
+				return ec.fieldContext_EditorialMediaUsage_publishedAt(ctx, field)
+			case "accessUrl":
+				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
+			case "accessExpiresAt":
+				return ec.fieldContext_EditorialMediaUsage_accessExpiresAt(ctx, field)
+			case "provenance":
+				return ec.fieldContext_EditorialMediaUsage_provenance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaUsage", field.Name)
 		},
 	}
 	return fc, nil
@@ -65650,6 +67288,88 @@ func (ec *executionContext) fieldContext_DraftReview_contentHash(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _DraftReview_editorialMedia(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReview_editorialMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EditorialMedia, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.EditorialMediaUsage)
+	fc.Result = res
+	return ec.marshalNEditorialMediaUsage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReview_editorialMedia(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaUsage_mediaId(ctx, field)
+			case "role":
+				return ec.fieldContext_EditorialMediaUsage_role(ctx, field)
+			case "inlinePosition":
+				return ec.fieldContext_EditorialMediaUsage_inlinePosition(ctx, field)
+			case "caption":
+				return ec.fieldContext_EditorialMediaUsage_caption(ctx, field)
+			case "creditLine":
+				return ec.fieldContext_EditorialMediaUsage_creditLine(ctx, field)
+			case "altText":
+				return ec.fieldContext_EditorialMediaUsage_altText(ctx, field)
+			case "effectiveAltText":
+				return ec.fieldContext_EditorialMediaUsage_effectiveAltText(ctx, field)
+			case "focus":
+				return ec.fieldContext_EditorialMediaUsage_focus(ctx, field)
+			case "state":
+				return ec.fieldContext_EditorialMediaUsage_state(ctx, field)
+			case "width":
+				return ec.fieldContext_EditorialMediaUsage_width(ctx, field)
+			case "height":
+				return ec.fieldContext_EditorialMediaUsage_height(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+			case "publishedUrl":
+				return ec.fieldContext_EditorialMediaUsage_publishedUrl(ctx, field)
+			case "publishedAt":
+				return ec.fieldContext_EditorialMediaUsage_publishedAt(ctx, field)
+			case "accessUrl":
+				return ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
+			case "accessExpiresAt":
+				return ec.fieldContext_EditorialMediaUsage_accessExpiresAt(ctx, field)
+			case "provenance":
+				return ec.fieldContext_EditorialMediaUsage_provenance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaUsage", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _DraftReview_revision(ctx context.Context, field graphql.CollectedField, obj *model.DraftReview) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_DraftReview_revision(ctx, field)
 	if err != nil {
@@ -66091,6 +67811,8 @@ func (ec *executionContext) fieldContext_DraftReview_grants(_ context.Context, f
 				return ec.fieldContext_DraftReviewGrant_reviewer(ctx, field)
 			case "grantedAt":
 				return ec.fieldContext_DraftReviewGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_DraftReviewGrant_expiresAt(ctx, field)
 			case "status":
 				return ec.fieldContext_DraftReviewGrant_status(ctx, field)
 			case "revokedAt":
@@ -66144,6 +67866,8 @@ func (ec *executionContext) fieldContext_DraftReview_grant(_ context.Context, fi
 				return ec.fieldContext_DraftReviewGrant_reviewer(ctx, field)
 			case "grantedAt":
 				return ec.fieldContext_DraftReviewGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_DraftReviewGrant_expiresAt(ctx, field)
 			case "status":
 				return ec.fieldContext_DraftReviewGrant_status(ctx, field)
 			case "revokedAt":
@@ -66498,6 +68222,8 @@ func (ec *executionContext) fieldContext_DraftReviewEdge_node(_ context.Context,
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftReview_editorialMedia(ctx, field)
 			case "revision":
 				return ec.fieldContext_DraftReview_revision(ctx, field)
 			case "activeReviewerIds":
@@ -66741,6 +68467,47 @@ func (ec *executionContext) _DraftReviewGrant_grantedAt(ctx context.Context, fie
 }
 
 func (ec *executionContext) fieldContext_DraftReviewGrant_grantedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DraftReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DraftReviewGrant_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.DraftReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DraftReviewGrant_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DraftReviewGrant_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "DraftReviewGrant",
 		Field:      field,
@@ -67620,6 +69387,1551 @@ func (ec *executionContext) fieldContext_DroneWorkflowMutationPayload_workflow(_
 				return ec.fieldContext_AgentWorkflowSurface_identitySemantics(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type AgentWorkflowSurface", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaAccess_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaAccess_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaAccess_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaAccess_url(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaAccess_url(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.URL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaAccess_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaAccess_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaAccess_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaAccess_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaAccess_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaAccess) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaAccess_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaAccess_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaAccess",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaLifecyclePayload_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaLifecyclePayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaLifecyclePayload_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaLifecyclePayload_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaLifecyclePayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaLifecyclePayload_lifecycle(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaLifecyclePayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaLifecyclePayload_lifecycle(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Lifecycle, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.EditorialMediaLifecycle)
+	fc.Result = res
+	return ec.marshalNEditorialMediaLifecycle2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecycle(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaLifecyclePayload_lifecycle(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaLifecyclePayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EditorialMediaLifecycle does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaLifecyclePayload_supersededByMediaId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaLifecyclePayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaLifecyclePayload_supersededByMediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SupersededByMediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOID2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaLifecyclePayload_supersededByMediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaLifecyclePayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_origin(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_origin(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Origin, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.EditorialMediaOrigin)
+	fc.Result = res
+	return ec.marshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_origin(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EditorialMediaOrigin does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_tool(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_tool(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Tool, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_tool(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_responsibleActorId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_responsibleActorId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ResponsibleActorID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_responsibleActorId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_responsibleActor(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_responsibleActor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ResponsibleActor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.Actor)
+	fc.Result = res
+	return ec.marshalOActor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_responsibleActor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Actor_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Actor_username(ctx, field)
+			case "domain":
+				return ec.fieldContext_Actor_domain(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Actor_displayName(ctx, field)
+			case "summary":
+				return ec.fieldContext_Actor_summary(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Actor_avatar(ctx, field)
+			case "header":
+				return ec.fieldContext_Actor_header(ctx, field)
+			case "followers":
+				return ec.fieldContext_Actor_followers(ctx, field)
+			case "following":
+				return ec.fieldContext_Actor_following(ctx, field)
+			case "statusesCount":
+				return ec.fieldContext_Actor_statusesCount(ctx, field)
+			case "bot":
+				return ec.fieldContext_Actor_bot(ctx, field)
+			case "locked":
+				return ec.fieldContext_Actor_locked(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Actor_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Actor_updatedAt(ctx, field)
+			case "fields":
+				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
+			case "tipAddress":
+				return ec.fieldContext_Actor_tipAddress(ctx, field)
+			case "tipChainId":
+				return ec.fieldContext_Actor_tipChainId(ctx, field)
+			case "trustScore":
+				return ec.fieldContext_Actor_trustScore(ctx, field)
+			case "reputation":
+				return ec.fieldContext_Actor_reputation(ctx, field)
+			case "vouches":
+				return ec.fieldContext_Actor_vouches(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_sourceReferences(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_sourceReferences(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SourceReferences, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_sourceReferences(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_rightsLicenseNotes(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_rightsLicenseNotes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RightsLicenseNotes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_rightsLicenseNotes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_createdAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_recordedAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_recordedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RecordedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_recordedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaProvenance_contentIntegrity(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaProvenance) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaProvenance_contentIntegrity(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentIntegrity, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaProvenance_contentIntegrity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaProvenance",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_role(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_role(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Role, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.EditorialMediaRole)
+	fc.Result = res
+	return ec.marshalNEditorialMediaRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaRole(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_role(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EditorialMediaRole does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_inlinePosition(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_inlinePosition(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.InlinePosition, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_inlinePosition(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_caption(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_caption(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Caption, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_caption(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_creditLine(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_creditLine(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreditLine, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_creditLine(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_altText(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_altText(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AltText, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_altText(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_effectiveAltText(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_effectiveAltText(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EffectiveAltText, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_effectiveAltText(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_focus(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_focus(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Focus, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_focus(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_state(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_state(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.State, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.EditorialMediaState)
+	fc.Result = res
+	return ec.marshalNEditorialMediaState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaState(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_state(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EditorialMediaState does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_width(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_width(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Width, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_width(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_height(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_height(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Height, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_height(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_mimeType(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_mimeType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MimeType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_mimeType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_publishedUrl(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_publishedUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublishedURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_publishedUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_publishedAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_publishedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublishedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_publishedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_accessUrl(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_accessUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AccessURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_accessUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_accessExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_accessExpiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AccessExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_accessExpiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EditorialMediaUsage_provenance(ctx context.Context, field graphql.CollectedField, obj *model.EditorialMediaUsage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EditorialMediaUsage_provenance(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Provenance, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.EditorialMediaProvenance)
+	fc.Result = res
+	return ec.marshalOEditorialMediaProvenance2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenance(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EditorialMediaUsage_provenance(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EditorialMediaUsage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "origin":
+				return ec.fieldContext_EditorialMediaProvenance_origin(ctx, field)
+			case "tool":
+				return ec.fieldContext_EditorialMediaProvenance_tool(ctx, field)
+			case "responsibleActorId":
+				return ec.fieldContext_EditorialMediaProvenance_responsibleActorId(ctx, field)
+			case "responsibleActor":
+				return ec.fieldContext_EditorialMediaProvenance_responsibleActor(ctx, field)
+			case "sourceReferences":
+				return ec.fieldContext_EditorialMediaProvenance_sourceReferences(ctx, field)
+			case "rightsLicenseNotes":
+				return ec.fieldContext_EditorialMediaProvenance_rightsLicenseNotes(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_EditorialMediaProvenance_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_EditorialMediaProvenance_updatedAt(ctx, field)
+			case "recordedAt":
+				return ec.fieldContext_EditorialMediaProvenance_recordedAt(ctx, field)
+			case "contentIntegrity":
+				return ec.fieldContext_EditorialMediaProvenance_contentIntegrity(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaProvenance", field.Name)
 		},
 	}
 	return fc, nil
@@ -95962,6 +99274,69 @@ func (ec *executionContext) fieldContext_Mutation_deleteMedia(ctx context.Contex
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_updateEditorialMediaLifecycle(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateEditorialMediaLifecycle(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateEditorialMediaLifecycle(rctx, fc.Args["mediaId"].(string), fc.Args["lifecycle"].(model.EditorialMediaLifecycle), fc.Args["supersededByMediaId"].(*string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.EditorialMediaLifecyclePayload)
+	fc.Result = res
+	return ec.marshalNEditorialMediaLifecyclePayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecyclePayload(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateEditorialMediaLifecycle(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaLifecyclePayload_mediaId(ctx, field)
+			case "lifecycle":
+				return ec.fieldContext_EditorialMediaLifecyclePayload_lifecycle(ctx, field)
+			case "supersededByMediaId":
+				return ec.fieldContext_EditorialMediaLifecyclePayload_supersededByMediaId(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaLifecyclePayload", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateEditorialMediaLifecycle_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_dismissNotification(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_dismissNotification(ctx, field)
 	if err != nil {
@@ -99136,6 +102511,8 @@ func (ec *executionContext) fieldContext_Mutation_createDraft(ctx context.Contex
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99235,6 +102612,8 @@ func (ec *executionContext) fieldContext_Mutation_updateDraft(ctx context.Contex
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99259,6 +102638,107 @@ func (ec *executionContext) fieldContext_Mutation_updateDraft(ctx context.Contex
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_updateDraft_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setDraftEditorialMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_setDraftEditorialMedia(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().SetDraftEditorialMedia(rctx, fc.Args["draftId"].(string), fc.Args["media"].([]*model.EditorialMediaUsageInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Draft)
+	fc.Result = res
+	return ec.marshalNDraft2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDraft(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_setDraftEditorialMedia(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Draft_id(ctx, field)
+			case "authorId":
+				return ec.fieldContext_Draft_authorId(ctx, field)
+			case "author":
+				return ec.fieldContext_Draft_author(ctx, field)
+			case "contentType":
+				return ec.fieldContext_Draft_contentType(ctx, field)
+			case "title":
+				return ec.fieldContext_Draft_title(ctx, field)
+			case "slug":
+				return ec.fieldContext_Draft_slug(ctx, field)
+			case "content":
+				return ec.fieldContext_Draft_content(ctx, field)
+			case "contentFormat":
+				return ec.fieldContext_Draft_contentFormat(ctx, field)
+			case "status":
+				return ec.fieldContext_Draft_status(ctx, field)
+			case "scheduledAt":
+				return ec.fieldContext_Draft_scheduledAt(ctx, field)
+			case "objectId":
+				return ec.fieldContext_Draft_objectId(ctx, field)
+			case "generatedBy":
+				return ec.fieldContext_Draft_generatedBy(ctx, field)
+			case "reviewedBy":
+				return ec.fieldContext_Draft_reviewedBy(ctx, field)
+			case "actedBy":
+				return ec.fieldContext_Draft_actedBy(ctx, field)
+			case "reviewVerdict":
+				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Draft_contentHash(ctx, field)
+			case "revision":
+				return ec.fieldContext_Draft_revision(ctx, field)
+			case "autosaveVersion":
+				return ec.fieldContext_Draft_autosaveVersion(ctx, field)
+			case "lastSavedAt":
+				return ec.fieldContext_Draft_lastSavedAt(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Draft_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Draft_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Draft", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setDraftEditorialMedia_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -99334,6 +102814,8 @@ func (ec *executionContext) fieldContext_Mutation_autosaveDraft(ctx context.Cont
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99413,6 +102895,148 @@ func (ec *executionContext) fieldContext_Mutation_deleteDraft(ctx context.Contex
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_deleteDraft_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_mintUploadGrant(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_mintUploadGrant(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().MintUploadGrant(rctx, fc.Args["input"].(model.MintUploadGrantInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrant)
+	fc.Result = res
+	return ec.marshalNUploadGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_mintUploadGrant(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_UploadGrant_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_UploadGrant_ownerId(ctx, field)
+			case "contentType":
+				return ec.fieldContext_UploadGrant_contentType(ctx, field)
+			case "maxSizeBytes":
+				return ec.fieldContext_UploadGrant_maxSizeBytes(ctx, field)
+			case "declaredSha256":
+				return ec.fieldContext_UploadGrant_declaredSha256(ctx, field)
+			case "status":
+				return ec.fieldContext_UploadGrant_status(ctx, field)
+			case "presignedUrl":
+				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "mediaId":
+				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
+			case "grantedAt":
+				return ec.fieldContext_UploadGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_UploadGrant_expiresAt(ctx, field)
+			case "usedAt":
+				return ec.fieldContext_UploadGrant_usedAt(ctx, field)
+			case "failureReason":
+				return ec.fieldContext_UploadGrant_failureReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrant", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_mintUploadGrant_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_finalizeUploadGrant(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_finalizeUploadGrant(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().FinalizeUploadGrant(rctx, fc.Args["grantId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrantFinalizeResult)
+	fc.Result = res
+	return ec.marshalNUploadGrantFinalizeResult2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantFinalizeResult(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_finalizeUploadGrant(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "grant":
+				return ec.fieldContext_UploadGrantFinalizeResult_grant(ctx, field)
+			case "media":
+				return ec.fieldContext_UploadGrantFinalizeResult_media(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrantFinalizeResult", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_finalizeUploadGrant_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -99607,6 +103231,8 @@ func (ec *executionContext) fieldContext_Mutation_scheduleDraft(ctx context.Cont
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99706,6 +103332,8 @@ func (ec *executionContext) fieldContext_Mutation_cancelScheduledDraft(ctx conte
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -99750,7 +103378,7 @@ func (ec *executionContext) _Mutation_shareDraftForReview(ctx context.Context, f
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().ShareDraftForReview(rctx, fc.Args["draftId"].(string), fc.Args["reviewer"].(string))
+		return ec.resolvers.Mutation().ShareDraftForReview(rctx, fc.Args["draftId"].(string), fc.Args["reviewer"].(string), fc.Args["includeAccessUrls"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -99813,6 +103441,8 @@ func (ec *executionContext) fieldContext_Mutation_shareDraftForReview(ctx contex
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftReview_editorialMedia(ctx, field)
 			case "revision":
 				return ec.fieldContext_DraftReview_revision(ctx, field)
 			case "activeReviewerIds":
@@ -99926,7 +103556,7 @@ func (ec *executionContext) _Mutation_submitDraftReview(ctx context.Context, fie
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().SubmitDraftReview(rctx, fc.Args["draftId"].(string), fc.Args["verdict"].(model.DraftReviewVerdict), fc.Args["notes"].(*string))
+		return ec.resolvers.Mutation().SubmitDraftReview(rctx, fc.Args["draftId"].(string), fc.Args["verdict"].(model.DraftReviewVerdict), fc.Args["notes"].(*string), fc.Args["includeAccessUrls"].(*bool), fc.Args["contentHash"].(*string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -99989,6 +103619,8 @@ func (ec *executionContext) fieldContext_Mutation_submitDraftReview(ctx context.
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftReview_editorialMedia(ctx, field)
 			case "revision":
 				return ec.fieldContext_DraftReview_revision(ctx, field)
 			case "activeReviewerIds":
@@ -101681,6 +105313,375 @@ func (ec *executionContext) fieldContext_Mutation_updatePublicationMemberRole(ct
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_updatePublicationMemberRole_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_composePromoPackage(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_composePromoPackage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().ComposePromoPackage(rctx, fc.Args["input"].(model.ComposePromoPackageInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackage)
+	fc.Result = res
+	return ec.marshalNPromoPackage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_composePromoPackage(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_PromoPackage_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_PromoPackage_ownerId(ctx, field)
+			case "articleId":
+				return ec.fieldContext_PromoPackage_articleId(ctx, field)
+			case "postText":
+				return ec.fieldContext_PromoPackage_postText(ctx, field)
+			case "visibility":
+				return ec.fieldContext_PromoPackage_visibility(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackage_contentHash(ctx, field)
+			case "status":
+				return ec.fieldContext_PromoPackage_status(ctx, field)
+			case "releasedStatusId":
+				return ec.fieldContext_PromoPackage_releasedStatusId(ctx, field)
+			case "assets":
+				return ec.fieldContext_PromoPackage_assets(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_PromoPackage_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_PromoPackage_updatedAt(ctx, field)
+			case "review":
+				return ec.fieldContext_PromoPackage_review(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackage", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_composePromoPackage_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_sharePromoPackageForReview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_sharePromoPackageForReview(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().SharePromoPackageForReview(rctx, fc.Args["packageId"].(string), fc.Args["reviewer"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackageReview)
+	fc.Result = res
+	return ec.marshalNPromoPackageReview2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReview(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_sharePromoPackageForReview(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "packageId":
+				return ec.fieldContext_PromoPackageReview_packageId(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackageReview_contentHash(ctx, field)
+			case "assets":
+				return ec.fieldContext_PromoPackageReview_assets(ctx, field)
+			case "activeReviewerIds":
+				return ec.fieldContext_PromoPackageReview_activeReviewerIds(ctx, field)
+			case "releaseEligible":
+				return ec.fieldContext_PromoPackageReview_releaseEligible(ctx, field)
+			case "releaseBlockingReasons":
+				return ec.fieldContext_PromoPackageReview_releaseBlockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_PromoPackageReview_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_PromoPackageReview_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_PromoPackageReview_principalApproved(ctx, field)
+			case "grantCount":
+				return ec.fieldContext_PromoPackageReview_grantCount(ctx, field)
+			case "grantsTruncated":
+				return ec.fieldContext_PromoPackageReview_grantsTruncated(ctx, field)
+			case "grants":
+				return ec.fieldContext_PromoPackageReview_grants(ctx, field)
+			case "verdicts":
+				return ec.fieldContext_PromoPackageReview_verdicts(ctx, field)
+			case "releaseEligibility":
+				return ec.fieldContext_PromoPackageReview_releaseEligibility(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReview", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_sharePromoPackageForReview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_revokePromoPackageReview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_revokePromoPackageReview(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().RevokePromoPackageReview(rctx, fc.Args["packageId"].(string), fc.Args["reviewer"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_revokePromoPackageReview(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_revokePromoPackageReview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_submitPromoPackageReview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_submitPromoPackageReview(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().SubmitPromoPackageReview(rctx, fc.Args["packageId"].(string), fc.Args["verdict"].(model.PromoPackageReviewVerdict), fc.Args["notes"].(*string), fc.Args["contentHash"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackageReview)
+	fc.Result = res
+	return ec.marshalNPromoPackageReview2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReview(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_submitPromoPackageReview(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "packageId":
+				return ec.fieldContext_PromoPackageReview_packageId(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackageReview_contentHash(ctx, field)
+			case "assets":
+				return ec.fieldContext_PromoPackageReview_assets(ctx, field)
+			case "activeReviewerIds":
+				return ec.fieldContext_PromoPackageReview_activeReviewerIds(ctx, field)
+			case "releaseEligible":
+				return ec.fieldContext_PromoPackageReview_releaseEligible(ctx, field)
+			case "releaseBlockingReasons":
+				return ec.fieldContext_PromoPackageReview_releaseBlockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_PromoPackageReview_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_PromoPackageReview_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_PromoPackageReview_principalApproved(ctx, field)
+			case "grantCount":
+				return ec.fieldContext_PromoPackageReview_grantCount(ctx, field)
+			case "grantsTruncated":
+				return ec.fieldContext_PromoPackageReview_grantsTruncated(ctx, field)
+			case "grants":
+				return ec.fieldContext_PromoPackageReview_grants(ctx, field)
+			case "verdicts":
+				return ec.fieldContext_PromoPackageReview_verdicts(ctx, field)
+			case "releaseEligibility":
+				return ec.fieldContext_PromoPackageReview_releaseEligibility(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReview", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_submitPromoPackageReview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_releasePromoPackage(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_releasePromoPackage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().ReleasePromoPackage(rctx, fc.Args["packageId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackageReleaseResult)
+	fc.Result = res
+	return ec.marshalNPromoPackageReleaseResult2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReleaseResult(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_releasePromoPackage(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "package":
+				return ec.fieldContext_PromoPackageReleaseResult_package(ctx, field)
+			case "statusId":
+				return ec.fieldContext_PromoPackageReleaseResult_statusId(ctx, field)
+			case "url":
+				return ec.fieldContext_PromoPackageReleaseResult_url(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReleaseResult", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_releasePromoPackage_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -113449,6 +117450,3025 @@ func (ec *executionContext) fieldContext_ProfileDirectory_totalCount(_ context.C
 	return fc, nil
 }
 
+func (ec *executionContext) _PromoPackage_id(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_ownerId(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_ownerId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.OwnerID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_ownerId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_articleId(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_articleId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ArticleID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_articleId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_postText(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_postText(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PostText, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_postText(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_visibility(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_visibility(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Visibility, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.PromoPackageVisibility)
+	fc.Result = res
+	return ec.marshalNPromoPackageVisibility2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageVisibility(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_visibility(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PromoPackageVisibility does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_status(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.PromoPackageStatus)
+	fc.Result = res
+	return ec.marshalNPromoPackageStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageStatus(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PromoPackageStatus does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_releasedStatusId(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_releasedStatusId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReleasedStatusID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOID2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_releasedStatusId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_assets(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_assets(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Assets, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.PromoPackageAsset)
+	fc.Result = res
+	return ec.marshalNPromoPackageAsset2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageAssetᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_assets(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_PromoPackageAsset_mediaId(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackageAsset_contentHash(ctx, field)
+			case "publishedUrl":
+				return ec.fieldContext_PromoPackageAsset_publishedUrl(ctx, field)
+			case "state":
+				return ec.fieldContext_PromoPackageAsset_state(ctx, field)
+			case "width":
+				return ec.fieldContext_PromoPackageAsset_width(ctx, field)
+			case "height":
+				return ec.fieldContext_PromoPackageAsset_height(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_PromoPackageAsset_mimeType(ctx, field)
+			case "provenance":
+				return ec.fieldContext_PromoPackageAsset_provenance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageAsset", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_createdAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackage_review(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackage) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackage_review(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Review, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackageReview)
+	fc.Result = res
+	return ec.marshalOPromoPackageReview2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReview(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackage_review(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "packageId":
+				return ec.fieldContext_PromoPackageReview_packageId(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackageReview_contentHash(ctx, field)
+			case "assets":
+				return ec.fieldContext_PromoPackageReview_assets(ctx, field)
+			case "activeReviewerIds":
+				return ec.fieldContext_PromoPackageReview_activeReviewerIds(ctx, field)
+			case "releaseEligible":
+				return ec.fieldContext_PromoPackageReview_releaseEligible(ctx, field)
+			case "releaseBlockingReasons":
+				return ec.fieldContext_PromoPackageReview_releaseBlockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_PromoPackageReview_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_PromoPackageReview_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_PromoPackageReview_principalApproved(ctx, field)
+			case "grantCount":
+				return ec.fieldContext_PromoPackageReview_grantCount(ctx, field)
+			case "grantsTruncated":
+				return ec.fieldContext_PromoPackageReview_grantsTruncated(ctx, field)
+			case "grants":
+				return ec.fieldContext_PromoPackageReview_grants(ctx, field)
+			case "verdicts":
+				return ec.fieldContext_PromoPackageReview_verdicts(ctx, field)
+			case "releaseEligibility":
+				return ec.fieldContext_PromoPackageReview_releaseEligibility(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReview", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageAsset_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageAsset) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageAsset_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageAsset_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageAsset",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageAsset_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageAsset) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageAsset_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageAsset_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageAsset",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageAsset_publishedUrl(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageAsset) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageAsset_publishedUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublishedURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageAsset_publishedUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageAsset",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageAsset_state(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageAsset) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageAsset_state(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.State, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.PromoPackageAssetState)
+	fc.Result = res
+	return ec.marshalNPromoPackageAssetState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageAssetState(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageAsset_state(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageAsset",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PromoPackageAssetState does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageAsset_width(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageAsset) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageAsset_width(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Width, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageAsset_width(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageAsset",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageAsset_height(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageAsset) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageAsset_height(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Height, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageAsset_height(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageAsset",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageAsset_mimeType(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageAsset) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageAsset_mimeType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MimeType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageAsset_mimeType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageAsset",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageAsset_provenance(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageAsset) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageAsset_provenance(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Provenance, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.EditorialMediaProvenance)
+	fc.Result = res
+	return ec.marshalOEditorialMediaProvenance2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenance(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageAsset_provenance(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageAsset",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "origin":
+				return ec.fieldContext_EditorialMediaProvenance_origin(ctx, field)
+			case "tool":
+				return ec.fieldContext_EditorialMediaProvenance_tool(ctx, field)
+			case "responsibleActorId":
+				return ec.fieldContext_EditorialMediaProvenance_responsibleActorId(ctx, field)
+			case "responsibleActor":
+				return ec.fieldContext_EditorialMediaProvenance_responsibleActor(ctx, field)
+			case "sourceReferences":
+				return ec.fieldContext_EditorialMediaProvenance_sourceReferences(ctx, field)
+			case "rightsLicenseNotes":
+				return ec.fieldContext_EditorialMediaProvenance_rightsLicenseNotes(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_EditorialMediaProvenance_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_EditorialMediaProvenance_updatedAt(ctx, field)
+			case "recordedAt":
+				return ec.fieldContext_EditorialMediaProvenance_recordedAt(ctx, field)
+			case "contentIntegrity":
+				return ec.fieldContext_EditorialMediaProvenance_contentIntegrity(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaProvenance", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageConnection_edges(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageConnection_edges(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Edges, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.PromoPackageEdge)
+	fc.Result = res
+	return ec.marshalNPromoPackageEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageEdgeᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "node":
+				return ec.fieldContext_PromoPackageEdge_node(ctx, field)
+			case "cursor":
+				return ec.fieldContext_PromoPackageEdge_cursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageEdge", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageConnection_pageInfo(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageConnection_pageInfo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PageInfo, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PageInfo)
+	fc.Result = res
+	return ec.marshalNPageInfo2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPageInfo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "hasNextPage":
+				return ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+			case "hasPreviousPage":
+				return ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+			case "startCursor":
+				return ec.fieldContext_PageInfo_startCursor(ctx, field)
+			case "endCursor":
+				return ec.fieldContext_PageInfo_endCursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageConnection_totalCount(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageConnection_totalCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageEdge_node(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageEdge_node(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Node, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackage)
+	fc.Result = res
+	return ec.marshalNPromoPackage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_PromoPackage_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_PromoPackage_ownerId(ctx, field)
+			case "articleId":
+				return ec.fieldContext_PromoPackage_articleId(ctx, field)
+			case "postText":
+				return ec.fieldContext_PromoPackage_postText(ctx, field)
+			case "visibility":
+				return ec.fieldContext_PromoPackage_visibility(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackage_contentHash(ctx, field)
+			case "status":
+				return ec.fieldContext_PromoPackage_status(ctx, field)
+			case "releasedStatusId":
+				return ec.fieldContext_PromoPackage_releasedStatusId(ctx, field)
+			case "assets":
+				return ec.fieldContext_PromoPackage_assets(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_PromoPackage_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_PromoPackage_updatedAt(ctx, field)
+			case "review":
+				return ec.fieldContext_PromoPackage_review(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackage", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageEdge_cursor(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageEdge_cursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Cursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Cursor)
+	fc.Result = res
+	return ec.marshalNCursor2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReleaseEligibility_eligible(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReleaseEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReleaseEligibility_eligible(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Eligible, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReleaseEligibility_eligible(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReleaseEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReleaseEligibility_blockingReasons(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReleaseEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReleaseEligibility_blockingReasons(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.BlockingReasons, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReleaseEligibility_blockingReasons(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReleaseEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReleaseEligibility_reviewersApproved(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReleaseEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReleaseEligibility_reviewersApproved(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewersApproved, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReleaseEligibility_reviewersApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReleaseEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReleaseEligibility_principalApprovalRequired(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReleaseEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReleaseEligibility_principalApprovalRequired(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalApprovalRequired, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReleaseEligibility_principalApprovalRequired(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReleaseEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReleaseEligibility_principalApproved(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReleaseEligibility) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReleaseEligibility_principalApproved(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalApproved, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReleaseEligibility_principalApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReleaseEligibility",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReleaseResult_package(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReleaseResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReleaseResult_package(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Package, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackage)
+	fc.Result = res
+	return ec.marshalNPromoPackage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReleaseResult_package(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReleaseResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_PromoPackage_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_PromoPackage_ownerId(ctx, field)
+			case "articleId":
+				return ec.fieldContext_PromoPackage_articleId(ctx, field)
+			case "postText":
+				return ec.fieldContext_PromoPackage_postText(ctx, field)
+			case "visibility":
+				return ec.fieldContext_PromoPackage_visibility(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackage_contentHash(ctx, field)
+			case "status":
+				return ec.fieldContext_PromoPackage_status(ctx, field)
+			case "releasedStatusId":
+				return ec.fieldContext_PromoPackage_releasedStatusId(ctx, field)
+			case "assets":
+				return ec.fieldContext_PromoPackage_assets(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_PromoPackage_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_PromoPackage_updatedAt(ctx, field)
+			case "review":
+				return ec.fieldContext_PromoPackage_review(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackage", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReleaseResult_statusId(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReleaseResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReleaseResult_statusId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.StatusID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReleaseResult_statusId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReleaseResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReleaseResult_url(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReleaseResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReleaseResult_url(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.URL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReleaseResult_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReleaseResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_packageId(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_packageId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PackageID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_packageId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_assets(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_assets(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Assets, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.PromoPackageAsset)
+	fc.Result = res
+	return ec.marshalNPromoPackageAsset2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageAssetᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_assets(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_PromoPackageAsset_mediaId(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackageAsset_contentHash(ctx, field)
+			case "publishedUrl":
+				return ec.fieldContext_PromoPackageAsset_publishedUrl(ctx, field)
+			case "state":
+				return ec.fieldContext_PromoPackageAsset_state(ctx, field)
+			case "width":
+				return ec.fieldContext_PromoPackageAsset_width(ctx, field)
+			case "height":
+				return ec.fieldContext_PromoPackageAsset_height(ctx, field)
+			case "mimeType":
+				return ec.fieldContext_PromoPackageAsset_mimeType(ctx, field)
+			case "provenance":
+				return ec.fieldContext_PromoPackageAsset_provenance(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageAsset", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_activeReviewerIds(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_activeReviewerIds(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ActiveReviewerIds, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNID2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_activeReviewerIds(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_releaseEligible(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_releaseEligible(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReleaseEligible, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_releaseEligible(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_releaseBlockingReasons(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_releaseBlockingReasons(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReleaseBlockingReasons, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_releaseBlockingReasons(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_reviewersApproved(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_reviewersApproved(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewersApproved, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_reviewersApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_principalApprovalRequired(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_principalApprovalRequired(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalApprovalRequired, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_principalApprovalRequired(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_principalApproved(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_principalApproved(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalApproved, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_principalApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_grantCount(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_grantCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.GrantCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_grantCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_grantsTruncated(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_grantsTruncated(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.GrantsTruncated, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_grantsTruncated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_grants(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_grants(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Grants, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.PromoPackageReviewGrant)
+	fc.Result = res
+	return ec.marshalNPromoPackageReviewGrant2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewGrantᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_grants(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "reviewerId":
+				return ec.fieldContext_PromoPackageReviewGrant_reviewerId(ctx, field)
+			case "grantedAt":
+				return ec.fieldContext_PromoPackageReviewGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_PromoPackageReviewGrant_expiresAt(ctx, field)
+			case "status":
+				return ec.fieldContext_PromoPackageReviewGrant_status(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_PromoPackageReviewGrant_revokedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReviewGrant", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_verdicts(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_verdicts(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Verdicts, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.PromoPackageVerdictRecord)
+	fc.Result = res
+	return ec.marshalNPromoPackageVerdictRecord2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageVerdictRecordᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_verdicts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "verdict":
+				return ec.fieldContext_PromoPackageVerdictRecord_verdict(ctx, field)
+			case "notes":
+				return ec.fieldContext_PromoPackageVerdictRecord_notes(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackageVerdictRecord_contentHash(ctx, field)
+			case "reviewerId":
+				return ec.fieldContext_PromoPackageVerdictRecord_reviewerId(ctx, field)
+			case "recordedAt":
+				return ec.fieldContext_PromoPackageVerdictRecord_recordedAt(ctx, field)
+			case "current":
+				return ec.fieldContext_PromoPackageVerdictRecord_current(ctx, field)
+			case "stale":
+				return ec.fieldContext_PromoPackageVerdictRecord_stale(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageVerdictRecord", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReview_releaseEligibility(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReview) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReview_releaseEligibility(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReleaseEligibility, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackageReleaseEligibility)
+	fc.Result = res
+	return ec.marshalNPromoPackageReleaseEligibility2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReleaseEligibility(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReview_releaseEligibility(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "eligible":
+				return ec.fieldContext_PromoPackageReleaseEligibility_eligible(ctx, field)
+			case "blockingReasons":
+				return ec.fieldContext_PromoPackageReleaseEligibility_blockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_PromoPackageReleaseEligibility_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_PromoPackageReleaseEligibility_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_PromoPackageReleaseEligibility_principalApproved(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReleaseEligibility", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewConnection_edges(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewConnection_edges(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Edges, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.PromoPackageReviewEdge)
+	fc.Result = res
+	return ec.marshalNPromoPackageReviewEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewEdgeᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "node":
+				return ec.fieldContext_PromoPackageReviewEdge_node(ctx, field)
+			case "cursor":
+				return ec.fieldContext_PromoPackageReviewEdge_cursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReviewEdge", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewConnection_pageInfo(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewConnection_pageInfo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PageInfo, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PageInfo)
+	fc.Result = res
+	return ec.marshalNPageInfo2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPageInfo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "hasNextPage":
+				return ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+			case "hasPreviousPage":
+				return ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+			case "startCursor":
+				return ec.fieldContext_PageInfo_startCursor(ctx, field)
+			case "endCursor":
+				return ec.fieldContext_PageInfo_endCursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewConnection_totalCount(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewConnection_totalCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewEdge_node(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewEdge_node(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Node, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackageReview)
+	fc.Result = res
+	return ec.marshalNPromoPackageReview2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReview(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "packageId":
+				return ec.fieldContext_PromoPackageReview_packageId(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackageReview_contentHash(ctx, field)
+			case "assets":
+				return ec.fieldContext_PromoPackageReview_assets(ctx, field)
+			case "activeReviewerIds":
+				return ec.fieldContext_PromoPackageReview_activeReviewerIds(ctx, field)
+			case "releaseEligible":
+				return ec.fieldContext_PromoPackageReview_releaseEligible(ctx, field)
+			case "releaseBlockingReasons":
+				return ec.fieldContext_PromoPackageReview_releaseBlockingReasons(ctx, field)
+			case "reviewersApproved":
+				return ec.fieldContext_PromoPackageReview_reviewersApproved(ctx, field)
+			case "principalApprovalRequired":
+				return ec.fieldContext_PromoPackageReview_principalApprovalRequired(ctx, field)
+			case "principalApproved":
+				return ec.fieldContext_PromoPackageReview_principalApproved(ctx, field)
+			case "grantCount":
+				return ec.fieldContext_PromoPackageReview_grantCount(ctx, field)
+			case "grantsTruncated":
+				return ec.fieldContext_PromoPackageReview_grantsTruncated(ctx, field)
+			case "grants":
+				return ec.fieldContext_PromoPackageReview_grants(ctx, field)
+			case "verdicts":
+				return ec.fieldContext_PromoPackageReview_verdicts(ctx, field)
+			case "releaseEligibility":
+				return ec.fieldContext_PromoPackageReview_releaseEligibility(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReview", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewEdge_cursor(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewEdge_cursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Cursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Cursor)
+	fc.Result = res
+	return ec.marshalNCursor2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewGrant_reviewerId(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewGrant_reviewerId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewerID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewGrant_reviewerId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewGrant_grantedAt(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewGrant_grantedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.GrantedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewGrant_grantedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewGrant_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewGrant_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewGrant_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewGrant_status(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewGrant_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.PromoPackageGrantStatus)
+	fc.Result = res
+	return ec.marshalNPromoPackageGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageGrantStatus(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewGrant_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PromoPackageGrantStatus does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageReviewGrant_revokedAt(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageReviewGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageReviewGrant_revokedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RevokedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageReviewGrant_revokedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageReviewGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageVerdictRecord_verdict(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageVerdictRecord_verdict(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Verdict, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.PromoPackageReviewVerdict)
+	fc.Result = res
+	return ec.marshalNPromoPackageReviewVerdict2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewVerdict(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageVerdictRecord_verdict(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PromoPackageReviewVerdict does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageVerdictRecord_notes(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageVerdictRecord_notes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Notes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageVerdictRecord_notes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageVerdictRecord_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageVerdictRecord_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageVerdictRecord_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageVerdictRecord_reviewerId(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageVerdictRecord_reviewerId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReviewerID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageVerdictRecord_reviewerId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageVerdictRecord_recordedAt(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageVerdictRecord_recordedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RecordedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageVerdictRecord_recordedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageVerdictRecord_current(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageVerdictRecord_current(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Current, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageVerdictRecord_current(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PromoPackageVerdictRecord_stale(ctx context.Context, field graphql.CollectedField, obj *model.PromoPackageVerdictRecord) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PromoPackageVerdictRecord_stale(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Stale, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PromoPackageVerdictRecord_stale(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PromoPackageVerdictRecord",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Publication_id(ctx context.Context, field graphql.CollectedField, obj *model.Publication) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Publication_id(ctx, field)
 	if err != nil {
@@ -121252,6 +128272,8 @@ func (ec *executionContext) fieldContext_Query_draft(ctx context.Context, field 
 				return ec.fieldContext_Draft_actedBy(ctx, field)
 			case "reviewVerdict":
 				return ec.fieldContext_Draft_reviewVerdict(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_Draft_editorialMedia(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_Draft_contentHash(ctx, field)
 			case "revision":
@@ -121296,7 +128318,7 @@ func (ec *executionContext) _Query_draftPreview(ctx context.Context, field graph
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().DraftPreview(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Query().DraftPreview(rctx, fc.Args["id"].(string), fc.Args["includeAccessUrls"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -121335,6 +128357,8 @@ func (ec *executionContext) fieldContext_Query_draftPreview(ctx context.Context,
 				return ec.fieldContext_DraftPreview_renderedBytes(ctx, field)
 			case "errors":
 				return ec.fieldContext_DraftPreview_errors(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftPreview_editorialMedia(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DraftPreview", field.Name)
 		},
@@ -121556,7 +128580,7 @@ func (ec *executionContext) _Query_draftReview(ctx context.Context, field graphq
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().DraftReview(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Query().DraftReview(rctx, fc.Args["id"].(string), fc.Args["includeAccessUrls"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -121616,6 +128640,8 @@ func (ec *executionContext) fieldContext_Query_draftReview(ctx context.Context, 
 				return ec.fieldContext_DraftReview_editorNotes(ctx, field)
 			case "contentHash":
 				return ec.fieldContext_DraftReview_contentHash(ctx, field)
+			case "editorialMedia":
+				return ec.fieldContext_DraftReview_editorialMedia(ctx, field)
 			case "revision":
 				return ec.fieldContext_DraftReview_revision(ctx, field)
 			case "activeReviewerIds":
@@ -121654,6 +128680,152 @@ func (ec *executionContext) fieldContext_Query_draftReview(ctx context.Context, 
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_draftReview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_draftEditorialMediaAccess(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_draftEditorialMediaAccess(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().DraftEditorialMediaAccess(rctx, fc.Args["draftId"].(string), fc.Args["mediaId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.EditorialMediaAccess)
+	fc.Result = res
+	return ec.marshalNEditorialMediaAccess2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaAccess(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_draftEditorialMediaAccess(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_EditorialMediaAccess_mediaId(ctx, field)
+			case "url":
+				return ec.fieldContext_EditorialMediaAccess_url(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_EditorialMediaAccess_expiresAt(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_EditorialMediaAccess_contentHash(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type EditorialMediaAccess", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_draftEditorialMediaAccess_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_uploadGrant(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_uploadGrant(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().UploadGrant(rctx, fc.Args["grantId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrant)
+	fc.Result = res
+	return ec.marshalNUploadGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_uploadGrant(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_UploadGrant_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_UploadGrant_ownerId(ctx, field)
+			case "contentType":
+				return ec.fieldContext_UploadGrant_contentType(ctx, field)
+			case "maxSizeBytes":
+				return ec.fieldContext_UploadGrant_maxSizeBytes(ctx, field)
+			case "declaredSha256":
+				return ec.fieldContext_UploadGrant_declaredSha256(ctx, field)
+			case "status":
+				return ec.fieldContext_UploadGrant_status(ctx, field)
+			case "presignedUrl":
+				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "mediaId":
+				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
+			case "grantedAt":
+				return ec.fieldContext_UploadGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_UploadGrant_expiresAt(ctx, field)
+			case "usedAt":
+				return ec.fieldContext_UploadGrant_usedAt(ctx, field)
+			case "failureReason":
+				return ec.fieldContext_UploadGrant_failureReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrant", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_uploadGrant_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -122828,6 +130000,210 @@ func (ec *executionContext) fieldContext_Query_myPublications(_ context.Context,
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Publication", field.Name)
 		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_promoPackage(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_promoPackage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().PromoPackage(rctx, fc.Args["id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackage)
+	fc.Result = res
+	return ec.marshalOPromoPackage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_promoPackage(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_PromoPackage_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_PromoPackage_ownerId(ctx, field)
+			case "articleId":
+				return ec.fieldContext_PromoPackage_articleId(ctx, field)
+			case "postText":
+				return ec.fieldContext_PromoPackage_postText(ctx, field)
+			case "visibility":
+				return ec.fieldContext_PromoPackage_visibility(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_PromoPackage_contentHash(ctx, field)
+			case "status":
+				return ec.fieldContext_PromoPackage_status(ctx, field)
+			case "releasedStatusId":
+				return ec.fieldContext_PromoPackage_releasedStatusId(ctx, field)
+			case "assets":
+				return ec.fieldContext_PromoPackage_assets(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_PromoPackage_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_PromoPackage_updatedAt(ctx, field)
+			case "review":
+				return ec.fieldContext_PromoPackage_review(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackage", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_promoPackage_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_promoPackages(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_promoPackages(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().PromoPackages(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackageConnection)
+	fc.Result = res
+	return ec.marshalNPromoPackageConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_promoPackages(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_PromoPackageConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_PromoPackageConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_PromoPackageConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_promoPackages_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_sharedPromoPackageReviews(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_sharedPromoPackageReviews(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().SharedPromoPackageReviews(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PromoPackageReviewConnection)
+	fc.Result = res
+	return ec.marshalNPromoPackageReviewConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_sharedPromoPackageReviews(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_PromoPackageReviewConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_PromoPackageReviewConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_PromoPackageReviewConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PromoPackageReviewConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_sharedPromoPackageReviews_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
 	}
 	return fc, nil
 }
@@ -153912,6 +161288,914 @@ func (ec *executionContext) fieldContext_UpdateQuotePermissionsPayload_affectedQ
 	return fc, nil
 }
 
+func (ec *executionContext) _UploadGrant_id(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_ownerId(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_ownerId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.OwnerID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_ownerId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_contentType(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_contentType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_contentType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_maxSizeBytes(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_maxSizeBytes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MaxSizeBytes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_maxSizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_declaredSha256(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_declaredSha256(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DeclaredSha256, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_declaredSha256(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_status(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.UploadGrantStatus)
+	fc.Result = res
+	return ec.marshalNUploadGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantStatus(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type UploadGrantStatus does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_presignedUrl(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PresignedURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_presignedUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOID2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_grantedAt(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_grantedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.GrantedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_grantedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_usedAt(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_usedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UsedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_usedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrant_failureReason(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_failureReason(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.FailureReason, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_failureReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantFinalizeResult_grant(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantFinalizeResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantFinalizeResult_grant(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Grant, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrant)
+	fc.Result = res
+	return ec.marshalNUploadGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantFinalizeResult_grant(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantFinalizeResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_UploadGrant_id(ctx, field)
+			case "ownerId":
+				return ec.fieldContext_UploadGrant_ownerId(ctx, field)
+			case "contentType":
+				return ec.fieldContext_UploadGrant_contentType(ctx, field)
+			case "maxSizeBytes":
+				return ec.fieldContext_UploadGrant_maxSizeBytes(ctx, field)
+			case "declaredSha256":
+				return ec.fieldContext_UploadGrant_declaredSha256(ctx, field)
+			case "status":
+				return ec.fieldContext_UploadGrant_status(ctx, field)
+			case "presignedUrl":
+				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "mediaId":
+				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
+			case "grantedAt":
+				return ec.fieldContext_UploadGrant_grantedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_UploadGrant_expiresAt(ctx, field)
+			case "usedAt":
+				return ec.fieldContext_UploadGrant_usedAt(ctx, field)
+			case "failureReason":
+				return ec.fieldContext_UploadGrant_failureReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrant", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantFinalizeResult_media(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantFinalizeResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantFinalizeResult_media(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Media, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.UploadGrantMedia)
+	fc.Result = res
+	return ec.marshalNUploadGrantMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantMedia(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantFinalizeResult_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantFinalizeResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "mediaId":
+				return ec.fieldContext_UploadGrantMedia_mediaId(ctx, field)
+			case "contentType":
+				return ec.fieldContext_UploadGrantMedia_contentType(ctx, field)
+			case "size":
+				return ec.fieldContext_UploadGrantMedia_size(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_UploadGrantMedia_contentHash(ctx, field)
+			case "status":
+				return ec.fieldContext_UploadGrantMedia_status(ctx, field)
+			case "visibility":
+				return ec.fieldContext_UploadGrantMedia_visibility(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrantMedia", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_mediaId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MediaID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_mediaId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_contentType(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_contentType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_contentType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_size(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_size(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Size, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_contentHash(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_contentHash(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentHash, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_contentHash(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_status(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantMedia_visibility(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantMedia) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantMedia_visibility(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Visibility, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantMedia_visibility(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UploadMediaPayload_media(ctx context.Context, field graphql.CollectedField, obj *model.UploadMediaPayload) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_UploadMediaPayload_media(ctx, field)
 	if err != nil {
@@ -158634,6 +166918,61 @@ func (ec *executionContext) unmarshalInputCompleteSoulBootstrapConversationInput
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputComposePromoPackageInput(ctx context.Context, obj any) (model.ComposePromoPackageInput, error) {
+	var it model.ComposePromoPackageInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"packageId", "articleId", "postText", "visibility", "assetMediaIds"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "packageId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("packageId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PackageID = data
+		case "articleId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("articleId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ArticleID = data
+		case "postText":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("postText"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PostText = data
+		case "visibility":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("visibility"))
+			data, err := ec.unmarshalNPromoPackageVisibility2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageVisibility(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Visibility = data
+		case "assetMediaIds":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("assetMediaIds"))
+			data, err := ec.unmarshalNID2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AssetMediaIds = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputContentMapInput(ctx context.Context, obj any) (model.ContentMapInput, error) {
 	var it model.ContentMapInput
 	asMap := map[string]any{}
@@ -159838,6 +168177,144 @@ func (ec *executionContext) unmarshalInputDirectoryFiltersInput(ctx context.Cont
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputEditorialMediaProvenanceInput(ctx context.Context, obj any) (model.EditorialMediaProvenanceInput, error) {
+	var it model.EditorialMediaProvenanceInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"origin", "tool", "responsibleActorId", "sourceReferences", "rightsLicenseNotes", "createdAt", "updatedAt"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "origin":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("origin"))
+			data, err := ec.unmarshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Origin = data
+		case "tool":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("tool"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Tool = data
+		case "responsibleActorId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("responsibleActorId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ResponsibleActorID = data
+		case "sourceReferences":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceReferences"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceReferences = data
+		case "rightsLicenseNotes":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("rightsLicenseNotes"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RightsLicenseNotes = data
+		case "createdAt":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("createdAt"))
+			data, err := ec.unmarshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CreatedAt = data
+		case "updatedAt":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("updatedAt"))
+			data, err := ec.unmarshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UpdatedAt = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputEditorialMediaUsageInput(ctx context.Context, obj any) (model.EditorialMediaUsageInput, error) {
+	var it model.EditorialMediaUsageInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"mediaId", "role", "inlinePosition", "caption", "creditLine", "altText", "focus"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "mediaId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("mediaId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MediaID = data
+		case "role":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("role"))
+			data, err := ec.unmarshalNEditorialMediaRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaRole(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Role = data
+		case "inlinePosition":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("inlinePosition"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.InlinePosition = data
+		case "caption":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("caption"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Caption = data
+		case "creditLine":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("creditLine"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CreditLine = data
+		case "altText":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("altText"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AltText = data
+		case "focus":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("focus"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Focus = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputExchangeAgentAccessLeaseTokenInput(ctx context.Context, obj any) (model.ExchangeAgentAccessLeaseTokenInput, error) {
 	var it model.ExchangeAgentAccessLeaseTokenInput
 	asMap := map[string]any{}
@@ -160486,6 +168963,47 @@ func (ec *executionContext) unmarshalInputMediaFilterInput(ctx context.Context, 
 				return it, err
 			}
 			it.Until = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputMintUploadGrantInput(ctx context.Context, obj any) (model.MintUploadGrantInput, error) {
+	var it model.MintUploadGrantInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"contentType", "maxSizeBytes", "sha256"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "contentType":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("contentType"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ContentType = data
+		case "maxSizeBytes":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxSizeBytes"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxSizeBytes = data
+		case "sha256":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sha256"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Sha256 = data
 		}
 	}
 
@@ -163348,7 +171866,7 @@ func (ec *executionContext) unmarshalInputUploadMediaInput(ctx context.Context, 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"file", "filename", "description", "focus", "sensitive", "spoilerText", "mediaType"}
+	fieldsInOrder := [...]string{"file", "filename", "description", "focus", "sensitive", "spoilerText", "mediaType", "editorialProvenance"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -163404,6 +171922,13 @@ func (ec *executionContext) unmarshalInputUploadMediaInput(ctx context.Context, 
 				return it, err
 			}
 			it.MediaType = data
+		case "editorialProvenance":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("editorialProvenance"))
+			data, err := ec.unmarshalOEditorialMediaProvenanceInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenanceInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.EditorialProvenance = data
 		}
 	}
 
@@ -171886,6 +180411,11 @@ func (ec *executionContext) _Draft(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Draft_actedBy(ctx, field, obj)
 		case "reviewVerdict":
 			out.Values[i] = ec._Draft_reviewVerdict(ctx, field, obj)
+		case "editorialMedia":
+			out.Values[i] = ec._Draft_editorialMedia(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "contentHash":
 			out.Values[i] = ec._Draft_contentHash(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -172075,6 +180605,11 @@ func (ec *executionContext) _DraftPreview(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "editorialMedia":
+			out.Values[i] = ec._DraftPreview_editorialMedia(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -172230,6 +180765,11 @@ func (ec *executionContext) _DraftReview(ctx context.Context, sel ast.SelectionS
 			out.Values[i] = ec._DraftReview_editorNotes(ctx, field, obj)
 		case "contentHash":
 			out.Values[i] = ec._DraftReview_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "editorialMedia":
+			out.Values[i] = ec._DraftReview_editorialMedia(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -172437,6 +180977,8 @@ func (ec *executionContext) _DraftReviewGrant(ctx context.Context, sel ast.Selec
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "expiresAt":
+			out.Values[i] = ec._DraftReviewGrant_expiresAt(ctx, field, obj)
 		case "status":
 			out.Values[i] = ec._DraftReviewGrant_status(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -172767,6 +181309,254 @@ func (ec *executionContext) _DroneWorkflowMutationPayload(ctx context.Context, s
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var editorialMediaAccessImplementors = []string{"EditorialMediaAccess"}
+
+func (ec *executionContext) _EditorialMediaAccess(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaAccess) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, editorialMediaAccessImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EditorialMediaAccess")
+		case "mediaId":
+			out.Values[i] = ec._EditorialMediaAccess_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "url":
+			out.Values[i] = ec._EditorialMediaAccess_url(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._EditorialMediaAccess_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentHash":
+			out.Values[i] = ec._EditorialMediaAccess_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var editorialMediaLifecyclePayloadImplementors = []string{"EditorialMediaLifecyclePayload"}
+
+func (ec *executionContext) _EditorialMediaLifecyclePayload(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaLifecyclePayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, editorialMediaLifecyclePayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EditorialMediaLifecyclePayload")
+		case "mediaId":
+			out.Values[i] = ec._EditorialMediaLifecyclePayload_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lifecycle":
+			out.Values[i] = ec._EditorialMediaLifecyclePayload_lifecycle(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "supersededByMediaId":
+			out.Values[i] = ec._EditorialMediaLifecyclePayload_supersededByMediaId(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var editorialMediaProvenanceImplementors = []string{"EditorialMediaProvenance"}
+
+func (ec *executionContext) _EditorialMediaProvenance(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaProvenance) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, editorialMediaProvenanceImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EditorialMediaProvenance")
+		case "origin":
+			out.Values[i] = ec._EditorialMediaProvenance_origin(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tool":
+			out.Values[i] = ec._EditorialMediaProvenance_tool(ctx, field, obj)
+		case "responsibleActorId":
+			out.Values[i] = ec._EditorialMediaProvenance_responsibleActorId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "responsibleActor":
+			out.Values[i] = ec._EditorialMediaProvenance_responsibleActor(ctx, field, obj)
+		case "sourceReferences":
+			out.Values[i] = ec._EditorialMediaProvenance_sourceReferences(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "rightsLicenseNotes":
+			out.Values[i] = ec._EditorialMediaProvenance_rightsLicenseNotes(ctx, field, obj)
+		case "createdAt":
+			out.Values[i] = ec._EditorialMediaProvenance_createdAt(ctx, field, obj)
+		case "updatedAt":
+			out.Values[i] = ec._EditorialMediaProvenance_updatedAt(ctx, field, obj)
+		case "recordedAt":
+			out.Values[i] = ec._EditorialMediaProvenance_recordedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentIntegrity":
+			out.Values[i] = ec._EditorialMediaProvenance_contentIntegrity(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var editorialMediaUsageImplementors = []string{"EditorialMediaUsage"}
+
+func (ec *executionContext) _EditorialMediaUsage(ctx context.Context, sel ast.SelectionSet, obj *model.EditorialMediaUsage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, editorialMediaUsageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EditorialMediaUsage")
+		case "mediaId":
+			out.Values[i] = ec._EditorialMediaUsage_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "role":
+			out.Values[i] = ec._EditorialMediaUsage_role(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "inlinePosition":
+			out.Values[i] = ec._EditorialMediaUsage_inlinePosition(ctx, field, obj)
+		case "caption":
+			out.Values[i] = ec._EditorialMediaUsage_caption(ctx, field, obj)
+		case "creditLine":
+			out.Values[i] = ec._EditorialMediaUsage_creditLine(ctx, field, obj)
+		case "altText":
+			out.Values[i] = ec._EditorialMediaUsage_altText(ctx, field, obj)
+		case "effectiveAltText":
+			out.Values[i] = ec._EditorialMediaUsage_effectiveAltText(ctx, field, obj)
+		case "focus":
+			out.Values[i] = ec._EditorialMediaUsage_focus(ctx, field, obj)
+		case "state":
+			out.Values[i] = ec._EditorialMediaUsage_state(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "width":
+			out.Values[i] = ec._EditorialMediaUsage_width(ctx, field, obj)
+		case "height":
+			out.Values[i] = ec._EditorialMediaUsage_height(ctx, field, obj)
+		case "mimeType":
+			out.Values[i] = ec._EditorialMediaUsage_mimeType(ctx, field, obj)
+		case "contentHash":
+			out.Values[i] = ec._EditorialMediaUsage_contentHash(ctx, field, obj)
+		case "publishedUrl":
+			out.Values[i] = ec._EditorialMediaUsage_publishedUrl(ctx, field, obj)
+		case "publishedAt":
+			out.Values[i] = ec._EditorialMediaUsage_publishedAt(ctx, field, obj)
+		case "accessUrl":
+			out.Values[i] = ec._EditorialMediaUsage_accessUrl(ctx, field, obj)
+		case "accessExpiresAt":
+			out.Values[i] = ec._EditorialMediaUsage_accessExpiresAt(ctx, field, obj)
+		case "provenance":
+			out.Values[i] = ec._EditorialMediaUsage_provenance(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -179249,6 +188039,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "updateEditorialMediaLifecycle":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateEditorialMediaLifecycle(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "dismissNotification":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_dismissNotification(ctx, field)
@@ -179599,6 +188396,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setDraftEditorialMedia":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setDraftEditorialMedia(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "autosaveDraft":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_autosaveDraft(ctx, field)
@@ -179609,6 +188413,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "deleteDraft":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_deleteDraft(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "mintUploadGrant":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_mintUploadGrant(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "finalizeUploadGrant":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_finalizeUploadGrant(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -179791,6 +188609,41 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "updatePublicationMemberRole":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_updatePublicationMemberRole(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "composePromoPackage":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_composePromoPackage(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sharePromoPackageForReview":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_sharePromoPackageForReview(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokePromoPackageReview":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_revokePromoPackageReview(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "submitPromoPackageReview":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_submitPromoPackageReview(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "releasePromoPackage":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_releasePromoPackage(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -181791,6 +190644,661 @@ func (ec *executionContext) _ProfileDirectory(ctx context.Context, sel ast.Selec
 			}
 		case "totalCount":
 			out.Values[i] = ec._ProfileDirectory_totalCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageImplementors = []string{"PromoPackage"}
+
+func (ec *executionContext) _PromoPackage(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackage")
+		case "id":
+			out.Values[i] = ec._PromoPackage_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "ownerId":
+			out.Values[i] = ec._PromoPackage_ownerId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "articleId":
+			out.Values[i] = ec._PromoPackage_articleId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "postText":
+			out.Values[i] = ec._PromoPackage_postText(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "visibility":
+			out.Values[i] = ec._PromoPackage_visibility(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentHash":
+			out.Values[i] = ec._PromoPackage_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._PromoPackage_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "releasedStatusId":
+			out.Values[i] = ec._PromoPackage_releasedStatusId(ctx, field, obj)
+		case "assets":
+			out.Values[i] = ec._PromoPackage_assets(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._PromoPackage_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updatedAt":
+			out.Values[i] = ec._PromoPackage_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "review":
+			out.Values[i] = ec._PromoPackage_review(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageAssetImplementors = []string{"PromoPackageAsset"}
+
+func (ec *executionContext) _PromoPackageAsset(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageAsset) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageAssetImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageAsset")
+		case "mediaId":
+			out.Values[i] = ec._PromoPackageAsset_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentHash":
+			out.Values[i] = ec._PromoPackageAsset_contentHash(ctx, field, obj)
+		case "publishedUrl":
+			out.Values[i] = ec._PromoPackageAsset_publishedUrl(ctx, field, obj)
+		case "state":
+			out.Values[i] = ec._PromoPackageAsset_state(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "width":
+			out.Values[i] = ec._PromoPackageAsset_width(ctx, field, obj)
+		case "height":
+			out.Values[i] = ec._PromoPackageAsset_height(ctx, field, obj)
+		case "mimeType":
+			out.Values[i] = ec._PromoPackageAsset_mimeType(ctx, field, obj)
+		case "provenance":
+			out.Values[i] = ec._PromoPackageAsset_provenance(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageConnectionImplementors = []string{"PromoPackageConnection"}
+
+func (ec *executionContext) _PromoPackageConnection(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageConnection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageConnectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageConnection")
+		case "edges":
+			out.Values[i] = ec._PromoPackageConnection_edges(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pageInfo":
+			out.Values[i] = ec._PromoPackageConnection_pageInfo(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCount":
+			out.Values[i] = ec._PromoPackageConnection_totalCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageEdgeImplementors = []string{"PromoPackageEdge"}
+
+func (ec *executionContext) _PromoPackageEdge(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageEdge) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageEdgeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageEdge")
+		case "node":
+			out.Values[i] = ec._PromoPackageEdge_node(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cursor":
+			out.Values[i] = ec._PromoPackageEdge_cursor(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageReleaseEligibilityImplementors = []string{"PromoPackageReleaseEligibility"}
+
+func (ec *executionContext) _PromoPackageReleaseEligibility(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageReleaseEligibility) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageReleaseEligibilityImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageReleaseEligibility")
+		case "eligible":
+			out.Values[i] = ec._PromoPackageReleaseEligibility_eligible(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "blockingReasons":
+			out.Values[i] = ec._PromoPackageReleaseEligibility_blockingReasons(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "reviewersApproved":
+			out.Values[i] = ec._PromoPackageReleaseEligibility_reviewersApproved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalApprovalRequired":
+			out.Values[i] = ec._PromoPackageReleaseEligibility_principalApprovalRequired(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalApproved":
+			out.Values[i] = ec._PromoPackageReleaseEligibility_principalApproved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageReleaseResultImplementors = []string{"PromoPackageReleaseResult"}
+
+func (ec *executionContext) _PromoPackageReleaseResult(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageReleaseResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageReleaseResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageReleaseResult")
+		case "package":
+			out.Values[i] = ec._PromoPackageReleaseResult_package(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "statusId":
+			out.Values[i] = ec._PromoPackageReleaseResult_statusId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "url":
+			out.Values[i] = ec._PromoPackageReleaseResult_url(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageReviewImplementors = []string{"PromoPackageReview"}
+
+func (ec *executionContext) _PromoPackageReview(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageReview) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageReviewImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageReview")
+		case "packageId":
+			out.Values[i] = ec._PromoPackageReview_packageId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentHash":
+			out.Values[i] = ec._PromoPackageReview_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "assets":
+			out.Values[i] = ec._PromoPackageReview_assets(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "activeReviewerIds":
+			out.Values[i] = ec._PromoPackageReview_activeReviewerIds(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "releaseEligible":
+			out.Values[i] = ec._PromoPackageReview_releaseEligible(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "releaseBlockingReasons":
+			out.Values[i] = ec._PromoPackageReview_releaseBlockingReasons(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "reviewersApproved":
+			out.Values[i] = ec._PromoPackageReview_reviewersApproved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalApprovalRequired":
+			out.Values[i] = ec._PromoPackageReview_principalApprovalRequired(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalApproved":
+			out.Values[i] = ec._PromoPackageReview_principalApproved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "grantCount":
+			out.Values[i] = ec._PromoPackageReview_grantCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "grantsTruncated":
+			out.Values[i] = ec._PromoPackageReview_grantsTruncated(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "grants":
+			out.Values[i] = ec._PromoPackageReview_grants(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "verdicts":
+			out.Values[i] = ec._PromoPackageReview_verdicts(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "releaseEligibility":
+			out.Values[i] = ec._PromoPackageReview_releaseEligibility(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageReviewConnectionImplementors = []string{"PromoPackageReviewConnection"}
+
+func (ec *executionContext) _PromoPackageReviewConnection(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageReviewConnection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageReviewConnectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageReviewConnection")
+		case "edges":
+			out.Values[i] = ec._PromoPackageReviewConnection_edges(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pageInfo":
+			out.Values[i] = ec._PromoPackageReviewConnection_pageInfo(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCount":
+			out.Values[i] = ec._PromoPackageReviewConnection_totalCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageReviewEdgeImplementors = []string{"PromoPackageReviewEdge"}
+
+func (ec *executionContext) _PromoPackageReviewEdge(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageReviewEdge) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageReviewEdgeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageReviewEdge")
+		case "node":
+			out.Values[i] = ec._PromoPackageReviewEdge_node(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cursor":
+			out.Values[i] = ec._PromoPackageReviewEdge_cursor(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageReviewGrantImplementors = []string{"PromoPackageReviewGrant"}
+
+func (ec *executionContext) _PromoPackageReviewGrant(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageReviewGrant) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageReviewGrantImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageReviewGrant")
+		case "reviewerId":
+			out.Values[i] = ec._PromoPackageReviewGrant_reviewerId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "grantedAt":
+			out.Values[i] = ec._PromoPackageReviewGrant_grantedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._PromoPackageReviewGrant_expiresAt(ctx, field, obj)
+		case "status":
+			out.Values[i] = ec._PromoPackageReviewGrant_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokedAt":
+			out.Values[i] = ec._PromoPackageReviewGrant_revokedAt(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var promoPackageVerdictRecordImplementors = []string{"PromoPackageVerdictRecord"}
+
+func (ec *executionContext) _PromoPackageVerdictRecord(ctx context.Context, sel ast.SelectionSet, obj *model.PromoPackageVerdictRecord) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, promoPackageVerdictRecordImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PromoPackageVerdictRecord")
+		case "verdict":
+			out.Values[i] = ec._PromoPackageVerdictRecord_verdict(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "notes":
+			out.Values[i] = ec._PromoPackageVerdictRecord_notes(ctx, field, obj)
+		case "contentHash":
+			out.Values[i] = ec._PromoPackageVerdictRecord_contentHash(ctx, field, obj)
+		case "reviewerId":
+			out.Values[i] = ec._PromoPackageVerdictRecord_reviewerId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recordedAt":
+			out.Values[i] = ec._PromoPackageVerdictRecord_recordedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "current":
+			out.Values[i] = ec._PromoPackageVerdictRecord_current(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "stale":
+			out.Values[i] = ec._PromoPackageVerdictRecord_stale(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -184171,6 +193679,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "draftEditorialMediaAccess":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_draftEditorialMediaAccess(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "uploadGrant":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_uploadGrant(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "revisions":
 			field := field
 
@@ -184462,6 +194014,69 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_myPublications(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "promoPackage":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_promoPackage(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "promoPackages":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_promoPackages(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "sharedPromoPackageReviews":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_sharedPromoPackageReviews(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -191356,6 +200971,196 @@ func (ec *executionContext) _UpdateQuotePermissionsPayload(ctx context.Context, 
 	return out
 }
 
+var uploadGrantImplementors = []string{"UploadGrant"}
+
+func (ec *executionContext) _UploadGrant(ctx context.Context, sel ast.SelectionSet, obj *model.UploadGrant) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, uploadGrantImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UploadGrant")
+		case "id":
+			out.Values[i] = ec._UploadGrant_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "ownerId":
+			out.Values[i] = ec._UploadGrant_ownerId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentType":
+			out.Values[i] = ec._UploadGrant_contentType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxSizeBytes":
+			out.Values[i] = ec._UploadGrant_maxSizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "declaredSha256":
+			out.Values[i] = ec._UploadGrant_declaredSha256(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._UploadGrant_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "presignedUrl":
+			out.Values[i] = ec._UploadGrant_presignedUrl(ctx, field, obj)
+		case "mediaId":
+			out.Values[i] = ec._UploadGrant_mediaId(ctx, field, obj)
+		case "grantedAt":
+			out.Values[i] = ec._UploadGrant_grantedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._UploadGrant_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "usedAt":
+			out.Values[i] = ec._UploadGrant_usedAt(ctx, field, obj)
+		case "failureReason":
+			out.Values[i] = ec._UploadGrant_failureReason(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var uploadGrantFinalizeResultImplementors = []string{"UploadGrantFinalizeResult"}
+
+func (ec *executionContext) _UploadGrantFinalizeResult(ctx context.Context, sel ast.SelectionSet, obj *model.UploadGrantFinalizeResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, uploadGrantFinalizeResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UploadGrantFinalizeResult")
+		case "grant":
+			out.Values[i] = ec._UploadGrantFinalizeResult_grant(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "media":
+			out.Values[i] = ec._UploadGrantFinalizeResult_media(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var uploadGrantMediaImplementors = []string{"UploadGrantMedia"}
+
+func (ec *executionContext) _UploadGrantMedia(ctx context.Context, sel ast.SelectionSet, obj *model.UploadGrantMedia) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, uploadGrantMediaImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UploadGrantMedia")
+		case "mediaId":
+			out.Values[i] = ec._UploadGrantMedia_mediaId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentType":
+			out.Values[i] = ec._UploadGrantMedia_contentType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._UploadGrantMedia_size(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentHash":
+			out.Values[i] = ec._UploadGrantMedia_contentHash(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._UploadGrantMedia_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "visibility":
+			out.Values[i] = ec._UploadGrantMedia_visibility(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var uploadMediaPayloadImplementors = []string{"UploadMediaPayload"}
 
 func (ec *executionContext) _UploadMediaPayload(ctx context.Context, sel ast.SelectionSet, obj *model.UploadMediaPayload) graphql.Marshaler {
@@ -194687,6 +204492,11 @@ func (ec *executionContext) unmarshalNCompleteSoulBootstrapConversationInput2git
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNComposePromoPackageInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐComposePromoPackageInput(ctx context.Context, v any) (model.ComposePromoPackageInput, error) {
+	res, err := ec.unmarshalInputComposePromoPackageInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNConnectionType2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConnectionType(ctx context.Context, v any) (model.ConnectionType, error) {
 	var res model.ConnectionType
 	err := res.UnmarshalGQL(v)
@@ -195751,6 +205561,148 @@ func (ec *executionContext) unmarshalNDuration2githubᚗcomᚋequaltoaiᚋlesser
 
 func (ec *executionContext) marshalNDuration2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDuration(ctx context.Context, sel ast.SelectionSet, v model.Duration) graphql.Marshaler {
 	return v
+}
+
+func (ec *executionContext) marshalNEditorialMediaAccess2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaAccess(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaAccess) graphql.Marshaler {
+	return ec._EditorialMediaAccess(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNEditorialMediaAccess2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaAccess(ctx context.Context, sel ast.SelectionSet, v *model.EditorialMediaAccess) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EditorialMediaAccess(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaLifecycle2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecycle(ctx context.Context, v any) (model.EditorialMediaLifecycle, error) {
+	var res model.EditorialMediaLifecycle
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEditorialMediaLifecycle2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecycle(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaLifecycle) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNEditorialMediaLifecyclePayload2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecyclePayload(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaLifecyclePayload) graphql.Marshaler {
+	return ec._EditorialMediaLifecyclePayload(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNEditorialMediaLifecyclePayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaLifecyclePayload(ctx context.Context, sel ast.SelectionSet, v *model.EditorialMediaLifecyclePayload) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EditorialMediaLifecyclePayload(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx context.Context, v any) (model.EditorialMediaOrigin, error) {
+	var res model.EditorialMediaOrigin
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEditorialMediaOrigin2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaOrigin(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaOrigin) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaRole(ctx context.Context, v any) (model.EditorialMediaRole, error) {
+	var res model.EditorialMediaRole
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEditorialMediaRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaRole(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaRole) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaState(ctx context.Context, v any) (model.EditorialMediaState, error) {
+	var res model.EditorialMediaState
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEditorialMediaState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaState(ctx context.Context, sel ast.SelectionSet, v model.EditorialMediaState) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNEditorialMediaUsage2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.EditorialMediaUsage) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNEditorialMediaUsage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsage(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNEditorialMediaUsage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsage(ctx context.Context, sel ast.SelectionSet, v *model.EditorialMediaUsage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EditorialMediaUsage(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaUsageInput2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageInputᚄ(ctx context.Context, v any) ([]*model.EditorialMediaUsageInput, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*model.EditorialMediaUsageInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNEditorialMediaUsageInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) unmarshalNEditorialMediaUsageInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaUsageInput(ctx context.Context, v any) (*model.EditorialMediaUsageInput, error) {
+	res, err := ec.unmarshalInputEditorialMediaUsageInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNEntity2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEntityᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Entity) graphql.Marshaler {
@@ -198463,6 +208415,11 @@ func (ec *executionContext) marshalNMetricsUpdate2ᚖgithubᚗcomᚋequaltoaiᚋ
 	return ec._MetricsUpdate(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNMintUploadGrantInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐMintUploadGrantInput(ctx context.Context, v any) (model.MintUploadGrantInput, error) {
+	res, err := ec.unmarshalInputMintUploadGrantInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNModerationAction2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐModerationAction(ctx context.Context, v any) (model.ModerationAction, error) {
 	var res model.ModerationAction
 	err := res.UnmarshalGQL(v)
@@ -199743,6 +209700,406 @@ func (ec *executionContext) marshalNProfileDirectory2ᚖgithubᚗcomᚋequaltoai
 func (ec *executionContext) unmarshalNProfileFieldInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐProfileFieldInput(ctx context.Context, v any) (*model.ProfileFieldInput, error) {
 	res, err := ec.unmarshalInputProfileFieldInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPromoPackage2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackage(ctx context.Context, sel ast.SelectionSet, v model.PromoPackage) graphql.Marshaler {
+	return ec._PromoPackage(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPromoPackage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackage(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackage(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPromoPackageAsset2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageAssetᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.PromoPackageAsset) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNPromoPackageAsset2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageAsset(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPromoPackageAsset2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageAsset(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageAsset) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageAsset(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNPromoPackageAssetState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageAssetState(ctx context.Context, v any) (model.PromoPackageAssetState, error) {
+	var res model.PromoPackageAssetState
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPromoPackageAssetState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageAssetState(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageAssetState) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNPromoPackageConnection2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageConnection(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageConnection) graphql.Marshaler {
+	return ec._PromoPackageConnection(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPromoPackageConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageConnection(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageConnection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPromoPackageEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.PromoPackageEdge) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNPromoPackageEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageEdge(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPromoPackageEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageEdge(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageEdge) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageEdge(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNPromoPackageGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageGrantStatus(ctx context.Context, v any) (model.PromoPackageGrantStatus, error) {
+	var res model.PromoPackageGrantStatus
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPromoPackageGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageGrantStatus(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageGrantStatus) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNPromoPackageReleaseEligibility2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReleaseEligibility(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageReleaseEligibility) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageReleaseEligibility(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPromoPackageReleaseResult2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReleaseResult(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageReleaseResult) graphql.Marshaler {
+	return ec._PromoPackageReleaseResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPromoPackageReleaseResult2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReleaseResult(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageReleaseResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageReleaseResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPromoPackageReview2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReview(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageReview) graphql.Marshaler {
+	return ec._PromoPackageReview(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPromoPackageReview2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReview(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageReview) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageReview(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPromoPackageReviewConnection2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewConnection(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageReviewConnection) graphql.Marshaler {
+	return ec._PromoPackageReviewConnection(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPromoPackageReviewConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewConnection(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageReviewConnection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageReviewConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPromoPackageReviewEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.PromoPackageReviewEdge) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNPromoPackageReviewEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewEdge(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPromoPackageReviewEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewEdge(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageReviewEdge) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageReviewEdge(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPromoPackageReviewGrant2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewGrantᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.PromoPackageReviewGrant) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNPromoPackageReviewGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewGrant(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPromoPackageReviewGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewGrant(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageReviewGrant) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageReviewGrant(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNPromoPackageReviewVerdict2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewVerdict(ctx context.Context, v any) (model.PromoPackageReviewVerdict, error) {
+	var res model.PromoPackageReviewVerdict
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPromoPackageReviewVerdict2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReviewVerdict(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageReviewVerdict) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) unmarshalNPromoPackageStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageStatus(ctx context.Context, v any) (model.PromoPackageStatus, error) {
+	var res model.PromoPackageStatus
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPromoPackageStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageStatus(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageStatus) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNPromoPackageVerdictRecord2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageVerdictRecordᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.PromoPackageVerdictRecord) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNPromoPackageVerdictRecord2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageVerdictRecord(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPromoPackageVerdictRecord2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageVerdictRecord(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageVerdictRecord) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PromoPackageVerdictRecord(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNPromoPackageVisibility2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageVisibility(ctx context.Context, v any) (model.PromoPackageVisibility, error) {
+	var res model.PromoPackageVisibility
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPromoPackageVisibility2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageVisibility(ctx context.Context, sel ast.SelectionSet, v model.PromoPackageVisibility) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) marshalNPublication2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPublication(ctx context.Context, sel ast.SelectionSet, v model.Publication) graphql.Marshaler {
@@ -202807,6 +213164,54 @@ func (ec *executionContext) marshalNUpload2githubᚗcomᚋ99designsᚋgqlgenᚋg
 	return res
 }
 
+func (ec *executionContext) marshalNUploadGrant2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx context.Context, sel ast.SelectionSet, v model.UploadGrant) graphql.Marshaler {
+	return ec._UploadGrant(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNUploadGrant2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrant(ctx context.Context, sel ast.SelectionSet, v *model.UploadGrant) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UploadGrant(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNUploadGrantFinalizeResult2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantFinalizeResult(ctx context.Context, sel ast.SelectionSet, v model.UploadGrantFinalizeResult) graphql.Marshaler {
+	return ec._UploadGrantFinalizeResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNUploadGrantFinalizeResult2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantFinalizeResult(ctx context.Context, sel ast.SelectionSet, v *model.UploadGrantFinalizeResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UploadGrantFinalizeResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNUploadGrantMedia2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantMedia(ctx context.Context, sel ast.SelectionSet, v *model.UploadGrantMedia) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UploadGrantMedia(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNUploadGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantStatus(ctx context.Context, v any) (model.UploadGrantStatus, error) {
+	var res model.UploadGrantStatus
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNUploadGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantStatus(ctx context.Context, sel ast.SelectionSet, v model.UploadGrantStatus) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) unmarshalNUploadMediaInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadMediaInput(ctx context.Context, v any) (model.UploadMediaInput, error) {
 	res, err := ec.unmarshalInputUploadMediaInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -203919,6 +214324,21 @@ func (ec *executionContext) marshalODraftStatus2ᚖgithubᚗcomᚋequaltoaiᚋle
 	return res
 }
 
+func (ec *executionContext) marshalOEditorialMediaProvenance2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenance(ctx context.Context, sel ast.SelectionSet, v *model.EditorialMediaProvenance) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._EditorialMediaProvenance(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOEditorialMediaProvenanceInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐEditorialMediaProvenanceInput(ctx context.Context, v any) (*model.EditorialMediaProvenanceInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputEditorialMediaProvenanceInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalOExpandMediaPreference2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐExpandMediaPreference(ctx context.Context, v any) (*model.ExpandMediaPreference, error) {
 	if v == nil {
 		return nil, nil
@@ -204590,6 +215010,20 @@ func (ec *executionContext) unmarshalOProfileFieldInput2ᚕᚖgithubᚗcomᚋequ
 		}
 	}
 	return res, nil
+}
+
+func (ec *executionContext) marshalOPromoPackage2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackage(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackage) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._PromoPackage(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOPromoPackageReview2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPromoPackageReview(ctx context.Context, sel ast.SelectionSet, v *model.PromoPackageReview) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._PromoPackageReview(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOPublication2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPublication(ctx context.Context, sel ast.SelectionSet, v *model.Publication) graphql.Marshaler {

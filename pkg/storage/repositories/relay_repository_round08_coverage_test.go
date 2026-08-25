@@ -318,9 +318,9 @@ func TestRelayRepository_Round08_UpdateAndAliases(t *testing.T) {
 			_ = dest.UpdateKeys()
 		}).Once()
 
-		// ValidateAndCreate -> Create.
+		// ValidateAndCreateOrUpdate -> CreateOrUpdate.
 		mockDB.On("Model", mock.Anything).Return(mockQueryCreate).Once()
-		mockQueryCreate.On("Create").Return(nil).Once()
+		mockQueryCreate.On("CreateOrUpdate").Return(nil).Once()
 
 		repo := NewRelayRepository(mockDB, "table", zap.NewNop(), nil)
 		repo.SetValidationService(nil)
@@ -351,7 +351,7 @@ func TestRelayRepository_Round08_UpdateAndAliases(t *testing.T) {
 		}).Once()
 
 		mockDB.On("Model", mock.Anything).Return(mockQueryCreate).Once()
-		mockQueryCreate.On("Create").Return(nil).Once()
+		mockQueryCreate.On("CreateOrUpdate").Return(nil).Once()
 
 		repo := NewRelayRepository(mockDB, "table", zap.NewNop(), nil)
 		repo.SetValidationService(nil)
@@ -392,7 +392,7 @@ func TestRelayRepository_Round08_UpdateAndAliases(t *testing.T) {
 		}).Once()
 
 		mockDB.On("Model", mock.Anything).Return(mockQueryCreate).Once()
-		mockQueryCreate.On("Create").Return(assert.AnError).Once()
+		mockQueryCreate.On("CreateOrUpdate").Return(assert.AnError).Once()
 
 		repo := NewRelayRepository(mockDB, "table", zap.NewNop(), nil)
 		repo.SetValidationService(nil)

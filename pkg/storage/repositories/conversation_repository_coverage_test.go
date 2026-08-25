@@ -302,7 +302,7 @@ func TestRound07_ConversationRepository_MuteCRUD_ErrorBranchesAndCleanup(t *test
 
 	require.Error(t, repo.CreateConversationMute(context.Background(), &storage.ConversationMute{ConversationID: "conv-1"}))
 
-	mockQuery.On("Create").Return(stdErrors.New("create-failed")).Once()
+	mockQuery.On("CreateOrUpdate").Return(stdErrors.New("create-failed")).Once()
 	require.Error(t, repo.CreateConversationMute(context.Background(), &storage.ConversationMute{Username: "user-1", ConversationID: "conv-1"}))
 
 	mockQuery.On("First", mock.Anything).Return(ddbErrors.ErrItemNotFound).Once()

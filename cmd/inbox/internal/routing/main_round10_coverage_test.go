@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 func TestInboxMain_Round10_BuildAppAndLambdaHandler(t *testing.T) {
@@ -71,7 +71,7 @@ func TestInboxMain_Round10_BuildAppAndLambdaHandler(t *testing.T) {
 	_, _ = handlerNoMetrics(context.Background(), noMetricsEvent)
 
 	// Exercise the panic recovery path in the middleware chain.
-	app.Get("/panic", func(*apptheory.Context) (*apptheory.Response, error) { panic("boom") })
+	app.Get("/panic", func(*apptheory.Context) (*apptheory.Response, error) { panic("boom") }, apptheory.Public())
 	panicEvent, err := json.Marshal(makeAPIEvent("GET", "/panic", map[string]string{"Host": "localhost"}))
 	require.NoError(t, err)
 	_, _ = handler(context.Background(), panicEvent)

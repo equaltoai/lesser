@@ -69,6 +69,7 @@ func (e *upEnv) resolveAuthUIDist() (string, error) {
 		if strings.TrimSpace(e.releaseAuthUIDir) == "" {
 			return "", fmt.Errorf("release auth-ui bundle is not prepared")
 		}
+		//nolint:gosec // G703: releaseAuthUIDir is the checksum-verified extracted bundle root and index.html is a fixed child.
 		if _, err := os.Stat(filepath.Join(e.releaseAuthUIDir, "index.html")); err != nil {
 			return "", fmt.Errorf("release auth-ui bundle missing index.html at %s", e.releaseAuthUIDir)
 		}
@@ -81,10 +82,12 @@ func buildAuthUI(repoRoot string) (string, error) {
 	authDir := filepath.Join(repoRoot, "auth-ui")
 	distDir := filepath.Join(authDir, "dist")
 
+	//nolint:gosec // G703: authDir is a fixed child of the discovered repository root and package.json is a fixed marker.
 	if _, err := os.Stat(filepath.Join(authDir, "package.json")); err != nil {
 		return "", fmt.Errorf("auth-ui not found at %s", authDir)
 	}
 
+	//nolint:gosec // G703: authDir is a fixed child of the discovered repository root and node_modules is a fixed child.
 	if _, err := os.Stat(filepath.Join(authDir, "node_modules")); err != nil {
 		fmt.Println("\nInstalling auth UI dependencies...")
 		if err := runCommandFn(context.Background(), "pnpm", []string{"install", "--frozen-lockfile"}, execOptions{Dir: authDir}); err != nil {
@@ -97,6 +100,7 @@ func buildAuthUI(repoRoot string) (string, error) {
 		return "", fmt.Errorf("pnpm build (auth-ui): %w", err)
 	}
 
+	//nolint:gosec // G703: distDir is a fixed child of the discovered repository root and index.html is the fixed build output marker.
 	if _, err := os.Stat(filepath.Join(distDir, "index.html")); err != nil {
 		return "", fmt.Errorf("auth UI build missing %s", distDir)
 	}

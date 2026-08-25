@@ -139,7 +139,7 @@ func TestInstanceHealthRepository_SaveAndGetSummaryAndCalculate(t *testing.T) {
 	err := repo.SaveHealthSummary(context.Background(), &models.InstanceHealthSummary{Domain: ""})
 	require.Error(t, err)
 
-	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 	summary := &models.InstanceHealthSummary{Domain: "example.com", Window: 24 * time.Hour, Availability: 0.9, HealthScore: 70, ErrorRate: 0.2}
 	err = repo.SaveHealthSummary(context.Background(), summary)
 	require.NoError(t, err)

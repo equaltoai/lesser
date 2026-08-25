@@ -1535,9 +1535,14 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 	return marshalers.NewKMSEncryptor(kmsKeyID)
 }
 
-// isAccountNotFound checks if an error is a not found error
+// isAccountNotFound checks only stable item-absence sentinels and codes. Resource
+// failures such as a missing table or index must propagate to callers.
 func isAccountNotFound(err error) bool {
-	return dynamormErrors.IsNotFound(err) || IsRepositoryNotFoundError(err) || strings.Contains(strings.ToLower(err.Error()), "not found")
+	var actorNotFound common.ActorNotFoundError
+	return errors.Is(err, storage.ErrNotFound) ||
+		dynamormErrors.IsNotFound(err) ||
+		IsRepositoryNotFoundError(err) ||
+		errors.As(err, &actorNotFound)
 }
 
 // ===== Account Pin Operations =====

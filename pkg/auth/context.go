@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 // Context represents the authenticated user context

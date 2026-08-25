@@ -18,7 +18,7 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 const (
@@ -120,7 +120,7 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 	userAgent, _ := h.getDeviceInfo(ctx)
 	token, err := h.mintDelegatedAgentTokens(ctx, req.AgentUsername, requestedScopes, accessTTL, req.DeviceLabel, userAgent, ownerClaims.Username, req.ContentClass)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return oauthTemporarilyUnavailable("Agent token mint is temporarily unavailable")
 	}
 
 	apiAccount := h.converter.ActorToAccount(account.Actor)

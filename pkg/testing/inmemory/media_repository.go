@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -148,6 +150,87 @@ func (r *MediaRepository) UpdateMedia(_ context.Context, media *models.Media) er
 	media.UpdatedAt = time.Now()
 	r.media[media.MediaID] = media
 
+	return nil
+}
+
+// UpdateMediaPublishedState models the production field-scoped writer: only the
+// durable published-serving attributes change, other metadata is untouched. The
+// write is conditioned on the observed model version and advances it on success,
+// mirroring the production ConditionVersion semantics.
+func (r *MediaRepository) UpdateMediaPublishedState(_ context.Context, mediaID string, publishedS3Key, publishedURL string, publishedAt time.Time, expectedVersion int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	existing, exists := r.media[mediaID]
+	if !exists {
+		return storage.ErrNotFound
+	}
+	if existing.ModelVersion != expectedVersion {
+		return apperrors.DynamoDBConditionalCheckFailed("media " + mediaID).WithInternalError(storage.ErrNotFound)
+	}
+	stored := *existing
+	stored.PublishedS3Key = strings.TrimSpace(publishedS3Key)
+	stored.PublishedURL = strings.TrimSpace(publishedURL)
+	stored.PublishedAt = &publishedAt
+	stored.ModelVersion = expectedVersion + 1
+	stored.UpdatedAt = time.Now()
+	r.media[mediaID] = &stored
+	return nil
+}
+
+// ClearMediaPublishedState models the production compensating rollback writer:
+// it removes the durable published-serving attributes under the same version
+// condition, so a stale rollback cannot clobber a concurrent re-mint.
+func (r *MediaRepository) ClearMediaPublishedState(_ context.Context, mediaID string, expectedVersion int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	existing, exists := r.media[mediaID]
+	if !exists {
+		return storage.ErrNotFound
+	}
+	if existing.ModelVersion != expectedVersion {
+		return apperrors.DynamoDBConditionalCheckFailed("media " + mediaID).WithInternalError(storage.ErrNotFound)
+	}
+	stored := *existing
+	stored.PublishedS3Key = ""
+	stored.PublishedURL = ""
+	stored.PublishedAt = nil
+	stored.ModelVersion = expectedVersion + 1
+	stored.UpdatedAt = time.Now()
+	r.media[mediaID] = &stored
+	return nil
+}
+
+// UpdateMediaEditorialState models the production field-scoped writer: only the
+// lifecycle attributes change, other metadata is untouched. The write is
+// conditioned on the observed model version and advances it on success.
+func (r *MediaRepository) UpdateMediaEditorialState(_ context.Context, mediaID string, state models.EditorialLifecycle, supersededByMediaID string, expectedVersion int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	existing, exists := r.media[mediaID]
+	if !exists {
+		return storage.ErrNotFound
+	}
+	state = models.EditorialLifecycle(strings.TrimSpace(string(state)))
+	supersededByMediaID = strings.TrimSpace(supersededByMediaID)
+	if state == models.EditorialLifecycleSuperseded && supersededByMediaID == "" {
+		return fmt.Errorf("superseded editorial media must name the superseding asset")
+	}
+	if existing.ModelVersion != expectedVersion {
+		return apperrors.DynamoDBConditionalCheckFailed("media " + mediaID).WithInternalError(storage.ErrNotFound)
+	}
+	stored := *existing
+	if state == "" || state == models.EditorialLifecycleAvailable {
+		stored.EditorialState = ""
+	} else {
+		stored.EditorialState = state
+	}
+	stored.SupersededByMediaID = supersededByMediaID
+	stored.ModelVersion = expectedVersion + 1
+	stored.UpdatedAt = time.Now()
+	r.media[mediaID] = &stored
 	return nil
 }
 

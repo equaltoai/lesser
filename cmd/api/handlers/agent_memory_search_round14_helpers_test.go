@@ -7,7 +7,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 func TestAgentMemorySearchRound14_ParseDateRange(t *testing.T) {

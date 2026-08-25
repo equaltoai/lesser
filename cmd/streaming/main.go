@@ -23,8 +23,8 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/theory-cloud/apptheory/v3/pkg/streamer"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	"github.com/theory-cloud/apptheory/v4/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 
@@ -68,6 +68,10 @@ type streamingConnectionRepository interface {
 	WriteSubscription(ctx context.Context, connectionID, userID, stream string) error
 	DeleteSubscription(ctx context.Context, connectionID, stream string) error
 }
+
+const streamingResolvedConnectionKey = "lesser.streaming.resolved_connection"
+
+type streamingResolvedConnectionContextKey struct{}
 
 type websocketCostTracker interface {
 	TrackWebSocketOperation(ctx context.Context, opCtx *repositories.WebSocketOperationContext, result *repositories.WebSocketOperationResult) error
@@ -357,11 +361,20 @@ func (sh *StreamingHandler) HandleWebSocketDefault(ctx *apptheory.Context) (*app
 	}
 	sh.wsClient = wsClient
 
-	if err := sh.handleMessage(ctx.Context(), event); err != nil {
+	frameCtx := resolvedStreamingFrameContext(ctx)
+	if err := sh.handleMessage(frameCtx, event); err != nil {
 		return nil, err
 	}
 
 	return &apptheory.Response{Status: 200}, nil
+}
+
+func resolvedStreamingFrameContext(ctx *apptheory.Context) context.Context {
+	frameCtx := ctx.Context()
+	if connection, ok := ctx.Get(streamingResolvedConnectionKey).(*models.WebSocketConnection); ok && connection != nil {
+		return context.WithValue(frameCtx, streamingResolvedConnectionContextKey{}, connection)
+	}
+	return frameCtx
 }
 
 // handleConnect handles WebSocket connection events
@@ -515,7 +528,11 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 	}
 
 	// Get connection details using DynamORM repository
-	connection, err := sh.connectionRepo.GetConnection(ctx, event.RequestContext.ConnectionID)
+	connection, _ := ctx.Value(streamingResolvedConnectionContextKey{}).(*models.WebSocketConnection)
+	var err error
+	if connection == nil {
+		connection, err = sh.connectionRepo.GetConnection(ctx, event.RequestContext.ConnectionID)
+	}
 	if err != nil {
 		logger.Error("failed to get connection", zap.Error(err))
 		return sh.sendError(event.RequestContext.ConnectionID, pkgErrors.StreamingConnectionNotFound().Error())
@@ -1056,29 +1073,100 @@ func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token 
 }
 
 func main() {
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier:              apptheory.TierP2,
+		PrincipalResolver: resolveStreamingWebSocketPrincipal,
+		WebSocketSupport:  true,
+	})
 	app.WebSocket("$connect", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		if handler == nil {
 			return nil, fmt.Errorf("streaming handler not initialized")
 		}
 		return handler.HandleWebSocketConnect(ctx)
-	})
+	}, apptheory.Optional())
 	app.WebSocket("$disconnect", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		if handler == nil {
 			return nil, fmt.Errorf("streaming handler not initialized")
 		}
 		return handler.HandleWebSocketDisconnect(ctx)
-	})
+	}, apptheory.Optional())
 	app.WebSocket("$default", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		if handler == nil {
 			return nil, fmt.Errorf("streaming handler not initialized")
 		}
 		return handler.HandleWebSocketDefault(ctx)
-	})
+	}, apptheory.Optional())
 
 	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
 		return app.HandleLambda(ctx, event)
 	})
+}
+
+func resolveStreamingWebSocketPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	if handler == nil {
+		return nil, nil
+	}
+	return handler.resolveWebSocketPrincipal(ctx)
+}
+
+func (sh *StreamingHandler) resolveWebSocketPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	if ctx == nil || sh == nil {
+		return nil, nil
+	}
+	wsCtx := ctx.AsWebSocket()
+	if wsCtx == nil {
+		return nil, nil
+	}
+	if wsCtx.RouteKey != "$connect" {
+		connection, err := sh.connectionRepo.GetConnection(ctx.Context(), wsCtx.ConnectionID)
+		if err != nil || connection == nil {
+			return nil, nil
+		}
+		identity := strings.TrimSpace(connection.Username)
+		if identity == "" {
+			identity = strings.TrimSpace(connection.UserID)
+		}
+		if identity == "" {
+			return nil, nil
+		}
+		ctx.Set(streamingResolvedConnectionKey, connection)
+		return &apptheory.SecurePrincipal{Identity: identity, Kind: apptheory.PrincipalExternal}, nil
+	}
+
+	event, err := webSocketEventFromAppTheory(ctx)
+	if err != nil || sh.cfg == nil || sh.storageFactory == nil {
+		return nil, nil
+	}
+	token := ""
+	if event.QueryStringParameters != nil {
+		token = decodeQueryToken(event.QueryStringParameters["access_token"])
+	}
+	for _, key := range []string{"Authorization", "authorization"} {
+		if value := event.Headers[key]; strings.HasPrefix(value, "Bearer ") {
+			token = decodeQueryToken(strings.TrimPrefix(value, "Bearer "))
+			break
+		}
+	}
+	if strings.TrimSpace(token) == "" {
+		return nil, nil
+	}
+	jwtSecret, err := sh.cfg.ResolveJWTSecret()
+	if err != nil || strings.TrimSpace(jwtSecret) == "" {
+		return nil, nil
+	}
+	auditLogger := auth.NewAuditLogger(sh.storageFactory, sh.logger, auth.DefaultAuditConfig())
+	oauthService := auth.NewOAuthService(jwtSecret, sh.cfg, sh.storageFactory, auditLogger)
+	claims, err := oauthService.ValidateAccessToken(token)
+	if err != nil || claims == nil {
+		return nil, nil
+	}
+	principal := auth.PrincipalFromClaims(claims)
+	return &apptheory.SecurePrincipal{
+		Identity: principal.Identity,
+		Scopes:   principal.Scopes,
+		Claims:   principal.Claims,
+		Kind:     apptheory.PrincipalExternal,
+	}, nil
 }
 
 func ensureRepositoryFactory() error {

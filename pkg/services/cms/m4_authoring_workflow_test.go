@@ -31,7 +31,7 @@ func TestM4DraftPublishCreatesCanonicalArticleWithAttribution(t *testing.T) {
 		Slug:          "agent-draft",
 		Content:       "# Agent Draft\n\nBody.",
 		ContentFormat: "markdown",
-		Status:        draftStatusDraft,
+		Status:        DraftStatusDraft,
 		GeneratedBy:   " https://example.com/users/agent-0 ",
 	}
 	require.NoError(t, repo.CreateDraft(context.Background(), draft))
@@ -55,6 +55,7 @@ func TestM4DraftPublishRejectsCanonicalArticleSlugChangeSafely(t *testing.T) {
 
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
 	articleID := "https://example.com/articles/original"
@@ -83,6 +84,8 @@ func TestM4DraftPublishRejectsCanonicalArticleSlugChangeSafely(t *testing.T) {
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	draftSvc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-1",
@@ -93,7 +96,7 @@ func TestM4DraftPublishRejectsCanonicalArticleSlugChangeSafely(t *testing.T) {
 		Slug:          "renamed",
 		Content:       "after",
 		ContentFormat: "markdown",
-		Status:        draftStatusDraft,
+		Status:        DraftStatusDraft,
 	}
 	require.NoError(t, draftRepo.CreateDraft(context.Background(), draft))
 
@@ -104,7 +107,7 @@ func TestM4DraftPublishRejectsCanonicalArticleSlugChangeSafely(t *testing.T) {
 
 	afterDraft, getErr := draftRepo.GetDraft(context.Background(), "alice", "draft-1")
 	require.NoError(t, getErr)
-	require.Equal(t, draftStatusFailed, afterDraft.Status)
+	require.Equal(t, DraftStatusFailed, afterDraft.Status)
 
 	stored, getArticleErr := articleRepo.GetArticle(context.Background(), articleID)
 	require.NoError(t, getArticleErr)
@@ -118,6 +121,7 @@ func TestM4ArticleUpdateRecordsRevisionAttributionAndFederatesUpdate(t *testing.
 
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 
 	articleID := "https://example.com/articles/hello"

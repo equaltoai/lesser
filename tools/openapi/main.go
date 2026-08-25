@@ -93,12 +93,14 @@ type pathItem struct {
 	Delete *operation `yaml:"delete,omitempty"`
 }
 
+type securityRequirements []map[string][]string
+
 type operation struct {
 	OperationID string                `yaml:"operationId,omitempty"`
 	Summary     string                `yaml:"summary,omitempty"`
 	Description string                `yaml:"description,omitempty"`
 	Tags        []string              `yaml:"tags,omitempty"`
-	Security    []map[string][]string `yaml:"security,omitempty"`
+	Security    *securityRequirements `yaml:"security,omitempty"`
 	Parameters  []parameter           `yaml:"parameters,omitempty"`
 	RequestBody *requestBody          `yaml:"requestBody,omitempty"`
 	Responses   map[string]response   `yaml:"responses"`
@@ -1362,18 +1364,30 @@ func applyAuthDefaults(op *operation, route routeDef) {
 
 	switch route.Auth {
 	case authModeBearerRequired:
-		op.Security = []map[string][]string{{"bearerAuth": {}}}
+		op.Security = newSecurityRequirements(map[string][]string{"bearerAuth": {}})
 	case authModeBearerOptional:
-		op.Security = []map[string][]string{{}, {"bearerAuth": {}}}
+		op.Security = newSecurityRequirements(
+			map[string][]string{},
+			map[string][]string{"bearerAuth": {}},
+		)
 	case authModeSetupBearer:
-		op.Security = []map[string][]string{{"setupBearer": {}}}
+		op.Security = newSecurityRequirements(map[string][]string{"setupBearer": {}})
 	case authModeSoulBinding:
-		op.Security = []map[string][]string{{"soulBindingBearer": {}}}
+		op.Security = newSecurityRequirements(map[string][]string{"soulBindingBearer": {}})
 	case authModePublic:
+		if route.Lambda == lambdaAPI {
+			op.Security = newSecurityRequirements()
+			return
+		}
 		op.Security = nil
 	default:
 		op.Security = nil
 	}
+}
+
+func newSecurityRequirements(alternatives ...map[string][]string) *securityRequirements {
+	reqs := securityRequirements(append([]map[string][]string(nil), alternatives...))
+	return &reqs
 }
 
 func ensureStandardResponses(op *operation, route routeDef) {
@@ -1636,8 +1650,12 @@ func inferRouteAuthFromExpr(expr ast.Expr) authMode {
 
 func authModeFromRouteMiddlewareToken(name string) authMode {
 	switch {
-	case name == "optionalAuth" || name == "OptionalAuth":
+	case name == "optionalAuth" || name == "OptionalAuth" || name == "Optional":
 		return authModeBearerOptional
+	case name == "Authenticated" || name == "InternalOnly":
+		return authModeBearerRequired
+	case name == "Public":
+		return authModePublic
 	case strings.HasPrefix(name, "require") || strings.HasPrefix(name, "Require"):
 		return authModeBearerRequired
 	default:
@@ -2083,6 +2101,9 @@ func extractHandlerName(expr ast.Expr) (string, bool) {
 	case *ast.SelectorExpr:
 		return v.Sel.Name, true
 	case *ast.CallExpr:
+		if ident, ok := v.Fun.(*ast.Ident); ok && ident.Name == "requireAnySecureScope" && len(v.Args) > 0 {
+			return extractHandlerName(v.Args[0])
+		}
 		if sel, ok := v.Fun.(*ast.SelectorExpr); ok && sel.Sel != nil {
 			if recv, ok := sel.X.(*ast.Ident); ok {
 				if recv.Name == "ratelimit" && sel.Sel.Name == "ApplyRateLimit" && len(v.Args) > 0 {

@@ -96,7 +96,7 @@ func (a *AnalyticsAggregator) RecordMetric(ctx context.Context, domain string, m
 
 	// Trigger 5-minute aggregation if we're at a 5-minute boundary
 	if now.Minute()%5 == 0 && now.Second() < 30 {
-		go a.triggerAggregation(context.Background(), domain, now)
+		go a.triggerAggregation(context.WithoutCancel(ctx), domain, now)
 	}
 
 	return nil

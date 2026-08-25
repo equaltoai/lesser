@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/auth"
+	mediasvc "github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
@@ -114,6 +115,47 @@ func (r *mutationResolver) UpdateDraft(ctx context.Context, id string, input mod
 	}
 	r.auditActAs(ctx, acting, "cms.draft.update", draft.ID, nil)
 
+	return r.convertCMSDraft(ctx, draft), nil
+}
+
+// SetDraftEditorialMedia is the resolver for the setDraftEditorialMedia field.
+func (r *mutationResolver) SetDraftEditorialMedia(ctx context.Context, draftID string, inputs []*model.EditorialMediaUsageInput) (*model.Draft, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	owner, acting, err := r.requireActingIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	service := r.Registry.Drafts()
+	if service == nil {
+		return nil, errors.New("draft service is not available")
+	}
+	usages := make([]models.DraftMediaUsage, 0, len(inputs))
+	for _, input := range inputs {
+		if input == nil {
+			return nil, errors.New("editorial media usage cannot be null")
+		}
+		var inlinePosition *int
+		if input.InlinePosition != nil {
+			value := *input.InlinePosition
+			inlinePosition = &value
+		}
+		usages = append(usages, models.DraftMediaUsage{
+			MediaID:        input.MediaID,
+			Role:           models.EditorialMediaRole(strings.ToLower(string(input.Role))),
+			InlinePosition: inlinePosition,
+			Caption:        trimStringPtr(input.Caption),
+			CreditLine:     trimStringPtr(input.CreditLine),
+			AltText:        trimStringPtr(input.AltText),
+			Focus:          trimStringPtr(input.Focus),
+		})
+	}
+	draft, err := service.SetEditorialMedia(ctx, owner, strings.TrimSpace(draftID), usages)
+	if err != nil {
+		return nil, err
+	}
+	r.auditActAs(ctx, acting, "cms.draft.media_set", draft.ID, map[string]any{"media_count": len(usages)})
 	return r.convertCMSDraft(ctx, draft), nil
 }
 
@@ -392,6 +434,7 @@ func (r *mutationResolver) UpdateArticle(ctx context.Context, id string, input m
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
@@ -470,6 +513,7 @@ func (r *mutationResolver) DeleteArticle(ctx context.Context, id string) (bool, 
 	if err != nil {
 		return false, err
 	}
+	article = cmsCloneArticleForWrite(article)
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return false, err
@@ -715,6 +759,7 @@ func (r *mutationResolver) AddArticleToSeries(ctx context.Context, seriesID stri
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
 	}
@@ -770,6 +815,7 @@ func (r *mutationResolver) RemoveArticleFromSeries(ctx context.Context, seriesID
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
 	}
@@ -833,6 +879,7 @@ func (r *mutationResolver) ReorderSeriesArticles(ctx context.Context, seriesID s
 		if err != nil {
 			return nil, err
 		}
+		article = cmsCloneArticleForWrite(article)
 		if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 			return nil, err
 		}
@@ -1059,6 +1106,7 @@ func (r *mutationResolver) AddArticleToCategory(ctx context.Context, categoryID 
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
@@ -1115,6 +1163,7 @@ func (r *mutationResolver) RemoveArticleFromCategory(ctx context.Context, catego
 	if err != nil {
 		return nil, err
 	}
+	article = cmsCloneArticleForWrite(article)
 
 	if err := r.ensureAuthorCanWriteCMS(ctx, username, article.AttributedTo); err != nil {
 		return nil, err
@@ -1371,6 +1420,43 @@ func cmsApplyArticleFeaturedImage(ctx context.Context, mediaRepo cmsMediaGetter,
 	return nil
 }
 
+// cmsCloneArticleForWrite gives each mutation ownership of the article value it
+// changes. Repository test doubles and caches may return a shared pointer, while
+// the CMS service retains its submitted snapshot for best-effort federation.
+// Mutating that shared value would let a later resolver race the prior handoff.
+func cmsCloneArticleForWrite(article *models.Article) *models.Article {
+	if article == nil {
+		return nil
+	}
+
+	clone := *article
+	clone.To = append([]string(nil), article.To...)
+	clone.CC = append([]string(nil), article.CC...)
+	clone.BTo = append([]string(nil), article.BTo...)
+	clone.BCC = append([]string(nil), article.BCC...)
+	clone.TableOfContents = append([]models.TOCEntry(nil), article.TableOfContents...)
+	clone.CategoryIDs = append([]string(nil), article.CategoryIDs...)
+
+	if article.InReplyTo != nil {
+		inReplyTo := *article.InReplyTo
+		clone.InReplyTo = &inReplyTo
+	}
+	if article.SeriesID != nil {
+		seriesID := *article.SeriesID
+		clone.SeriesID = &seriesID
+	}
+	if article.SeriesOrder != nil {
+		seriesOrder := *article.SeriesOrder
+		clone.SeriesOrder = &seriesOrder
+	}
+	if article.FeaturedImage != nil {
+		featuredImage := *article.FeaturedImage
+		clone.FeaturedImage = &featuredImage
+	}
+
+	return &clone
+}
+
 func cmsSetStringField(dest *string, value *string) {
 	if value == nil {
 		return
@@ -1543,7 +1629,7 @@ func derefString(value *string) string {
 	return *value
 }
 
-func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID string, reviewer string) (*model.DraftReview, error) {
+func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID string, reviewer string, includeAccessUrls *bool) (*model.DraftReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -1575,7 +1661,10 @@ func (r *mutationResolver) ShareDraftForReview(ctx context.Context, draftID stri
 	if err != nil {
 		return nil, err
 	}
-	return r.buildCMSDraftReview(ctx, d, g, vs)
+	// Write-path responses mint per-asset read URLs only when the caller
+	// explicitly opts in (includeAccessUrls); otherwise the reviewer reads exact
+	// assets through draftEditorialMediaAccess (fold-in a).
+	return r.buildCMSDraftReview(ctx, d, g, vs, cmsIncludeAccessUrls(includeAccessUrls))
 }
 func (r *mutationResolver) RevokeDraftReview(ctx context.Context, draftID string, reviewer string) (bool, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
@@ -1594,7 +1683,7 @@ func (r *mutationResolver) RevokeDraftReview(ctx context.Context, draftID string
 	}
 	return true, nil
 }
-func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string) (*model.DraftReview, error) {
+func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string, verdict model.DraftReviewVerdict, notes *string, includeAccessUrls *bool, contentHash *string) (*model.DraftReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -1613,7 +1702,11 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 	if g == nil {
 		return nil, errors.New("draft owner cannot review their own draft")
 	}
-	if _, err = svc.SubmitDraftReview(ctx, caller, d.AuthorID, draftID, string(verdict), trimStringPtr(notes)); err != nil {
+	expectedContentHash := ""
+	if contentHash != nil {
+		expectedContentHash = strings.TrimSpace(*contentHash)
+	}
+	if _, err = svc.SubmitDraftReview(ctx, caller, d.AuthorID, draftID, string(verdict), trimStringPtr(notes), expectedContentHash); err != nil {
 		return nil, err
 	}
 	r.auditActAs(ctx, acting, "cms.draft.review_verdict", draftID, map[string]any{"verdict": string(verdict)})
@@ -1621,5 +1714,58 @@ func (r *mutationResolver) SubmitDraftReview(ctx context.Context, draftID string
 	if err != nil {
 		return nil, err
 	}
-	return r.buildCMSDraftReview(ctx, d, g, vs)
+	// Write-path responses mint per-asset read URLs only when the caller
+	// explicitly opts in (includeAccessUrls); otherwise the reviewer reads exact
+	// assets through draftEditorialMediaAccess (fold-in a).
+	return r.buildCMSDraftReview(ctx, d, g, vs, cmsIncludeAccessUrls(includeAccessUrls))
+}
+
+func (r *mutationResolver) MintUploadGrant(ctx context.Context, input model.MintUploadGrantInput) (*model.UploadGrant, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return nil, errors.New("media service is not available")
+	}
+	grant, url, err := mediaService.MintUploadGrant(ctx, mediasvc.MintUploadGrantInput{
+		Owner:         username,
+		ContentType:   input.ContentType,
+		MaxSizeBytes:  int64(input.MaxSizeBytes),
+		ContentSHA256: input.Sha256,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.convertCMSUploadGrant(grant, url), nil
+}
+
+func (r *mutationResolver) FinalizeUploadGrant(ctx context.Context, grantID string) (*model.UploadGrantFinalizeResult, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return nil, errors.New("media service is not available")
+	}
+	media, err := mediaService.FinalizeUploadGrant(ctx, username, grantID)
+	if err != nil {
+		return nil, err
+	}
+	grant, _, err := mediaService.UploadGrant(ctx, username, grantID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.UploadGrantFinalizeResult{
+		Grant: r.convertCMSUploadGrant(grant, ""),
+		Media: r.convertCMSUploadGrantMedia(media),
+	}, nil
 }

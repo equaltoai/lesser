@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	agentpkg "github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -33,6 +35,122 @@ type round12TestClaims struct {
 	username string
 }
 
+type round12MediaS3Service struct {
+	state *round12PermissiveQueryState
+}
+
+func (s round12MediaS3Service) UploadFile(
+	_ context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+) (string, error) {
+	if s.state != nil {
+		if s.state.uploadObjects == nil {
+			s.state.uploadObjects = make(map[string][]byte)
+			s.state.uploadTypes = make(map[string]string)
+		}
+		s.state.uploadObjects[bucket+"/"+key] = append([]byte(nil), data...)
+		s.state.uploadTypes[bucket+"/"+key] = contentType
+	}
+	return "s3://" + bucket + "/" + key, nil
+}
+
+func (s round12MediaS3Service) UploadInternalFile(
+	ctx context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+	_ string,
+) (string, error) {
+	return s.UploadFile(ctx, bucket, key, data, contentType)
+}
+
+func (round12MediaS3Service) DeleteFile(context.Context, string, string) error { return nil }
+
+func (s round12MediaS3Service) PresignPutObject(_ context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error) {
+	if s.state != nil {
+		s.state.uploadGrantPresigns = append(s.state.uploadGrantPresigns, round12UploadGrantPresign{
+			bucket: bucket, key: key, contentType: contentType, contentSHA256: contentSHA256Hex,
+			kmsKeyID: kmsKeyID, expiry: expiry,
+		})
+	}
+	return "https://presigned.example/" + bucket + "/" + key + "?X-Amz-Signature=test", nil
+}
+
+func (s round12MediaS3Service) HeadFile(_ context.Context, bucket, key string) (int64, string, error) {
+	if s.state != nil && s.state.uploadObjects != nil {
+		if data, ok := s.state.uploadObjects[bucket+"/"+key]; ok {
+			return int64(len(data)), s.state.uploadTypes[bucket+"/"+key], nil
+		}
+	}
+	return 0, "", fmt.Errorf("object %s/%s not found", bucket, key)
+}
+
+func (s round12MediaS3Service) DownloadFile(_ context.Context, bucket, key string, maxBytes int64) ([]byte, string, error) {
+	if s.state != nil && s.state.uploadObjects != nil {
+		if data, ok := s.state.uploadObjects[bucket+"/"+key]; ok {
+			if int64(len(data)) > maxBytes {
+				return nil, "", fmt.Errorf("object %s/%s exceeds size cap", bucket, key)
+			}
+			return append([]byte(nil), data...), s.state.uploadTypes[bucket+"/"+key], nil
+		}
+	}
+	return nil, "", fmt.Errorf("object %s/%s not found", bucket, key)
+}
+
+func (s round12MediaS3Service) GeneratePresignedURL(_ context.Context, bucket, key string, _ time.Duration) (string, error) {
+	if s.state != nil {
+		s.state.presignCalls++
+		if s.state.presignErr != nil {
+			return "", s.state.presignErr
+		}
+	}
+	return "https://signed.example/" + bucket + "/" + key + "?signature=review", nil
+}
+
+func (s round12MediaS3Service) CopyFileToPublished(_ context.Context, bucket, sourceKey, destinationKey, _ string) (string, error) {
+	if s.state != nil {
+		s.state.publishCopies = append(s.state.publishCopies, round12PublishCopy{source: sourceKey, destination: destinationKey})
+	}
+	return "s3://" + bucket + "/" + destinationKey, nil
+}
+
+type round12VAPIDSecretsClient struct {
+	secret string
+}
+
+func newRound12VAPIDSecretsClient() *round12VAPIDSecretsClient {
+	payload, _ := json.Marshal(map[string]string{
+		"public_key":  "server-key",
+		"private_key": "test-private-key",
+		"subject":     "mailto:admin@localhost",
+	})
+	return &round12VAPIDSecretsClient{secret: string(payload)}
+}
+
+func (c *round12VAPIDSecretsClient) GetSecretValue(
+	_ context.Context,
+	_ *secretsmanager.GetSecretValueInput,
+	_ ...func(*secretsmanager.Options),
+) (*secretsmanager.GetSecretValueOutput, error) {
+	return &secretsmanager.GetSecretValueOutput{SecretString: aws.String(c.secret)}, nil
+}
+
+func (c *round12VAPIDSecretsClient) PutSecretValue(
+	_ context.Context,
+	input *secretsmanager.PutSecretValueInput,
+	_ ...func(*secretsmanager.Options),
+) (*secretsmanager.PutSecretValueOutput, error) {
+	if input == nil || input.SecretString == nil {
+		return nil, fmt.Errorf("test VAPID secret value is absent")
+	}
+	c.secret = aws.ToString(input.SecretString)
+	return &secretsmanager.PutSecretValueOutput{}, nil
+}
+
 func (c round12TestClaims) HasScope(string) bool { return true }
 func (c round12TestClaims) GetUsername() string  { return c.username }
 
@@ -55,8 +173,33 @@ type round12PermissiveQueryState struct {
 	seededImportBudgets    map[string]*models.ImportBudget
 	seededQuotePermissions map[string]*models.QuotePermissions
 	seededAgentShareGrants map[string]*models.AgentShareGrant
+	seededMedia            map[string]*models.Media
+	persistMedia           bool
+	presignCalls           int
+	presignErr             error
+	publishCopies          []round12PublishCopy
 	pendingUpdateSets      map[string]any
 	pendingUpdateRemovals  map[string]struct{}
+
+	// Presigned-companion upload grant surface: simulated PUT objects and the
+	// recorded presign-PUT calls.
+	uploadObjects       map[string][]byte
+	uploadTypes         map[string]string
+	uploadGrantPresigns []round12UploadGrantPresign
+}
+
+type round12UploadGrantPresign struct {
+	bucket        string
+	key           string
+	contentType   string
+	contentSHA256 string
+	kmsKeyID      string
+	expiry        time.Duration
+}
+
+type round12PublishCopy struct {
+	source      string
+	destination string
 }
 
 func setupRound12PermissiveDynamormMocks(t *testing.T) (*dynamormmocks.MockDB, *dynamormmocks.MockQuery, *round12PermissiveQueryState) {
@@ -99,7 +242,9 @@ func setupRound12PermissiveDynamormMocks(t *testing.T) (*dynamormmocks.MockDB, *
 	mockQuery.On("Select", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
 	mockQuery.On("IfExists").Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("Create").Run(func(mock.Arguments) {
+		round12ApplyDirectModelCreate(state)
+	}).Return(nil).Maybe()
 	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Update").Run(func(mock.Arguments) {
 		round12ApplyDirectModelUpdate(state)
@@ -455,6 +600,12 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 		mediaID := strings.TrimPrefix(state.lastPK, "media#")
 		if strings.TrimSpace(mediaID) == "" {
 			mediaID = "m1"
+		}
+		if state != nil && state.seededMedia != nil {
+			if seeded := state.seededMedia[mediaID]; seeded != nil {
+				*v = *round12CloneMedia(seeded)
+				return
+			}
 		}
 		v.MediaID = mediaID
 		v.UserID = "alice"
@@ -856,6 +1007,22 @@ func round12ApplyPendingUpdate(state *round12PermissiveQueryState) {
 		state.pendingUpdateRemovals = nil
 	}()
 
+	// Media rows use media#<id> partition keys; apply field-scoped writer
+	// updates to the seeded map so the double models the write semantics.
+	if mediaID := strings.TrimPrefix(state.lastPK, "media#"); mediaID != state.lastPK && strings.TrimSpace(mediaID) != "" {
+		if seeded := state.seededMedia[mediaID]; seeded != nil {
+			updated := round12CloneMedia(seeded)
+			for field, value := range state.pendingUpdateSets {
+				round12ApplyMediaField(updated, field, value)
+			}
+			for field := range state.pendingUpdateRemovals {
+				round12RemoveMediaField(updated, field)
+			}
+			state.seededMedia[mediaID] = updated
+		}
+		return
+	}
+
 	username := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(state.lastPK, "USER#")))
 	if username == "" {
 		return
@@ -879,6 +1046,40 @@ func round12ApplyPendingUpdate(state *round12PermissiveQueryState) {
 	}
 }
 
+func round12ApplyMediaField(media *models.Media, field string, value any) {
+	switch field {
+	case "EditorialState":
+		if state, ok := value.(models.EditorialLifecycle); ok {
+			media.EditorialState = state
+		}
+	case "SupersededByMediaID":
+		if id, ok := value.(string); ok {
+			media.SupersededByMediaID = id
+		}
+	case "PublishedS3Key":
+		if key, ok := value.(string); ok {
+			media.PublishedS3Key = key
+		}
+	case "PublishedURL":
+		if url, ok := value.(string); ok {
+			media.PublishedURL = url
+		}
+	case "PublishedAt":
+		if at, ok := value.(time.Time); ok {
+			media.PublishedAt = &at
+		}
+	}
+}
+
+func round12RemoveMediaField(media *models.Media, field string) {
+	switch field {
+	case "EditorialState":
+		media.EditorialState = ""
+	case "SupersededByMediaID":
+		media.SupersededByMediaID = ""
+	}
+}
+
 func round12ApplyDirectModelUpdate(state *round12PermissiveQueryState) {
 	if state == nil {
 		return
@@ -890,7 +1091,52 @@ func round12ApplyDirectModelUpdate(state *round12PermissiveQueryState) {
 	case models.User:
 		modelCopy := model
 		round12StoreUpdatedUserModel(state, &modelCopy)
+	case *models.Media:
+		round12StoreMediaModel(state, model)
+	case models.Media:
+		modelCopy := model
+		round12StoreMediaModel(state, &modelCopy)
 	}
+}
+
+func round12ApplyDirectModelCreate(state *round12PermissiveQueryState) {
+	if state == nil {
+		return
+	}
+	switch model := state.currentModel.(type) {
+	case *models.Media:
+		round12StoreMediaModel(state, model)
+	case models.Media:
+		modelCopy := model
+		round12StoreMediaModel(state, &modelCopy)
+	}
+}
+
+func round12StoreMediaModel(state *round12PermissiveQueryState, media *models.Media) {
+	if state == nil || !state.persistMedia || media == nil || strings.TrimSpace(media.MediaID) == "" {
+		return
+	}
+	if state.seededMedia == nil {
+		state.seededMedia = make(map[string]*models.Media)
+	}
+	state.seededMedia[media.MediaID] = round12CloneMedia(media)
+}
+
+func round12CloneMedia(media *models.Media) *models.Media {
+	if media == nil {
+		return nil
+	}
+	clone := *media
+	clone.Variants = make(map[string]models.MediaVariant, len(media.Variants))
+	for name, variant := range media.Variants {
+		clone.Variants[name] = variant
+	}
+	if media.Provenance != nil {
+		provenance := *media.Provenance
+		provenance.SourceReferences = append([]string(nil), media.Provenance.SourceReferences...)
+		clone.Provenance = &provenance
+	}
+	return &clone
 }
 
 func round12StoreUpdatedUserModel(state *round12PermissiveQueryState, model *models.User) {
@@ -1310,11 +1556,12 @@ func (r *round12PublicationRepoWithDB) GetDB() dynamormcore.DB { return r.db }
 type round12GraphStorage struct {
 	*pkgtesting.MockRepositoryStorage
 
-	db           dynamormcore.DB
-	queryState   *round12PermissiveQueryState
-	accountRepo  *repositories.AccountRepository
-	bookmarkRepo *repositories.BookmarkRepository
-	mediaRepo    *repositories.MediaRepository
+	db              dynamormcore.DB
+	queryState      *round12PermissiveQueryState
+	accountRepo     *repositories.AccountRepository
+	bookmarkRepo    *repositories.BookmarkRepository
+	mediaRepo       *repositories.MediaRepository
+	uploadGrantRepo *inmemory.UploadGrantRepository
 
 	markerRepo *repositories.MarkerRepository
 
@@ -1387,6 +1634,22 @@ func (s *round12GraphStorage) Bookmark() *repositories.BookmarkRepository {
 func (s *round12GraphStorage) Media() *repositories.MediaRepository {
 	return s.mediaRepo
 }
+
+// UploadGrant returns the in-memory upload grant repository for the
+// presigned-companion contract tests.
+func (s *round12GraphStorage) UploadGrant() interfaces.UploadGrantRepository {
+	return s.uploadGrantRepo
+}
+
+// SeedUploadGrant seeds an upload grant deterministically for fail-closed
+// states (expired, used, failed-digest).
+func (s *round12GraphStorage) SeedUploadGrant(grant *models.UploadGrant) {
+	if s == nil || s.uploadGrantRepo == nil || grant == nil {
+		return
+	}
+	s.uploadGrantRepo.SeedUploadGrant(grant)
+}
+
 func (s *round12GraphStorage) PushSubscription() *repositories.PushSubscriptionRepository {
 	return s.pushSubscriptionRepo
 }
@@ -1498,6 +1761,7 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 		CMSScheduledPublishingEnabled: true,
 		CMSSeriesEnabled:              true,
 		CMSCategoriesEnabled:          true,
+		KMSKeyID:                      "alias/lesser-test",
 	}
 
 	articleRepo := &round12ArticleRepoWithDB{ArticleRepository: inmemory.NewArticleRepository(), db: mockDB}
@@ -1527,7 +1791,15 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 	pollRepo := repositories.NewPollRepository(mockDB, tableName, zap.NewNop(), nil)
 	scheduledStatusRepo := repositories.NewScheduledStatusRepository(mockDB, tableName, zap.NewNop(), nil)
 	scheduledStatusRepo.SetMediaRepository(mediaRepo)
-	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(mockDB, tableName, zap.NewNop(), nil, nil, "", "mailto:admin@localhost")
+	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(
+		mockDB,
+		tableName,
+		zap.NewNop(),
+		nil,
+		newRound12VAPIDSecretsClient(),
+		"test-vapid-secret",
+		"mailto:admin@localhost",
+	)
 	markerRepo := repositories.NewMarkerRepository(mockDB, tableName, zap.NewNop(), nil)
 	communityNoteRepo := repositories.NewCommunityNoteRepository(mockDB, tableName, zap.NewNop(), nil)
 	costRepo := repositories.NewTrackingRepository(mockDB, tableName, zap.NewNop(), nil)
@@ -1547,6 +1819,7 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 		notificationRepo:      notificationRepo,
 		bookmarkRepo:          bookmarkRepo,
 		mediaRepo:             mediaRepo,
+		uploadGrantRepo:       inmemory.NewUploadGrantRepository(),
 		pollRepo:              pollRepo,
 		scheduledStatusRepo:   scheduledStatusRepo,
 		threadRepo:            threadRepo,
@@ -1578,6 +1851,7 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 		services.WithStorage(storage),
 		services.WithPublisher(streaming.NewMockPublisher()),
 		services.WithLogger(zap.NewNop()),
+		services.WithMediaS3Service(round12MediaS3Service{state: state}),
 		services.WithConfig(&services.ServiceConfig{
 			BaseURL:   "https://localhost",
 			JWTSecret: strings.Repeat("x", 32),

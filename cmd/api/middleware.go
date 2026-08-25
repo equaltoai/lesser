@@ -15,7 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/observability"
 	browsercors "github.com/equaltoai/lesser/pkg/security/cors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
@@ -145,6 +145,8 @@ func isOAuthSensitivePath(path string) bool {
 		return false
 	case strings.HasPrefix(path, "/oauth/"):
 		return true
+	case path == "/authorize", path == "/register", path == "/token":
+		return true
 	case path == "/.well-known/oauth-authorization-server":
 		return true
 	case path == apiV1AppsPath:
@@ -267,6 +269,8 @@ func isWriteAllowedWhileLocked(path string) bool {
 	return strings.HasPrefix(path, "/setup/") ||
 		strings.HasPrefix(path, "/auth/") ||
 		strings.HasPrefix(path, "/oauth/") ||
+		path == "/register" ||
+		path == "/token" ||
 		strings.HasPrefix(path, "/api/v1/auth/") ||
 		path == apiV1AppsPath
 }

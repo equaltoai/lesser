@@ -12,8 +12,9 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -65,6 +66,93 @@ type ActivityProcessor struct {
 	retryDelay       time.Duration
 }
 
+type activityProcessingRecord struct {
+	PK          string `theorydb:"pk,attr:PK"`
+	SK          string `theorydb:"sk,attr:SK"`
+	Type        string `theorydb:"attr:type"`
+	ActivityPK  string `theorydb:"attr:activityPK"`
+	Username    string `theorydb:"attr:username"`
+	ActorID     string `theorydb:"attr:actorID"`
+	ProcessedAt string `theorydb:"attr:processedAt"`
+	Status      string `theorydb:"attr:status"`
+	TTL         int64  `theorydb:"ttl,attr:ttl"`
+}
+
+func (activityProcessingRecord) TableName() string { return models.MainTableName }
+
+type activityMetricsRecord struct {
+	PK         string `theorydb:"pk,attr:PK"`
+	SK         string `theorydb:"sk,attr:SK"`
+	Type       string `theorydb:"attr:type"`
+	ActivityPK string `theorydb:"attr:activityPK"`
+	Direction  string `theorydb:"attr:direction"`
+	Username   string `theorydb:"attr:username"`
+	UpdatedAt  string `theorydb:"attr:updatedAt"`
+	TTL        int64  `theorydb:"ttl,attr:ttl"`
+}
+
+func (activityMetricsRecord) TableName() string { return models.MainTableName }
+
+type activityCleanupRecord struct {
+	PK         string `theorydb:"pk,attr:PK"`
+	SK         string `theorydb:"sk,attr:SK"`
+	Type       string `theorydb:"attr:type"`
+	ActivityPK string `theorydb:"attr:activityPK"`
+	Direction  string `theorydb:"attr:direction"`
+	Username   string `theorydb:"attr:username"`
+	DeletedAt  string `theorydb:"attr:deletedAt"`
+	TTL        int64  `theorydb:"ttl,attr:ttl"`
+}
+
+func (activityCleanupRecord) TableName() string { return models.MainTableName }
+
+type activityProcessorMetricRecord struct {
+	PK               string `theorydb:"pk,attr:PK"`
+	SK               string `theorydb:"sk,attr:SK"`
+	Type             string `theorydb:"attr:type"`
+	Timestamp        string `theorydb:"attr:timestamp"`
+	TTL              int64  `theorydb:"ttl,attr:ttl"`
+	Operation        string `theorydb:"attr:operation,omitempty"`
+	Success          bool   `theorydb:"attr:success,omitempty"`
+	DurationMS       int64  `theorydb:"attr:durationMS,omitempty"`
+	RemoteHost       string `theorydb:"attr:remoteHost,omitempty"`
+	ObjectType       string `theorydb:"attr:objectType,omitempty"`
+	IsRemote         bool   `theorydb:"attr:isRemote,omitempty"`
+	ProcessingTimeMS int64  `theorydb:"attr:processingTimeMS,omitempty"`
+	ActivityType     string `theorydb:"attr:activityType,omitempty"`
+	EntryCount       int    `theorydb:"attr:entryCount,omitempty"`
+	FanoutTimeMS     int64  `theorydb:"attr:fanoutTimeMS,omitempty"`
+}
+
+func (activityProcessorMetricRecord) TableName() string { return models.MainTableName }
+
+type activityDLQRecord struct {
+	PK             string `theorydb:"pk,attr:PK"`
+	SK             string `theorydb:"sk,attr:SK"`
+	Type           string `theorydb:"attr:type"`
+	EventID        string `theorydb:"attr:eventID"`
+	EventName      string `theorydb:"attr:eventName"`
+	Reason         string `theorydb:"attr:reason"`
+	OriginalRecord string `theorydb:"attr:originalRecord"`
+	CreatedAt      string `theorydb:"attr:createdAt"`
+	TTL            int64  `theorydb:"ttl,attr:ttl"`
+}
+
+func (activityDLQRecord) TableName() string { return models.MainTableName }
+
+type activityTombstoneRecord struct {
+	PK        string `theorydb:"pk,attr:PK"`
+	SK        string `theorydb:"sk,attr:SK"`
+	Type      string `theorydb:"attr:type"`
+	ObjectID  string `theorydb:"attr:objectID"`
+	ActorID   string `theorydb:"attr:actorID"`
+	Reason    string `theorydb:"attr:reason"`
+	DeletedAt string `theorydb:"attr:deletedAt"`
+	TTL       int64  `theorydb:"ttl,attr:ttl"`
+}
+
+func (activityTombstoneRecord) TableName() string { return models.MainTableName }
+
 var fetchAuthorizedObjectFn = func(ctx context.Context, fetchService *federation.AuthorizedFetchService, objectURL string, signingActor *activitypub.Actor) (any, error) {
 	if fetchService == nil {
 		return nil, fmt.Errorf("authorized fetch service is nil")
@@ -73,6 +161,8 @@ var fetchAuthorizedObjectFn = func(ctx context.Context, fetchService *federation
 }
 
 var lambdaStartFn = lambda.Start
+
+var activityMetricNow = time.Now
 
 // NewActivityProcessor creates a new activity processor instance with the given
 // lambda context
@@ -359,17 +449,7 @@ func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity 
 	)
 
 	// Create inbox processing record
-	inboxRecord := struct {
-		PK          string `theorydb:"pk"`
-		SK          string `theorydb:"sk"`
-		Type        string `json:"type"`
-		ActivityPK  string `json:"activity_pk"`
-		Username    string `json:"username"`
-		ActorID     string `json:"actor_id"`
-		ProcessedAt string `json:"processed_at"`
-		Status      string `json:"status"`
-		TTL         int64  `theorydb:"ttl"`
-	}{
+	inboxRecord := activityProcessingRecord{
 		PK:          fmt.Sprintf("INBOX#%s", activity.Username),
 		SK:          fmt.Sprintf("PROCESSED#%s", activity.PK),
 		Type:        "InboxProcessing",
@@ -381,7 +461,7 @@ func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity 
 		TTL:         time.Now().Add(7 * 24 * time.Hour).Unix(), // 7 days retention
 	}
 
-	return ap.db.WithContext(ctx).Model(&inboxRecord).Create()
+	return tolerateActivityReplayCreate(ap.db.WithContext(ctx).Model(&inboxRecord).Create())
 }
 
 func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity struct {
@@ -424,17 +504,7 @@ func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity
 	}
 
 	// Create outbox processing record
-	outboxRecord := struct {
-		PK          string `theorydb:"pk"`
-		SK          string `theorydb:"sk"`
-		Type        string `json:"type"`
-		ActivityPK  string `json:"activity_pk"`
-		Username    string `json:"username"`
-		ActorID     string `json:"actor_id"`
-		ProcessedAt string `json:"processed_at"`
-		Status      string `json:"status"`
-		TTL         int64  `theorydb:"ttl"`
-	}{
+	outboxRecord := activityProcessingRecord{
 		PK:          fmt.Sprintf("OUTBOX#%s", activity.Username),
 		SK:          fmt.Sprintf("PROCESSED#%s", activity.PK),
 		Type:        "OutboxProcessing",
@@ -446,7 +516,7 @@ func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity
 		TTL:         time.Now().Add(7 * 24 * time.Hour).Unix(), // 7 days retention
 	}
 
-	return ap.db.WithContext(ctx).Model(&outboxRecord).Create()
+	return tolerateActivityReplayCreate(ap.db.WithContext(ctx).Model(&outboxRecord).Create())
 }
 
 func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity struct {
@@ -461,16 +531,7 @@ func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity
 },
 ) error {
 	// Update activity metrics for analytics
-	metricsRecord := struct {
-		PK         string `theorydb:"pk"`
-		SK         string `theorydb:"sk"`
-		Type       string `json:"type"`
-		ActivityPK string `json:"activity_pk"`
-		Direction  string `json:"direction"`
-		Username   string `json:"username"`
-		UpdatedAt  string `json:"updated_at"`
-		TTL        int64  `theorydb:"ttl"`
-	}{
+	metricsRecord := activityMetricsRecord{
 		PK:         fmt.Sprintf("METRICS#ACTIVITY#%s", activity.Direction),
 		SK:         fmt.Sprintf("UPDATE#%s", activity.PK),
 		Type:       "ActivityMetrics",
@@ -481,7 +542,7 @@ func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity
 		TTL:        time.Now().Add(30 * 24 * time.Hour).Unix(), // 30 days retention
 	}
 
-	return ap.db.WithContext(ctx).Model(&metricsRecord).Create()
+	return ap.db.WithContext(ctx).Model(&metricsRecord).CreateOrUpdate()
 }
 
 func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, activity struct {
@@ -496,16 +557,7 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 },
 ) error {
 	// Create cleanup record for deleted activities
-	cleanupRecord := struct {
-		PK         string `theorydb:"pk"`
-		SK         string `theorydb:"sk"`
-		Type       string `json:"type"`
-		ActivityPK string `json:"activity_pk"`
-		Direction  string `json:"direction"`
-		Username   string `json:"username"`
-		DeletedAt  string `json:"deleted_at"`
-		TTL        int64  `theorydb:"ttl"`
-	}{
+	cleanupRecord := activityCleanupRecord{
 		PK:         "CLEANUP#ACTIVITY",
 		SK:         fmt.Sprintf("DELETED#%s", activity.PK),
 		Type:       "ActivityCleanup",
@@ -516,7 +568,17 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 		TTL:        time.Now().Add(24 * time.Hour).Unix(), // 24 hours retention
 	}
 
-	return ap.db.WithContext(ctx).Model(&cleanupRecord).Create()
+	return tolerateActivityReplayCreate(ap.db.WithContext(ctx).Model(&cleanupRecord).Create())
+}
+
+// tolerateActivityReplayCreate keeps create-only processor records immutable
+// while treating an at-least-once delivery of the same deterministic key as
+// successful. Non-condition failures still propagate to the retry policy.
+func tolerateActivityReplayCreate(err error) error {
+	if dynamormerrors.IsConditionFailed(err) {
+		return nil
+	}
+	return err
 }
 
 // ProcessedObject holds information about a processed ActivityPub object
@@ -1284,27 +1346,37 @@ func (ap *ActivityProcessor) detectLanguageFromContent(content string) string {
 
 // recordMetric is a generic function to record metrics with custom fields
 func (ap *ActivityProcessor) recordMetric(ctx context.Context, pkPrefix, metricType, keyField string, ttlDuration time.Duration, customFields map[string]interface{}, logContext []zap.Field) {
-	now := time.Now()
+	now := activityMetricNow()
 
 	// Create base metric with common fields
-	metric := map[string]interface{}{
-		"PK":        fmt.Sprintf("%s#METRICS", pkPrefix),
-		"SK":        fmt.Sprintf("METRIC#%d#%s", now.Unix(), keyField),
-		"Type":      metricType,
-		"Timestamp": now.Format(time.RFC3339),
-		"TTL":       now.Add(ttlDuration).Unix(),
+	metric := activityProcessorMetricRecord{
+		PK:        fmt.Sprintf("%s#METRICS", pkPrefix),
+		SK:        fmt.Sprintf("METRIC#%d#%s", now.Unix(), keyField),
+		Type:      metricType,
+		Timestamp: now.Format(time.RFC3339),
+		TTL:       now.Add(ttlDuration).Unix(),
 	}
 
-	// Add custom fields
-	for k, v := range customFields {
-		metric[k] = v
-	}
+	metric.applyCustomFields(customFields)
 
 	// Log the metric (don't fail the main operation if this fails)
-	if err := ap.db.WithContext(ctx).Model(&metric).Create(); err != nil {
+	if err := ap.db.WithContext(ctx).Model(&metric).CreateOrUpdate(); err != nil {
 		fields := append([]zap.Field{zap.Error(err)}, logContext...)
 		ap.logger.Debug("failed to record metric", fields...)
 	}
+}
+
+func (m *activityProcessorMetricRecord) applyCustomFields(fields map[string]interface{}) {
+	m.Operation, _ = fields["operation"].(string)
+	m.Success, _ = fields["success"].(bool)
+	m.DurationMS, _ = fields["duration_ms"].(int64)
+	m.RemoteHost, _ = fields["remote_host"].(string)
+	m.ObjectType, _ = fields["object_type"].(string)
+	m.IsRemote, _ = fields["is_remote"].(bool)
+	m.ProcessingTimeMS, _ = fields["processing_time_ms"].(int64)
+	m.ActivityType, _ = fields["activity_type"].(string)
+	m.EntryCount, _ = fields["entry_count"].(int)
+	m.FanoutTimeMS, _ = fields["fanout_time_ms"].(int64)
 }
 
 // recordFederationMetrics records metrics for federation operations
@@ -1857,17 +1929,7 @@ func (ap *ActivityProcessor) storeObjectWithLogging(ctx context.Context, storage
 func (ap *ActivityProcessor) sendToDeadLetterQueue(ctx context.Context, record events.DynamoDBEventRecord, reason string) error {
 	now := time.Now()
 
-	dlqRecord := struct {
-		PK             string `theorydb:"pk"`
-		SK             string `theorydb:"sk"`
-		Type           string `json:"type"`
-		EventID        string `json:"event_id"`
-		EventName      string `json:"event_name"`
-		Reason         string `json:"reason"`
-		OriginalRecord string `json:"original_record"`
-		CreatedAt      string `json:"created_at"`
-		TTL            int64  `theorydb:"ttl"`
-	}{
+	dlqRecord := activityDLQRecord{
 		PK:        "DLQ#ACTIVITY_PROCESSOR",
 		SK:        fmt.Sprintf("RECORD#%s#%d", record.EventID, now.UnixNano()),
 		Type:      "DeadLetterRecord",
@@ -2202,16 +2264,7 @@ func (ap *ActivityProcessor) removeFromAllTimelines(_ context.Context, objectID 
 func (ap *ActivityProcessor) createTombstone(ctx context.Context, objectID, actorID, reason string) error {
 	now := time.Now()
 
-	tombstone := struct {
-		PK        string `theorydb:"pk"`
-		SK        string `theorydb:"sk"`
-		Type      string `json:"type"`
-		ObjectID  string `json:"object_id"`
-		ActorID   string `json:"actor_id"`
-		Reason    string `json:"reason"`
-		DeletedAt string `json:"deleted_at"`
-		TTL       int64  `theorydb:"ttl"`
-	}{
+	tombstone := activityTombstoneRecord{
 		PK:        fmt.Sprintf("TOMBSTONE#%s", objectID),
 		SK:        "METADATA",
 		Type:      "Tombstone",
@@ -2222,7 +2275,7 @@ func (ap *ActivityProcessor) createTombstone(ctx context.Context, objectID, acto
 		TTL:       now.Add(30 * 24 * time.Hour).Unix(), // Keep tombstones for 30 days
 	}
 
-	if err := ap.db.WithContext(ctx).Model(&tombstone).Create(); err != nil {
+	if err := tolerateActivityReplayCreate(ap.db.WithContext(ctx).Model(&tombstone).Create()); err != nil {
 		return tombstoneCreationFailedStream(err)
 	}
 

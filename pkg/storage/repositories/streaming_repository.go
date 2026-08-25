@@ -171,7 +171,7 @@ func (r *StreamingRepository) UpdateDeviceStreamingPreferences(ctx context.Conte
 	model := r.storageTypeToModel(prefs)
 	model.SetDevicePreference(deviceID)
 
-	err := r.ValidateAndCreate(ctx, model)
+	err := r.ValidateAndCreateOrUpdate(ctx, model)
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, "device streaming preferences", fmt.Sprintf("%s:%s", prefs.Username, deviceID))
 	}

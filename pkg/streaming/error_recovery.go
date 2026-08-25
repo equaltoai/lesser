@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/apptheory/v3/pkg/streamer"
+	"github.com/theory-cloud/apptheory/v4/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -292,9 +292,10 @@ func (erm *ErrorRecoveryManager) attemptRecovery(ctx context.Context, conn *mode
 			zap.Error(err))
 
 		// Fallback to goroutine if job queue fails
+		recoveryCtx := context.WithoutCancel(ctx)
 		go func() {
 			time.Sleep(delay)
-			erm.executeRecovery(context.Background(), conn.ConnectionID)
+			erm.executeRecovery(recoveryCtx, conn.ConnectionID)
 		}()
 	}
 
@@ -495,9 +496,10 @@ func (erm *ErrorRecoveryManager) handleRecoveryFailure(ctx context.Context, conn
 				zap.Error(err))
 
 			// Fallback to goroutine if job queue fails
+			recoveryCtx := context.WithoutCancel(ctx)
 			go func() {
 				time.Sleep(delay)
-				erm.executeRecovery(context.Background(), conn.ConnectionID)
+				erm.executeRecovery(recoveryCtx, conn.ConnectionID)
 			}()
 		}
 	}

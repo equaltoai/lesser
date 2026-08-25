@@ -1033,6 +1033,8 @@ input UploadMediaInput {
   sensitive: Boolean
   spoilerText: String
   mediaType: MediaCategory
+  """When supplied, bytes begin internal and provenance is integrity-bound to their SHA-256 digest."""
+  editorialProvenance: EditorialMediaProvenanceInput
 }
 
 input UpdateMediaInput {
@@ -1411,6 +1413,8 @@ type Mutation {
   updateMedia(id: ID!, input: UpdateMediaInput!): Media!
   """Delete media owned by the authenticated account."""
   deleteMedia(id: ID!): Boolean!
+  """Apply an explicit editorial lifecycle change to an internal editorial asset."""
+  updateEditorialMediaLifecycle(mediaId: ID!, lifecycle: EditorialMediaLifecycle!, supersededByMediaId: ID): EditorialMediaLifecyclePayload!
   
   # Notification operations
   dismissNotification(id: ID!): Boolean!

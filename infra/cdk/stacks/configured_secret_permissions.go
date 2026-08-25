@@ -53,6 +53,51 @@ func attachConfiguredSecretReadPolicy(scope awscdk.Stack, appName string, enviro
 	})
 }
 
+func attachVAPIDSecretReadWritePolicy(scope awscdk.Stack, appName string, environment string, role awsiam.IRole, config map[string]interface{}) {
+	if scope == nil || role == nil || len(config) == 0 {
+		return
+	}
+
+	vapidSecretARN := configuredSecretARN(config, "vapidSecretArn")
+	if vapidSecretARN == nil {
+		return
+	}
+
+	statement := awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Effect: awsiam.Effect_ALLOW,
+		Actions: &[]*string{
+			jsii.String("secretsmanager:GetSecretValue"),
+			jsii.String("secretsmanager:PutSecretValue"),
+			jsii.String("secretsmanager:DescribeSecret"),
+		},
+		Resources: &[]*string{vapidSecretARN},
+	})
+
+	policyName := naming.ResourceNameWithApp(appName, "vapid-secret-read-write", environment)
+	roles := []awsiam.IRole{role}
+	awsiam.NewPolicy(scope, jsii.String("VAPIDSecretReadWritePolicy"), &awsiam.PolicyProps{
+		PolicyName: jsii.String(policyName),
+		Roles:      &roles,
+		Statements: &[]awsiam.PolicyStatement{statement},
+	})
+}
+
+func configuredSecretARN(config map[string]interface{}, key string) *string {
+	raw, ok := config[key]
+	if !ok {
+		return nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return nil
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return jsii.String(value)
+}
+
 func configuredSecretARNs(config map[string]interface{}) []*string {
 	if len(config) == 0 {
 		return nil
@@ -61,18 +106,11 @@ func configuredSecretARNs(config map[string]interface{}) []*string {
 	seen := map[string]struct{}{}
 	values := make([]string, 0, len(configuredSecretARNContextKeys))
 	for _, key := range configuredSecretARNContextKeys {
-		raw, ok := config[key]
-		if !ok {
+		valuePtr := configuredSecretARN(config, key)
+		if valuePtr == nil {
 			continue
 		}
-		value, ok := raw.(string)
-		if !ok {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
+		value := *valuePtr
 		if _, exists := seen[value]; exists {
 			continue
 		}

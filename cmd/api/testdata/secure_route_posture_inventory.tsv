@@ -1,0 +1,327 @@
+route	secure_posture	secure_scopes	pre_classification	legacy_route_auth
+DELETE /api/v1/admin/custom_emojis/{shortcode}	authenticated		auth_required	requireAuth
+DELETE /api/v1/admin/domain_allows/{id}	authenticated		auth_required	requireAuth
+DELETE /api/v1/admin/domain_blocks/{id}	authenticated		auth_required	requireAuth
+DELETE /api/v1/admin/email_domain_blocks/{id}	authenticated		auth_required	requireAuth
+DELETE /api/v1/admin/statuses/{id}	authenticated		auth_required	requireAuth
+DELETE /api/v1/agents/{username}	authenticated		auth_required	requireManageAgents
+DELETE /api/v1/agents/{username}/share/{grantee}	authenticated		auth_required	requireManageAgents
+DELETE /api/v1/announcements/{id}/reactions/{name}	authenticated		auth_required	requireAuth
+DELETE /api/v1/auth/webauthn/credentials/{credentialId}	authenticated		auth_required	requireAuth
+DELETE /api/v1/conversations/{id}	authenticated	write	auth_required	requireWrite
+DELETE /api/v1/domain_blocks	authenticated		auth_required	requireBlockWrite
+DELETE /api/v1/imports/{id}	authenticated	write	auth_required	requireWrite
+DELETE /api/v1/lists/{id}	authenticated	write	auth_required	requireWrite
+DELETE /api/v1/lists/{id}/accounts	authenticated	write	auth_required	requireWrite
+DELETE /api/v1/push/subscription	authenticated		auth_required	requirePushWrite
+DELETE /api/v1/scheduled_statuses/{id}	authenticated	write	auth_required	requireWrite
+DELETE /api/v1/statuses/{id}	authenticated	write	auth_required	requireWrite
+DELETE /api/v1/statuses/{id}/quote/{quote_id}	authenticated		auth_required	requireStatusWrite
+DELETE /api/v1/suggestions/{account_id}	authenticated		auth_required	requireAuth
+DELETE /api/v1/vouches/{vouch_id}	authenticated		auth_required	requireAuth
+DELETE /api/v2/filters/{filter_id}/keywords/{keyword_id}	authenticated		auth_required	requireFilterWrite
+DELETE /api/v2/filters/{filter_id}/statuses/{status_id}	authenticated		auth_required	requireFilterWrite
+DELETE /api/v2/filters/{id}	authenticated		auth_required	requireFilterWrite
+DELETE /auth/wallet/unlink/{address}	authenticated		auth_required	requireAuth
+GET /	public		anonymous	none
+GET /.well-known/lesser-soul-agent	public		anonymous	none
+GET /.well-known/nodeinfo	public		anonymous	none
+GET /.well-known/oauth-authorization-server	public		anonymous	none
+GET /.well-known/oauth-protected-resource/mcp/{username}	public		anonymous	none
+GET /.well-known/reputation-keys	public		anonymous	none
+GET /api/oembed	public		anonymous	none
+GET /api/v1/accounts/lookup	public		anonymous	none
+GET /api/v1/accounts/relationships	authenticated		auth_required	requireFollowRead
+GET /api/v1/accounts/search	optional		anonymous	optionalAuth
+GET /api/v1/accounts/search/suggestions	public		anonymous	none
+GET /api/v1/accounts/verify_credentials	authenticated	read	auth_required	requireRead
+GET /api/v1/accounts/{id}	public		anonymous	none
+GET /api/v1/accounts/{id}/followers	authenticated	read	auth_required	requireRead
+GET /api/v1/accounts/{id}/following	authenticated	read	auth_required	requireRead
+GET /api/v1/accounts/{id}/notes	public		anonymous	none
+GET /api/v1/accounts/{id}/quote_permissions	authenticated		auth_required	none
+GET /api/v1/accounts/{id}/statuses	optional		anonymous	optionalAuth
+GET /api/v1/admin/accounts	authenticated		auth_required	requireAuth
+GET /api/v1/admin/accounts/{id}	authenticated		auth_required	requireAuth
+GET /api/v1/admin/agents/policy	authenticated	admin	auth_required	requireAdmin
+GET /api/v1/admin/domain_allows	authenticated		auth_required	requireAuth
+GET /api/v1/admin/domain_blocks	authenticated		auth_required	requireAuth
+GET /api/v1/admin/domain_blocks/{id}	authenticated		auth_required	requireAuth
+GET /api/v1/admin/email_domain_blocks	authenticated		auth_required	requireAuth
+GET /api/v1/admin/federation/instance/{domain}	authenticated		auth_required	requireAuth
+GET /api/v1/admin/federation/instances	authenticated		auth_required	requireAuth
+GET /api/v1/admin/federation/statistics	authenticated		auth_required	requireAuth
+GET /api/v1/admin/moderation/events	authenticated		auth_required	requireAuth
+GET /api/v1/admin/moderation/overview	authenticated		auth_required	requireAuth
+GET /api/v1/admin/moderation/reviewers	authenticated		auth_required	requireAuth
+GET /api/v1/admin/moderation/trust/graph	authenticated		auth_required	requireAuth
+GET /api/v1/admin/reports	authenticated		auth_required	requireAuth
+GET /api/v1/admin/reports/{id}	authenticated		auth_required	requireAuth
+GET /api/v1/admin/skills/proposals	authenticated		auth_required	requireAdminRead
+GET /api/v1/admin/skills/proposals/{proposalId}	authenticated		auth_required	requireAdminRead
+GET /api/v1/admin/skills/{skillId}/assignments	authenticated		auth_required	requireAdminRead
+GET /api/v1/admin/statuses	authenticated		auth_required	requireAuth
+GET /api/v1/admin/statuses/{id}	authenticated		auth_required	requireAuth
+GET /api/v1/agents	public		anonymous	none
+GET /api/v1/agents/memory/search	authenticated	read	auth_required	requireRead
+GET /api/v1/agents/shared-with-me	authenticated	read	anonymous	requireRead
+GET /api/v1/agents/{username}	public		anonymous	none
+GET /api/v1/agents/{username}/access	authenticated		auth_required	none
+GET /api/v1/agents/{username}/access-leases	authenticated		auth_required	requireManageAgents
+GET /api/v1/agents/{username}/activity	authenticated	read	auth_required	requireRead
+GET /api/v1/agents/{username}/runtime-sessions	authenticated		auth_required	requireManageAgents
+GET /api/v1/agents/{username}/share	authenticated		auth_required	requireManageAgents
+GET /api/v1/announcements	public		anonymous	none
+GET /api/v1/auth/webauthn/credentials	authenticated		auth_required	requireAuth
+GET /api/v1/blocks	authenticated		auth_required	requireBlockRead
+GET /api/v1/bookmarks	authenticated	read	auth_required	requireRead
+GET /api/v1/conversations	authenticated	read	auth_required	requireRead
+GET /api/v1/conversations/lookup	authenticated	read	auth_required	requireRead
+GET /api/v1/conversations/{id}	authenticated	read	auth_required	requireRead
+GET /api/v1/custom_emojis	public		anonymous	none
+GET /api/v1/directory	public		anonymous	none
+GET /api/v1/domain_blocks	authenticated		auth_required	requireBlockRead
+GET /api/v1/endorsements	authenticated		auth_required	requireAccountRead
+GET /api/v1/exports	authenticated	read	auth_required	requireRead
+GET /api/v1/exports/{id}	authenticated	read	auth_required	requireRead
+GET /api/v1/exports/{id}/download	authenticated	read	auth_required	requireRead
+GET /api/v1/favourites	authenticated	read	auth_required	requireRead
+GET /api/v1/follow_requests	authenticated		auth_required	requireFollowRead
+GET /api/v1/imports	authenticated		auth_required	requireReadOrWrite
+GET /api/v1/imports/{id}	authenticated		auth_required	requireReadOrWrite
+GET /api/v1/instance	public		anonymous	none
+GET /api/v1/instance/activity	public		anonymous	none
+GET /api/v1/instance/domain_blocks	public		anonymous	none
+GET /api/v1/instance/metrics/daily	public		anonymous	none
+GET /api/v1/instance/peers	public		anonymous	none
+GET /api/v1/instance/translation_languages	public		anonymous	none
+GET /api/v1/lists	authenticated	read	auth_required	requireRead
+GET /api/v1/lists/{id}	authenticated	read	auth_required	requireRead
+GET /api/v1/lists/{id}/accounts	authenticated	read	auth_required	requireRead
+GET /api/v1/markers	authenticated	read	auth_required	requireRead
+GET /api/v1/media/{id}	authenticated	read	auth_required	requireRead
+GET /api/v1/moderation/consensus/{event_id}	authenticated		auth_required	requireAuth
+GET /api/v1/moderation/history/{object_id}	authenticated		auth_required	requireAuth
+GET /api/v1/moderation/queue	authenticated		auth_required	requireAuth
+GET /api/v1/moderation/trust	authenticated		auth_required	requireAuth
+GET /api/v1/moderation/trust/{actor_id}/score	authenticated		auth_required	requireAuth
+GET /api/v1/mutes	authenticated	read	auth_required	requireRead
+GET /api/v1/notes/{object_id}	optional		anonymous	optionalAuth
+GET /api/v1/notifications	authenticated		auth_required	requireNotificationRead
+GET /api/v1/notifications/{id}	authenticated		auth_required	requireNotificationRead
+GET /api/v1/preferences	authenticated	read	auth_required	requireRead
+GET /api/v1/push/subscription	authenticated		auth_required	requirePushRead
+GET /api/v1/reputation/{actor_id}	authenticated		auth_required	requireAuth
+GET /api/v1/scheduled_statuses	authenticated	read	auth_required	requireRead
+GET /api/v1/scheduled_statuses/{id}	authenticated	read	auth_required	requireRead
+GET /api/v1/search/statuses	authenticated	read	anonymous	requireRead
+GET /api/v1/skills	optional		anonymous	optionalAuth
+GET /api/v1/skills/catalog	optional		anonymous	optionalAuth
+GET /api/v1/skills/resolve	authenticated	read	auth_required	requireRead
+GET /api/v1/skills/{skillId}	optional		anonymous	optionalAuth
+GET /api/v1/skills/{skillId}/revisions	optional		anonymous	optionalAuth
+GET /api/v1/skills/{skillId}/revisions/{revisionNumber}	optional		anonymous	optionalAuth
+GET /api/v1/skills/{skillId}/revisions/{revisionNumber}/bundle	optional		anonymous	optionalAuth
+GET /api/v1/souls/bindings/{agentId}	public		contract_auth/soul_binding_integration	none
+GET /api/v1/souls/bound/me	authenticated		auth_required	requireReadOrWrite
+GET /api/v1/souls/bound/me/mint-conversations	authenticated	read	auth_required	requireRead
+GET /api/v1/souls/bound/me/mint-conversations/{conversationId}	authenticated	read	auth_required	requireRead
+GET /api/v1/souls/mine	authenticated		auth_required	requireReadOrWrite
+GET /api/v1/statuses/{id}	optional		anonymous	optionalAuth
+GET /api/v1/statuses/{id}/context	optional		anonymous	optionalAuth
+GET /api/v1/statuses/{id}/favourited_by	authenticated	read	auth_required	requireRead
+GET /api/v1/statuses/{id}/history	optional		anonymous	optionalAuth
+GET /api/v1/statuses/{id}/quotes	public		anonymous	none
+GET /api/v1/statuses/{id}/reblogged_by	authenticated	read	auth_required	requireRead
+GET /api/v1/statuses/{id}/source	authenticated	read	auth_required	requireRead
+GET /api/v1/suggestions	authenticated		auth_required	requireAuth
+GET /api/v1/timelines/direct	authenticated	read	auth_required	requireRead
+GET /api/v1/timelines/home	authenticated	read	auth_required	requireRead
+GET /api/v1/timelines/link	public		anonymous	none
+GET /api/v1/timelines/list/{list_id}	authenticated	read	auth_required	requireRead
+GET /api/v1/timelines/public	optional		anonymous	optionalAuth
+GET /api/v1/timelines/tag/{hashtag}	optional		anonymous	optionalAuth
+GET /api/v1/trends	public		anonymous	none
+GET /api/v1/trends/links	public		anonymous	none
+GET /api/v1/trends/statuses	public		anonymous	none
+GET /api/v1/trends/tags	public		anonymous	none
+GET /api/v1/trust/ai/jobs/{jobId}	authenticated		auth_required	requireAuth
+GET /api/v1/trust/attestations	public		anonymous	none
+GET /api/v1/trust/attestations/{id}	public		anonymous	none
+GET /api/v1/trust/jwks.json	public		anonymous	none
+GET /api/v1/trust/previews/images/{imageId}	authenticated		auth_required	none
+GET /api/v1/trust/previews/{id}	authenticated		auth_required	requireAuth
+GET /api/v1/trust/publish/jobs/{jobId}	authenticated		auth_required	requireAuth
+GET /api/v1/trust/renders/{renderId}	authenticated		auth_required	requireAuth
+GET /api/v1/trust/renders/{renderId}/snapshot	authenticated		auth_required	none
+GET /api/v1/trust/renders/{renderId}/thumbnail	authenticated		auth_required	none
+GET /api/v1/vouches/{actor_id}	authenticated		auth_required	none
+GET /api/v2/filters	authenticated		auth_required	requireFilterRead
+GET /api/v2/filters/{filter_id}/keywords	authenticated		auth_required	requireFilterRead
+GET /api/v2/filters/{filter_id}/statuses	authenticated		auth_required	requireFilterRead
+GET /api/v2/filters/{id}	authenticated		auth_required	requireFilterRead
+GET /api/v2/instance	public		anonymous	none
+GET /api/v2/notifications/grouped	authenticated		auth_required	requireNotificationRead
+GET /api/v2/search	optional		anonymous	optionalAuth
+GET /api/v2/suggestions	authenticated		anonymous	requireAuth
+GET /api/v2/trends	public		anonymous	none
+GET /api/v2/trends/links	public		anonymous	none
+GET /api/v2/trends/statuses	public		anonymous	none
+GET /api/v2/trends/tags	public		anonymous	none
+GET /auth/device	public		anonymous	none
+GET /auth/wallet/list	authenticated		auth_required	requireAuth
+GET /authorize	public		anonymous	none
+GET /embed/{id}	public		anonymous	none
+GET /nodeinfo/2.0	public		anonymous	none
+GET /oauth/authorize	public		anonymous	none
+GET /robots.txt	public		anonymous	none
+GET /setup/status	public		anonymous	none
+HEAD /	public		anonymous	none
+PATCH /api/v1/accounts/update_credentials	authenticated	write	auth_required	requireWrite
+PATCH /api/v1/agents/{username}	authenticated		auth_required	requireManageAgents
+PATCH /api/v1/preferences	authenticated	write	auth_required	requireWrite
+POST /api/v1/accounts	public		anonymous	none
+POST /api/v1/accounts/{id}/block	authenticated		auth_required	requireBlockWrite
+POST /api/v1/accounts/{id}/follow	authenticated		auth_required	requireFollowWrite
+POST /api/v1/accounts/{id}/mute	authenticated	write	auth_required	requireWrite
+POST /api/v1/accounts/{id}/unblock	authenticated		auth_required	requireBlockWrite
+POST /api/v1/accounts/{id}/unfollow	authenticated		auth_required	requireFollowWrite
+POST /api/v1/accounts/{id}/unmute	authenticated	write	auth_required	requireWrite
+POST /api/v1/admin/accounts	authenticated		auth_required	requireAuth
+POST /api/v1/admin/accounts/{id}/action	authenticated		auth_required	requireAuth
+POST /api/v1/admin/accounts/{id}/approve	authenticated		auth_required	requireAuth
+POST /api/v1/admin/accounts/{id}/enable	authenticated		auth_required	requireAuth
+POST /api/v1/admin/accounts/{id}/reject	authenticated		auth_required	requireAuth
+POST /api/v1/admin/accounts/{id}/unsensitive	authenticated		auth_required	requireAuth
+POST /api/v1/admin/accounts/{id}/unsilence	authenticated		auth_required	requireAuth
+POST /api/v1/admin/accounts/{id}/unsuspend	authenticated		auth_required	requireAuth
+POST /api/v1/admin/agents/{username}/unlock	authenticated	admin	auth_required	requireAdmin
+POST /api/v1/admin/agents/{username}/unverify	authenticated	admin	auth_required	requireAdmin
+POST /api/v1/admin/agents/{username}/verify	authenticated	admin	auth_required	requireAdmin
+POST /api/v1/admin/announcements	authenticated		auth_required	requireAuth
+POST /api/v1/admin/custom_emojis	authenticated		auth_required	requireAuth
+POST /api/v1/admin/domain_allows	authenticated		auth_required	requireAuth
+POST /api/v1/admin/domain_blocks	authenticated		auth_required	requireAuth
+POST /api/v1/admin/email_domain_blocks	authenticated		auth_required	requireAuth
+POST /api/v1/admin/moderation/events/{id}/override	authenticated		auth_required	requireAuth
+POST /api/v1/admin/moderation/reviewers/{id}/demote	authenticated		auth_required	requireAuth
+POST /api/v1/admin/moderation/reviewers/{id}/promote	authenticated		auth_required	requireAuth
+POST /api/v1/admin/reports/{id}/assign_to_self	authenticated		auth_required	requireAuth
+POST /api/v1/admin/reports/{id}/reopen	authenticated		auth_required	requireAuth
+POST /api/v1/admin/reports/{id}/resolve	authenticated		auth_required	requireAuth
+POST /api/v1/admin/reports/{id}/unassign	authenticated		auth_required	requireAuth
+POST /api/v1/admin/skills/{skillId}/assignments	authenticated		auth_required	requireAdminWrite
+POST /api/v1/admin/skills/{skillId}/assignments/{assignmentId}/revoke	authenticated		auth_required	requireAdminWrite
+POST /api/v1/admin/skills/{skillId}/proposals/{proposalId}/promote	authenticated		auth_required	requireAdminWrite
+POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve	authenticated		auth_required	requireAdminWrite
+POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/revoke	authenticated		auth_required	requireAdminWrite
+POST /api/v1/admin/statuses/{id}/sensitive	authenticated		auth_required	requireAuth
+POST /api/v1/admin/statuses/{id}/unsensitive	authenticated		auth_required	requireAuth
+POST /api/v1/agents/auth/challenge	public		anonymous	none
+POST /api/v1/agents/auth/token	public		anonymous	none
+POST /api/v1/agents/delegate	authenticated		auth_required	requireManageAgents
+POST /api/v1/agents/memory/search	authenticated	read	auth_required	requireRead
+POST /api/v1/agents/register	public		anonymous	none
+POST /api/v1/agents/register/challenge	public		anonymous	none
+POST /api/v1/agents/{username}/access-leases	authenticated		auth_required	requireManageAgents
+POST /api/v1/agents/{username}/access-leases/challenge/agent	authenticated		auth_required	requireManageAgents
+POST /api/v1/agents/{username}/access-leases/challenge/principal	authenticated		auth_required	requireManageAgents
+POST /api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge	public		anonymous	none
+POST /api/v1/agents/{username}/access-leases/{leaseID}/revoke	authenticated		auth_required	requireManageAgents
+POST /api/v1/agents/{username}/access-leases/{leaseID}/session-key	public		anonymous	none
+POST /api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge	public		anonymous	none
+POST /api/v1/agents/{username}/access-leases/{leaseID}/token	public		anonymous	none
+POST /api/v1/agents/{username}/rotate-key	authenticated	write	auth_required	requireWrite
+POST /api/v1/agents/{username}/rotate-key/challenge	authenticated	read	auth_required	requireRead
+POST /api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke	authenticated		auth_required	requireManageAgents
+POST /api/v1/agents/{username}/suspend	authenticated	admin	auth_required	requireAdmin
+POST /api/v1/announcements/{id}/dismiss	authenticated		auth_required	requireAuth
+POST /api/v1/apps	optional		anonymous	optionalAuth
+POST /api/v1/apps/{id}/rotate_secret	authenticated		auth_required	requireWriteOrAdmin
+POST /api/v1/auth/webauthn/login/begin	public		anonymous	none
+POST /api/v1/auth/webauthn/login/finish	public		anonymous	none
+POST /api/v1/auth/webauthn/register/begin	authenticated		auth_required	requireAuth
+POST /api/v1/auth/webauthn/register/finish	authenticated		auth_required	requireAuth
+POST /api/v1/auth/webauthn/signup/begin	public		anonymous	none
+POST /api/v1/auth/webauthn/signup/finish	public		anonymous	none
+POST /api/v1/conversations/{id}/read	authenticated	write	auth_required	requireWrite
+POST /api/v1/domain_blocks	authenticated		auth_required	requireBlockWrite
+POST /api/v1/exports	authenticated	read	auth_required	requireRead
+POST /api/v1/follow_requests/{account_id}/authorize	authenticated		auth_required	requireFollowWrite
+POST /api/v1/follow_requests/{account_id}/reject	authenticated		auth_required	requireFollowWrite
+POST /api/v1/imports	authenticated	write	auth_required	requireWrite
+POST /api/v1/lists	authenticated	write	auth_required	requireWrite
+POST /api/v1/lists/{id}/accounts	authenticated	write	auth_required	requireWrite
+POST /api/v1/markers	authenticated	write	auth_required	requireWrite
+POST /api/v1/media	authenticated	write	auth_required	requireWrite
+POST /api/v1/moderation/flag	authenticated		auth_required	requireAuth
+POST /api/v1/moderation/review	authenticated		auth_required	requireAuth
+POST /api/v1/notes	authenticated		auth_required	requireAuth
+POST /api/v1/notes/{id}/vote	authenticated		auth_required	requireAuth
+POST /api/v1/notifications/clear	authenticated		auth_required	requireNotificationWrite
+POST /api/v1/notifications/deliver	internal_only		contract_auth/internal_only	none
+POST /api/v1/notifications/{id}/dismiss	authenticated		auth_required	requireNotificationWrite
+POST /api/v1/push/subscription	authenticated		auth_required	requirePushWrite
+POST /api/v1/reports	authenticated	write	auth_required	requireWrite
+POST /api/v1/reputation/export	authenticated		auth_required	requireAuth
+POST /api/v1/reputation/import	authenticated		auth_required	requireAuth
+POST /api/v1/reputation/verify	authenticated		auth_required	requireAuth
+POST /api/v1/search/statuses	authenticated	read	anonymous	requireRead
+POST /api/v1/souls/bindings	public		contract_auth/soul_binding_integration	none
+POST /api/v1/souls/{agentId}/incorporate	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/bookmark	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/favourite	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/mute	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/pin	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/quote	authenticated		auth_required	requireStatusWrite
+POST /api/v1/statuses/{id}/reblog	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/translate	authenticated		auth_required	requireAuth
+POST /api/v1/statuses/{id}/unbookmark	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/unfavourite	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/unmute	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/unpin	authenticated	write	auth_required	requireWrite
+POST /api/v1/statuses/{id}/unreblog	authenticated	write	auth_required	requireWrite
+POST /api/v1/trust/ai/claims/verify	authenticated		auth_required	requireAuth
+POST /api/v1/trust/previews	authenticated		auth_required	requireAuth
+POST /api/v1/trust/publish/jobs	authenticated		auth_required	requireAuth
+POST /api/v1/trust/renders	authenticated		auth_required	requireAuth
+POST /api/v1/vouches	authenticated		auth_required	requireAuth
+POST /api/v2/filters	authenticated		auth_required	requireFilterWrite
+POST /api/v2/filters/test	authenticated		auth_required	requireFilterRead
+POST /api/v2/filters/{filter_id}/keywords	authenticated		auth_required	requireFilterWrite
+POST /api/v2/filters/{filter_id}/statuses	authenticated		auth_required	requireFilterWrite
+POST /api/v2/notifications/groups/{group_id}/read	authenticated		auth_required	requireNotificationWrite
+POST /auth/wallet/challenge	public		anonymous	none
+POST /auth/wallet/link	optional		anonymous	optionalAuth
+POST /auth/wallet/login	public		anonymous	none
+POST /auth/wallet/verify	public		anonymous	none
+POST /oauth/consent	public		anonymous	none
+POST /oauth/device/code	public		anonymous	none
+POST /oauth/device/consent	authenticated		auth_required	none
+POST /oauth/device/verify	public		anonymous	none
+POST /oauth/register	optional		anonymous	optionalAuth
+POST /oauth/revoke	public		anonymous	none
+POST /oauth/token	public		anonymous	none
+POST /register	optional		anonymous	optionalAuth
+POST /setup/admin	public		contract_auth/setup_bearer	none
+POST /setup/bootstrap/challenge	public		anonymous	none
+POST /setup/bootstrap/verify	public		anonymous	none
+POST /setup/finalize	public		contract_auth/bearer_required	none
+POST /token	public		anonymous	none
+PUT /api/v1/accounts/quote_permissions	authenticated		auth_required	requireAccountWrite
+PUT /api/v1/admin/agents/policy	authenticated	admin	auth_required	requireAdmin
+PUT /api/v1/admin/custom_emojis/{shortcode}	authenticated		auth_required	requireAuth
+PUT /api/v1/admin/domain_blocks/{id}	authenticated		auth_required	requireAuth
+PUT /api/v1/admin/moderation/trust/{from}/{to}	authenticated		auth_required	requireAuth
+PUT /api/v1/admin/soul/well-known	authenticated	admin	auth_required	requireAdmin
+PUT /api/v1/agents/{username}/share/{grantee}	authenticated		auth_required	requireManageAgents
+PUT /api/v1/announcements/{id}/reactions/{name}	authenticated		auth_required	requireAuth
+PUT /api/v1/auth/webauthn/credentials/{credentialId}	authenticated		auth_required	requireAuth
+PUT /api/v1/lists/{id}	authenticated	write	auth_required	requireWrite
+PUT /api/v1/media/{id}	authenticated	write	auth_required	requireWrite
+PUT /api/v1/moderation/trust	authenticated		auth_required	requireAuth
+PUT /api/v1/push/subscription	authenticated		auth_required	requirePushWrite
+PUT /api/v1/scheduled_statuses/{id}	authenticated	write	auth_required	requireWrite
+PUT /api/v1/statuses/{id}	authenticated	write	auth_required	requireWrite
+PUT /api/v2/filters/{id}	authenticated		auth_required	requireFilterWrite

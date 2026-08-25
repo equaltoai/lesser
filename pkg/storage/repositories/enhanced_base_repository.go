@@ -134,29 +134,41 @@ func (r *EnhancedBaseRepository[T]) SetEventService(events EventService) {
 
 // ValidateAndCreate performs validation and creates with event emission
 func (r *EnhancedBaseRepository[T]) ValidateAndCreate(ctx context.Context, model T) error {
-	// 1. Validate required fields
+	return r.validateAndCreate(ctx, model, false)
+}
+
+// ValidateAndCreateOrUpdate preserves the existing create validation,
+// permission, and event pipeline while opting into TableTheory's explicit
+// overwrite semantics. It is reserved for deterministic rows whose contract is
+// to replace an earlier value; true creates must use ValidateAndCreate.
+func (r *EnhancedBaseRepository[T]) ValidateAndCreateOrUpdate(ctx context.Context, model T) error {
+	return r.validateAndCreate(ctx, model, true)
+}
+
+func (r *EnhancedBaseRepository[T]) validateAndCreate(ctx context.Context, model T, upsert bool) error {
 	if r.validator != nil {
 		if err := r.validator.ValidateRequiredFields(ctx, model); err != nil {
 			return errors.ValidationFailed("required fields", err.Error())
 		}
-
-		// 2. Validate business rules
 		if err := r.validator.ValidateBusinessRules(ctx, model, "create"); err != nil {
 			return errors.ValidationFailed("business rules", err.Error())
 		}
 	}
 
-	// 3. Check permissions
 	if err := r.checkCreatePermissions(ctx, model); err != nil {
 		return err
 	}
 
-	// 4. Execute create with cost tracking
-	if err := r.Create(ctx, model); err != nil {
+	if upsert {
+		if err := r.CreateOrUpdate(ctx, model); err != nil {
+			return err
+		}
+	} else if err := r.Create(ctx, model); err != nil {
 		return err
 	}
 
-	// 5. Emit creation event
+	// Keep the pre-v3.0.5 event contract for both modes: explicit-upsert callers
+	// historically ran through ValidateAndCreate and emitted entity.created.
 	if r.events != nil {
 		event := NewEvent("entity.created", r.entityName, model.GetPK(), "create", model)
 		event.Actor = r.getActorFromContext(ctx)

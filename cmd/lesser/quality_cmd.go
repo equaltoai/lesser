@@ -116,9 +116,15 @@ func ensureGolangCILintCacheFresh(repoRoot, xdgCache string) error {
 	}
 	versionLine := strings.TrimSpace(strings.SplitN(versionOut, "\n", 2)[0])
 
-	stampPath := filepath.Join(xdgCache, "golangci-lint.cache.stamp")
 	stamp := fmt.Sprintf("%s\nconfig-sha256:%x\n", versionLine, cfgHash[:])
-	if existing, err := os.ReadFile(filepath.Clean(stampPath)); err == nil && string(existing) == stamp {
+	cacheRoot, err := os.OpenRoot(xdgCache)
+	if err != nil {
+		return fmt.Errorf("open xdg cache root: %w", err)
+	}
+	defer func() { _ = cacheRoot.Close() }()
+
+	const stampName = "golangci-lint.cache.stamp"
+	if existing, err := cacheRoot.ReadFile(stampName); err == nil && string(existing) == stamp {
 		return nil
 	}
 
@@ -131,7 +137,7 @@ func ensureGolangCILintCacheFresh(repoRoot, xdgCache string) error {
 		return err
 	}
 
-	if err := os.WriteFile(stampPath, []byte(stamp), 0o600); err != nil {
+	if err := cacheRoot.WriteFile(stampName, []byte(stamp), 0o600); err != nil {
 		return fmt.Errorf("write golangci-lint cache stamp: %w", err)
 	}
 	return nil
@@ -142,7 +148,7 @@ func resolveLintBatchSize() int {
 }
 
 func runLintInBatches(repoRoot string, baseArgs []string, env map[string]string, batchSize int) error {
-	dirs, err := listGoPackageDirsForLint(repoRoot, env)
+	dirs, err := listGoPackageDirs(repoRoot, env)
 	if err != nil {
 		return err
 	}
@@ -170,7 +176,11 @@ func runLintInBatches(repoRoot string, baseArgs []string, env map[string]string,
 	return nil
 }
 
-func listGoPackageDirsForLint(repoRoot string, env map[string]string) ([]string, error) {
+// listGoPackageDirs returns the module's package directories as "./rel" paths,
+// sorted and deduplicated. Both golangci-lint (batched lint) and gosec (batched
+// sec-scan) resolve package arguments to files only in directory form, so this
+// is the shared target-list producer for their batch loops.
+func listGoPackageDirs(repoRoot string, env map[string]string) ([]string, error) {
 	out, err := captureCommandOutputFn(context.Background(), repoRoot, env, "go", "list", "-f", "{{.Dir}}", "./...")
 	if err != nil {
 		return nil, err

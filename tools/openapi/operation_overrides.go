@@ -11,6 +11,7 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	applySSEOverrides(op, route)
 	applyGraphQLOverrides(op, route)
 	applyOAuthOverrides(op, route)
+	applySetupOverrides(op, route)
 	applyAppRegistrationOverrides(op, route)
 	applyMediaOverrides(op, route)
 	applySoulOverrides(op, route)
@@ -348,6 +349,27 @@ func applyOAuthOverrides(op *operation, route routeDef) {
 		applyOAuthAuthorizeOverrides(op)
 	case route.Method == methodGET && route.Path == "/oauth/login":
 		applyOAuthLoginOverrides(op)
+	}
+}
+
+func applySetupOverrides(op *operation, route routeDef) {
+	if op == nil {
+		return
+	}
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+
+	switch {
+	case route.Method == methodPOST && route.Path == "/setup/bootstrap/challenge":
+		delete(op.Responses, "422")
+		ensureResponseRef(op.Responses, "403", "Forbidden")
+		ensureResponseRef(op.Responses, "409", "Conflict")
+	case route.Method == methodPOST && route.Path == "/setup/bootstrap/verify":
+		delete(op.Responses, "422")
+		ensureResponseRef(op.Responses, "401", "Unauthorized")
+		ensureResponseRef(op.Responses, "403", "Forbidden")
+		ensureResponseRef(op.Responses, "409", "Conflict")
 	}
 }
 

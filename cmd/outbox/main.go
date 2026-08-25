@@ -21,7 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
@@ -1130,8 +1130,8 @@ var (
 	startLambda    = lambda.Start
 )
 
-func buildOutboxApp(processor *OutboxProcessor) *apptheory.App {
-	app := apptheory.New()
+func buildOutboxApp(processor *OutboxProcessor) *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 
 	app.Use(func(next apptheory.Handler) apptheory.Handler {
 		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -1181,8 +1181,8 @@ func buildOutboxApp(processor *OutboxProcessor) *apptheory.App {
 		return processor.HandleSQSMessage(runCtx, requestID, msg)
 	})
 
-	app.Get("/users/:username/outbox", processor.HandleOutboxGet)
-	app.Post("/users/:username/outbox", processor.HandleOutboxPost)
+	app.Get("/users/:username/outbox", processor.HandleOutboxGet, apptheory.Public())
+	app.Post("/users/:username/outbox", processor.HandleOutboxPost, apptheory.Public())
 
 	return app
 }

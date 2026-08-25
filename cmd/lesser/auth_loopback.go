@@ -273,11 +273,11 @@ func openBrowser(targetURL string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", targetURL)
+		cmd = exec.Command("open", targetURL) //nolint:gosec // G204: fixed OS browser launcher receives the operator-approved URL as a separate argument; no shell is involved
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", targetURL)
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", targetURL) //nolint:gosec // G204: fixed OS browser launcher receives the operator-approved URL as a separate argument; no shell is involved
 	default:
-		cmd = exec.Command("xdg-open", targetURL)
+		cmd = exec.Command("xdg-open", targetURL) //nolint:gosec // G204: fixed OS browser launcher receives the operator-approved URL as a separate argument; no shell is involved
 	}
 
 	return cmd.Start()

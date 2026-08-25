@@ -7,10 +7,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
@@ -18,12 +20,22 @@ import (
 
 // IsProductionEnvironment checks if the current environment is production
 func IsProductionEnvironment(cfg *config.Config) bool {
-	env := cfg.Stage
-	return env == "production" || env == "prod"
+	return naming.IsLiveEnvironment(cfg.Stage)
 }
 
 // ValidateVAPIDKeysForProduction validates that VAPID keys are available in production
 func ValidateVAPIDKeysForProduction(ctx context.Context, cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger) error {
+	if strings.TrimSpace(cfg.VAPIDSecretARN) == "" {
+		if IsProductionEnvironment(cfg) {
+			err := errors.New("VAPID_SECRET_ARN is required in production for durable VAPID key persistence")
+			logger.Error("VAPID Secrets Manager configuration is missing", zap.Error(err))
+			return err
+		}
+
+		logger.Warn("VAPID_SECRET_ARN is not configured; skipping non-production VAPID bootstrap because generated keys could not be persisted durably")
+		return nil
+	}
+
 	pushRepo := repos.PushSubscription()
 	if pushRepo == nil {
 		logger.Warn("push subscription repository unavailable; skipping VAPID key validation")

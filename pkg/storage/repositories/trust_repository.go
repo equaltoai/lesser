@@ -526,7 +526,7 @@ func (r *TrustRepository) UpdateTrustScore(ctx context.Context, score *storage.T
 		return err
 	}
 
-	return r.scoreRepo.ValidateAndCreate(ctx, model)
+	return r.scoreRepo.ValidateAndCreateOrUpdate(ctx, model)
 }
 
 // RecordTrustUpdate records a trust score update event

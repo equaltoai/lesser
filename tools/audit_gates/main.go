@@ -148,12 +148,18 @@ func findDefaultInitStorageContinuationMatches(root string) ([]string, error) {
 		"initializeWithDefaults",
 	}
 	var matches []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open audit root: %w", err)
+	}
+	defer func() { _ = rootFS.Close() }()
+
+	err = fs.WalkDir(rootFS.FS(), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if strings.HasPrefix(path, ".git") || strings.Contains(path, string(filepath.Separator)+"testdata"+string(filepath.Separator)) {
+			if strings.HasPrefix(path, ".git") || strings.Contains(path, "/testdata/") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -161,13 +167,14 @@ func findDefaultInitStorageContinuationMatches(root string) ([]string, error) {
 		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		content, readErr := os.ReadFile(path) // #nosec G304 -- repo-local audit gate
+		content, readErr := rootFS.ReadFile(path)
 		if readErr != nil {
 			return readErr
 		}
 		for _, needle := range forbidden {
 			if bytes.Contains(content, []byte(needle)) {
-				matches = append(matches, fmt.Sprintf("%s contains %q", path, needle))
+				displayPath := filepath.Join(root, filepath.FromSlash(path))
+				matches = append(matches, fmt.Sprintf("%s contains %q", displayPath, needle))
 			}
 		}
 		return nil

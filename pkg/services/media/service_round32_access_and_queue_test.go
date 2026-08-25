@@ -52,8 +52,9 @@ func TestService_checkMediaAccess_CoversBranches(t *testing.T) {
 func TestService_queueMediaProcessing_CoversMediaTypesAndError(t *testing.T) {
 	t.Parallel()
 
-	service, _, jobQueue, _ := createTestService(t)
+	service, mediaRepo, jobQueue, _ := createTestService(t)
 	ctx := context.Background()
+	mediaRepo.On("CreateMediaJob", ctx, mock.AnythingOfType("*models.MediaJob")).Return(nil).Times(4)
 
 	jobQueue.On("QueueMediaJob", ctx, mock.MatchedBy(func(msg JobMessage) bool {
 		return msg.MediaID == "img-1" && msg.Username == "alice" && msg.JobID != "" && msg.Timestamp > 0

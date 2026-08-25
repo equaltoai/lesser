@@ -835,7 +835,7 @@ func (r *SocialRepository) CreateAccountNote(ctx context.Context, note *storage.
 	}
 
 	// Use enhanced validation and creation
-	err := r.accountNoteRepo.ValidateAndCreate(ctx, model)
+	err := r.accountNoteRepo.ValidateAndCreateOrUpdate(ctx, model)
 	if err != nil {
 		r.logger.Error("failed to create account note", zap.Error(err))
 		return err
@@ -861,7 +861,7 @@ func (r *SocialRepository) UpdateAccountNote(ctx context.Context, note *storage.
 	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Use enhanced validation and creation (overwrites existing in DynamoDB)
-	err := r.accountNoteRepo.ValidateAndCreate(ctx, model)
+	err := r.accountNoteRepo.ValidateAndCreateOrUpdate(ctx, model)
 	if err != nil {
 		r.logger.Error("failed to update account note", zap.Error(err))
 		return err

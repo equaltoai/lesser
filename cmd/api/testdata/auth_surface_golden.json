@@ -36,6 +36,13 @@
   },
   {
     "method": "GET",
+    "path": "/.well-known/oauth-protected-resource/mcp/{username}",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
     "path": "/.well-known/reputation-keys",
     "runtimePosture": "anonymous",
     "openapiSecurity": "public",
@@ -1353,9 +1360,9 @@
   {
     "method": "POST",
     "path": "/api/v1/notifications/deliver",
-    "runtimePosture": "anonymous",
+    "runtimePosture": "auth-required",
     "openapiSecurity": "required",
-    "verdict": "failOpen"
+    "verdict": "agree"
   },
   {
     "method": "GET",
@@ -2234,6 +2241,13 @@
   },
   {
     "method": "GET",
+    "path": "/authorize",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
     "path": "/embed/{id}",
     "runtimePosture": "anonymous",
     "openapiSecurity": "public",
@@ -2331,6 +2345,13 @@
     "verdict": "agree"
   },
   {
+    "method": "POST",
+    "path": "/register",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "optional",
+    "verdict": "agree"
+  },
+  {
     "method": "GET",
     "path": "/robots.txt",
     "runtimePosture": "anonymous",
@@ -2368,6 +2389,13 @@
   {
     "method": "GET",
     "path": "/setup/status",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/token",
     "runtimePosture": "anonymous",
     "openapiSecurity": "public",
     "verdict": "agree"

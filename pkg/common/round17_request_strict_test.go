@@ -5,7 +5,7 @@ import (
 
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 func TestParseRequestStrict(t *testing.T) {

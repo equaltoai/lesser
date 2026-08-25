@@ -29,7 +29,8 @@ func TestSeveranceRepository_Round09_FinalPush(t *testing.T) {
 	t.Run("CreateReconnectionAttempt and UpdateReconnectionAttempt create error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("Create").Return(ErrTestMockError).Twice()
+		mockQuery.On("Create").Return(ErrTestMockError).Once()
+		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewSeveranceRepository(mockDB, "test-table", zap.NewNop())
 		require.Error(t, repo.CreateReconnectionAttempt(ctx, models.NewSeveranceReconnectionAttempt("sev", "admin")))

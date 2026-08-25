@@ -45,7 +45,7 @@ func TestGSIHelper_CreateGSI_PersistsRecord(t *testing.T) {
 		}
 		return ok
 	})).Return(mockQuery).Once()
-	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	err = helper.CreateGSI(ctx, definition)
 	require.NoError(t, err)
@@ -233,7 +233,7 @@ func TestGSIHelper_CreateGSI_DefaultsProjectionTypeWhenEmpty(t *testing.T) {
 		}
 		return ok
 	})).Return(mockQuery).Once()
-	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	require.NoError(t, helper.CreateGSI(ctx, definition))
 	require.NotNil(t, persistedRecord)

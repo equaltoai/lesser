@@ -11,7 +11,7 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
@@ -159,9 +159,9 @@ func TestStatusPins_MuteConversation(t *testing.T) {
 	require.Equal(t, http.StatusOK, respMute.Status)
 
 	retryState := &round10QueryState{
-		actorsByUser:    state.actorsByUser,
-		objectsByID:     state.objectsByID,
-		createErrorOnce: apperrors.AlreadyExists("conversation mute"),
+		actorsByUser:            state.actorsByUser,
+		objectsByID:             state.objectsByID,
+		createOrUpdateErrorOnce: apperrors.AlreadyExists("conversation mute"),
 	}
 	retryHandler, _, _ := round11NewHandler(t, cfg, retryState)
 	ctxRetry := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses/s1/mute", headers, nil, []byte(`{"duration": 0}`))

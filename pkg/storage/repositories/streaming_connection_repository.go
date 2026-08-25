@@ -193,8 +193,9 @@ func (r *StreamingConnectionRepository) WriteSubscription(ctx context.Context, c
 		TTL:          time.Now().Add(24 * time.Hour).Unix(),
 	}
 
-	// Use subscription BaseRepository Create method
-	if err := r.subscriptionRepo.ValidateAndCreate(ctx, subscription); err != nil {
+	// Re-subscribing is an idempotent refresh of the deterministic
+	// SUB#{stream}/CONN#{connectionID} row, including its 24-hour TTL.
+	if err := r.subscriptionRepo.ValidateAndCreateOrUpdate(ctx, subscription); err != nil {
 		r.logger.Error("websocket subscription write failed",
 			zap.String("connection_id", connectionID),
 			zap.String("user_id", userID),

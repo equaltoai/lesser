@@ -229,8 +229,8 @@ func TestTrustRepository_GetTrustScore_RecalculateAndCache(t *testing.T) {
 		}
 	}).Return(nil).Once()
 
-	// 5) UpdateTrustScore caches calculated score (Create)
-	mockQuery.On("Create").Return(nil).Once()
+	// 5) UpdateTrustScore caches calculated score with an explicit upsert.
+	mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 	score, err := repo.GetTrustScore(context.Background(), "actor", string(trust.TrustCategoryGeneral))
 	require.NoError(t, err)
@@ -368,8 +368,8 @@ func TestTrustRepository_MoreErrorBranches(t *testing.T) {
 	_, err = repo.getCachedTrustScore(context.Background(), "a", "general")
 	require.Error(t, err)
 
-	// UpdateTrustScore create error
-	mockQuery.On("Create").Return(errors.New("boom")).Once()
+	// UpdateTrustScore upsert error
+	mockQuery.On("CreateOrUpdate").Return(errors.New("boom")).Once()
 	err = repo.UpdateTrustScore(context.Background(), &storage.TrustScore{
 		ActorID:        "a",
 		Category:       trust.TrustCategoryGeneral,

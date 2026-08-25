@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -21,5 +22,28 @@ func TestStreamTriggersDeclareFiniteRetryAgeAndPoisonDestination(t *testing.T) {
 				t.Fatalf("%s stream trigger %d must declare a poison record queue", spec.Name, idx)
 			}
 		}
+	}
+}
+
+func TestVAPIDConsumersDeclareRequiredEnvironmentAndRoleClasses(t *testing.T) {
+	byName := make(map[string]LambdaSpec, len(LambdaInventory.Lambdas))
+	for _, spec := range LambdaInventory.Lambdas {
+		byName[spec.Name] = spec
+	}
+
+	api := byName["api"]
+	if api.Role != RoleClassEncryption {
+		t.Fatalf("api must retain the encryption role for VAPID rotation, got %q", api.Role)
+	}
+	if !slices.Contains(api.RequiredEnvVars, "VAPID_SECRET_ARN") {
+		t.Fatalf("api must receive VAPID_SECRET_ARN for VAPID reads and rotation")
+	}
+
+	pushDelivery := byName["push-delivery"]
+	if pushDelivery.Role != RoleClassBasic {
+		t.Fatalf("push-delivery must retain the basic role, got %q", pushDelivery.Role)
+	}
+	if !slices.Contains(pushDelivery.RequiredEnvVars, "VAPID_SECRET_ARN") {
+		t.Fatalf("push-delivery must receive VAPID_SECRET_ARN for VAPID reads")
 	}
 }

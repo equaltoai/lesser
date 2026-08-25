@@ -117,7 +117,7 @@ func (h *GSIHelper) CreateGSI(ctx context.Context, gsi GSIDefinition) error {
 		CreatedAt:      time.Now().UTC(),
 	}
 
-	if err := h.db.WithContext(ctx).Model(record).Create(); err != nil {
+	if err := h.db.WithContext(ctx).Model(record).CreateOrUpdate(); err != nil {
 		return fmt.Errorf("failed to persist GSI migration record: %w", err)
 	}
 

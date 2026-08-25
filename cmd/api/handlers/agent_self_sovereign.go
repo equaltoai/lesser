@@ -17,7 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 )
 
@@ -97,7 +97,7 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 	userAgent, _ := h.getDeviceInfo(ctx)
 	token, err := h.mintSelfSovereignTokens(ctx, req.Username, requestedScopes, req.DeviceLabel, userAgent)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return oauthTemporarilyUnavailable("Agent token mint is temporarily unavailable")
 	}
 
 	apiAccount := h.converter.ActorToAccount(account.Actor)
@@ -454,7 +454,7 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 		DeviceLabel: auth.CoalesceAgentRuntimeLabel(req.DeviceLabel, userAgent),
 	})
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return oauthTemporarilyUnavailable("Agent token mint is temporarily unavailable")
 	}
 
 	return okJSON(apimodels.OAuthTokenResponse{

@@ -37,7 +37,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 
@@ -111,6 +111,9 @@ func init() {
 
 	// Use standardized Lambda initialization
 	lambdaCtx = common.MustInitializeLambda(lambdaConfig)
+	if err := configureTableTheoryEncryption(lambdaCtx.Config); err != nil {
+		lambdaCtx.Logger.Fatal("failed to configure TableTheory encryption", zap.Error(err))
+	}
 
 	if _, err := lambdastorage.Initialize(context.Background(), lambdaCtx, lambdastorage.Options{
 		ServiceName:          "api",
@@ -127,6 +130,19 @@ func init() {
 
 	// Initialize API-specific services
 	initializeAPISpecificServices()
+}
+
+// configureTableTheoryEncryption bridges Lesser's established KMS_KEY_ID
+// configuration to TableTheory's fail-closed encrypted-field configuration.
+// AWS KMS accepts key IDs, ARNs, and aliases for this setting.
+func configureTableTheoryEncryption(cfg *config.Config) error {
+	if cfg == nil || strings.TrimSpace(os.Getenv("KMS_KEY_ARN")) != "" {
+		return nil
+	}
+	if keyID := strings.TrimSpace(cfg.KMSKeyID); keyID != "" {
+		return os.Setenv("KMS_KEY_ARN", keyID)
+	}
+	return nil
 }
 
 // extractStandardizedServices extracts services from standardized initialization
@@ -421,11 +437,12 @@ func parseAPICORSAllowedOrigins(raw string) []string {
 	return browsercors.ParseAllowedOrigins(raw)
 }
 
-func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
+func buildApp(lambdaLogger *zap.Logger) *apptheory.SecureApp {
 	oauthService := newAPIOAuthService(lambdaLogger)
 
-	options := []apptheory.Option{
-		apptheory.WithCORS(apptheory.CORSConfig{
+	secureOptions := apptheory.SecureOptions{
+		Tier: apptheory.TierP2,
+		CORS: apptheory.CORSConfig{
 			AllowedOrigins:   apiCORSAllowedOrigins(cfg),
 			AllowCredentials: false,
 			AllowHeaders: []string{
@@ -438,18 +455,29 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 				"X-Request-Id",
 				"X-Tenant-Id",
 			},
-		}),
-		apptheory.WithLimits(apptheory.Limits{
+		},
+		Limits: apptheory.Limits{
 			MaxRequestBytes:  512 * 1024,
 			MaxResponseBytes: 0,
-		}),
+		},
 	}
+	var bearerResolver apptheory.SecurePrincipalResolver
 	if authService != nil && oauthService != nil {
-		options = append(options, apptheory.WithAuthPrincipalHook(
-			auth.NewAppTheoryPrincipalHookFromAuthAndOAuthServices(authService, oauthService, lambdaLogger, "api"),
-		))
+		bearerResolver = auth.NewAppTheorySecurePrincipalResolverFromAuthAndOAuthServices(
+			authService, oauthService, lambdaLogger, "api",
+		)
 	}
-	app := apptheory.New(options...)
+	secureOptions.PrincipalResolver = func(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+		if ctx != nil && strings.EqualFold(ctx.Request.Method, http.MethodPost) &&
+			ctx.Request.Path == "/api/v1/notifications/deliver" && apiHandler != nil {
+			return apiHandler.ResolveNotificationDeliveryPrincipal(ctx)
+		}
+		if bearerResolver == nil {
+			return nil, nil
+		}
+		return bearerResolver(ctx)
+	}
+	app := apptheory.NewSecure(secureOptions)
 
 	// Timeout middleware (app-tier).
 	app.Use(apptheory.TimeoutMiddleware(apptheory.TimeoutConfig{
@@ -790,7 +818,7 @@ func createEMFMetricsMiddleware() apptheory.Middleware {
 	}
 }
 
-func configureHealthRoutes(app *apptheory.App) {
+func configureHealthRoutes(app *apptheory.SecureApp) {
 	// Liveness endpoint
 	app.Get("/health/live", func(_ *apptheory.Context) (*apptheory.Response, error) {
 		response := map[string]interface{}{
@@ -800,7 +828,7 @@ func configureHealthRoutes(app *apptheory.App) {
 			"version":   cfg.Version,
 		}
 		return apptheory.JSON(200, response)
-	})
+	}, apptheory.Public())
 
 	// Legacy health endpoint (infra + backwards compatibility)
 	app.Get("/health", func(_ *apptheory.Context) (*apptheory.Response, error) {
@@ -811,7 +839,7 @@ func configureHealthRoutes(app *apptheory.App) {
 			"version":   cfg.Version,
 		}
 		return apptheory.JSON(200, response)
-	})
+	}, apptheory.Public())
 
 	// Readiness endpoint
 	app.Get("/health/ready", func(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -855,7 +883,7 @@ func configureHealthRoutes(app *apptheory.App) {
 		}
 
 		return apptheory.JSON(statusCode, response)
-	})
+	}, apptheory.Public())
 
 	// Detailed health endpoint
 	app.Get("/health/detailed", func(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -924,7 +952,7 @@ func configureHealthRoutes(app *apptheory.App) {
 		}
 
 		return apptheory.JSON(statusCode, response)
-	})
+	}, apptheory.Public())
 }
 
 // createTracingMiddleware creates middleware for distributed tracing

@@ -29,6 +29,7 @@ func WriteAuthUIBundle(repoRoot string, outDir string) error {
 		return fmt.Errorf("list auth-ui dist: %w", err)
 	}
 
+	//nolint:gosec // Release output is a publication directory whose artifacts must be readable by packaging/upload workers.
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create release dir: %w", err)
 	}
@@ -36,7 +37,8 @@ func WriteAuthUIBundle(repoRoot string, outDir string) error {
 	archivePath := filepath.Join(outDir, AuthUIBundleArchiveName)
 	tmpPath := archivePath + ".tmp"
 
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- caller controls output dir
+	//nolint:gosec // This temporary contains only the public release archive and must retain the archive's published 0644 mode.
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("create auth-ui bundle: %w", err)
 	}

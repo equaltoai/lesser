@@ -311,7 +311,7 @@ func TestRound34_ConversationRepository_UserConversationStateWrappers(t *testing
 					candidate.PK == "USER_CONVERSATION_STATE#alice" &&
 					candidate.SK == "CONVERSATION#conv-1"
 			})).Return(createQuery).Once()
-			createQuery.On("Create").Return(nil).Once()
+			createQuery.On("CreateOrUpdate").Return(nil).Once()
 
 			repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 			require.NoError(t, repo.createOrUpdateUserConversationState(ctx, state))

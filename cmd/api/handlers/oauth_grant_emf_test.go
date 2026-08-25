@@ -1,0 +1,721 @@
+package handlers
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/observability"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+)
+
+type oauthGrantEMFPayload struct {
+	AWS          observability.EMFMetadata `json:"_aws"`
+	Outcome      string                    `json:"outcome"`
+	ReasonCode   string                    `json:"reason_code"`
+	RetryPath    string                    `json:"retry_path"`
+	HTTPStatus   string                    `json:"http_status"`
+	GrantType    string                    `json:"grant_type"`
+	DetailReason string                    `json:"detail_reason"`
+	RequestID    string                    `json:"request_id"`
+	ClientHash   string                    `json:"client_id_hash"`
+	ResourceHash string                    `json:"resource_hash"`
+	FamilyHash   string                    `json:"family_id_hash"`
+	Outcomes     int                       `json:"oauth_grant_outcomes_total"`
+	Exceptions   int                       `json:"oauth_grant_exceptions_total"`
+}
+
+func decodeOAuthGrantEMFLines(t *testing.T, raw string) []oauthGrantEMFPayload {
+	t.Helper()
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	lines := strings.Split(trimmed, "\n")
+	result := make([]oauthGrantEMFPayload, 0, len(lines))
+	for _, line := range lines {
+		var payload oauthGrantEMFPayload
+		require.NoError(t, json.Unmarshal([]byte(line), &payload))
+		result = append(result, payload)
+	}
+	return result
+}
+
+func TestOAuthGrantEMFContractClampsDimensionsAndKeepsCorrelationAsProperties(t *testing.T) {
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", map[string]string{"X-Request-ID": "request-123"}, nil, nil)
+	ctx.RequestID = "lambda-request-123"
+	var output bytes.Buffer
+	h := &Handler{oauthGrantEMFWriter: &output, oauthGrantEMFEnabled: true, logger: round10TestLogger(t)}
+	telemetry := &oauthGrantTelemetry{
+		GrantType:    oauthGrantTypeRefreshToken,
+		ClientID:     "client-secret-id",
+		Resource:     "https://api.example.com/mcp/alice",
+		FamilyID:     "family-sensitive-id",
+		DetailReason: "future_unmapped_reason",
+		RetryPath:    "future_retry_path",
+	}
+
+	h.emitOAuthGrantOutcome(ctx, responseWithStatus{Status: http.StatusBadRequest}.response(), nil, telemetry)
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 1)
+	payload := lines[0]
+	require.Equal(t, oauthGrantOutcomeFailure, payload.Outcome)
+	require.Equal(t, oauthGrantReasonOther, payload.ReasonCode)
+	require.Equal(t, "future_unmapped_reason", payload.DetailReason)
+	require.Equal(t, oauthGrantRetryPathNone, payload.RetryPath)
+	require.Equal(t, "400", payload.HTTPStatus)
+	require.Equal(t, "lambda-request-123", payload.RequestID)
+	require.Equal(t, oauthGrantTelemetryHash(telemetry.ClientID), payload.ClientHash)
+	require.Equal(t, oauthGrantTelemetryHash(telemetry.Resource), payload.ResourceHash)
+	require.Equal(t, oauthGrantTelemetryHash(telemetry.FamilyID), payload.FamilyHash)
+	require.NotContains(t, output.String(), telemetry.ClientID)
+	require.NotContains(t, output.String(), telemetry.FamilyID)
+	require.Equal(t, 1, payload.Outcomes)
+	require.Zero(t, payload.Exceptions)
+
+	require.Len(t, payload.AWS.CloudWatchMetrics, 1)
+	directive := payload.AWS.CloudWatchMetrics[0]
+	require.Equal(t, oauthGrantEMFNamespace, directive.Namespace)
+	require.Equal(t, [][]string{{"outcome", "reason_code", "retry_path", "http_status"}, {}}, directive.Dimensions)
+	require.Equal(t, []observability.EMFMetricDefinition{
+		{Name: oauthGrantEMFOutcomeMetric, Unit: "Count"},
+		{Name: oauthGrantEMFExceptionMetric, Unit: "Count"},
+	}, directive.Metrics)
+	for _, dimensionSet := range directive.Dimensions {
+		require.NotContains(t, dimensionSet, "request_id")
+		require.NotContains(t, dimensionSet, "client_id_hash")
+		require.NotContains(t, dimensionSet, "resource_hash")
+		require.NotContains(t, dimensionSet, "family_id_hash")
+	}
+}
+
+func TestOAuthGrantEMFExceptionMetricCountsOnlyRescueServes(t *testing.T) {
+	var output bytes.Buffer
+	h := &Handler{oauthGrantEMFWriter: &output, oauthGrantEMFEnabled: true}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, nil)
+
+	h.emitOAuthGrantOutcome(ctx, responseWithStatus{Status: http.StatusOK}.response(), nil, &oauthGrantTelemetry{
+		GrantType: oauthGrantTypeRefreshToken, DetailReason: oauthGrantReasonSuccess, RetryPath: oauthGrantRetryPathDirectRotate,
+	})
+	h.emitOAuthGrantOutcome(ctx, responseWithStatus{Status: http.StatusOK}.response(), nil, &oauthGrantTelemetry{
+		GrantType: oauthGrantTypeRefreshToken, DetailReason: oauthGrantReasonRefreshRetryRescueServed, RetryPath: oauthGrantRetryPathRetryRescue,
+	})
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 2)
+	require.Zero(t, lines[0].Exceptions)
+	require.Equal(t, 1, lines[1].Exceptions)
+	require.Equal(t, oauthGrantReasonRefreshRetryRescueServed, lines[1].ReasonCode)
+}
+
+func TestOAuthGrantEMFClosedReasonVocabulary(t *testing.T) {
+	reasons := []string{
+		oauthGrantReasonSuccess,
+		oauthGrantReasonInvalidRequest,
+		oauthGrantReasonInvalidClient,
+		oauthGrantReasonInvalidTarget,
+		oauthGrantReasonUnauthorizedClient,
+		oauthGrantReasonTemporarilyUnavailable,
+		oauthGrantReasonServerError,
+		oauthGrantReasonAuthorizationCodeAbsent,
+		oauthGrantReasonAuthorizationCodeClientMismatch,
+		oauthGrantReasonAuthorizationCodeRedirectMismatch,
+		oauthGrantReasonAuthorizationCodePKCEMismatch,
+		oauthGrantReasonAuthorizationCodeScopeInvalid,
+		oauthGrantReasonAuthorizationCodeResourceMismatch,
+		oauthGrantReasonAuthorizationCodeAuthorityRevoked,
+		oauthGrantReasonAuthorizationCodeInvalidContext,
+		oauthGrantReasonAuthorizationCodeConsumed,
+		oauthGrantReasonTokenGenerationFailed,
+		oauthGrantReasonRefreshTokenAbsent,
+		oauthGrantReasonRefreshCrossClientReplay,
+		oauthGrantReasonRefreshShareGrantRevoked,
+		oauthGrantReasonRefreshRetryReplayed,
+		oauthGrantReasonRefreshTokenExpired,
+		oauthGrantReasonRefreshStaleGeneration,
+		oauthGrantReasonRefreshResourceMismatch,
+		oauthGrantReasonRefreshResourceAuthorityRevoked,
+		oauthGrantReasonRefreshOutsideRetryGrace,
+		oauthGrantReasonRefreshSuccessorAbsent,
+		oauthGrantReasonRefreshAuthorityAbsent,
+		oauthGrantReasonRefreshRetryRescueServed,
+		oauthGrantReasonRefreshRuntimeInvalid,
+		oauthGrantReasonRefreshRuntimeReuse,
+		oauthGrantReasonRefreshRotationInfrastructure,
+	}
+	for _, reason := range reasons {
+		require.Equal(t, reason, oauthGrantEMFReasonCode(reason))
+	}
+	require.Equal(t, oauthGrantReasonOther, oauthGrantEMFReasonCode("not_declared"))
+}
+
+func TestOAuthGrantEMFTransientOutcomeUsesRetryableClass(t *testing.T) {
+	var output bytes.Buffer
+	h := &Handler{oauthGrantEMFWriter: &output, oauthGrantEMFEnabled: true}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, nil)
+
+	h.emitOAuthGrantOutcome(ctx, responseWithStatus{Status: http.StatusServiceUnavailable}.response(), nil, &oauthGrantTelemetry{
+		GrantType: oauthGrantTypeAuthorizationCode,
+	})
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 1)
+	require.Equal(t, oauthGrantOutcomeFailure, lines[0].Outcome)
+	require.Equal(t, oauthGrantReasonTemporarilyUnavailable, lines[0].ReasonCode)
+	require.Equal(t, "503", lines[0].HTTPStatus)
+	require.Zero(t, lines[0].Exceptions)
+}
+
+func TestOAuthGrantEMFGatesAndNilWriterAreSilent(t *testing.T) {
+	t.Setenv(oauthGrantEMFEnabledEnv, "false")
+	require.False(t, oauthGrantEMFEnabled())
+	var output bytes.Buffer
+	disabled := &Handler{}
+	configureOAuthGrantEMF(disabled)
+	require.False(t, disabled.oauthGrantEMFEnabled)
+	disabled.oauthGrantEMFWriter = &output
+	disabled.emitOAuthGrantOutcome(
+		round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, nil),
+		responseWithStatus{Status: http.StatusOK}.response(), nil,
+		&oauthGrantTelemetry{GrantType: oauthGrantTypeRefreshToken},
+	)
+	require.Empty(t, output.String())
+
+	t.Setenv(oauthGrantEMFEnabledEnv, "true")
+	require.True(t, oauthGrantEMFEnabled())
+	t.Setenv(oauthGrantEMFEnabledEnv, "not-a-bool")
+	require.True(t, oauthGrantEMFEnabled())
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, nil)
+	telemetry := &oauthGrantTelemetry{GrantType: oauthGrantTypeAuthorizationCode}
+	(&Handler{oauthGrantEMFEnabled: true}).emitOAuthGrantOutcome(ctx, responseWithStatus{Status: http.StatusOK}.response(), nil, telemetry)
+
+	output.Reset()
+	(&Handler{oauthGrantEMFWriter: &output, oauthGrantEMFEnabled: false}).emitOAuthGrantOutcome(ctx, responseWithStatus{Status: http.StatusOK}.response(), nil, telemetry)
+	require.Empty(t, output.String())
+}
+
+type failingOAuthGrantEMFWriter struct{}
+
+func (failingOAuthGrantEMFWriter) Write([]byte) (int, error) {
+	return 0, errors.New("stdout unavailable")
+}
+
+func TestOAuthGrantEMFFailingWriterDoesNotAlterGrantResponse(t *testing.T) {
+	h, _, _ := round11NewHandler(t, &round10QueryState{})
+	request := []byte("grant_type=refresh_token&client_id=client-1")
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)
+
+	h.oauthGrantEMFWriter = nil
+	expected := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+	h.oauthGrantEMFWriter = failingOAuthGrantEMFWriter{}
+	h.oauthGrantEMFEnabled = true
+	actual := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
+
+	require.Equal(t, expected.Status, actual.Status)
+	require.Equal(t, expected.Headers, actual.Headers)
+	require.JSONEq(t, string(expected.Body), string(actual.Body))
+}
+
+func TestOAuthTokenGrantArmsEmitExactlyOneOutcome(t *testing.T) {
+	h, _, _ := round11NewHandler(t, &round10QueryState{})
+	var output bytes.Buffer
+	h.oauthGrantEMFWriter = &output
+	h.oauthGrantEMFEnabled = true
+
+	requests := [][]byte{
+		[]byte("grant_type=authorization_code&client_id=client-1&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback"),
+		[]byte("grant_type=refresh_token&client_id=client-1"),
+	}
+	for _, request := range requests {
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
+		requireOAuthTokenError(t, resp.Status, "invalid_request", resp.Body)
+	}
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 2)
+	require.Equal(t, oauthGrantTypeAuthorizationCode, lines[0].GrantType)
+	require.Equal(t, oauthGrantTypeRefreshToken, lines[1].GrantType)
+	for _, payload := range lines {
+		require.Equal(t, oauthGrantReasonInvalidRequest, payload.ReasonCode)
+		require.Equal(t, 1, payload.Outcomes)
+	}
+}
+
+func TestOAuthAuthorizationCodeRedirectFailuresKeepWireAndTelemetryTruthful(t *testing.T) {
+	const (
+		clientID  = "client-1"
+		redirectA = "https://client.example/callback-a"
+		redirectB = "https://client.example/callback-b"
+	)
+
+	tests := []struct {
+		name                string
+		registeredRedirects []string
+		storedRedirect      string
+		presentedCode       string
+		presentedRedirect   string
+		wantWireError       string
+		wantDescription     string
+		refuteDescription   string
+		wantReason          string
+	}{
+		{
+			name:                "whitespace code is a missing required parameter",
+			registeredRedirects: []string{redirectA},
+			storedRedirect:      redirectA,
+			presentedCode:       " ",
+			presentedRedirect:   redirectA,
+			wantWireError:       oauthGrantReasonInvalidRequest,
+			wantDescription:     "validation failed for parameters: missing required parameters: code",
+			refuteDescription:   "redirect_uri",
+			wantReason:          oauthGrantReasonInvalidRequest,
+		},
+		{
+			name:                "whitespace redirect is a missing required parameter",
+			registeredRedirects: []string{redirectA},
+			storedRedirect:      redirectA,
+			presentedCode:       "code-1",
+			presentedRedirect:   " ",
+			wantWireError:       oauthGrantReasonInvalidRequest,
+			wantDescription:     "validation failed for parameters: missing required parameters: redirect_uri",
+			wantReason:          oauthGrantReasonInvalidRequest,
+		},
+		{
+			name:                "unregistered redirect is invalid request",
+			registeredRedirects: []string{redirectA},
+			storedRedirect:      redirectA,
+			presentedCode:       "code-1",
+			presentedRedirect:   "https://unregistered.example/callback",
+			wantWireError:       oauthGrantReasonInvalidRequest,
+			wantDescription:     "Invalid redirect_uri",
+			wantReason:          oauthGrantReasonAuthorizationCodeRedirectMismatch,
+		},
+		{
+			name:                "registered redirect differing from code is invalid grant",
+			registeredRedirects: []string{redirectA, redirectB},
+			storedRedirect:      redirectA,
+			presentedCode:       "code-1",
+			presentedRedirect:   redirectB,
+			wantWireError:       "invalid_grant",
+			wantDescription:     "Invalid authorization code or expired",
+			wantReason:          oauthGrantReasonAuthorizationCodeRedirectMismatch,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &round10QueryState{
+				oauthClientsByID: map[string]storagemodels.OAuthClient{
+					clientID: {
+						ClientID:     clientID,
+						RedirectURIs: tc.registeredRedirects,
+						Scopes:       []string{auth.ScopeRead},
+					},
+				},
+				authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+					"code-1": {
+						Code:        "code-1",
+						ClientID:    clientID,
+						RedirectURI: tc.storedRedirect,
+						Username:    "alice",
+						ExpiresAt:   time.Now().Add(5 * time.Minute),
+						Scopes:      []string{auth.ScopeRead},
+					},
+				},
+			}
+			h, _, _ := round11NewHandler(t, state)
+			var output bytes.Buffer
+			h.oauthGrantEMFWriter = &output
+			h.oauthGrantEMFEnabled = true
+
+			params := url.Values{
+				"grant_type":   {oauthGrantTypeAuthorizationCode},
+				"code":         {tc.presentedCode},
+				"client_id":    {clientID},
+				"redirect_uri": {tc.presentedRedirect},
+			}
+			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))
+			resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+			requireOAuthTokenError(t, resp.Status, tc.wantWireError, resp.Body)
+			var wire apimodels.OAuthErrorResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &wire))
+			require.Equal(t, tc.wantDescription, wire.ErrorDescription)
+			if tc.refuteDescription != "" {
+				require.NotContains(t, wire.ErrorDescription, tc.refuteDescription)
+			}
+
+			lines := decodeOAuthGrantEMFLines(t, output.String())
+			require.Len(t, lines, 1)
+			require.Equal(t, tc.wantReason, lines[0].ReasonCode)
+			require.Equal(t, tc.wantReason, lines[0].DetailReason)
+			require.Equal(t, "400", lines[0].HTTPStatus)
+			require.Equal(t, oauthGrantOutcomeFailure, lines[0].Outcome)
+		})
+	}
+}
+
+func TestOAuthAuthorizationCodeScopeNarrowingEmitsInvalidScopeOnce(t *testing.T) {
+	const (
+		clientID    = "client-1"
+		code        = "scope-narrowed-code"
+		redirectURI = "https://client.example/callback"
+	)
+	state := &round10QueryState{
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			clientID: {
+				ClientID:     clientID,
+				RedirectURIs: []string{redirectURI},
+				Scopes:       []string{auth.ScopeRead},
+			},
+		},
+		authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+			code: {
+				Code:        code,
+				ClientID:    clientID,
+				RedirectURI: redirectURI,
+				Username:    "alice",
+				ExpiresAt:   time.Now().Add(5 * time.Minute),
+				Scopes:      []string{auth.ScopeRead, auth.ScopeWrite},
+			},
+		},
+	}
+	h, _, _ := round11NewHandler(t, state)
+	var output bytes.Buffer
+	h.oauthGrantEMFWriter = &output
+	h.oauthGrantEMFEnabled = true
+
+	params := url.Values{
+		"grant_type":   {oauthGrantTypeAuthorizationCode},
+		"code":         {code},
+		"client_id":    {clientID},
+		"redirect_uri": {redirectURI},
+	}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+	requireOAuthTokenError(t, resp.Status, "invalid_scope", resp.Body)
+	var wire apimodels.OAuthErrorResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &wire))
+	require.Equal(t, "Authorization code scope is invalid or no longer permitted", wire.ErrorDescription)
+	require.Contains(t, state.authorizationCodesByCode, code)
+	require.Empty(t, state.refreshTokensByToken)
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 1)
+	require.Equal(t, oauthGrantTypeAuthorizationCode, lines[0].GrantType)
+	require.Equal(t, oauthGrantOutcomeFailure, lines[0].Outcome)
+	require.Equal(t, oauthGrantReasonAuthorizationCodeScopeInvalid, lines[0].ReasonCode)
+	require.Equal(t, oauthGrantReasonAuthorizationCodeScopeInvalid, lines[0].DetailReason)
+	require.Equal(t, oauthGrantRetryPathNone, lines[0].RetryPath)
+	require.Equal(t, "400", lines[0].HTTPStatus)
+	require.Equal(t, 1, lines[0].Outcomes)
+	require.Zero(t, lines[0].Exceptions)
+}
+
+func TestOAuthRefreshPreservesStoredGrantWhenRegistrationNarrows(t *testing.T) {
+	// A refresh consumes the server-issued refresh grant rather than a pending
+	// authorization request. The stored scopes remain authoritative, so this
+	// path has no ErrInvalidScope producer for the refresh error mapper.
+	now := time.Now().UTC()
+	client := oauthRefreshReliabilityClient("client-1")
+	client.Scopes = []string{auth.ScopeRead}
+	token := oauthRefreshReliabilityToken("scope-narrowed-refresh", client.ClientID, now)
+	token.Scopes = []string{auth.ScopeRead, auth.ScopeWrite}
+	state := &round10QueryState{
+		oauthClientsByID:     map[string]storagemodels.OAuthClient{client.ClientID: client},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{token.Token: token},
+		disableAuditRepo:     true,
+	}
+	h, _, _ := round11NewHandler(t, state)
+	var output bytes.Buffer
+	h.oauthGrantEMFWriter = &output
+	h.oauthGrantEMFEnabled = true
+
+	params := url.Values{
+		"grant_type":    {oauthGrantTypeRefreshToken},
+		"refresh_token": {token.Token},
+		"client_id":     {client.ClientID},
+	}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(params.Encode()))
+	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+	var wire apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &wire))
+	require.Equal(t, "read write", wire.Scope)
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 1)
+	require.Equal(t, oauthGrantTypeRefreshToken, lines[0].GrantType)
+	require.Equal(t, oauthGrantOutcomeSuccess, lines[0].Outcome)
+	require.Equal(t, oauthGrantReasonSuccess, lines[0].ReasonCode)
+	require.Equal(t, "200", lines[0].HTTPStatus)
+}
+
+func TestOAuthTokenParseFailuresEmitWireExactReason(t *testing.T) {
+	tests := []struct {
+		name       string
+		headers    map[string]string
+		body       string
+		wireReason string
+	}{
+		{
+			name: "malformed Basic credentials",
+			headers: map[string]string{
+				"Content-Type":  "application/x-www-form-urlencoded",
+				"Authorization": "Basic !!!",
+			},
+			body:       "grant_type=refresh_token&refresh_token=rt-1",
+			wireReason: oauthGrantReasonInvalidClient,
+		},
+		{
+			name:       "rejected resource indicator",
+			body:       "grant_type=refresh_token&refresh_token=rt-1&resource=https%3A%2F%2Fexample.com%2Fmcp%2Falice%23fragment",
+			wireReason: oauthGrantReasonInvalidTarget,
+		},
+		{
+			name:       "shapeless non-form request body",
+			headers:    map[string]string{"Content-Type": "application/json"},
+			body:       "grant_type=refresh_token",
+			wireReason: oauthGrantReasonInvalidRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _ := round11NewHandler(t, &round10QueryState{})
+			var output bytes.Buffer
+			h.oauthGrantEMFWriter = &output
+			h.oauthGrantEMFEnabled = true
+
+			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", tc.headers, nil, []byte(tc.body))
+			resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+			requireOAuthTokenError(t, resp.Status, tc.wireReason, resp.Body)
+
+			lines := decodeOAuthGrantEMFLines(t, output.String())
+			require.Len(t, lines, 1)
+			require.Equal(t, tc.wireReason, lines[0].ReasonCode)
+			require.Equal(t, tc.wireReason, lines[0].DetailReason)
+		})
+	}
+}
+
+func TestAgentRuntimeRefreshLookupReasonsDistinguishInfrastructureAndCredentials(t *testing.T) {
+	now := time.Now().UTC()
+	wrongClient := buildRuntimeRefreshToken(t, "rt-wrong-client", "agent1", delegatedAgentClientID, "sid-wrong", "family-wrong", "runtime", 1, true, false, now)
+	nonRuntime := buildRuntimeRefreshToken(t, "rt-non-runtime", "agent1", delegatedAgentClientID, "sid-non-runtime", "family-non-runtime", "runtime", 1, true, false, now)
+	nonRuntime.SessionID = ""
+
+	tests := []struct {
+		name     string
+		token    string
+		clientID string
+		state    *round10QueryState
+		reason   string
+		wantErr  error
+	}{
+		{
+			name:  "storage infrastructure fault",
+			token: "rt-fault", clientID: delegatedAgentClientID,
+			state:   &round10QueryState{firstErrorByType: map[string]error{"*models.RefreshToken": errors.New("storage unavailable")}},
+			reason:  oauthGrantReasonRefreshRotationInfrastructure,
+			wantErr: auth.ErrOAuthTemporarilyUnavailable,
+		},
+		{
+			name:  "authoritative absence",
+			token: "rt-missing", clientID: delegatedAgentClientID,
+			state:   &round10QueryState{notFoundPKs: map[string]bool{"REFRESHTOKEN#rt-missing": true}},
+			reason:  oauthGrantReasonRefreshTokenAbsent,
+			wantErr: auth.ErrInvalidToken,
+		},
+		{
+			name:  "wrong client",
+			token: wrongClient.Token, clientID: selfSovereignAgentClientID,
+			state:   &round10QueryState{refreshTokensByToken: map[string]storagemodels.RefreshToken{wrongClient.Token: wrongClient}},
+			reason:  oauthGrantReasonRefreshRuntimeInvalid,
+			wantErr: auth.ErrInvalidToken,
+		},
+		{
+			name:  "non-runtime token",
+			token: nonRuntime.Token, clientID: delegatedAgentClientID,
+			state:   &round10QueryState{refreshTokensByToken: map[string]storagemodels.RefreshToken{nonRuntime.Token: nonRuntime}},
+			reason:  oauthGrantReasonRefreshRuntimeInvalid,
+			wantErr: auth.ErrInvalidToken,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _ := round11NewHandler(t, tc.state)
+			telemetry := &oauthGrantTelemetry{}
+			stored, err := h.loadAgentRuntimeRefreshTokenForExchange(context.Background(), tc.token, tc.clientID, telemetry)
+			require.Nil(t, stored)
+			require.ErrorIs(t, err, tc.wantErr)
+			require.Equal(t, tc.reason, telemetry.DetailReason)
+		})
+	}
+}
+
+func TestOAuthRefreshRescueEmitsExceptionOutcome(t *testing.T) {
+	now := time.Now().UTC()
+	stale := oauthRefreshReliabilityToken("telemetry-stale", "client-1", now)
+	stale.Current = false
+	stale.Revoked = true
+	stale.RevokedAt = now.Add(-time.Second)
+	stale.RevokedReason = "rotated"
+	stale.ReplacedByHash = ""
+	head := oauthRefreshReliabilityToken("telemetry-head", "client-1", now)
+	head.Generation = 2
+	require.NoError(t, head.UpdateKeys())
+	state := &round10QueryState{
+		oauthClientsByID:     map[string]storagemodels.OAuthClient{"client-1": oauthRefreshReliabilityClient("client-1")},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{stale.Token: stale, head.Token: head},
+		disableAuditRepo:     true,
+	}
+	seedOAuthRefreshReplayChain(t, state, stale, head)
+	h, _, _ := round11NewHandler(t, state)
+	var output bytes.Buffer
+	h.oauthGrantEMFWriter = &output
+	h.oauthGrantEMFEnabled = true
+
+	request := []byte("grant_type=refresh_token&refresh_token=telemetry-stale&client_id=client-1")
+	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, request)))
+	require.NotEmpty(t, resp.Body)
+
+	lines := decodeOAuthGrantEMFLines(t, output.String())
+	require.Len(t, lines, 1)
+	require.Equal(t, oauthGrantOutcomeSuccess, lines[0].Outcome)
+	require.Equal(t, oauthGrantReasonRefreshRetryRescueServed, lines[0].ReasonCode)
+	require.Equal(t, oauthGrantRetryPathRetryRescue, lines[0].RetryPath)
+	require.Equal(t, 1, lines[0].Exceptions)
+	require.NotEmpty(t, lines[0].FamilyHash)
+}
+
+func TestOAuthGrantTelemetryMapsRefreshTerminalAndTransientReasons(t *testing.T) {
+	now := time.Now().UTC()
+	tests := []struct {
+		name      string
+		status    int
+		reason    string
+		clientID  string
+		resource  string
+		refresh   string
+		configure func(*round10QueryState)
+	}{
+		{
+			name: "authoritative absence", status: http.StatusBadRequest,
+			reason: oauthGrantReasonRefreshTokenAbsent, clientID: "client-1", refresh: "missing",
+			configure: func(state *round10QueryState) {
+				state.notFoundPKs = map[string]bool{"REFRESHTOKEN#missing": true}
+			},
+		},
+		{
+			name: "expired", status: http.StatusBadRequest,
+			reason: oauthGrantReasonRefreshTokenExpired, clientID: "client-1", refresh: "expired",
+			configure: func(state *round10QueryState) {
+				token := oauthRefreshReliabilityToken("expired", "client-1", now)
+				token.ExpiresAt = now.Add(-time.Second)
+				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{token.Token: token}
+			},
+		},
+		{
+			name: "replay authority unavailable", status: http.StatusServiceUnavailable,
+			reason: oauthGrantReasonTemporarilyUnavailable, clientID: "client-1", refresh: "stale",
+			configure: func(state *round10QueryState) {
+				token := oauthRefreshReliabilityToken("stale", "client-1", now)
+				token.Current = false
+				token.Revoked = true
+				token.RevokedAt = now.Add(-time.Minute)
+				token.RevokedReason = standardRefreshRevokedReasonRotated
+				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{token.Token: token}
+			},
+		},
+		{
+			name: "resource mismatch", status: http.StatusBadRequest,
+			reason: oauthGrantReasonRefreshResourceMismatch, clientID: "client-1", refresh: "resource-bound",
+			resource: "https://api.example.com/mcp/bob",
+			configure: func(state *round10QueryState) {
+				token := oauthRefreshReliabilityToken("resource-bound", "client-1", now)
+				token.Resource = "https://api.example.com/mcp/alice"
+				require.NoError(t, token.UpdateKeys())
+				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{token.Token: token}
+			},
+		},
+		{
+			name: "cross-client containment", status: http.StatusBadRequest,
+			reason: oauthGrantReasonRefreshCrossClientReplay, clientID: "client-2", refresh: "cross-client",
+			configure: func(state *round10QueryState) {
+				token := oauthRefreshReliabilityToken("cross-client", "client-1", now)
+				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{token.Token: token}
+			},
+		},
+		{
+			name: "storage fault", status: http.StatusServiceUnavailable,
+			reason: oauthGrantReasonTemporarilyUnavailable, clientID: "client-1", refresh: "fault",
+			configure: func(state *round10QueryState) {
+				state.firstErrorByType = map[string]error{"*models.RefreshToken": errors.New("storage unavailable")}
+			},
+		},
+		{
+			name: "direct success", status: http.StatusOK,
+			reason: oauthGrantReasonSuccess, clientID: "client-1", refresh: "active",
+			configure: func(state *round10QueryState) {
+				token := oauthRefreshReliabilityToken("active", "client-1", now)
+				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{token.Token: token}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &round10QueryState{
+				oauthClientsByID: map[string]storagemodels.OAuthClient{
+					"client-1": oauthRefreshReliabilityClient("client-1"),
+					"client-2": oauthRefreshReliabilityClient("client-2"),
+				},
+				disableAuditRepo: true,
+			}
+			tc.configure(state)
+			h, _, _ := round11NewHandler(t, state)
+			var output bytes.Buffer
+			h.oauthGrantEMFWriter = &output
+			h.oauthGrantEMFEnabled = true
+
+			body := "grant_type=refresh_token&refresh_token=" + tc.refresh + "&client_id=" + tc.clientID
+			if tc.resource != "" {
+				body += "&resource=" + url.QueryEscape(tc.resource)
+			}
+			resp := requireStatus(t, tc.status)(h.HandleOAuthTokenLift(round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte(body))))
+			require.NotEmpty(t, resp.Body)
+
+			lines := decodeOAuthGrantEMFLines(t, output.String())
+			require.Len(t, lines, 1)
+			require.Equal(t, tc.reason, lines[0].ReasonCode)
+			require.Equal(t, 1, lines[0].Outcomes)
+			require.Zero(t, lines[0].Exceptions)
+			if tc.status == http.StatusOK {
+				require.NotEmpty(t, lines[0].FamilyHash)
+			}
+		})
+	}
+}
+
+// responseWithStatus keeps the focused EMF tests independent of response-body
+// construction while still exercising the production response-status reader.
+type responseWithStatus struct{ Status int }
+
+func (r responseWithStatus) response() *apptheory.Response {
+	return &apptheory.Response{Status: r.Status}
+}
+
+var _ io.Writer = failingOAuthGrantEMFWriter{}

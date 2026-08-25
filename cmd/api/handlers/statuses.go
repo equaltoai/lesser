@@ -21,7 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageMods "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
@@ -802,14 +802,14 @@ func (h *Handler) createStatusUpdateActivity(ctx *apptheory.Context, note *activ
 		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
-	// Federation: Deliver Update activity to relevant recipients
-	go func() {
-		if err := h.deliverUpdateActivity(context.Background(), updateActivity, actor, note); err != nil {
-			h.logger.Error("failed to deliver update activity for federation",
-				zap.String("activity_id", updateActivity.ID),
-				zap.Error(err))
-		}
-	}()
+	// Complete the best-effort federation handoff before returning. A detached
+	// goroutine can be frozen when Lambda returns and can outlive request-scoped
+	// dependencies such as the logger.
+	if err := h.deliverUpdateActivity(ctx.Context(), updateActivity, actor, note); err != nil {
+		h.logger.Error("failed to deliver update activity for federation",
+			zap.String("activity_id", updateActivity.ID),
+			zap.Error(err))
+	}
 
 	h.logger.Info("created update activity with federation",
 		zap.String("activity_id", updateActivity.ID),

@@ -16,6 +16,7 @@ type memArticleServiceWithErrors struct {
 	base      *memArticleService
 	getErr    error
 	updateErr error
+	createErr error
 }
 
 func (s *memArticleServiceWithErrors) GetArticle(ctx context.Context, articleID string) (*models.Article, error) {
@@ -30,6 +31,9 @@ func (s *memArticleServiceWithErrors) GetArticleBySlug(ctx context.Context, slug
 }
 
 func (s *memArticleServiceWithErrors) CreateArticle(ctx context.Context, article *models.Article) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
 	return s.base.CreateArticle(ctx, article)
 }
 
@@ -96,6 +100,8 @@ func TestDraftServicePublishDraft_PublishedCleanupPermissionDenied(t *testing.T)
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	draft := &models.Draft{
@@ -135,6 +141,8 @@ func TestDraftServicePublishDraft_PublishedCleanupDeleteFailureIsBestEffort(t *t
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	draft := &models.Draft{
@@ -213,6 +221,8 @@ func TestDraftServicePublishDraft_UpdateExistingArticlePermissionDeniedMarksFail
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	articles.items[objectID] = &models.Article{
@@ -260,6 +270,8 @@ func TestDraftServicePublishDraft_UpdateExistingArticleUpdateErrorMarksFailed(t 
 		domain:         "example.com",
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	objectID := "https://example.com/objects/existing"
 	baseArticles.items[objectID] = &models.Article{
@@ -317,7 +329,7 @@ func TestDraftServicePublishDraftCreateNewArticle_DeleteDraftFailurePublishesDra
 
 	now := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	objectID := "https://example.com/objects/new"
-	article, err := svc.publishDraftCreateNewArticle(context.Background(), draft.AuthorID, draft.ID, "example.com", objectID, "hello-world", draft, now, "")
+	article, err := svc.publishDraftCreateNewArticle(context.Background(), draft.AuthorID, draft.ID, "example.com", objectID, "hello-world", draft, now, "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, article)
 	require.Equal(t, objectID, article.ID)

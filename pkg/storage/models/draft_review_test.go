@@ -46,3 +46,31 @@ func TestDraftReviewVerdictUpdateKeys(t *testing.T) {
 	require.Equal(t, "attr:contentHash,omitempty", field.Tag.Get("theorydb"))
 	require.Equal(t, "content_hash,omitempty", field.Tag.Get("json"))
 }
+
+func TestDraftReviewGrantExpiryIsFailClosed(t *testing.T) {
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	revoked := now.Add(-time.Hour)
+	future := now.Add(time.Hour)
+	past := now.Add(-time.Hour)
+
+	active := &DraftReviewGrant{ExpiresAt: &future}
+	require.True(t, active.IsActive(now))
+	require.False(t, active.Expired(now))
+
+	expired := &DraftReviewGrant{ExpiresAt: &past}
+	require.False(t, expired.IsActive(now))
+	require.True(t, expired.Expired(now))
+
+	// A grant without an expiry cannot authorize anything (fail-closed for rows
+	// created before the M2 expiry surface; re-sharing refreshes the grant).
+	legacy := &DraftReviewGrant{}
+	require.False(t, legacy.IsActive(now))
+	require.True(t, legacy.Expired(now))
+
+	// Revocation dominates expiry classification.
+	revokedGrant := &DraftReviewGrant{ExpiresAt: &future, RevokedAt: &revoked}
+	require.False(t, revokedGrant.IsActive(now))
+	require.False(t, revokedGrant.Expired(now))
+
+	require.False(t, (*DraftReviewGrant)(nil).IsActive(now))
+}

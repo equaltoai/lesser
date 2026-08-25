@@ -83,6 +83,7 @@ func (ht *HTTPTracker) Do(ctx context.Context, req *http.Request) (*http.Respons
 	}
 
 	// Execute request
+	//nolint:gosec // HTTPTracker decorates an injected client's Do path; destination and dial policy remain the caller-provided transport's responsibility.
 	resp, err := ht.client.Do(req.WithContext(ctx))
 	totalDuration := time.Since(startTime)
 
@@ -123,8 +124,9 @@ func (ht *HTTPTracker) Do(ctx context.Context, req *http.Request) (*http.Respons
 	}
 
 	// Record metrics
+	metricsCtx := context.WithoutCancel(ctx)
 	go func() {
-		if err := ht.recordHTTPMetrics(context.Background(), operationType, host, metrics, dimensions); err != nil {
+		if err := ht.recordHTTPMetrics(metricsCtx, operationType, host, metrics, dimensions); err != nil {
 			ht.logger.Warn("failed to record HTTP metrics",
 				zap.String("url", req.URL.String()),
 				zap.String("method", req.Method),

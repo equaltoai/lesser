@@ -150,8 +150,9 @@ func (rs *ReputationScorer) GetReputationScore(ctx context.Context, actorID stri
 	if rs.config.ReputationDecayRate > 0 && time.Since(score.UpdatedAt) > 24*time.Hour {
 		score = rs.applyDecay(score)
 		// Save decayed score asynchronously
+		saveCtx := context.WithoutCancel(ctx)
 		go func() {
-			if err := rs.saveScore(context.Background(), score); err != nil && rs.logger != nil {
+			if err := rs.saveScore(saveCtx, score); err != nil && rs.logger != nil {
 				rs.logger.Warn("failed to save decayed score", zap.Error(err))
 			}
 		}()

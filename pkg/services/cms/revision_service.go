@@ -87,7 +87,7 @@ func (w dynamormCMSArticleIndexWriter) Create(ctx context.Context, entry *models
 	if w.db == nil {
 		return fmt.Errorf("cms article index db is nil")
 	}
-	return w.db.WithContext(ctx).Model(entry).Create()
+	return w.db.WithContext(ctx).Model(entry).CreateOrUpdate()
 }
 
 func (w dynamormCMSArticleIndexWriter) Delete(ctx context.Context, entry *models.CMSArticleIndex) error {

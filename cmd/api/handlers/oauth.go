@@ -18,7 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/security/authz"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
@@ -57,9 +57,34 @@ const (
 
 	oauthResourceSegmentMCP      = "mcp"
 	oauthResourceSegmentInstance = "instance"
+
+	standardRefreshRevokedReasonRotated      = "rotated"
+	standardRefreshRevokedReasonRetryRescued = "retry_rescued"
 )
 
 var errOAuthInvalidTarget = errors.New("invalid_target")
+
+type oauthAuthorizationCodeRequestValidationError struct {
+	validationErr error
+}
+
+func (e *oauthAuthorizationCodeRequestValidationError) Error() string {
+	if e == nil || e.validationErr == nil {
+		return ""
+	}
+	return e.validationErr.Error()
+}
+
+func (e *oauthAuthorizationCodeRequestValidationError) Is(target error) bool {
+	return target == auth.ErrInvalidRequest
+}
+
+func (e *oauthAuthorizationCodeRequestValidationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.validationErr
+}
 
 type oauthAuthorizeTargetError struct {
 	code        string
@@ -516,35 +541,46 @@ func oauthClientCanAuthorizeInstanceResource(client *storage.OAuthClient) bool {
 // for Lesser's internally provisioned operator client. Public client classes remain
 // governed by the existing account-holder check above and do not receive admin scope.
 func (h *Handler) oauthOperatorClientCanAuthorizeInstanceResource(ctx context.Context, client *storage.OAuthClient, principalUsername string) bool {
+	authorized, err := h.oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx, client, principalUsername)
+	return err == nil && authorized
+}
+
+func (h *Handler) oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx context.Context, client *storage.OAuthClient, principalUsername string) (bool, error) {
 	if client == nil || !strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassOperator) {
-		return true
+		return true, nil
 	}
 
 	ownerID := strings.TrimSpace(client.OwnerID)
 	principalUsername = strings.TrimSpace(principalUsername)
 	if ownerID == "" || principalUsername == "" || !strings.EqualFold(ownerID, principalUsername) || h == nil || h.repos == nil || h.repos.Account() == nil {
-		return false
+		return false, nil
 	}
 
-	return h.oauthInstanceOperatorPrincipal(ctx, principalUsername)
+	return h.oauthInstanceOperatorPrincipalStatus(ctx, principalUsername)
 }
 
-// oauthInstanceOperatorPrincipal reports whether the current local account is an
-// active administrator who can receive instance-plane operator authority. This
-// is intentionally evaluated against the account row at issuance/refresh time;
-// the public OAuth client's class is not itself an authority grant.
-func (h *Handler) oauthInstanceOperatorPrincipal(ctx context.Context, principalUsername string) bool {
+// oauthInstanceOperatorPrincipalStatus reports whether the current local account
+// is an active administrator who can receive instance-plane operator authority.
+// This is intentionally evaluated against the account row at issuance/refresh
+// time; the public OAuth client's class is not itself an authority grant.
+func (h *Handler) oauthInstanceOperatorPrincipalStatus(ctx context.Context, principalUsername string) (bool, error) {
 	principalUsername = strings.TrimSpace(principalUsername)
 	if h == nil || h.repos == nil || h.repos.Account() == nil || principalUsername == "" {
-		return false
+		return false, nil
 	}
 
 	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
-	if err != nil || principal == nil {
-		return false
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("load instance-plane principal: %w", err)
+	}
+	if principal == nil {
+		return false, nil
 	}
 
-	return !principal.IsAgent && principal.Approved && !principal.Suspended && !principal.Silenced && authz.IsAdmin(principal.Role)
+	return !principal.IsAgent && principal.Approved && !principal.Suspended && !principal.Silenced && authz.IsAdmin(principal.Role), nil
 }
 
 func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context, resource, principalUsername string) (string, string, error) {
@@ -582,7 +618,13 @@ func (h *Handler) resolveAuthorizeTargetInstanceFromResource(ctx context.Context
 
 	principalUsername = strings.TrimSpace(principalUsername)
 	principal, err := h.repos.Account().GetUser(ctx, principalUsername)
-	if err != nil || principal == nil || principal.IsAgent {
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return "", "", oauthInvalidInstanceResourceTarget()
+		}
+		return "", "", fmt.Errorf("load instance-plane resource owner: %w", err)
+	}
+	if principal == nil || principal.IsAgent {
 		return "", "", &oauthAuthorizeTargetError{
 			code:        "access_denied",
 			description: "instance-plane MCP requires an account-holder principal",
@@ -631,7 +673,14 @@ func (h *Handler) validateOAuthInstanceResourceOwner(ctx context.Context, resour
 	}
 
 	resolvedUsername, canonicalResource, err := h.resolveAuthorizeTargetInstanceFromResource(ctx, resource, principalUsername)
-	if err != nil || resolvedUsername != targetUsername || canonicalResource != strings.TrimSpace(resource) {
+	if err != nil {
+		var targetErr *oauthAuthorizeTargetError
+		if errors.As(err, &targetErr) {
+			return errOAuthInvalidTarget
+		}
+		return err
+	}
+	if resolvedUsername != targetUsername || canonicalResource != strings.TrimSpace(resource) {
 		return errOAuthInvalidTarget
 	}
 
@@ -643,7 +692,11 @@ func (h *Handler) validateOAuthInstanceAuthorizationCodeTarget(ctx context.Conte
 		return errOAuthInvalidTarget
 	}
 	principalUsername := oauthAuthorizationCodePrincipalUsername(authCode)
-	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, principalUsername) {
+	authorized, err := h.oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx, client, principalUsername)
+	if err != nil {
+		return err
+	}
+	if !authorized {
 		return errOAuthInvalidTarget
 	}
 
@@ -656,11 +709,21 @@ func (h *Handler) validateOAuthInstanceRefreshTokenTarget(ctx context.Context, c
 	}
 
 	username := strings.TrimSpace(token.Username)
-	if !h.oauthOperatorClientCanAuthorizeInstanceResource(ctx, client, username) {
+	clientAuthorized, err := h.oauthOperatorClientCanAuthorizeInstanceResourceStatus(ctx, client, username)
+	if err != nil {
+		return err
+	}
+	if !clientAuthorized {
 		return errOAuthInvalidTarget
 	}
-	if strings.EqualFold(strings.TrimSpace(token.ClientClass), auth.ClientClassOperator) && !h.oauthInstanceOperatorPrincipal(ctx, username) {
-		return errOAuthInvalidTarget
+	if strings.EqualFold(strings.TrimSpace(token.ClientClass), auth.ClientClassOperator) {
+		operator, operatorErr := h.oauthInstanceOperatorPrincipalStatus(ctx, username)
+		if operatorErr != nil {
+			return operatorErr
+		}
+		if !operator {
+			return errOAuthInvalidTarget
+		}
 	}
 	return h.validateOAuthInstanceResourceOwner(ctx, token.Resource, username, username)
 }
@@ -962,15 +1025,39 @@ func parseOAuthTokenBasicClientCredentials(ctx *apptheory.Context) (clientID, cl
 
 // HandleOAuthTokenLift handles the OAuth token endpoint using native Lift patterns
 // POST /oauth/token
-func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (response *apptheory.Response, responseErr error) {
+	telemetry := oauthGrantTelemetryFromRequest(ctx)
+	if telemetry != nil {
+		defer func() {
+			h.emitOAuthGrantOutcome(ctx, response, responseErr, telemetry)
+		}()
+	}
+
 	req, resp, err := parseOAuthTokenRequest(ctx)
 	if resp != nil || err != nil {
+		telemetry.setReason(oauthGrantReasonFromTokenErrorResponse(resp))
 		return resp, err
+	}
+
+	if req.grantType == oauthGrantTypeAuthorizationCode || req.grantType == oauthGrantTypeRefreshToken {
+		if telemetry == nil {
+			telemetry = newOAuthGrantTelemetry(req)
+			defer func() {
+				h.emitOAuthGrantOutcome(ctx, response, responseErr, telemetry)
+			}()
+		} else {
+			telemetry.GrantType = strings.TrimSpace(req.grantType)
+			telemetry.ClientID = strings.TrimSpace(req.clientID)
+			telemetry.Resource = strings.TrimSpace(req.resource)
+		}
 	}
 
 	// Initialize OAuth service
 	oauthSvc, err := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	if err != nil {
+		if telemetry != nil {
+			telemetry.setReason(oauthGrantReasonServerError)
+		}
 		h.logger.Error("failed to initialize OAuth service", zap.Error(err))
 		return apptheory.JSON(http.StatusInternalServerError, apimodels.OAuthErrorResponse{
 			Error:            "server_error",
@@ -980,9 +1067,9 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 
 	switch req.grantType {
 	case oauthGrantTypeAuthorizationCode:
-		return h.handleOAuthAuthorizationCodeGrant(ctx.Context(), oauthSvc, req)
+		return h.handleOAuthAuthorizationCodeGrant(ctx.Context(), oauthSvc, req, telemetry)
 	case oauthGrantTypeRefreshToken:
-		return h.handleOAuthRefreshTokenGrant(ctx, oauthSvc, req)
+		return h.handleOAuthRefreshTokenGrant(ctx, oauthSvc, req, telemetry)
 	case oauthDeviceCodeGrantType:
 		return h.handleOAuthDeviceCodeGrant(ctx.Context(), oauthSvc, req)
 	default:
@@ -997,53 +1084,24 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 }
 
-func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest, telemetry *oauthGrantTelemetry) (*apptheory.Response, error) {
 	if err := common.ValidateMultipleRequiredParams(map[string]string{
 		"code":         req.code,
 		"client_id":    req.clientID,
 		"redirect_uri": req.redirectURI,
 	}); err != nil {
+		telemetry.setReason(oauthGrantReasonInvalidRequest)
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": err.Error(),
 		})
 	}
 
-	accessToken, refreshTokenOut, grantedScopes, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret, req.resource)
+	accessToken, refreshTokenOut, grantedScopes, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret, req.resource, telemetry)
 	if err != nil {
+		setOAuthGrantReasonFromError(telemetry, err)
 		h.logger.Error("failed to exchange authorization code", zap.Error(err))
-		switch err {
-		case errOAuthInvalidTarget:
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_target",
-				"error_description": "resource must match the original authorization request",
-			})
-		case auth.ErrInvalidGrant:
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_grant",
-				"error_description": "Invalid authorization code or expired",
-			})
-		case auth.ErrInvalidClient:
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_client",
-				"error_description": "Invalid client credentials",
-			})
-		case auth.ErrUnauthorizedClient:
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "unauthorized_client",
-				"error_description": "This client is not allowed to use authorization_code",
-			})
-		case auth.ErrInvalidCodeChallenge:
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_grant",
-				"error_description": "PKCE verification failed",
-			})
-		default:
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_grant",
-				"error_description": "Authorization code exchange failed",
-			})
-		}
+		return oauthAuthorizationCodeExchangeErrorResponse(err)
 	}
 
 	return okJSON(apimodels.OAuthTokenResponse{
@@ -1056,11 +1114,65 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 	})
 }
 
-func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+func oauthAuthorizationCodeExchangeErrorResponse(err error) (*apptheory.Response, error) {
+	var validationErr *oauthAuthorizationCodeRequestValidationError
+	switch {
+	case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
+		return oauthTemporarilyUnavailable("Authorization code exchange is temporarily unavailable")
+	case errors.Is(err, errOAuthInvalidTarget):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_target",
+			"error_description": "resource must match the original authorization request",
+		})
+	case errors.As(err, &validationErr):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": validationErr.Error(),
+		})
+	case errors.Is(err, auth.ErrInvalidRequest):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "Invalid redirect_uri",
+		})
+	case errors.Is(err, auth.ErrInvalidScope):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_scope",
+			"error_description": "Authorization code scope is invalid or no longer permitted",
+		})
+	case errors.Is(err, auth.ErrInvalidGrant):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Invalid authorization code or expired",
+		})
+	case errors.Is(err, auth.ErrInvalidClient):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+	case errors.Is(err, auth.ErrUnauthorizedClient):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "unauthorized_client",
+			"error_description": "This client is not allowed to use authorization_code",
+		})
+	case errors.Is(err, auth.ErrInvalidCodeChallenge):
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "PKCE verification failed",
+		})
+	default:
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error":             "server_error",
+			"error_description": "Authorization code exchange failed",
+		})
+	}
+}
+
+func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest, telemetry *oauthGrantTelemetry) (*apptheory.Response, error) {
 	if err := common.ValidateMultipleRequiredParams(map[string]string{
 		"refresh_token": req.refreshToken,
 		"client_id":     req.clientID,
 	}); err != nil {
+		telemetry.setReason(oauthGrantReasonInvalidRequest)
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": err.Error(),
@@ -1068,28 +1180,31 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc 
 	}
 
 	userAgent, ipAddress := h.getDeviceInfo(ctx)
-	accessToken, newRefreshToken, grantedScopes, err := h.exchangeRefreshToken(ctx.Context(), oauthSvc, req.refreshToken, req.clientID, req.clientSecret, ipAddress, userAgent)
+	accessToken, newRefreshToken, grantedScopes, err := h.exchangeRefreshToken(ctx.Context(), oauthSvc, req.refreshToken, req.clientID, req.clientSecret, req.resource, ipAddress, userAgent, telemetry)
 	if err != nil {
+		setOAuthGrantReasonFromError(telemetry, err)
 		h.logger.Error("failed to refresh tokens", zap.Error(err))
-		switch err {
-		case auth.ErrInvalidToken:
+		switch {
+		case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
+			return oauthTemporarilyUnavailable("Refresh token exchange is temporarily unavailable")
+		case errors.Is(err, auth.ErrInvalidToken):
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_grant",
 				"error_description": "Invalid or expired refresh token",
 			})
-		case auth.ErrInvalidClient:
+		case errors.Is(err, auth.ErrInvalidClient):
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_client",
 				"error_description": "Invalid client credentials",
 			})
-		case auth.ErrUnauthorizedClient:
+		case errors.Is(err, auth.ErrUnauthorizedClient):
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "unauthorized_client",
 				"error_description": "This client is not allowed to use refresh_token",
 			})
 		default:
-			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_grant",
+			return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+				"error":             "server_error",
 				"error_description": "Refresh token exchange failed",
 			})
 		}
@@ -1103,6 +1218,17 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc 
 		ExpiresIn:    oauthTokenExpiresInSeconds,
 		RefreshToken: newRefreshToken,
 	})
+}
+
+func oauthTemporarilyUnavailable(description string) (*apptheory.Response, error) {
+	resp, err := apptheory.JSON(http.StatusServiceUnavailable, map[string]string{
+		"error":             "temporarily_unavailable",
+		"error_description": description,
+	})
+	if resp != nil {
+		setHeader(resp, "Retry-After", "1")
+	}
+	return resp, err
 }
 
 func (h *Handler) handleOAuthDeviceCodeGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
@@ -1124,13 +1250,22 @@ func (h *Handler) handleOAuthDeviceCodeGrant(ctx context.Context, oauthSvc *auth
 	}
 
 	client, err := h.repos.Account().GetOAuthClient(ctx, strings.TrimSpace(req.clientID))
-	if err != nil || client == nil {
+	if err != nil {
+		if !errors.Is(err, storage.ErrNotFound) {
+			return oauthTemporarilyUnavailable("Device authorization is temporarily unavailable")
+		}
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_client",
 			"error_description": "Invalid client credentials",
 		})
 	}
-	resp, err := validateOAuthDeviceGrantClientSecret(ctx, oauthSvc, client, req.clientID, req.clientSecret)
+	if client == nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+	}
+	resp, err := validateOAuthDeviceGrantClientSecret(ctx, oauthSvc, client, req.clientSecret)
 	if resp != nil || err != nil {
 		return resp, err
 	}
@@ -1171,8 +1306,8 @@ func (h *Handler) validateOAuthClientSecretIfProvided(ctx context.Context, oauth
 	return nil, nil
 }
 
-func validateOAuthDeviceGrantClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientID, clientSecret string) (*apptheory.Response, error) {
-	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, clientID, clientSecret); err != nil {
+func validateOAuthDeviceGrantClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientSecret string) (*apptheory.Response, error) {
+	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, clientSecret); err != nil {
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_client",
 			"error_description": "Invalid client credentials",
@@ -1213,7 +1348,18 @@ func oauthClientSupportsGrantType(client *storage.OAuthClient, grantType string)
 
 func (h *Handler) loadOAuthDeviceSessionForTokenGrant(ctx context.Context, deviceCode, clientID string) (*storage.OAuthDeviceSession, *apptheory.Response, error) {
 	session, err := h.repos.Account().GetOAuthDeviceSession(ctx, oauthDeviceCodeHash(deviceCode))
-	if err != nil || session == nil {
+	if err != nil {
+		if !errors.Is(err, storage.ErrNotFound) {
+			resp, respErr := oauthTemporarilyUnavailable("Device authorization is temporarily unavailable")
+			return nil, resp, respErr
+		}
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Invalid device_code",
+		})
+		return nil, resp, respErr
+	}
+	if session == nil {
 		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_grant",
 			"error_description": "Invalid device_code",
@@ -1258,6 +1404,7 @@ func (h *Handler) enforceOAuthDeviceSessionPolling(ctx context.Context, session 
 			session.PollCount++
 			if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx, session); updateErr != nil {
 				h.logger.Warn("failed to update oauth device session poll metadata", zap.Error(updateErr))
+				return oauthTemporarilyUnavailable("Device authorization is temporarily unavailable")
 			}
 
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
@@ -1271,6 +1418,7 @@ func (h *Handler) enforceOAuthDeviceSessionPolling(ctx context.Context, session 
 	session.LastPolledAt = now
 	if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx, session); updateErr != nil {
 		h.logger.Warn("failed to update oauth device session poll metadata", zap.Error(updateErr))
+		return oauthTemporarilyUnavailable("Device authorization is temporarily unavailable")
 	}
 
 	return nil, nil
@@ -1314,7 +1462,16 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 	}
 
 	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
-	if err != nil || client == nil {
+	if err != nil {
+		if !errors.Is(err, storage.ErrNotFound) {
+			return oauthTemporarilyUnavailable("Device authorization is temporarily unavailable")
+		}
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Device authorization is no longer valid",
+		})
+	}
+	if client == nil {
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_grant",
 			"error_description": "Device authorization is no longer valid",
@@ -1348,14 +1505,15 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 		Username: tokenUsername,
 		Scopes:   session.Scopes,
 	}, clientClass, sessionID, accessTTL)
-	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
-		h.logger.Error("failed to store refresh token for device flow", zap.Error(err))
-	}
-
-	session.Status = oauthDeviceSessionStatusConsumed
-	session.ConsumedAt = now
-	if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx, session); updateErr != nil {
-		h.logger.Warn("failed to mark oauth device session consumed", zap.Error(updateErr))
+	if err := h.repos.Account().ConsumeOAuthDeviceSessionAndCreateRefreshToken(ctx, session, oauthRefreshToken, now); err != nil {
+		h.logger.Error("failed to atomically consume device session and store refresh token", zap.Error(err))
+		if errors.Is(err, storage.ErrNotFound) {
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_grant",
+				"error_description": "Device authorization is no longer valid",
+			})
+		}
+		return oauthTemporarilyUnavailable("Device token issuance is temporarily unavailable")
 	}
 
 	return okJSON(apimodels.OAuthTokenResponse{
@@ -1402,23 +1560,43 @@ func (h *Handler) oauthDeviceApprovedTokenContextErrorResponse(err error) (*appt
 }
 
 // exchangeAuthorizationCode exchanges an authorization code for access and refresh tokens
-func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret, requestedResource string) (string, string, []string, error) {
+func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret, requestedResource string, telemetry *oauthGrantTelemetry) (string, string, []string, error) {
+	if telemetry == nil {
+		telemetry = &oauthGrantTelemetry{}
+	}
 	code = strings.TrimSpace(code)
 	clientID = strings.TrimSpace(clientID)
 	redirectURI = strings.TrimSpace(redirectURI)
 	clientSecret = strings.TrimSpace(clientSecret)
 	requestedResource = strings.TrimSpace(requestedResource)
+	telemetry.ClientID = clientID
+	telemetry.Resource = requestedResource
 
 	client, err := h.validateAuthorizationCodeExchangeClient(ctx, oauthSvc, clientID, redirectURI, clientSecret, code)
 	if err != nil {
+		var validationErr *oauthAuthorizationCodeRequestValidationError
+		switch {
+		case errors.Is(err, auth.ErrOAuthTemporarilyUnavailable):
+			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+		case errors.Is(err, auth.ErrInvalidClient):
+			telemetry.setReason(oauthGrantReasonInvalidClient)
+		case errors.Is(err, auth.ErrUnauthorizedClient):
+			telemetry.setReason(oauthGrantReasonUnauthorizedClient)
+		case errors.As(err, &validationErr):
+			telemetry.setReason(oauthGrantReasonInvalidRequest)
+		default:
+			telemetry.setReason(oauthGrantReasonAuthorizationCodeRedirectMismatch)
+		}
 		return "", "", nil, err
 	}
 
-	authCode, err := h.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code, clientID, redirectURI, codeVerifier)
+	authCode, err := h.loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx, oauthSvc, code, clientID, redirectURI, codeVerifier, telemetry)
 	if err != nil {
 		return "", "", nil, err
 	}
+	telemetry.setResourceIfEmpty(authCode.Resource)
 	if err := validateOAuthAuthorizationCodeScopes(client, authCode); err != nil {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeScopeInvalid)
 		return "", "", nil, err
 	}
 	storedResource := strings.TrimSpace(authCode.Resource)
@@ -1429,50 +1607,68 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		requestedResource = storedResource
 	}
 	if storedResource != requestedResource {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeResourceMismatch)
 		return "", "", nil, errOAuthInvalidTarget
 	}
 	if oauthResourceTargetsInstancePlane(storedResource) {
 		if err := h.validateOAuthInstanceAuthorizationCodeTarget(ctx, client, authCode); err != nil {
-			return "", "", nil, err
+			if errors.Is(err, errOAuthInvalidTarget) {
+				telemetry.setReason(oauthGrantReasonAuthorizationCodeAuthorityRevoked)
+			} else {
+				telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+			}
+			return "", "", nil, oauthInstanceAuthorizationCodeExchangeError(err)
 		}
-	}
-
-	// Consume the authorization code before issuing tokens. This prevents code reuse via
-	// concurrent exchanges in the (small) TOCTOU window between read and delete.
-	if err := h.repos.Account().DeleteAuthorizationCode(ctx, code); err != nil {
-		h.logger.Warn("failed to consume authorization code", zap.Error(err))
-		return "", "", nil, auth.ErrInvalidGrant
 	}
 
 	_, sessionID, accessTTL, err := authorizationCodeExchangeTokenContext(h.cfg, client, authCode)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeInvalidContext)
 		return "", "", nil, err
 	}
 	clientClass, err := h.oauthAuthorizationCodeClientClass(ctx, client, authCode)
 	if err != nil {
-		return "", "", nil, err
+		if errors.Is(err, errOAuthInvalidTarget) {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodeAuthorityRevoked)
+		} else {
+			telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+		}
+		return "", "", nil, oauthInstanceAuthorizationCodeExchangeError(err)
 	}
 
 	// Generate tokens
 	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudienceAndDelegatedBy(ctx, authCode.Username, clientID, "", authCode.Scopes, accessTTL, clientClass, sessionID, authCode.Resource, authCode.PrincipalUsername)
 	if err != nil {
+		telemetry.setReason(oauthGrantReasonTokenGenerationFailed)
 		return "", "", nil, errors.Join(failedToGenerateTokens(), err)
 	}
 
 	now := time.Now().UTC()
 	oauthRefreshToken := buildAuthorizationCodeRefreshToken(now, refreshToken, clientID, client, authCode, clientClass, sessionID, accessTTL)
 
-	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
-		h.logger.Error("failed to store refresh token", zap.Error(err))
-		// Continue - access token is still valid
+	if err := h.repos.Account().ConsumeAuthorizationCodeAndCreateRefreshToken(ctx, code, oauthRefreshToken); err != nil {
+		h.logger.Error("failed to atomically consume authorization code and store refresh token", zap.Error(err))
+		if errors.Is(err, storage.ErrNotFound) {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodeConsumed)
+			return "", "", nil, auth.ErrInvalidGrant
+		}
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+		return "", "", nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
 	}
+	telemetry.FamilyID = oauthRefreshToken.FamilyID
 
 	return accessToken, refreshToken, authCode.Scopes, nil
 }
 
 func (h *Handler) validateAuthorizationCodeExchangeClient(ctx context.Context, oauthSvc *auth.OAuthService, clientID, redirectURI, clientSecret, code string) (*storage.OAuthClient, error) {
 	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
-	if err != nil || client == nil {
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil, auth.ErrInvalidClient
+		}
+		return nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
+	}
+	if client == nil {
 		return nil, auth.ErrInvalidClient
 	}
 	if !oauthClientSupportsGrantType(client, oauthGrantTypeAuthorizationCode) {
@@ -1481,7 +1677,7 @@ func (h *Handler) validateAuthorizationCodeExchangeClient(ctx context.Context, o
 	if err := validateAuthorizationCodeExchangeRedirect(client, clientID, redirectURI, code); err != nil {
 		return nil, err
 	}
-	if err := validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, client, clientID, clientSecret); err != nil {
+	if err := validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, client, clientSecret); err != nil {
 		return nil, err
 	}
 	return client, nil
@@ -1489,11 +1685,11 @@ func (h *Handler) validateAuthorizationCodeExchangeClient(ctx context.Context, o
 
 func validateAuthorizationCodeExchangeRedirect(client *storage.OAuthClient, clientID, redirectURI, code string) error {
 	if err := common.ValidateMultipleRequiredParams(map[string]string{
-		"clientID":    clientID,
-		"redirectURI": redirectURI,
-		"authCode":    code,
+		"client_id":    clientID,
+		"redirect_uri": redirectURI,
+		"code":         code,
 	}); err != nil {
-		return auth.ErrInvalidRequest
+		return &oauthAuthorizationCodeRequestValidationError{validationErr: err}
 	}
 	for _, registeredURI := range client.RedirectURIs {
 		if auth.RedirectURIsMatch(client, registeredURI, redirectURI) {
@@ -1503,28 +1699,35 @@ func validateAuthorizationCodeExchangeRedirect(client *storage.OAuthClient, clie
 	return auth.ErrInvalidRequest
 }
 
-func validateAuthorizationCodeExchangeClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientID, clientSecret string) error {
+func validateAuthorizationCodeExchangeClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientSecret string) error {
 	if client.Confidential {
 		if clientSecret == "" {
 			return auth.ErrInvalidClient
 		}
-		return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
+		return oauthSvc.ValidateClientRecord(ctx, client, clientSecret)
 	}
 	if clientSecret == "" {
 		return nil
 	}
-	return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
+	return oauthSvc.ValidateClientRecord(ctx, client, clientSecret)
 }
 
-func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier string) (*storage.AuthorizationCode, error) {
+func (h *Handler) loadAndValidateAuthorizationCodeForExchangeWithTelemetry(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier string, telemetry *oauthGrantTelemetry) (*storage.AuthorizationCode, error) {
 	authCode, err := h.repos.Account().GetAuthorizationCode(ctx, code)
 	if err != nil {
-		return nil, auth.ErrInvalidGrant
+		if errors.Is(err, storage.ErrNotFound) {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodeAbsent)
+			return nil, auth.ErrInvalidGrant
+		}
+		telemetry.setReason(oauthGrantReasonTemporarilyUnavailable)
+		return nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
 	}
 	if authCode.ClientID != clientID {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeClientMismatch)
 		return nil, auth.ErrInvalidGrant
 	}
 	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
+		telemetry.setReason(oauthGrantReasonAuthorizationCodeRedirectMismatch)
 		return nil, auth.ErrInvalidGrant
 	}
 	// PKCE verification: when the authorization code carries a challenge,
@@ -1534,15 +1737,18 @@ func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Contex
 	// may have been issued before PKCE enforcement (no stored challenge).
 	if authCode.CodeChallenge != "" {
 		if codeVerifier == "" {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodePKCEMismatch)
 			return nil, auth.ErrInvalidGrant
 		}
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
+			telemetry.setReason(oauthGrantReasonAuthorizationCodePKCEMismatch)
 			return nil, err
 		}
 	} else if codeVerifier != "" {
 		// Legacy authorization code without a PKCE challenge stored; the
 		// exchange supplies a verifier but the code was not issued for PKCE.
 		// Reject as a grant-level mismatch (invalid_grant).
+		telemetry.setReason(oauthGrantReasonAuthorizationCodePKCEMismatch)
 		return nil, auth.ErrInvalidGrant
 	}
 	return authCode, nil
@@ -1656,13 +1862,24 @@ func (h *Handler) oauthAuthorizationCodeClientClass(ctx context.Context, client 
 	}
 
 	principalUsername := oauthAuthorizationCodePrincipalUsername(authCode)
-	if h.oauthInstanceOperatorPrincipal(ctx, principalUsername) {
+	operator, err := h.oauthInstanceOperatorPrincipalStatus(ctx, principalUsername)
+	if err != nil {
+		return "", err
+	}
+	if operator {
 		return auth.ClientClassOperator, nil
 	}
 	if clientClass == auth.ClientClassOperator {
 		return "", errOAuthInvalidTarget
 	}
 	return clientClass, nil
+}
+
+func oauthInstanceAuthorizationCodeExchangeError(err error) error {
+	if err == nil || errors.Is(err, errOAuthInvalidTarget) {
+		return err
+	}
+	return errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
 }
 
 func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID string, client *storage.OAuthClient, authCode *storage.AuthorizationCode, clientClass, sessionID string, accessTTL time.Duration) *storage.RefreshToken {
@@ -1678,6 +1895,9 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 		ClientClass:       clientClass,
 		SessionID:         sessionID,
 		LastAuthSuccessAt: now,
+		FamilyID:          common.GenerateSessionIDULID(),
+		Generation:        1,
+		Current:           true,
 	}
 	if !auth.IsAgentRuntimeClientID(clientID) {
 		return oauthRefreshToken
@@ -1692,9 +1912,6 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 	idleExpiry, absoluteExpiry := auth.AgentRuntimeRefreshExpiries(now, refreshIdleTTL, refreshAbsoluteTTL)
 
 	oauthRefreshToken.ExpiresAt = idleExpiry
-	oauthRefreshToken.FamilyID = common.GenerateSessionIDULID()
-	oauthRefreshToken.Generation = 1
-	oauthRefreshToken.Current = true
 	labelPrimary := ""
 	if client != nil {
 		labelPrimary = client.Name
@@ -1710,7 +1927,13 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 
 func (h *Handler) validateRefreshGrantClient(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret string) (*storage.OAuthClient, error) {
 	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
-	if err != nil || client == nil {
+	if err != nil {
+		if !errors.Is(err, storage.ErrNotFound) {
+			return nil, errors.Join(auth.ErrOAuthTemporarilyUnavailable, err)
+		}
+		client = nil
+	}
+	if client == nil {
 		if auth.IsAgentRuntimeClientID(clientID) {
 			h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "invalid_client", "Invalid client credentials")
 		}
@@ -1722,7 +1945,7 @@ func (h *Handler) validateRefreshGrantClient(ctx context.Context, oauthSvc *auth
 		}
 		return nil, auth.ErrUnauthorizedClient
 	}
-	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, clientID, clientSecret); err != nil {
+	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, clientSecret); err != nil {
 		if auth.IsAgentRuntimeClientID(clientID) {
 			h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "invalid_client", "Invalid client credentials")
 		}
@@ -1731,14 +1954,14 @@ func (h *Handler) validateRefreshGrantClient(ctx context.Context, oauthSvc *auth
 	return client, nil
 }
 
-func validateRefreshGrantClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientID, clientSecret string) error {
+func validateRefreshGrantClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientSecret string) error {
 	if client.Confidential && clientSecret == "" {
 		return auth.ErrInvalidClient
 	}
 	if clientSecret == "" {
 		return nil
 	}
-	return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
+	return oauthSvc.ValidateClientRecord(ctx, client, clientSecret)
 }
 
 func refreshGrantClientClass(client *storage.OAuthClient, storedToken *storage.RefreshToken) string {
@@ -1838,13 +2061,20 @@ func standardRefreshGrantLifetimes(now time.Time, cfg *config.Config, client *st
 }
 
 // exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
-func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret, ipAddress, userAgent string) (string, string, []string, error) {
+func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret, requestedResource, ipAddress, userAgent string, telemetry *oauthGrantTelemetry) (string, string, []string, error) {
+	if telemetry == nil {
+		telemetry = &oauthGrantTelemetry{GrantType: oauthGrantTypeRefreshToken, RetryPath: oauthGrantRetryPathNone}
+	}
 	refreshToken = strings.TrimSpace(refreshToken)
 	clientID = strings.TrimSpace(clientID)
 	clientSecret = strings.TrimSpace(clientSecret)
+	requestedResource = strings.TrimSpace(requestedResource)
+	telemetry.ClientID = clientID
+	telemetry.Resource = requestedResource
+	telemetry.RetryPath = oauthGrantRetryPathDirectRotate
 
 	if auth.IsAgentRuntimeClientID(clientID) {
-		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
+		return h.exchangeAgentRuntimeRefreshTokenWithTelemetry(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent, telemetry)
 	}
 
 	client, err := h.validateRefreshGrantClient(ctx, oauthSvc, refreshToken, clientID, clientSecret)
@@ -1852,102 +2082,45 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		return "", "", nil, err
 	}
 
-	// Get refresh token from storage
-	storedToken, err := h.repos.Account().GetRefreshToken(ctx, refreshToken)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return "", "", nil, auth.ErrInvalidToken
-		}
-		if strings.Contains(err.Error(), "expired") {
-			return "", "", nil, auth.ErrInvalidToken
-		}
-		return "", "", nil, errors.Join(failedToValidateRefreshToken(), err)
+	return h.exchangeStandardRefreshTokenCAS(ctx, oauthSvc, client, refreshToken, clientID, requestedResource, ipAddress, userAgent, telemetry)
+}
+func (h *Handler) standardRefreshAuthorityRevocationReason(
+	ctx context.Context,
+	client *storage.OAuthClient,
+	token *storage.RefreshToken,
+	requestedResource string,
+	now time.Time,
+) (string, error) {
+	// A refresh resource parameter is optional, but when supplied it must be the
+	// exact resource bound at the original grant. A mismatch is authoritative.
+	if requestedResource != "" && requestedResource != strings.TrimSpace(token.Resource) {
+		return "refresh_resource_mismatch", nil
 	}
-	if strings.EqualFold(strings.TrimSpace(storedToken.ClientClass), auth.ClientClassOperator) && !oauthResourceTargetsInstancePlane(storedToken.Resource) {
-		return "", "", nil, auth.ErrInvalidToken
+	if strings.TrimSpace(token.FamilyID) != "" && !token.Current {
+		return "refresh_stale_generation", nil
 	}
-	if oauthResourceTargetsInstancePlane(storedToken.Resource) {
-		if err := h.validateOAuthInstanceRefreshTokenTarget(ctx, client, storedToken); err != nil {
-			return "", "", nil, auth.ErrInvalidToken
-		}
+	if strings.EqualFold(strings.TrimSpace(token.ClientClass), auth.ClientClassOperator) && !oauthResourceTargetsInstancePlane(token.Resource) {
+		return "refresh_resource_mismatch", nil
 	}
-
-	// Validate refresh token belongs to the client
-	if storedToken.ClientID != clientID {
-		return "", "", nil, auth.ErrInvalidToken
-	}
-
-	now := time.Now().UTC()
-
-	// Check expiration
-	if now.After(storedToken.ExpiresAt) {
-		// Clean up expired token
-		_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
-		return "", "", nil, auth.ErrInvalidToken
-	}
-
-	accessTTL, refreshExpiry, clientClass, err := standardRefreshGrantLifetimes(now, h.cfg, client, storedToken)
-	if err != nil {
-		_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
-		return "", "", nil, err
-	}
-
-	// The authorizing human must survive a refresh. For actor-scoped MCP tokens the
-	// subject is the agent, so DelegatedBy has to be re-derived from the stored
-	// principal (owner or grantee) rather than silently reverting to the owner, and
-	// a non-owner principal's share grant is re-validated so revocation takes effect
-	// on the next refresh.
-	delegatedByOverride := strings.TrimSpace(storedToken.PrincipalUsername)
-	if oauthResourceTargetsActorMCP(storedToken.Resource) {
-		if delegatedByOverride == "" {
-			// Legacy actor-scoped refresh token issued before the authorizing
-			// principal was persisted. Fail closed: re-deriving DelegatedBy as the
-			// owner would silently re-attribute a grantee's token to the owner.
-			return "", "", nil, auth.ErrInvalidToken
-		}
-		authorized, authErr := h.agentRefreshGrantAuthorized(ctx, storedToken.Username, delegatedByOverride)
-		if authErr != nil || !authorized {
-			return "", "", nil, auth.ErrInvalidToken
+	if oauthResourceTargetsInstancePlane(token.Resource) {
+		if err := h.validateOAuthInstanceRefreshTokenTarget(ctx, client, token); err != nil {
+			if errors.Is(err, errOAuthInvalidTarget) {
+				return "refresh_resource_authority_revoked", nil
+			}
+			return "", err
 		}
 	}
-
-	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudienceAndDelegatedBy(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, clientClass, storedToken.SessionID, storedToken.Resource, delegatedByOverride)
-	if err != nil {
-		return "", "", nil, errors.Join(failedToGenerateNewTokens(), err)
+	if !token.ExpiresAt.After(now) {
+		return "refresh_token_expired", nil
 	}
+	return "", nil
+}
 
-	// Create new refresh token record
-	newOAuthRefreshToken := &storage.RefreshToken{
-		Token:               newRefreshToken,
-		Username:            storedToken.Username,
-		PrincipalUsername:   delegatedByOverride,
-		ClientID:            clientID,
-		Resource:            storedToken.Resource,
-		Scopes:              storedToken.Scopes,
-		CreatedAt:           now,
-		ExpiresAt:           refreshExpiry,
-		ClientClass:         clientClass,
-		SessionID:           storedToken.SessionID,
-		LastAuthFailureCode: storedToken.LastAuthFailureCode,
-		LastAuthFailureAt:   storedToken.LastAuthFailureAt,
-		LastAuthFailureMsg:  storedToken.LastAuthFailureMsg,
-		LastAuthSuccessAt:   now,
+func (h *Handler) revokeStandardRefreshFamily(ctx context.Context, token *storage.RefreshToken, reason, ipAddress, userAgent string) {
+	if token == nil || strings.TrimSpace(token.FamilyID) == "" {
+		return
 	}
-	if clientClass == auth.ClientClassAgent && storedToken.AccessTTLSeconds > 0 {
-		newOAuthRefreshToken.AccessTTLSeconds = storedToken.AccessTTLSeconds
+	if err := auth.RevokeAgentRuntimeFamily(ctx, h.repos, token, reason, ipAddress, userAgent); err != nil {
+		h.logger.Error("failed to revoke standard refresh token family after reconciliation", zap.Error(err))
 	}
-
-	// Store new refresh token
-	if err := h.repos.Account().CreateRefreshToken(ctx, newOAuthRefreshToken); err != nil {
-		h.logger.Error("failed to store new refresh token", zap.Error(err))
-		return "", "", nil, errors.Join(failedToStoreNewRefreshToken(), err)
-	}
-
-	// Delete the old refresh token to prevent reuse
-	if err := h.repos.Account().DeleteRefreshToken(ctx, refreshToken); err != nil {
-		h.logger.Error("failed to delete old refresh token", zap.Error(err))
-		// Continue - new token is already stored
-	}
-
-	return accessToken, newRefreshToken, storedToken.Scopes, nil
 }

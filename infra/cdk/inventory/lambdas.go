@@ -75,9 +75,10 @@ var LambdaInventory = Inventory{
 			},
 		},
 		{
-			Name: "api",
-			Type: LambdaTypeAPIHTTP,
-			Role: RoleClassEncryption,
+			Name:            "api",
+			Type:            LambdaTypeAPIHTTP,
+			Role:            RoleClassEncryption,
+			RequiredEnvVars: []string{"VAPID_SECRET_ARN"},
 			HTTPRoutes: []HTTPRoute{
 				{Method: "ANY", Path: "/api/v1/{proxy+}"},
 				{Method: "ANY", Path: "/api/v2/{proxy+}"},

@@ -50,7 +50,8 @@ func (e *upEnv) deployFromReleaseAssembly(ctx context.Context) (*upReceipt, erro
 		return nil, err
 	}
 
-	sharedTemplateRaw, err := os.ReadFile(e.releaseAssembly.SharedTemplate) // #nosec G304 -- shared template path comes from verified release assembly extraction
+	//nolint:gosec // G703: SharedTemplate is a fixed entry from the checksum-verified and containment-checked release assembly extraction.
+	sharedTemplateRaw, err := os.ReadFile(e.releaseAssembly.SharedTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("read shared deploy assembly template: %w", err)
 	}

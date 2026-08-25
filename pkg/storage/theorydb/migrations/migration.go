@@ -70,14 +70,14 @@ func (m BaseMigration) Dependencies() []string {
 type MigrationHistory struct {
 	PK          string    `theorydb:"pk"`
 	SK          string    `theorydb:"sk"`
-	ID          string    `theorydb:"id"`
+	ID          string    `theorydb:"attr:id"`
 	Version     int64     `theorydb:"version"`
-	Description string    `theorydb:"description"`
-	AppliedAt   time.Time `theorydb:"applied_at"`
-	AppliedBy   string    `theorydb:"applied_by"`
-	Checksum    string    `theorydb:"checksum"`
-	Status      string    `theorydb:"status"` // "applied", "failed", "rolled_back"
-	Error       string    `theorydb:"error,omitempty"`
+	Description string    `theorydb:"attr:description"`
+	AppliedAt   time.Time `theorydb:"attr:appliedAt"`
+	AppliedBy   string    `theorydb:"attr:appliedBy"`
+	Checksum    string    `theorydb:"attr:checksum"`
+	Status      string    `theorydb:"attr:status"` // "applied", "failed", "rolled_back"
+	Error       string    `theorydb:"attr:error,omitempty"`
 }
 
 // GetTableKeys returns the primary key values for DynamoDB
@@ -89,12 +89,12 @@ func (m *MigrationHistory) GetTableKeys() (string, string) {
 type MigrationStatus struct {
 	PK              string    `theorydb:"pk"`
 	SK              string    `theorydb:"sk"`
-	LastMigrationID string    `theorydb:"last_migration_id"`
-	LastVersion     int64     `theorydb:"last_version"`
-	UpdatedAt       time.Time `theorydb:"updated_at"`
-	IsLocked        bool      `theorydb:"is_locked"`
-	LockedBy        string    `theorydb:"locked_by,omitempty"`
-	LockedAt        time.Time `theorydb:"locked_at,omitempty"`
+	LastMigrationID string    `theorydb:"attr:lastMigrationID"`
+	LastVersion     int64     `theorydb:"attr:lastVersion"`
+	UpdatedAt       time.Time `theorydb:"updated_at,attr:updatedAt"`
+	IsLocked        bool      `theorydb:"attr:isLocked"`
+	LockedBy        string    `theorydb:"attr:lockedBy,omitempty"`
+	LockedAt        time.Time `theorydb:"attr:lockedAt,omitempty"`
 }
 
 // GetTableKeys returns the primary key values for DynamoDB

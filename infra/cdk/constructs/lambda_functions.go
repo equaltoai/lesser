@@ -18,7 +18,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v3"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v4"
 )
 
 type LambdaFunctionsProps struct {
@@ -30,6 +30,7 @@ type LambdaFunctionsProps struct {
 	RateLimitTable      awsdynamodb.Table
 	StreamEventsTable   awsdynamodb.Table
 	MediaBucket         awss3.Bucket
+	MediaDomain         string
 	StreamingBucket     awss3.Bucket
 	TrainingBucket      awss3.Bucket
 	Queues              map[string]QueuePair
@@ -171,6 +172,9 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		// Secrets
 		"PRIVATE_KEY_SECRET": props.PrivateKey.SecretArn(),
 		"KMS_KEY_ID":         jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(appName, "encryption"))), // KMS key for encrypting actor private keys
+	}
+	if mediaDomain := strings.TrimSpace(props.MediaDomain); mediaDomain != "" {
+		commonEnv["CLOUDFRONT_DOMAIN"] = jsii.String(mediaDomain)
 	}
 
 	if v := getConfigString("lesserVersion"); v != "" {

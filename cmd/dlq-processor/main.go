@@ -11,7 +11,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 
@@ -240,7 +240,7 @@ func initializeDLQStorage(lambdaCtx *common.LambdaContext) (core.DB, error) {
 }
 
 func main() {
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 
 	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
 	stage := strings.TrimSpace(os.Getenv("STAGE"))
@@ -275,10 +275,10 @@ func main() {
 		return handler.HandleEventBridge(ctx, event)
 	})
 
-	app.Get("/health", handleHealthCheck)
-	app.Get("/analytics/:service", handleAnalyticsHTTP)
-	app.Get("/trends/:service", handleTrendsHTTP)
-	app.Post("/search", handleSearchHTTP)
+	app.Get("/health", handleHealthCheck, apptheory.Public())
+	app.Get("/analytics/:service", handleAnalyticsHTTP, apptheory.Public())
+	app.Get("/trends/:service", handleTrendsHTTP, apptheory.Public())
+	app.Post("/search", handleSearchHTTP, apptheory.Public())
 
 	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
 		return app.HandleLambda(ctx, event)

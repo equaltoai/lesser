@@ -235,7 +235,7 @@ func (r *TrackingRepository) CreateAggregated(ctx context.Context, aggregated *m
 	}
 
 	// Create the aggregated cost tracking
-	err := r.db.WithContext(ctx).Model(aggregated).Create()
+	err := r.db.WithContext(ctx).Model(aggregated).CreateOrUpdate()
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create aggregated cost tracking")
 	}

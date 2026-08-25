@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
@@ -46,6 +47,15 @@ type Handler struct {
 	legacyTrustConfigWarnOnce       sync.Once
 	legacyTranslationConfigWarnOnce sync.Once
 	legacyTipsConfigWarnOnce        sync.Once
+
+	// oauthGrantEMFWriter receives one best-effort CloudWatch EMF line per
+	// authorization-code or refresh-token grant attempt. It is nil on handlers
+	// assembled directly by tests and os.Stdout on production NewHandler paths.
+	oauthGrantEMFWriter   io.Writer
+	oauthGrantEMFEnabled  bool
+	oauthRefreshSleep     func(context.Context, time.Duration) error
+	oauthRefreshJitter    func(time.Duration) time.Duration
+	oauthRefreshBeforeCAS func()
 }
 
 type liftAuthResponder func(*apptheory.Context) (*apptheory.Response, error)
@@ -128,7 +138,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 	// Initialize DataLoader instances for batched data loading
 	loaders := graph.NewLoaders(repos, logger)
 
-	return &Handler{
+	handler := &Handler{
 		cfg:                 cfg,
 		repos:               repos,
 		logger:              logger,
@@ -144,7 +154,11 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		commonBusinessLogic: commonBusinessLogic,
 		activityPubLogic:    activityPubLogic,
 		mastodonLogic:       mastodonAPILogic,
+		oauthRefreshSleep:   sleepWithContext,
+		oauthRefreshJitter:  fullJitterDuration,
 	}
+	configureOAuthGrantEMF(handler)
+	return handler
 }
 
 // getBearerTokenLift extracts Bearer token from Authorization header

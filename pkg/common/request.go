@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 )
 
 const (

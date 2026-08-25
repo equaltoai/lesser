@@ -361,6 +361,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 	}
 
 	// Store subscription in memory for channel management
+	//nolint:gosec // cancel is retained on GraphQLSubscription and invoked when the subscription or connection is removed.
 	subCtx, cancel := context.WithCancel(ctx)
 	sub := &GraphQLSubscription{
 		ID:            subscriptionID,

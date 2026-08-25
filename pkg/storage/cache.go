@@ -33,7 +33,7 @@ func (cs *CacheService) CacheUser(ctx context.Context, userID string, user *mode
 		CreatedAt: time.Now(),
 	}
 
-	return cs.db.WithContext(ctx).Model(cacheModel).Create()
+	return cs.db.WithContext(ctx).Model(cacheModel).CreateOrUpdate()
 }
 
 // GetCachedUser retrieves a user from cache

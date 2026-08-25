@@ -248,7 +248,7 @@ func (r *FederationActivityRepository) UpdateInstanceInfo(ctx context.Context, i
 		if info.FirstSeen.IsZero() {
 			item.FirstSeen = time.Now()
 		}
-		err = r.db.WithContext(ctx).Model(item).Create()
+		err = r.db.WithContext(ctx).Model(item).CreateOrUpdate()
 		if err != nil {
 			r.logger.Error("failed to update federation instance info",
 				zap.Error(err),

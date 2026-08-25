@@ -6,6 +6,8 @@ package media
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"mime"
@@ -40,6 +42,10 @@ type Service struct {
 	cloudfrontService cloudfrontService
 	objectDeleter     ObjectDeleter
 	metadataDeleter   MetadataDeleter
+	s3Service         S3Service
+	editorialKMSKeyID string
+	uploadGrantRepo   interfaces.UploadGrantRepository
+	orphanSource      OrphanedPublishedMintSource
 }
 
 type transcoderService interface {
@@ -76,7 +82,39 @@ var (
 type S3Service interface {
 	UploadFile(ctx context.Context, bucket, key string, data []byte, contentType string) (string, error)
 	DeleteFile(ctx context.Context, bucket, key string) error
+}
+
+// InternalS3Service stores an object under the instance KMS key. The public
+// CloudFront origin has no permission to decrypt these objects, while Lesser's
+// authorized Lambda role can presign exact-object reads.
+type InternalS3Service interface {
+	UploadInternalFile(ctx context.Context, bucket, key string, data []byte, contentType, kmsKeyID string) (string, error)
+}
+
+// S3Presigner issues short-lived object reads without making an internal asset
+// part of the unsigned public CDN surface.
+type S3Presigner interface {
 	GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error)
+}
+
+// PublishedMediaCopier copies the exact original bytes of an internal editorial
+// asset to the durable unsigned serving surface at the publish transition. The
+// destination object is SSE-S3 (the CloudFront origin can serve it) while the
+// source remains SSE-KMS under the instance key.
+type PublishedMediaCopier interface {
+	CopyFileToPublished(ctx context.Context, bucket, sourceKey, destinationKey, contentType string) (string, error)
+}
+
+// OrphanedPublishedMintSource enumerates durable published mints that no live
+// article references: assets minted by a publish whose draft is terminally
+// failed and whose compensating rollback never ran or failed. The registry
+// wires it from the CMS side; reconciliation is a no-op without it.
+// RecheckOrphanedPublishedMint re-verifies one candidate's orphan premise at
+// unpublish time so the enumerate-then-unpublish window cannot clear an asset a
+// concurrent republish just made live.
+type OrphanedPublishedMintSource interface {
+	ListOrphanedPublishedMintIDs(ctx context.Context) ([]string, error)
+	RecheckOrphanedPublishedMint(ctx context.Context, mediaID string) (bool, error)
 }
 
 // ProcessingQueue defines the interface for async media processing
@@ -148,6 +186,24 @@ func (s *Service) SetDeletionDependencies(objectDeleter ObjectDeleter, metadataD
 	s.metadataDeleter = metadataDeleter
 }
 
+// SetS3Service wires the object-storage client used for original media bytes.
+func (s *Service) SetS3Service(s3Service S3Service) {
+	s.s3Service = s3Service
+}
+
+// SetOrphanPublishedMintSource wires the enumeration of orphaned durable
+// published mints used by ReconcileOrphanedPublishedMedia. Leaving it unwired
+// makes reconciliation a no-op; the registry wires it from the CMS side.
+func (s *Service) SetOrphanPublishedMintSource(source OrphanedPublishedMintSource) {
+	s.orphanSource = source
+}
+
+// SetEditorialKMSKeyID configures the instance key used to keep internal
+// editorial originals outside the unsigned CDN read surface.
+func (s *Service) SetEditorialKMSKeyID(keyID string) {
+	s.editorialKMSKeyID = strings.TrimSpace(keyID)
+}
+
 // SetMaxFileSize sets the maximum allowed file size
 func (s *Service) SetMaxFileSize(maxSize int64) {
 	s.maxFileSize = maxSize
@@ -157,15 +213,17 @@ func (s *Service) SetMaxFileSize(maxSize int64) {
 
 // UploadMediaCommand contains all data needed to upload a media file
 type UploadMediaCommand struct {
-	UserID        string               `json:"user_id" validate:"required"`
-	FileName      string               `json:"file_name" validate:"required"`
-	ContentType   string               `json:"content_type" validate:"required"`
-	FileData      []byte               `json:"file_data" validate:"required"`
-	Description   string               `json:"description" validate:"max=1500"` // Alt text
-	Focus         string               `json:"focus"`                           // Focus point for cropping (x,y)
-	Sensitive     bool                 `json:"sensitive"`
-	SpoilerText   string               `json:"spoiler_text"`
-	MediaCategory models.MediaCategory `json:"media_category"`
+	UserID        string                  `json:"user_id" validate:"required"`
+	FileName      string                  `json:"file_name" validate:"required"`
+	ContentType   string                  `json:"content_type" validate:"required"`
+	FileData      []byte                  `json:"file_data" validate:"required"`
+	Description   string                  `json:"description" validate:"max=1500"` // Alt text
+	Focus         string                  `json:"focus"`                           // Focus point for cropping (x,y)
+	Sensitive     bool                    `json:"sensitive"`
+	SpoilerText   string                  `json:"spoiler_text"`
+	MediaCategory models.MediaCategory    `json:"media_category"`
+	Editorial     bool                    `json:"editorial"`
+	Provenance    *models.MediaProvenance `json:"provenance,omitempty"`
 }
 
 // UpdateMediaCommand contains all data needed to update media metadata
@@ -216,6 +274,31 @@ type Result struct {
 	Events []*streaming.Event `json:"events"`
 }
 
+// EditorialAccess is a short-lived, exact-byte read for an internal asset.
+// Authorization of the bound draft is deliberately performed by the CMS
+// service before this storage capability is invoked.
+type EditorialAccess struct {
+	URL         string
+	ExpiresAt   time.Time
+	ContentHash string
+}
+
+// PublishedMedia is the durable public serving minted for one internal
+// editorial asset at the publish transition. The URL serves the exact approved
+// original bytes indefinitely: no expiring presignature, no temporary
+// generator URL, no dependence on the internal KMS-read posture.
+type PublishedMedia struct {
+	MediaID     string
+	ContentHash string
+	ContentType string
+	FileSize    int64
+	Width       int
+	Height      int
+	URL         string
+	S3Key       string
+	PublishedAt time.Time
+}
+
 // UpdateResult contains updated media and events
 type UpdateResult struct {
 	Media  *models.Media      `json:"media"`
@@ -243,6 +326,7 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 		FileName:      cmd.FileName,
 		ContentType:   cmd.ContentType,
 		FileSize:      int64(len(cmd.FileData)),
+		ContentHash:   contentHash(cmd.FileData),
 		Description:   cmd.Description,
 		Focus:         cmd.Focus,
 		IsNSFW:        cmd.Sensitive,
@@ -250,14 +334,29 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 		MediaCategory: cmd.MediaCategory,
 		Status:        models.StatusPending,
 	}
+	if cmd.Editorial {
+		media.Visibility = models.MediaVisibilityInternal
+		media.Provenance = cmd.Provenance
+		if err := media.Provenance.Normalize(media.UserID, media.ContentHash, time.Now().UTC()); err != nil {
+			return nil, errors.Join(ErrMediaValidationFailed, err)
+		}
+	} else {
+		media.Visibility = models.MediaVisibilityPublic
+	}
 
-	// Generate S3 key and simulate upload
+	// Persist the original bytes before publishing a media record that points at them.
 	s3Key := s.generateS3Key(media.MediaID, cmd.FileName)
 	media.S3Bucket = s.s3Bucket
 	media.S3Key = s3Key
+	if s.s3Service == nil {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("media S3 service is unavailable"))
+	}
+	if err := s.uploadOriginal(ctx, media, cmd.FileData); err != nil {
+		return nil, errors.Join(ErrMediaStorageFailed, err)
+	}
 
 	// Generate CDN URL
-	if s.cdnDomain != "" {
+	if !media.IsInternalEditorial() && s.cdnDomain != "" {
 		media.CDNUrl = fmt.Sprintf("https://%s/%s", s.cdnDomain, s3Key)
 	}
 
@@ -272,6 +371,9 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 			media.Width = 0
 			media.Height = 0
 			media.Blurhash = mediaprocessor.GetDefaultBlurhash()
+			if media.IsInternalEditorial() {
+				media.Status = models.StatusFailed
+			}
 		} else {
 			// Extract dimensions and blurhash from the original image
 			if original, exists := processedImages["original"]; exists {
@@ -285,11 +387,20 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 				media.Height = 0
 				media.Blurhash = mediaprocessor.GetDefaultBlurhash()
 			}
+			if media.IsInternalEditorial() {
+				media.Status = models.StatusReady
+			}
 		}
 	}
 
 	// Store the media record
 	if err := s.mediaRepo.CreateMedia(ctx, media); err != nil {
+		if cleanupErr := s.s3Service.DeleteFile(ctx, s.s3Bucket, s3Key); cleanupErr != nil {
+			s.logger.Warn("failed to clean up media object after record failure",
+				zap.String("bucket", s.s3Bucket),
+				zap.String("key", s3Key),
+				zap.Error(cleanupErr))
+		}
 		return nil, errors.Join(ErrMediaStorageFailed, err)
 	}
 
@@ -300,18 +411,50 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 	// Emit events
 	events := s.emitMediaUploadedEvents(ctx, media)
 
-	// Queue async processing (thumbnails, analysis, etc.)
-	if err := s.queueMediaProcessing(ctx, media); err != nil {
-		// Don't fail the upload if queueing fails - just log the error
-		s.logger.Warn("failed to queue media processing, processing will be skipped",
-			zap.String("media_id", media.MediaID),
-			zap.Error(err))
+	// The existing processor writes unsigned CDN variants. Internal editorial
+	// images are validated synchronously above and deliberately do not enter
+	// that public-derivative pipeline. Public/social uploads retain the M0 queue.
+	if !media.IsInternalEditorial() {
+		if err := s.queueMediaProcessing(ctx, media); err != nil {
+			// Don't fail the upload if queueing fails - just log the error
+			s.logger.Warn("failed to queue media processing, processing will be skipped",
+				zap.String("media_id", media.MediaID),
+				zap.Error(err))
+		}
 	}
 
 	return &Result{
 		Media:  media,
 		Events: events,
 	}, nil
+}
+
+func (s *Service) uploadOriginal(ctx context.Context, media *models.Media, data []byte) error {
+	if media.IsInternalEditorial() {
+		if s.editorialKMSKeyID == "" {
+			return errors.New("editorial media KMS key is unavailable")
+		}
+		internalStore, ok := s.s3Service.(InternalS3Service)
+		if !ok {
+			return errors.New("internal editorial media storage is unavailable")
+		}
+		_, err := internalStore.UploadInternalFile(
+			ctx,
+			media.S3Bucket,
+			media.S3Key,
+			data,
+			media.ContentType,
+			s.editorialKMSKeyID,
+		)
+		return err
+	}
+	_, err := s.s3Service.UploadFile(ctx, media.S3Bucket, media.S3Key, data, media.ContentType)
+	return err
+}
+
+func contentHash(data []byte) string {
+	digest := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(digest[:])
 }
 
 // UpdateMedia updates media metadata (alt text, focus points) and emits events
@@ -475,6 +618,306 @@ func (s *Service) GetMedia(ctx context.Context, query *GetMediaQuery) (*models.M
 	return media, nil
 }
 
+// IssueEditorialAccess signs a read for one internal object. Callers must first
+// prove that this media ID is bound to a draft the current actor owns or has an
+// active review grant for; this method intentionally grants no list capability.
+func (s *Service) IssueEditorialAccess(ctx context.Context, mediaID string) (*EditorialAccess, error) {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("media ID is required"))
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil || !media.IsInternalEditorial() {
+		return nil, ErrMediaUnauthorizedAccess
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	key := strings.TrimSpace(media.S3Key)
+	if bucket == "" || key == "" {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("internal media storage location is unavailable"))
+	}
+	presigner, ok := s.s3Service.(S3Presigner)
+	if !ok || presigner == nil {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("internal media presigner is unavailable"))
+	}
+	const ttl = 5 * time.Minute
+	url, err := presigner.GeneratePresignedURL(ctx, bucket, key, ttl)
+	if err != nil {
+		return nil, errors.Join(ErrMediaStorageFailed, err)
+	}
+	return &EditorialAccess{URL: url, ExpiresAt: time.Now().UTC().Add(ttl), ContentHash: media.ContentHash}, nil
+}
+
+// PublishMediaDurably transitions one internal editorial asset to durable
+// public serving of its exact approved bytes. The publish transition is the
+// single point where durable public serving is minted: before it, internal
+// assets expose no unsigned URL through the application contract.
+func (s *Service) PublishMediaDurably(ctx context.Context, mediaID string) (*PublishedMedia, error) {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("media ID is required"))
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil {
+		return nil, ErrMediaUnauthorizedAccess
+	}
+	if !media.IsInternalEditorial() {
+		return nil, errors.Join(ErrMediaUnauthorizedAccess, errors.New("durable published serving is minted only for internal editorial assets"))
+	}
+	if media.Provenance == nil || media.Provenance.ContentIntegrity != media.ContentHash {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial media integrity is unavailable"))
+	}
+	if !media.EditorialLifecycleAvailableForPublish() {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial media lifecycle does not allow publication"))
+	}
+	if !media.IsReady() {
+		return nil, ErrMediaNotReady
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	sourceKey := strings.TrimSpace(media.S3Key)
+	if bucket == "" || sourceKey == "" {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("internal media storage location is unavailable"))
+	}
+	copier, ok := s.s3Service.(PublishedMediaCopier)
+	if !ok || copier == nil {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("durable published copy capability is unavailable"))
+	}
+	if strings.TrimSpace(s.cdnDomain) == "" {
+		return nil, errors.Join(ErrMediaStorageFailed, errors.New("CDN domain is required to mint durable published serving"))
+	}
+	destinationKey := "published/" + sourceKey
+	location, err := copier.CopyFileToPublished(ctx, bucket, sourceKey, destinationKey, media.ContentType)
+	if err != nil {
+		return nil, errors.Join(ErrMediaStorageFailed, err)
+	}
+	_ = location
+	publishedURL := fmt.Sprintf("https://%s/%s", s.cdnDomain, destinationKey)
+	publishedAt := time.Now().UTC()
+	if err := s.mediaRepo.UpdateMediaPublishedState(ctx, mediaID, destinationKey, publishedURL, publishedAt, media.ModelVersion); err != nil {
+		// The copy is already live on the unsigned CDN surface but no record
+		// references it. Compensate with a best-effort delete of the
+		// deterministic published key; a cleanup failure is logged, never
+		// surfaced, so the caller still sees the record-write error.
+		s.deletePublishedObject(ctx, bucket, destinationKey)
+		return nil, errors.Join(ErrMediaUpdateFailed, err)
+	}
+	s.logger.Info("minted durable published serving",
+		zap.String("media_id", mediaID),
+		zap.String("published_key", destinationKey),
+		zap.String("published_url", publishedURL))
+	return &PublishedMedia{
+		MediaID:     media.MediaID,
+		ContentHash: media.ContentHash,
+		ContentType: media.ContentType,
+		FileSize:    media.FileSize,
+		Width:       media.Width,
+		Height:      media.Height,
+		URL:         publishedURL,
+		S3Key:       destinationKey,
+		PublishedAt: publishedAt,
+	}, nil
+}
+
+// deletePublishedObject best-effort removes one durable published object. The
+// deterministic published key makes the compensating delete idempotent, and the
+// original error is preserved: cleanup failures are logged at error level so an
+// orphaned object stays alarmable, but never surfaced over the original error.
+func (s *Service) deletePublishedObject(ctx context.Context, bucket, destinationKey string) {
+	if strings.TrimSpace(bucket) == "" || strings.TrimSpace(destinationKey) == "" {
+		return
+	}
+	if err := s.s3Service.DeleteFile(ctx, bucket, destinationKey); err != nil {
+		s.logger.Error("failed to compensate orphaned durable published serving",
+			zap.String("bucket", bucket),
+			zap.String("published_key", destinationKey),
+			zap.Error(err))
+	}
+}
+
+// UnpublishMediaDurably best-effort removes durable public serving minted for
+// one internal asset. It clears the record state first under the observed model
+// version (a concurrent re-mint advances the version and is left intact) and
+// only then deletes the deterministic published object, re-reading the record
+// after the clear so a re-mint that lands between the two steps keeps its
+// serving. Assets without published state are a no-op, so repeated rollback is
+// idempotent.
+func (s *Service) UnpublishMediaDurably(ctx context.Context, mediaID string) error {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		// Unreadable or missing media means there is nothing durable to roll
+		// back; compensation is best-effort.
+		s.logger.Debug("unpublish rollback skipped for unreadable media",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	if media == nil || !media.IsInternalEditorial() || !media.IsPublished() {
+		return nil
+	}
+	bucket := strings.TrimSpace(media.S3Bucket)
+	publishedKey := strings.TrimSpace(media.PublishedS3Key)
+	if err := s.mediaRepo.ClearMediaPublishedState(ctx, mediaID, media.ModelVersion); err != nil {
+		// A failed clear leaves the record published. The failure is logged at
+		// error level so the orphan stays alarmable, then swallowed to preserve
+		// the best-effort contract; ReconcileOrphanedPublishedMedia can retry it.
+		s.logger.Error("failed to clear published serving on rollback",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	// Re-read the record after the clear. A concurrent re-mint between the two
+	// steps advances the model version and re-publishes; deleting the
+	// deterministic object then would remove a legitimate concurrent mint's
+	// serving. Only delete when the record still shows no published state.
+	fresh, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		s.logger.Warn("failed to re-read media after clearing published serving",
+			zap.String("media_id", mediaID), zap.Error(err))
+		return nil
+	}
+	if fresh == nil || fresh.IsPublished() {
+		// A concurrent re-mint re-published the record; leave its serving intact.
+		return nil
+	}
+	// Residual TOCTOU window: between the fresh re-read above and this delete,
+	// a concurrent same-key re-mint can land and still lose its object. Fully
+	// closing the window needs a conditional delete or per-mint object keys
+	// (schema/scale change), which is deliberately out of scope; a post-delete
+	// re-check is pointless because the object is already gone and the
+	// deterministic key makes a later reconcile idempotent. The version-guarded
+	// clear above already bounds the window to this single delete, and the
+	// reconcile path re-verifies the orphan premise before unpublishing, so the
+	// residual risk is a re-mint landing within this delete's latency and
+	// losing its serving, which the operator can re-mint by re-publishing.
+	s.deletePublishedObject(ctx, bucket, publishedKey)
+	return nil
+}
+
+// ReconcileOrphanedPublishedMedia re-runs the best-effort unpublish for every
+// durable published mint the wired OrphanedPublishedMintSource reports as
+// orphaned (owning draft terminally failed, no live article reference). It is
+// idempotent: UnpublishMediaDurably is a no-op once the record is unpublished
+// and version-guarded against concurrent re-mints, so repeated reconciliation
+// is safe and a live published asset is never touched. Before each unpublish
+// the source re-verifies the candidate's orphan premise at the current state,
+// so a draft that was republished (or an article that appeared) between the
+// enumeration and the unpublish aborts that candidate.
+func (s *Service) ReconcileOrphanedPublishedMedia(ctx context.Context) error {
+	if s.orphanSource == nil {
+		return nil
+	}
+	orphanedIDs, err := s.orphanSource.ListOrphanedPublishedMintIDs(ctx)
+	if err != nil {
+		return errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	for _, mediaID := range orphanedIDs {
+		mediaID = strings.TrimSpace(mediaID)
+		if mediaID == "" {
+			continue
+		}
+		// Re-verify the orphan premise at unpublish time. Unverifiable or
+		// changed candidates are skipped fail closed: a live published asset is
+		// never unpublished on a stale enumeration.
+		stillOrphaned, err := s.orphanSource.RecheckOrphanedPublishedMint(ctx, mediaID)
+		if err != nil {
+			s.logger.Warn("orphan reconciliation re-check failed; skipping candidate",
+				zap.String("media_id", mediaID), zap.Error(err))
+			continue
+		}
+		if !stillOrphaned {
+			s.logger.Info("orphan reconciliation candidate no longer orphaned; skipping",
+				zap.String("media_id", mediaID))
+			continue
+		}
+		s.logger.Info("reconciling orphaned published media mint",
+			zap.String("media_id", mediaID))
+		if err := s.UnpublishMediaDurably(ctx, mediaID); err != nil {
+			// UnpublishMediaDurably is best-effort and reports failures at error
+			// level; keep reconciling the remaining candidates.
+			s.logger.Warn("orphan reconciliation unpublish failed",
+				zap.String("media_id", mediaID), zap.Error(err))
+		}
+	}
+	return nil
+}
+
+// UpdateEditorialLifecycleCommand identifies the asset and the owner requesting
+// an explicit editorial lifecycle change.
+type UpdateEditorialLifecycleCommand struct {
+	MediaID             string
+	UserID              string
+	Lifecycle           models.EditorialLifecycle
+	SupersededByMediaID string
+}
+
+// UpdateEditorialLifecycle applies an explicit editorial lifecycle change to an
+// internal asset. Withdrawn, superseded, and unavailable states are inspectable
+// through the draft preview surface and block publication until re-review.
+func (s *Service) UpdateEditorialLifecycle(ctx context.Context, cmd *UpdateEditorialLifecycleCommand) (*models.Media, error) {
+	if cmd == nil {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("update editorial lifecycle command cannot be nil"))
+	}
+	cmd.MediaID = strings.TrimSpace(cmd.MediaID)
+	cmd.UserID = strings.TrimSpace(cmd.UserID)
+	if cmd.MediaID == "" || cmd.UserID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("media ID and owner are required"))
+	}
+	media, err := s.mediaRepo.GetMedia(ctx, cmd.MediaID)
+	if err != nil {
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
+	}
+	if media == nil || media.UserID != cmd.UserID {
+		return nil, ErrMediaUnauthorizedAccess
+	}
+	if !media.IsInternalEditorial() {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("editorial lifecycle applies only to internal editorial media"))
+	}
+	lifecycle := models.EditorialLifecycle(strings.ToLower(strings.TrimSpace(string(cmd.Lifecycle))))
+	if lifecycle == "" || lifecycle == models.EditorialLifecycleAvailable {
+		lifecycle = ""
+	} else {
+		switch lifecycle {
+		case models.EditorialLifecycleWithdrawn, models.EditorialLifecycleSuperseded, models.EditorialLifecycleUnavailable:
+		default:
+			return nil, errors.Join(ErrMediaValidationFailed, fmt.Errorf("invalid editorial lifecycle %q", lifecycle))
+		}
+	}
+	cmd.SupersededByMediaID = strings.TrimSpace(cmd.SupersededByMediaID)
+	if cmd.SupersededByMediaID != "" && lifecycle != models.EditorialLifecycleSuperseded {
+		// Mirror the model's whole-write validation: the successor attribute is
+		// meaningful only under the superseded lifecycle. Rejecting it here keeps
+		// the field-scoped writer from persisting a model-invalid state that
+		// would later block unrelated metadata updates.
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded-by media ID requires the superseded lifecycle"))
+	}
+	if lifecycle == models.EditorialLifecycleSuperseded && cmd.SupersededByMediaID == "" {
+		return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseded editorial media must name the superseding asset"))
+	}
+	if lifecycle == models.EditorialLifecycleSuperseded {
+		successor, getErr := s.mediaRepo.GetMedia(ctx, cmd.SupersededByMediaID)
+		if getErr != nil {
+			return nil, errors.Join(ErrMediaRetrievalFailed, getErr)
+		}
+		if successor == nil || strings.TrimSpace(successor.UserID) != cmd.UserID {
+			return nil, ErrMediaUnauthorizedAccess
+		}
+		if !successor.IsInternalEditorial() {
+			return nil, errors.Join(ErrMediaValidationFailed, errors.New("superseding media must be an internal editorial asset"))
+		}
+	}
+	if err := s.mediaRepo.UpdateMediaEditorialState(ctx, cmd.MediaID, lifecycle, cmd.SupersededByMediaID, media.ModelVersion); err != nil {
+		return nil, errors.Join(ErrMediaUpdateFailed, err)
+	}
+	return s.mediaRepo.GetMedia(ctx, cmd.MediaID)
+}
+
 // ListMedia returns paginated media filtered by owner and type
 func (s *Service) ListMedia(ctx context.Context, query *ListMediaQuery) (*ListMediaResult, error) {
 	if query == nil {
@@ -569,6 +1012,9 @@ func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaComma
 	// Validate content type
 	if !s.isValidMediaType(cmd.ContentType) {
 		return ErrMediaUnsupportedType
+	}
+	if cmd.Editorial && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(cmd.ContentType)), "image/") {
+		return common.ErrValidation("contentType", "editorial media currently requires an image").InternalError
 	}
 
 	if err := ValidateSVGUpload(cmd.ContentType, cmd.FileData); err != nil {
@@ -705,6 +1151,9 @@ func (s *Service) checkMediaAccess(ctx context.Context, media *models.Media, vie
 	// Basic privacy check - owner can always access their media
 	if media.UserID == viewerID {
 		return nil
+	}
+	if media.IsInternalEditorial() {
+		return ErrMediaUnauthorizedAccess
 	}
 
 	// Check if media is marked as NSFW and viewer restrictions
@@ -882,6 +1331,19 @@ func (s *Service) emitMediaFailedEvents(ctx context.Context, media *models.Media
 func (s *Service) queueMediaProcessing(ctx context.Context, media *models.Media) error {
 	// Generate a unique job ID for tracking
 	jobID := uuid.New().String()
+	job := &models.MediaJob{
+		JobID:    jobID,
+		MediaID:  media.MediaID,
+		Username: media.UserID,
+		Status:   models.StatusPending,
+		S3Key:    media.S3Key,
+		MimeType: media.ContentType,
+		FileHash: media.ContentHash,
+		FileSize: media.FileSize,
+	}
+	if err := s.mediaRepo.CreateMediaJob(ctx, job); err != nil {
+		return errors.Join(ErrMediaProcessingQueueFailed, err)
+	}
 
 	// Create media job message
 	msg := JobMessage{

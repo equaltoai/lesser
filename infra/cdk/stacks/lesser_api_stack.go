@@ -24,7 +24,7 @@ import (
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v3"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk/v4"
 )
 
 type LesserApiStackProps struct {
@@ -49,6 +49,7 @@ type LesserApiStack struct {
 	StreamingBucket        awss3.Bucket
 	TrainingBucket         awss3.Bucket
 	MediaDistribution      awscloudfront.Distribution
+	MediaDomain            string
 	FrontendDistribution   awscloudfront.Distribution
 	ClientBucket           awss3.Bucket
 	ClientArtifactBucket   awss3.Bucket
@@ -646,6 +647,7 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 	if mediaDomain == "" {
 		mediaDomain = fmt.Sprintf("media.%s", domain)
 	}
+	s.MediaDomain = mediaDomain
 
 	if s.HostedZone == nil {
 		panic("Media infrastructure requires HostedZone")
@@ -965,6 +967,7 @@ func (s *LesserApiStack) lambdaFunctionsProps() *localconstructs.LambdaFunctions
 		RateLimitTable:      s.RateLimitTable,
 		StreamEventsTable:   s.StreamEventsTable,
 		MediaBucket:         s.MediaBucket,
+		MediaDomain:         s.MediaDomain,
 		StreamingBucket:     s.StreamingBucket,
 		TrainingBucket:      s.TrainingBucket,
 		Queues:              s.Queues,
@@ -1024,6 +1027,13 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		s.AppName,
 		s.Environment,
 		[]awsiam.IRole{s.LambdaBasicRole, s.LambdaEncryptionRole},
+		s.Configuration,
+	)
+	attachVAPIDSecretReadWritePolicy(
+		s.Stack,
+		s.AppName,
+		s.Environment,
+		s.LambdaEncryptionRole,
 		s.Configuration,
 	)
 

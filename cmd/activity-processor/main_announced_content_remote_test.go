@@ -35,7 +35,8 @@ func TestActivityProcessor_GetAnnouncedContent_RemotePath(t *testing.T) {
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	actorRepo := testmocks.NewMockActorRepository()
 	actorRepo.On("GetActor", mock.Anything, "https://example.com/users/alice").Return(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice"}}, nil).Once()
@@ -71,6 +72,7 @@ func TestActivityProcessor_ProcessActivityDeleted_CreateErrorBranch(t *testing.T
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Create").Return(errors.New("boom"))
 
 	ap := &ActivityProcessor{

@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/golang-jwt/jwt/v5"
+	frameworkoauth "github.com/theory-cloud/apptheory/v4/runtime/oauth"
 	"go.uber.org/zap"
 )
 
@@ -37,6 +37,10 @@ var (
 	ErrInvalidAPIKey = errors.New("invalid_api_key")
 	// ErrInvalidDelegationCredential is returned when a scoped delegation claim set is incomplete or mismatched.
 	ErrInvalidDelegationCredential = errors.New("invalid_delegation_credential")
+	// ErrOAuthTemporarilyUnavailable marks token-endpoint infrastructure and
+	// contention failures that must remain retryable for OAuth clients. Callers
+	// wrap the underlying cause and classify it with errors.Is.
+	ErrOAuthTemporarilyUnavailable = errors.New("oauth temporarily unavailable")
 )
 
 // Scopes define the permissions that can be granted
@@ -237,7 +241,17 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 		// Return invalid_client for any client lookup error (not found, etc.)
 		return ErrInvalidClient
 	}
+	return s.ValidateClientRecord(ctx, client, clientSecret)
+}
 
+// ValidateClientRecord validates a client secret against an already
+// authoritatively loaded client row. Token-endpoint handlers use this form so a
+// second storage read cannot collapse an infrastructure failure into
+// invalid_client after the first read succeeded.
+func (s *OAuthService) ValidateClientRecord(ctx context.Context, client *storage.OAuthClient, clientSecret string) error {
+	if client == nil {
+		return ErrInvalidClient
+	}
 	// For client authentication, secret is required and must verify against the stored representation.
 	if err := common.ValidateRequiredParam("clientSecret", clientSecret); err != nil {
 		return ErrInvalidClient
@@ -253,9 +267,10 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 		type secretUpdater interface {
 			UpdateOAuthClientSecretHash(ctx context.Context, clientID, clientSecretHash string) error
 		}
+		accountRepo := s.account()
 		if updater, ok := accountRepo.(secretUpdater); ok {
 			if hashed, err := HashOAuthClientSecret(clientSecret); err == nil {
-				_ = updater.UpdateOAuthClientSecretHash(ctx, clientID, hashed)
+				_ = updater.UpdateOAuthClientSecretHash(ctx, client.ClientID, hashed)
 			}
 		}
 	}
@@ -312,8 +327,8 @@ func (s *OAuthService) GenerateAuthorizationCode() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// VerifyCodeChallenge verifies the PKCE code challenge per Mastodon 4.3.0+ requirements
-// Mastodon only supports S256 method for PKCE
+// VerifyCodeChallenge verifies PKCE using AppTheory's RFC 7636 S256 primitive.
+// Verifiers must use the RFC character set and be 43-128 characters long.
 func (s *OAuthService) VerifyCodeChallenge(codeChallenge, codeVerifier, challengeMethod string) error {
 	// If PKCE is not used, skip verification
 	if common.ValidateRequiredParam("codeChallenge", codeChallenge) != nil && common.ValidateRequiredParam("codeVerifier", codeVerifier) != nil && common.ValidateRequiredParam("challengeMethod", challengeMethod) != nil {
@@ -330,10 +345,8 @@ func (s *OAuthService) VerifyCodeChallenge(codeChallenge, codeVerifier, challeng
 		return ErrInvalidRequest
 	}
 
-	// Verify S256 code challenge
-	h := sha256.Sum256([]byte(codeVerifier))
-	computedChallenge := base64.RawURLEncoding.EncodeToString(h[:])
-	if codeChallenge != computedChallenge {
+	matched, err := frameworkoauth.PKCEVerifyS256(codeVerifier, codeChallenge)
+	if err != nil || !matched {
 		return ErrInvalidCodeChallenge
 	}
 
@@ -374,6 +387,27 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndAudien
 	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience, DelegationCredentialClaims{}, delegatedBy)
 }
 
+// GenerateRefreshTokensWithAuthoritativeSubject mints a standard refresh
+// successor only after an authoritative subject read. Refresh rotation must not
+// silently downgrade an agent subject to ordinary user claims when storage is
+// unavailable between authority validation and token minting.
+func (s *OAuthService) GenerateRefreshTokensWithAuthoritativeSubject(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	clientClass, sessionID, audience, delegatedBy string,
+) (accessToken, refreshToken string, err error) {
+	isAgent, agentType, resolvedDelegatedBy, err := s.resolveAgentClaimsAuthoritatively(ctx, username, delegatedBy)
+	if err != nil {
+		return "", "", err
+	}
+	return s.generateTokenPairWithResolvedClaims(
+		ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience,
+		DelegationCredentialClaims{}, isAgent, agentType, resolvedDelegatedBy,
+	)
+}
+
 // GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation extends Lesser's existing signed
 // OAuth access-token mechanism with an optional, server-minted content-class delegation binding.
 func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndDelegation(
@@ -385,6 +419,98 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndDelega
 	delegation DelegationCredentialClaims,
 ) (accessToken, refreshToken string, err error) {
 	return s.generateTokensWithAccessTokenTTLAndClientContextAndDelegation(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, "", delegation, "")
+}
+
+// GenerateAgentAccessTokenWithClientContextAndDelegation mints only a short-lived
+// agent access token. Dedicated machine clients re-prove their authority and call
+// their mint endpoint again; they never receive or persist a refresh credential.
+//
+// The agent lookup is deliberately authoritative. A storage failure must not
+// silently downgrade an agent token to an ordinary user token.
+func (s *OAuthService) GenerateAgentAccessTokenWithClientContextAndDelegation(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	sessionID string,
+	delegation DelegationCredentialClaims,
+) (string, error) {
+	if s == nil || s.repos == nil || s.repos.Account() == nil {
+		return "", ErrSessionStorage
+	}
+
+	user, err := s.repos.Account().GetUser(ctx, username)
+	if err != nil {
+		return "", errors.Join(ErrSessionStorage, err)
+	}
+	if user == nil || !user.IsAgent {
+		return "", ErrInvalidToken
+	}
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = AccessTokenDuration
+	}
+
+	effectiveSessionID := strings.TrimSpace(sessionID)
+	if effectiveSessionID == "" {
+		effectiveSessionID = generateSecureJTI()
+	}
+	delegatedBy := normalizeDelegatedBy(user.AgentOwner)
+	if principal := strings.TrimSpace(delegation.Principal); principal != "" &&
+		!s.agentOwnerMatchesPrincipal(user.AgentOwner, principal) {
+		delegatedBy = normalizeDelegatedBy(principal)
+	}
+
+	return s.generateAccessTokenWithMetadata(username, clientID, scopes, accessTokenMetadata{
+		ExpiresAt:              time.Now().Add(accessTokenTTL),
+		IPAddress:              ipAddress,
+		SessionID:              effectiveSessionID,
+		ClientClass:            ClientClassAgent,
+		IsAgent:                true,
+		AgentType:              strings.TrimSpace(user.AgentType),
+		DelegatedBy:            delegatedBy,
+		AgentSessionID:         effectiveSessionID,
+		DelegationPrincipal:    strings.TrimSpace(delegation.Principal),
+		DelegationAgent:        strings.TrimSpace(delegation.Agent),
+		DelegationContentClass: strings.TrimSpace(delegation.ContentClass),
+	})
+}
+
+// GenerateAccessTokenWithClientContextAndAudienceAndDelegatedBy mints only an
+// access credential. Refresh replay uses it when returning the already-minted
+// family head, so replay cannot accidentally create a second successor.
+func (s *OAuthService) GenerateAccessTokenWithClientContextAndAudienceAndDelegatedBy(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	clientClass, sessionID, audience, delegatedByOverride string,
+) (string, error) {
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = AccessTokenDuration
+	}
+	isAgent, agentType, delegatedBy, err := s.resolveAgentClaimsAuthoritatively(ctx, username, delegatedByOverride)
+	if err != nil {
+		return "", err
+	}
+	effectiveSessionID := strings.TrimSpace(sessionID)
+	agentSessionID := ""
+	if isAgent {
+		if effectiveSessionID == "" {
+			effectiveSessionID = generateSecureJTI()
+		}
+		agentSessionID = effectiveSessionID
+	}
+	return s.generateAccessTokenWithMetadata(username, clientID, scopes, accessTokenMetadata{
+		ExpiresAt:      time.Now().Add(accessTokenTTL),
+		IPAddress:      ipAddress,
+		SessionID:      effectiveSessionID,
+		ClientClass:    clientClass,
+		Audience:       audience,
+		IsAgent:        isAgent,
+		AgentType:      agentType,
+		DelegatedBy:    delegatedBy,
+		AgentSessionID: agentSessionID,
+	})
 }
 
 func (s *OAuthService) generateTokensWithAccessTokenTTLAndClientContextAndDelegation(
@@ -401,6 +527,25 @@ func (s *OAuthService) generateTokensWithAccessTokenTTLAndClientContextAndDelega
 	}
 
 	isAgent, agentType, delegatedBy := s.resolveAgentClaims(ctx, username, delegatedByOverride)
+	return s.generateTokenPairWithResolvedClaims(
+		ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, audience,
+		delegation, isAgent, agentType, delegatedBy,
+	)
+}
+
+func (s *OAuthService) generateTokenPairWithResolvedClaims(
+	ctx context.Context,
+	username, clientID, ipAddress string,
+	scopes []string,
+	accessTokenTTL time.Duration,
+	clientClass, sessionID, audience string,
+	delegation DelegationCredentialClaims,
+	isAgent bool,
+	agentType, delegatedBy string,
+) (accessToken, refreshToken string, err error) {
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = AccessTokenDuration
+	}
 	effectiveSessionID := strings.TrimSpace(sessionID)
 	agentSessionID := ""
 	if isAgent {
@@ -603,6 +748,32 @@ func (s *OAuthService) resolveAgentClaims(ctx context.Context, username string, 
 	}
 
 	return true, strings.TrimSpace(user.AgentType), delegatedBy
+}
+
+func (s *OAuthService) resolveAgentClaimsAuthoritatively(ctx context.Context, username string, delegatedByOverride string) (bool, string, string, error) {
+	if s == nil || s.repos == nil || s.repos.Account() == nil {
+		return false, "", "", ErrSessionStorage
+	}
+	user, err := s.repos.Account().GetUser(ctx, username)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return false, "", "", ErrInvalidToken
+		}
+		return false, "", "", errors.Join(ErrSessionStorage, err)
+	}
+	if user == nil {
+		return false, "", "", ErrInvalidToken
+	}
+	if !user.IsAgent {
+		return false, "", "", nil
+	}
+
+	delegatedBy := normalizeDelegatedBy(user.AgentOwner)
+	if override := strings.TrimSpace(delegatedByOverride); override != "" &&
+		!s.agentOwnerMatchesPrincipal(user.AgentOwner, override) {
+		delegatedBy = normalizeDelegatedBy(override)
+	}
+	return true, strings.TrimSpace(user.AgentType), delegatedBy, nil
 }
 
 func (s *OAuthService) agentOwnerMatchesPrincipal(owner, principalUsername string) bool {

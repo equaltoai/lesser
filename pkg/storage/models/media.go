@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -58,6 +59,7 @@ type Media struct {
 	FileName    string `theorydb:"attr:fileName" json:"file_name"`       // Original filename
 	ContentType string `theorydb:"attr:contentType" json:"content_type"` // MIME type
 	FileSize    int64  `theorydb:"attr:fileSize" json:"file_size"`       // Size in bytes
+	ContentHash string `theorydb:"attr:contentHash,omitempty" json:"-"`  // Canonical sha256:<hex> digest of original bytes
 
 	// Storage details
 	S3Bucket string `theorydb:"attr:s3Bucket" json:"s3_bucket"`
@@ -90,6 +92,22 @@ type Media struct {
 
 	// Client-provided classification (image/video/gifv/etc.)
 	MediaCategory MediaCategory `theorydb:"attr:mediaCategory" json:"media_category,omitempty"`
+
+	// Editorial state is optional so historical and social media retain the
+	// existing public posture. Internal assets never expose CDNUrl through the
+	// application contract and carry private provenance separately from credits.
+	Visibility MediaVisibility  `theorydb:"attr:visibility,omitempty" json:"visibility,omitempty"`
+	Provenance *MediaProvenance `theorydb:"attr:provenance,omitempty" json:"provenance,omitempty"`
+
+	// Editorial lifecycle and durable published serving. These are editorial
+	// concerns distinct from the processing Status enum and from the public
+	// CDNUrl minted for social media at upload. PublishedURL is minted exactly
+	// once at the publish transition and serves the approved original bytes.
+	EditorialState      EditorialLifecycle `theorydb:"attr:editorialState,omitempty" json:"editorial_state,omitempty"`
+	SupersededByMediaID string             `theorydb:"attr:supersededByMediaID,omitempty" json:"superseded_by_media_id,omitempty"`
+	PublishedS3Key      string             `theorydb:"attr:publishedS3Key,omitempty" json:"published_s3_key,omitempty"`
+	PublishedURL        string             `theorydb:"attr:publishedURL,omitempty" json:"published_url,omitempty"`
+	PublishedAt         *time.Time         `theorydb:"attr:publishedAt,omitempty" json:"published_at,omitempty"`
 
 	// Usage tracking
 	UsageCount int        `theorydb:"attr:usageCount" json:"usage_count"`
@@ -135,6 +153,10 @@ func (m *Media) BeforeCreate() error {
 	m.UpdatedAt = now
 	m.UploadedAt = now
 	m.SpoilerText = strings.TrimSpace(m.SpoilerText)
+	m.Visibility = MediaVisibility(strings.ToLower(strings.TrimSpace(string(m.Visibility))))
+	if m.Visibility == MediaVisibilityInternal {
+		m.CDNUrl = ""
+	}
 
 	// Generate media ID if not provided
 	if err := common.ValidateRequiredParam("MediaID", m.MediaID); err != nil {
@@ -180,6 +202,10 @@ func (m *Media) BeforeCreate() error {
 func (m *Media) BeforeUpdate() error {
 	m.UpdatedAt = time.Now()
 	m.SpoilerText = strings.TrimSpace(m.SpoilerText)
+	m.Visibility = MediaVisibility(strings.ToLower(strings.TrimSpace(string(m.Visibility))))
+	if m.Visibility == MediaVisibilityInternal {
+		m.CDNUrl = ""
+	}
 	if strings.TrimSpace(string(m.MediaCategory)) == "" {
 		m.MediaCategory = DetermineMediaCategory(m.ContentType)
 	} else {
@@ -265,6 +291,57 @@ func (m *Media) Validate() error {
 		return fmt.Errorf("%w: %s", ErrInvalidMediaCategory, m.MediaCategory)
 	}
 
+	switch m.Visibility {
+	case "", MediaVisibilityPublic:
+		if m.EditorialState != "" || m.PublishedURL != "" || m.PublishedS3Key != "" || m.PublishedAt != nil {
+			return errors.New("editorial lifecycle and published state require internal editorial media")
+		}
+	case MediaVisibilityInternal:
+		if m.Provenance == nil {
+			return errors.New("internal editorial media requires provenance")
+		}
+		if err := m.Provenance.Normalize(m.UserID, m.ContentHash, time.Now().UTC()); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("invalid media visibility %q", m.Visibility)
+	}
+
+	if err := validateEditorialLifecycle(m); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateEditorialLifecycle checks the editorial lifecycle surface of an
+// internal asset. Public/social media cannot carry an editorial lifecycle, a
+// superseded asset must name its successor, and durable published state is only
+// meaningful for internal assets that have crossed the publish transition.
+func validateEditorialLifecycle(m *Media) error {
+	if m == nil {
+		return nil
+	}
+	lifecycle := EditorialLifecycle(strings.ToLower(strings.TrimSpace(string(m.EditorialState))))
+	m.EditorialState = lifecycle
+	if lifecycle == "" {
+		if strings.TrimSpace(m.SupersededByMediaID) != "" {
+			return errors.New("superseded-by media ID requires the superseded lifecycle")
+		}
+		return nil
+	}
+	if !m.IsInternalEditorial() {
+		return errors.New("editorial lifecycle requires internal editorial media")
+	}
+	if _, ok := validEditorialLifecycles[lifecycle]; !ok {
+		return fmt.Errorf("invalid editorial lifecycle %q", lifecycle)
+	}
+	if lifecycle == EditorialLifecycleSuperseded && strings.TrimSpace(m.SupersededByMediaID) == "" {
+		return errors.New("superseded editorial media must name the superseding asset")
+	}
+	if lifecycle != EditorialLifecycleSuperseded && strings.TrimSpace(m.SupersededByMediaID) != "" {
+		return errors.New("superseded-by media ID requires the superseded lifecycle")
+	}
 	return nil
 }
 
@@ -409,6 +486,35 @@ func (m *Media) IsVideo() bool {
 // IsAudio returns true if the media is audio
 func (m *Media) IsAudio() bool {
 	return strings.HasPrefix(m.ContentType, "audio/")
+}
+
+// IsInternalEditorial reports whether the asset is restricted to the CMS
+// owner and exact draft-review grants.
+func (m *Media) IsInternalEditorial() bool {
+	return m != nil && m.Visibility == MediaVisibilityInternal
+}
+
+// IsPublished reports whether the publish transition has minted durable public
+// serving for this asset's exact approved bytes.
+func (m *Media) IsPublished() bool {
+	return m != nil && m.Visibility == MediaVisibilityInternal &&
+		m.PublishedAt != nil && strings.TrimSpace(m.PublishedURL) != "" && strings.TrimSpace(m.PublishedS3Key) != ""
+}
+
+// EditorialLifecycleAvailableForPublish reports whether the asset may serve as
+// a required bound asset at the publish gate. Withdrawn, superseded, and
+// unavailable assets fail closed; the empty lifecycle is the default available
+// state for assets created before the M2 lifecycle surface existed.
+func (m *Media) EditorialLifecycleAvailableForPublish() bool {
+	if m == nil {
+		return false
+	}
+	switch EditorialLifecycle(strings.ToLower(strings.TrimSpace(string(m.EditorialState)))) {
+	case "", EditorialLifecycleAvailable:
+		return true
+	default:
+		return false
+	}
 }
 
 // DetermineMediaCategory derives a category from the MIME type when none is provided.

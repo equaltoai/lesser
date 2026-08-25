@@ -12,12 +12,34 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
 const commDeliveryAuditEventType = "comm.notification.deliver"
 const commNotificationRecipientResolutionFailure = "notification recipient could not be resolved"
+
+// ResolveNotificationDeliveryPrincipal verifies the instance-scoped credential
+// used by the internal notification-delivery route. It is intentionally separate
+// from the handler's defense-in-depth check so SecureApp can classify the route as
+// InternalOnly without treating ordinary OAuth principals as internal callers.
+func (h *Handler) ResolveNotificationDeliveryPrincipal(ctx *apptheory.Context) (*apptheory.SecurePrincipal, error) {
+	if h == nil || h.cfg == nil || ctx == nil {
+		return nil, nil
+	}
+	expectedKeys, err := h.notificationDeliveryKeys(ctx.Context())
+	if err != nil || len(expectedKeys) == 0 {
+		return nil, err
+	}
+	token, err := common.ExtractBearerToken(ctx.Header("Authorization"))
+	if err != nil || !matchesNotificationDeliveryKey(token, expectedKeys) {
+		return nil, nil
+	}
+	return &apptheory.SecurePrincipal{
+		Identity: "lesser-host-notification-delivery",
+		Kind:     apptheory.PrincipalInternal,
+	}, nil
+}
 
 // HandleDeliverNotificationLift handles POST /api/v1/notifications/deliver.
 //

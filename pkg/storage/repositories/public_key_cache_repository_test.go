@@ -179,7 +179,7 @@ func TestPublicKeyCacheRepository_Store_Success(t *testing.T) {
 	// Set up mock for ValidateAndCreate which uses the base repository
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.PublicKeyCache")).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil)
 
 	// Execute
 	result, err := repo.Store(ctx, actorURL, keyID, publicKeyPEM, algorithm)
@@ -211,7 +211,7 @@ func TestPublicKeyCacheRepository_Store_CreateError(t *testing.T) {
 	// Set up mock for ValidateAndCreate
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.PublicKeyCache")).Return(mockQuery)
-	mockQuery.On("Create").Return(testErr)
+	mockQuery.On("CreateOrUpdate").Return(testErr)
 
 	// Execute
 	result, err := repo.Store(ctx, actorURL, "keyId", "pem", "algo")
@@ -450,7 +450,7 @@ func TestPublicKeyCacheRepository_RefreshKey_NotFound_FallbackToStore(t *testing
 	// Set up mock expectations for Store (fallback)
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.PublicKeyCache")).Return(mockCreateQuery).Once()
-	mockCreateQuery.On("Create").Return(nil)
+	mockCreateQuery.On("CreateOrUpdate").Return(nil)
 
 	// Execute
 	err := repo.RefreshKey(ctx, actorURL, keyID, publicKeyPEM, algorithm)

@@ -96,6 +96,7 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 		findRepoRootFn = previousRepoRoot
 		captureCommandOutputFn = previousCapture
 	})
+	stubLookPathInEnv(t)
 
 	ensureToolAvailableFn = func(string) error { return nil }
 	t.Setenv(lesserVerifyCIJobsEnv, "")
@@ -112,6 +113,9 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
 
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, name string, args ...string) (string, error) {
+		if out, ok := gosecVersionCaptureBranch(pinnedGosecVersion, args); ok {
+			return out, nil
+		}
 		if name == "go" && len(args) >= 4 && args[0] == "list" && args[1] == "-f" {
 			return strings.Join([]string{
 				filepath.Join(repoRoot, "cmd", "lesser"),
@@ -173,8 +177,8 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 		if !strings.HasPrefix(call, "gosec ") {
 			continue
 		}
-		if strings.Contains(call, "github.com/equaltoai/lesser/cmd/lesser") &&
-			strings.Contains(call, "github.com/equaltoai/lesser/pkg/common") {
+		if strings.Contains(call, "./cmd/lesser") &&
+			strings.Contains(call, "./pkg/common") {
 			sawBatchedSecScan = true
 			break
 		}

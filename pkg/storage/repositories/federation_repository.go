@@ -114,8 +114,8 @@ func (r *FederationRepository) UpsertInstanceInfo(ctx context.Context, info *sto
 	// Update keys
 	instance.UpdateKeys()
 
-	// Use Create to upsert (it will overwrite existing)
-	err := r.db.WithContext(ctx).Model(instance).Create()
+	// This domain-keyed row is an explicit upsert.
+	err := r.db.WithContext(ctx).Model(instance).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to upsert instance info",
 			zap.String("domain", info.Domain),
@@ -308,7 +308,7 @@ func (r *FederationRepository) RecordFederationActivity(ctx context.Context, act
 	}
 
 	// Update aggregated costs asynchronously
-	go r.updateAggregatedCosts(context.Background(), activity)
+	go r.updateAggregatedCosts(context.WithoutCancel(ctx), activity)
 
 	return nil
 }
@@ -1109,7 +1109,7 @@ func (r *FederationRepository) updateAggregatedCosts(ctx context.Context, activi
 	cost.UpdateKeys()
 
 	// Save updated cost record
-	err = r.db.WithContext(ctx).Model(&cost).Create()
+	err = r.db.WithContext(ctx).Model(&cost).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to update aggregated costs",
 			zap.String("domain", activity.Domain),
@@ -1149,7 +1149,7 @@ func (r *FederationRepository) AcknowledgeSeverance(ctx context.Context, userID,
 	severance.UpdateKeys()
 
 	// Save the updated record
-	err = r.db.WithContext(ctx).Model(&severance).Create()
+	err = r.db.WithContext(ctx).Model(&severance).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to acknowledge severance",
 			zap.String("user_id", userID),
@@ -1217,7 +1217,7 @@ func (r *FederationRepository) AttemptReconnection(ctx context.Context, userID, 
 	}
 
 	// Save the updated attempt record
-	err = r.db.WithContext(ctx).Model(attempt).Create()
+	err = r.db.WithContext(ctx).Model(attempt).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to update reconnection attempt record",
 			zap.String("user_id", userID),
@@ -1462,7 +1462,7 @@ func (r *FederationRepository) updateFederationInstanceStatus(ctx context.Contex
 	instance.UpdateKeys()
 
 	// Save the instance record
-	err = r.db.WithContext(ctx).Model(&instance).Create()
+	err = r.db.WithContext(ctx).Model(&instance).CreateOrUpdate()
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "instance record", "federation instance")
 	}
@@ -1647,7 +1647,7 @@ func (r *FederationRepository) UpdateFederationNode(ctx context.Context, node *s
 	modelNode.UpdateKeys()
 
 	// Save the node
-	err := r.db.WithContext(ctx).Model(modelNode).Create()
+	err := r.db.WithContext(ctx).Model(modelNode).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to update federation node",
 			zap.String("domain", node.Domain),
@@ -1689,7 +1689,7 @@ func (r *FederationRepository) UpdateFederationEdge(ctx context.Context, edge *s
 	modelEdge.UpdateKeys()
 
 	// Save the edge
-	err := r.db.WithContext(ctx).Model(modelEdge).Create()
+	err := r.db.WithContext(ctx).Model(modelEdge).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to update federation edge",
 			zap.String("source", edge.SourceDomain),
@@ -1736,7 +1736,7 @@ func (r *FederationRepository) UpdateInstanceMetadata(ctx context.Context, metad
 	modelMetadata.UpdateKeys()
 
 	// Save the metadata
-	err := r.db.WithContext(ctx).Model(modelMetadata).Create()
+	err := r.db.WithContext(ctx).Model(modelMetadata).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to update instance metadata",
 			zap.String("domain", metadata.Domain),
@@ -1778,7 +1778,7 @@ func (r *FederationRepository) StoreFederationTimeSeries(ctx context.Context, da
 	modelData.UpdateKeys()
 
 	// Save the time series data
-	err := r.db.WithContext(ctx).Model(modelData).Create()
+	err := r.db.WithContext(ctx).Model(modelData).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to store time series data",
 			zap.String("domain", data.Domain),
@@ -1815,7 +1815,7 @@ func (r *FederationRepository) StoreInstanceCluster(ctx context.Context, cluster
 	modelCluster.UpdateKeys()
 
 	// Save the cluster
-	err := r.db.WithContext(ctx).Model(modelCluster).Create()
+	err := r.db.WithContext(ctx).Model(modelCluster).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to store cluster",
 			zap.String("cluster_id", cluster.ClusterID),
@@ -2270,7 +2270,7 @@ func (r *FederationRepository) RetryDelivery(ctx context.Context, activityID, ta
 	delivery.UpdateKeys()
 
 	// Save the updated status
-	err = r.db.WithContext(ctx).Model(&delivery).Create()
+	err = r.db.WithContext(ctx).Model(&delivery).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to update delivery for retry",
 			zap.String("activity_id", activityID),
@@ -2564,7 +2564,7 @@ func (r *FederationRepository) StoreDetailedFederationMetrics(ctx context.Contex
 	metrics.CalculateHealthScore()
 
 	// Store the metrics
-	err := r.db.WithContext(ctx).Model(metrics).Create()
+	err := r.db.WithContext(ctx).Model(metrics).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("Failed to store federation time series",
 			zap.String("domain", metrics.Domain),

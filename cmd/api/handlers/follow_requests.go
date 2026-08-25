@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
@@ -62,12 +62,12 @@ func (h *Handler) handleFollowRequestOperation(ctx *apptheory.Context, actor *ac
 		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
-	// Send activity to the follower
-	go func() {
-		if err := config.activitySender(ctx.Context(), accountID, username); err != nil {
-			h.logger.Error(config.activityLogError, zap.Error(err))
-		}
-	}()
+	// Complete the best-effort activity handoff before the request returns.
+	// A detached goroutine retained the request context and handler logger past
+	// their lifecycle, and Lambda may freeze it as soon as the response is sent.
+	if err := config.activitySender(ctx.Context(), accountID, username); err != nil {
+		h.logger.Error(config.activityLogError, zap.Error(err))
+	}
 
 	h.logger.Info(config.logMessage,
 		zap.String("username", username),

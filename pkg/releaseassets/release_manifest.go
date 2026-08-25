@@ -133,6 +133,7 @@ func WriteReleaseManifest(outDir string, input ReleaseManifestInput) (ReleaseMan
 	}
 	data = append(data, '\n')
 
+	//nolint:gosec // The manifest is an intentionally public GitHub release artifact with no secret material.
 	if err := os.WriteFile(filepath.Join(outDir, ReleaseManifestName), data, 0o644); err != nil {
 		return ReleaseManifest{}, fmt.Errorf("write release manifest: %w", err)
 	}

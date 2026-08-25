@@ -223,8 +223,8 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 		db, q = newCMSMockDB(t)
 		repo.db = db
 
-		q.On("Create").Return(nil).Once()                      // slug index
-		q.On("Create").Return(errors.New("index fail")).Once() // first CMS index entry
+		q.On("Create").Return(nil).Once()                              // slug index
+		q.On("CreateOrUpdate").Return(errors.New("index fail")).Once() // first CMS index entry
 		q.On("Delete").Return(nil).Maybe()
 
 		article := &models.Article{
@@ -298,6 +298,7 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 		db, q := newCMSMockDB(t)
 		repo.db = db
 		q.On("Create").Return(nil).Maybe()
+		q.On("CreateOrUpdate").Return(nil).Maybe()
 		q.On("Delete").Return(nil).Maybe()
 
 		repo.articles["a5"] = &models.Article{Object: models.Object{ID: "a5", Published: time.Now(), AttributedTo: "https://example.com/users/alice"}, Slug: "slug"}
@@ -334,6 +335,7 @@ func TestArticleService_Round25_federationHelpersAndUsernameExtraction(t *testin
 	ctx := context.Background()
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 	q.On("First", mock.Anything).Return(nil).Maybe()
 
@@ -401,6 +403,7 @@ func TestArticleService_M2OutboundArticleFederationPayloads(t *testing.T) {
 	ctx := context.Background()
 	db, q := newCMSMockDB(t)
 	q.On("Create").Return(nil).Maybe()
+	q.On("CreateOrUpdate").Return(nil).Maybe()
 	q.On("Delete").Return(nil).Maybe()
 	q.On("First", mock.Anything).Return(nil).Maybe()
 

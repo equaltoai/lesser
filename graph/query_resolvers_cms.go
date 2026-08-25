@@ -347,7 +347,7 @@ func (r *queryResolver) Draft(ctx context.Context, id string) (*model.Draft, err
 	return r.convertCMSDraft(ctx, draft), nil
 }
 
-func (r *queryResolver) DraftPreview(ctx context.Context, id string) (*model.DraftPreview, error) {
+func (r *queryResolver) DraftPreview(ctx context.Context, id string, includeAccessUrls *bool) (*model.DraftPreview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -362,13 +362,43 @@ func (r *queryResolver) DraftPreview(ctx context.Context, id string) (*model.Dra
 		return nil, errors.New("draft service is not available")
 	}
 
-	draft, _, err := drafts.DraftReviewForCaller(ctx, username, strings.TrimSpace(id))
+	draft, bindings, err := drafts.DraftEditorialMediaForCaller(ctx, username, strings.TrimSpace(id))
 	if err != nil {
 		return nil, err
 	}
 
 	rendered, renderErr := cms.RenderDraftPreview(draft)
-	return r.convertCMSDraftPreview(draft, rendered, renderErr), nil
+	return r.convertCMSDraftPreview(ctx, draft, bindings, rendered, renderErr, cmsIncludeAccessUrls(includeAccessUrls))
+}
+
+// DraftEditorialMediaAccess is the resolver for the draftEditorialMediaAccess field.
+func (r *queryResolver) DraftEditorialMediaAccess(ctx context.Context, draftID string, mediaID string) (*model.EditorialMediaAccess, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	caller, _, err := r.requireActingIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	drafts := r.Registry.Drafts()
+	mediaService := r.Registry.Media()
+	if drafts == nil || mediaService == nil {
+		return nil, errors.New("editorial media services are unavailable")
+	}
+	bound, err := drafts.BoundEditorialMediaForCaller(ctx, caller, strings.TrimSpace(draftID), strings.TrimSpace(mediaID))
+	if err != nil {
+		return nil, err
+	}
+	access, err := mediaService.IssueEditorialAccess(ctx, bound.MediaID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.EditorialMediaAccess{
+		MediaID:     bound.MediaID,
+		URL:         access.URL,
+		ExpiresAt:   model.Time(access.ExpiresAt),
+		ContentHash: access.ContentHash,
+	}, nil
 }
 
 func (r *queryResolver) MyDrafts(ctx context.Context, contentType *model.ObjectType, status *model.DraftStatus, first *int, after *model.Cursor) (*model.DraftConnection, error) {
@@ -1368,7 +1398,7 @@ func (r *queryResolver) MyDraftReviews(ctx context.Context, first *int, after *m
 		if verdictErr != nil {
 			return nil, verdictErr
 		}
-		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, verdicts)
+		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, verdicts, false)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -1487,7 +1517,7 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 		if e != nil {
 			return nil, e
 		}
-		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, vs)
+		node, buildErr := r.buildCMSDraftReview(ctx, review.draft, review.grant, vs, false)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -1512,7 +1542,7 @@ func (r *queryResolver) SharedDraftReviews(ctx context.Context, first *int, afte
 	}
 	return &model.DraftReviewConnection{Edges: edges, PageInfo: pageInfo, TotalCount: totalCount}, nil
 }
-func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.DraftReview, error) {
+func (r *queryResolver) DraftReview(ctx context.Context, id string, includeAccessUrls *bool) (*model.DraftReview, error) {
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
@@ -1532,5 +1562,31 @@ func (r *queryResolver) DraftReview(ctx context.Context, id string) (*model.Draf
 	if err != nil {
 		return nil, err
 	}
-	return r.buildCMSDraftReview(ctx, d, g, vs)
+	return r.buildCMSDraftReview(ctx, d, g, vs, cmsIncludeAccessUrls(includeAccessUrls))
+}
+
+// cmsIncludeAccessUrls resolves the nullable includeAccessUrls argument: absent
+// (nil) or false keeps the projection URL-free; only an explicit true mints the
+// per-usage short-lived media read URLs.
+func cmsIncludeAccessUrls(includeAccessUrls *bool) bool {
+	return includeAccessUrls != nil && *includeAccessUrls
+}
+
+func (r *queryResolver) UploadGrant(ctx context.Context, grantID string) (*model.UploadGrant, error) {
+	if err := r.requireCMSDraftsEnabled(); err != nil {
+		return nil, err
+	}
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mediaService := r.Registry.Media()
+	if mediaService == nil {
+		return nil, errors.New("media service is not available")
+	}
+	grant, url, err := mediaService.UploadGrant(ctx, username, grantID)
+	if err != nil {
+		return nil, err
+	}
+	return r.convertCMSUploadGrant(grant, url), nil
 }

@@ -4,8 +4,11 @@ exemptions:
       reason: OAuth/OIDC and owned-client OAuth management flows are REST-only (authorize/token/discovery/redirects/client registration/secret rotation).
       match:
         exact:
+            - /authorize
             - /api/v1/apps
             - /api/v1/apps/{id}/rotate_secret
+            - /register
+            - /token
         prefixes:
             - /oauth
     - id: auth_setup
@@ -111,6 +114,10 @@ routes:
       exemptedBy: protocol_infra
     - method: GET
       path: /.well-known/oauth-authorization-server
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
+      path: /.well-known/oauth-protected-resource/mcp/{username}
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
@@ -1775,6 +1782,10 @@ routes:
       policy: rest_only
       exemptedBy: auth_setup
     - method: GET
+      path: /authorize
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: GET
       path: /embed/{id}
       policy: rest_only
       exemptedBy: embeds
@@ -1830,6 +1841,10 @@ routes:
       path: /oauth/token
       policy: rest_only
       exemptedBy: oauth_oidc
+    - method: POST
+      path: /register
+      policy: rest_only
+      exemptedBy: oauth_oidc
     - method: GET
       path: /robots.txt
       policy: rest_only
@@ -1854,4 +1869,8 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
+    - method: POST
+      path: /token
+      policy: rest_only
+      exemptedBy: oauth_oidc
 

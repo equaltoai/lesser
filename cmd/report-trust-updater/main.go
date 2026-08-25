@@ -12,7 +12,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 
@@ -126,7 +126,7 @@ func (r *ReportTrustService) UpdateReporterTrustOnDecision(ctx context.Context, 
 	}
 
 	// Store the trust relationship using DynamORM
-	err = r.db.WithContext(ctx).Model(trustRel).Create()
+	err = r.db.WithContext(ctx).Model(trustRel).CreateOrUpdate()
 	if err != nil {
 		r.logger.Error("failed to create trust relationship", zap.Error(err))
 		return err

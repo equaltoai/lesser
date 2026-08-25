@@ -220,6 +220,7 @@ func WriteDeployAssembly(repoRoot string, outDir string, version string, gitSHA 
 	if gitSHA == "" {
 		return DeployAssemblyDescriptor{}, fmt.Errorf("release git SHA is required")
 	}
+	//nolint:gosec // Release output is a publication directory whose artifacts must be readable by packaging/upload workers.
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return DeployAssemblyDescriptor{}, fmt.Errorf("create release dir: %w", err)
 	}
@@ -388,6 +389,7 @@ func WriteDeployAssembly(repoRoot string, outDir string, version string, gitSHA 
 		return DeployAssemblyDescriptor{}, fmt.Errorf("marshal deploy assembly descriptor: %w", err)
 	}
 	descriptorData = append(descriptorData, '\n')
+	//nolint:gosec // The descriptor is an intentionally public GitHub release artifact with no secret material.
 	if err := os.WriteFile(filepath.Join(outDir, DeployAssemblyManifestName), descriptorData, 0o644); err != nil {
 		return DeployAssemblyDescriptor{}, fmt.Errorf("write deploy assembly descriptor: %w", err)
 	}
@@ -600,7 +602,14 @@ func runCDKSynthJSON(repoRoot string, stackName string, contexts map[string]stri
 		return nil, cdkAssetsManifest{}, "", fmt.Errorf("cdk synth %s: %w\n%s", stackName, err, strings.TrimSpace(stderr.String()))
 	}
 
-	templateData, err := readSynthesizedTemplateFile(synthDir, stackName, stdout.Bytes())
+	synthRoot, err := os.OpenRoot(synthDir)
+	if err != nil {
+		_ = os.RemoveAll(synthDir)
+		return nil, cdkAssetsManifest{}, "", fmt.Errorf("open synth root: %w", err)
+	}
+	defer func() { _ = synthRoot.Close() }()
+
+	templateData, err := readSynthesizedTemplateFile(synthRoot, stackName, stdout.Bytes())
 	if err != nil {
 		_ = os.RemoveAll(synthDir)
 		return nil, cdkAssetsManifest{}, "", err
@@ -613,8 +622,9 @@ func runCDKSynthJSON(repoRoot string, stackName string, contexts map[string]stri
 	}
 
 	var assets cdkAssetsManifest
-	assetsPath := filepath.Join(synthDir, stackName+".assets.json")
-	if data, err := os.ReadFile(assetsPath); err == nil {
+	assetsName := stackName + ".assets.json"
+	assetsPath := filepath.Join(synthDir, assetsName)
+	if data, err := synthRoot.ReadFile(assetsName); err == nil {
 		if err := json.Unmarshal(data, &assets); err != nil {
 			_ = os.RemoveAll(synthDir)
 			return nil, cdkAssetsManifest{}, "", fmt.Errorf("parse asset manifest %s: %w", assetsPath, err)
@@ -625,9 +635,10 @@ func runCDKSynthJSON(repoRoot string, stackName string, contexts map[string]stri
 	return template, assets, synthDir, nil
 }
 
-func readSynthesizedTemplateFile(synthDir string, stackName string, stdout []byte) ([]byte, error) {
-	templatePath := filepath.Join(synthDir, stackName+".template.json")
-	templateData, err := os.ReadFile(templatePath)
+func readSynthesizedTemplateFile(synthRoot *os.Root, stackName string, stdout []byte) ([]byte, error) {
+	templateName := stackName + ".template.json"
+	templatePath := filepath.Join(synthRoot.Name(), templateName)
+	templateData, err := synthRoot.ReadFile(templateName)
 	if err == nil {
 		return templateData, nil
 	}
@@ -738,7 +749,8 @@ func readAssetData(sourcePath string, packaging string) ([]byte, error) {
 func writeArchiveEntries(archivePath string, entries []archiveEntry) error {
 	tmpPath := archivePath + ".tmp"
 
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644) // #nosec G304 -- caller controls output dir
+	//nolint:gosec // This temporary contains only the public deploy archive and must retain the archive's published 0644 mode.
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("create deploy assembly archive: %w", err)
 	}

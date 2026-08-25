@@ -53,7 +53,7 @@ func TestRound10_MarkerRepository_SaveMarker_ConflictAndCreate(t *testing.T) {
 		require.NoError(t, repo.SaveMarker(ctx, "user-1", "home", "status-1", 1))
 	})
 
-	t.Run("create error is wrapped", func(t *testing.T) {
+	t.Run("upsert error is wrapped", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
@@ -61,7 +61,7 @@ func TestRound10_MarkerRepository_SaveMarker_ConflictAndCreate(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound)
-		mockQuery.On("Create").Return(errors.New("boom"))
+		mockQuery.On("CreateOrUpdate").Return(errors.New("boom"))
 
 		repo := NewMarkerRepository(mockDB, "test-table", zap.NewNop(), nil)
 		repo.SetValidationService(nil)
@@ -73,7 +73,7 @@ func TestRound10_MarkerRepository_SaveMarker_ConflictAndCreate(t *testing.T) {
 		require.ErrorIs(t, err, ErrMarkerSaveFailed)
 	})
 
-	t.Run("create success when no existing marker", func(t *testing.T) {
+	t.Run("upsert success when no existing marker", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
@@ -81,7 +81,7 @@ func TestRound10_MarkerRepository_SaveMarker_ConflictAndCreate(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound)
-		mockQuery.On("Create").Return(nil)
+		mockQuery.On("CreateOrUpdate").Return(nil)
 
 		repo := NewMarkerRepository(mockDB, "test-table", zap.NewNop(), nil)
 		repo.SetValidationService(nil)

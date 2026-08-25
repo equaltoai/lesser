@@ -118,6 +118,12 @@ var publicRules = []PublicRule{
 	},
 	{
 		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/.well-known/oauth-protected-resource/mcp/",
+		Match:       RuleMatchSingleSegment,
+		Description: "actor-scoped MCP protected-resource metadata",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
 		Path:        "/.well-known/nodeinfo",
 		Match:       RuleMatchExact,
 		Description: "NodeInfo discovery",
@@ -232,6 +238,12 @@ var publicRules = []PublicRule{
 	},
 	{
 		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/authorize",
+		Match:       RuleMatchExact,
+		Description: "AppTheory-conventional OAuth authorization entrypoint",
+	},
+	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
 		Path:        "/oauth/authorize",
 		Match:       RuleMatchExact,
 		Description: "OAuth authorization entrypoint",
@@ -342,6 +354,18 @@ var publicRules = []PublicRule{
 		Path:        "/api/v1/notes/",
 		Match:       RuleMatchPrefix,
 		Description: "public community-note reads",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/register",
+		Match:       RuleMatchExact,
+		Description: "AppTheory-conventional dynamic OAuth client registration",
+	},
+	{
+		Methods:     []string{http.MethodPost},
+		Path:        "/token",
+		Match:       RuleMatchExact,
+		Description: "AppTheory-conventional OAuth token endpoint",
 	},
 	{
 		Methods:     []string{http.MethodPost},

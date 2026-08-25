@@ -18,8 +18,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
 	"go.uber.org/zap"
 )
 
@@ -200,7 +203,7 @@ func TestMain_WiresAppTheoryStart_Round12(t *testing.T) {
 	db := new(dynamormmocks.MockDB)
 	query := new(dynamormmocks.MockQuery)
 	db.On("Model", mock.Anything).Return(query)
-	query.On("Create").Return(nil)
+	query.On("CreateOrUpdate").Return(nil)
 
 	processor = &FederationAggregatorProcessor{
 		db:                           db,
@@ -229,7 +232,7 @@ func TestProcessSQSMessage_Round12(t *testing.T) {
 	db := new(dynamormmocks.MockDB)
 	query := new(dynamormmocks.MockQuery)
 	db.On("Model", mock.Anything).Return(query)
-	query.On("Create").Return(nil)
+	query.On("CreateOrUpdate").Return(nil)
 
 	p := &FederationAggregatorProcessor{
 		db:                           db,
@@ -248,7 +251,7 @@ func TestHandleSQS_AndHandleEvent_Round12(t *testing.T) {
 	db := new(dynamormmocks.MockDB)
 	query := new(dynamormmocks.MockQuery)
 	db.On("Model", mock.Anything).Return(query)
-	query.On("Create").Return(nil)
+	query.On("CreateOrUpdate").Return(nil)
 
 	repo := &fakeFederationActivityRepo{}
 	p := &FederationAggregatorProcessor{
@@ -278,7 +281,7 @@ func TestHandleEventBridgeEvent_DefaultsHourly_Round12(t *testing.T) {
 	db := new(dynamormmocks.MockDB)
 	query := new(dynamormmocks.MockQuery)
 	db.On("Model", mock.Anything).Return(query)
-	query.On("Create").Return(nil)
+	query.On("CreateOrUpdate").Return(nil)
 
 	repo := &fakeFederationActivityRepo{}
 	p := &FederationAggregatorProcessor{
@@ -339,7 +342,7 @@ func TestHandleAggregationEvent_FullPath_Round12(t *testing.T) {
 	db := new(dynamormmocks.MockDB)
 	query := new(dynamormmocks.MockQuery)
 	db.On("Model", mock.Anything).Return(query)
-	query.On("Create").Return(nil).Once()
+	query.On("CreateOrUpdate").Return(nil).Once()
 
 	p := &FederationAggregatorProcessor{
 		db:                           db,
@@ -446,24 +449,40 @@ func TestFederationAggregator_StoreAggregation_Round12(t *testing.T) {
 	}
 
 	agg := &FederationAggregation{}
-	query.On("Create").Return(nil).Once()
+	query.On("CreateOrUpdate").Return(nil).Once()
 	require.NoError(t, p.storeAggregation(context.Background(), agg))
 
 	query = new(dynamormmocks.MockQuery)
 	db = new(dynamormmocks.MockDB)
 	db.On("Model", mock.Anything).Return(query)
 	p.db = db
-	query.On("Create").Return(errors.New("boom")).Once()
-	query.On("Update", mock.Anything).Return(nil).Once()
-	require.NoError(t, p.storeAggregation(context.Background(), agg))
-
-	query = new(dynamormmocks.MockQuery)
-	db = new(dynamormmocks.MockDB)
-	db.On("Model", mock.Anything).Return(query)
-	p.db = db
-	query.On("Create").Return(errors.New("boom")).Once()
-	query.On("Update", mock.Anything).Return(errors.New("nope")).Once()
+	query.On("CreateOrUpdate").Return(errors.New("boom")).Once()
 	require.Error(t, p.storeAggregation(context.Background(), agg))
+}
+
+func TestFederationAggregator_ReplayReplacesWindowSnapshot(t *testing.T) {
+	fake := fakedb.New()
+	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
+	require.NoError(t, err)
+	require.NoError(t, db.CreateTable(&FederationAggregation{}))
+
+	p := &FederationAggregatorProcessor{db: db, logger: zap.NewNop()}
+	start := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	agg := p.createAggregation(AggregationEvent{Type: "hourly", StartTime: start, EndTime: start.Add(time.Hour)})
+	agg.TotalActivities = 1
+	require.NoError(t, p.storeAggregation(context.Background(), agg))
+
+	agg.TotalActivities = 2
+	require.NoError(t, p.storeAggregation(context.Background(), agg),
+		"retrying the same aggregation window must replace its snapshot")
+
+	var persisted FederationAggregation
+	require.NoError(t, db.Model(&FederationAggregation{}).
+		Where("PK", "=", agg.PK).
+		Where("SK", "=", agg.SK).
+		First(&persisted))
+	require.Equal(t, 2, persisted.TotalActivities)
+	require.Len(t, fake.Items(FederationAggregation{}.TableName()), 1)
 }
 
 func TestFederationAggregator_TriggerAggregation_Round12(t *testing.T) {

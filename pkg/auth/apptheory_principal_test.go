@@ -12,7 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -171,6 +171,20 @@ func TestAppTheoryPrincipalResolverResolve(t *testing.T) {
 		assert.Equal(t, "@owner", principal.Claims["delegated_by"])
 		assert.Equal(t, "subject-1", principal.Claims["subject"])
 	})
+}
+
+func TestAppTheorySecurePrincipalResolver_OptionalInvalidTokenDowngradesToAnonymousForPreMigrationParity(t *testing.T) {
+	resolver := newAppTheoryPrincipalResolver(func(token string) (*Claims, error) {
+		assert.Equal(t, "expired-token", token)
+		return nil, ErrInvalidToken
+	}, zap.NewNop(), "api")
+	ctx := newTestContext("GET", "/api/v1/statuses/1", withHeaders(map[string]string{
+		"Authorization": "Bearer expired-token",
+	}))
+
+	principal, err := resolver.ResolveSecure(ctx)
+	require.NoError(t, err)
+	assert.Nil(t, principal, "Optional routes deliberately preserve the pre-SecureApp anonymous downgrade")
 }
 
 func TestAppTheoryPrincipalBridgeHydratesContext(t *testing.T) {
@@ -356,6 +370,9 @@ func TestAppTheoryPrincipalContextHelpers(t *testing.T) {
 func TestAppTheoryPrincipalUtilityFunctions(t *testing.T) {
 	assert.Nil(t, NewAppTheoryPrincipalHookFromAuthService(nil, zap.NewNop(), "api"))
 	assert.Nil(t, NewAppTheoryPrincipalHookFromAuthAndOAuthServices(nil, nil, zap.NewNop(), "api"))
+	assert.Nil(t, NewAppTheorySecurePrincipalResolverFromAuthService(nil, zap.NewNop(), "api"))
+	assert.Nil(t, NewAppTheorySecurePrincipalResolverFromOAuthService(nil, zap.NewNop(), "api"))
+	assert.Nil(t, NewAppTheorySecurePrincipalResolverFromAuthAndOAuthServices(nil, nil, zap.NewNop(), "api"))
 
 	noOpAuthBridge := CreatePrincipalContextBridgeFromAuthService(nil, zap.NewNop(), "api")
 	nextCalled := false
@@ -428,6 +445,17 @@ func TestAppTheoryPrincipalUtilityFunctions(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, principal)
 	assert.Equal(t, "alice", principal.Identity)
+
+	secureResolver := NewAppTheorySecurePrincipalResolverFromOAuthService(oauthService, zap.NewNop(), "api")
+	require.NotNil(t, secureResolver)
+	securePrincipal, err := secureResolver(newTestContext("GET", "/api/v1/me", withHeaders(map[string]string{
+		"Authorization": "Bearer " + token,
+	})))
+	require.NoError(t, err)
+	require.NotNil(t, securePrincipal)
+	assert.Equal(t, "alice", securePrincipal.Identity)
+	assert.Equal(t, []string{"read"}, securePrincipal.Scopes)
+	assert.Equal(t, apptheory.PrincipalExternal, securePrincipal.Kind)
 
 	sessionToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "alice"},

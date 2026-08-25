@@ -55,10 +55,16 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -66,9 +72,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
@@ -128,6 +136,8 @@ type Registry struct {
 	publisher streaming.Publisher
 	logger    *zap.Logger
 	config    *ServiceConfig
+	jobQueue  JobQueueServiceInterface
+	mediaS3   media.S3Service
 
 	// Service instances (lazily initialized)
 	businessLogic  BusinessLogicService
@@ -249,6 +259,17 @@ func WithConfig(config *ServiceConfig) RegistryOption {
 			return ErrConfigCannotBeNil
 		}
 		r.config = config
+		return nil
+	}
+}
+
+// WithMediaS3Service configures the media object-storage seam.
+func WithMediaS3Service(s3Service media.S3Service) RegistryOption {
+	return func(r *Registry) error {
+		if s3Service == nil {
+			return errors.New("media S3 service cannot be nil")
+		}
+		r.mediaS3 = s3Service
 		return nil
 	}
 }
@@ -976,6 +997,14 @@ func (r *Registry) Articles() *cms.ArticleService {
 
 // Drafts returns the draft service, initializing it if necessary
 func (r *Registry) Drafts() *cms.DraftService {
+	// Resolve the media service before taking the registry lock: Media() lazily
+	// initializes under the same mutex and would deadlock if called here.
+	// Resolve the media and notes services before taking the registry lock:
+	// both lazily initialize under the same mutex and would deadlock if called
+	// here.
+	mediaService := r.Media()
+	notesService := r.Notes()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -1010,6 +1039,10 @@ func (r *Registry) Drafts() *cms.DraftService {
 		r.cmsSchedulingEnabled(),
 		r.logger,
 	)
+	r.draftService.SetEditorialMediaRepository(r.storage.Media())
+	if mediaService != nil {
+		r.draftService.SetEditorialPublishMinter(cmsEditorialPublishMinter{svc: mediaService})
+	}
 	r.draftService.SetPrincipalUsernameProvider(func(ctx context.Context) (string, error) {
 		state, err := r.storage.Instance().GetInstanceState(ctx)
 		if err != nil {
@@ -1017,9 +1050,56 @@ func (r *Registry) Drafts() *cms.DraftService {
 		}
 		return state.PrimaryAdminUsername, nil
 	})
+	r.draftService.SetPromoPackageRepository(r.storage.PromoPackage())
+	if notesService != nil {
+		// The notes service is the outbound release seam for the promo gate; it
+		// creates the public/unlisted Status with the exact PUBLISHED assets.
+		r.draftService.SetPromoStatusCreator(notesService)
+	}
 	r.initialized["Drafts"] = true
 
 	return r.draftService
+}
+
+// cmsEditorialPublishMinter adapts the media service's durable publish mint to
+// the CMS publish gate's minter interface.
+type cmsEditorialPublishMinter struct {
+	svc *media.Service
+}
+
+// PublishEditorialMedia transitions one internal asset to durable public
+// serving of its exact approved bytes.
+func (a cmsEditorialPublishMinter) PublishEditorialMedia(ctx context.Context, mediaID string) (*cms.EditorialPublishedMedia, error) {
+	if a.svc == nil {
+		return nil, errors.New("editorial media publish service is unavailable")
+	}
+	published, err := a.svc.PublishMediaDurably(ctx, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	if published == nil {
+		return nil, errors.New("editorial media publish returned no durable serving")
+	}
+	return &cms.EditorialPublishedMedia{
+		MediaID:     published.MediaID,
+		ContentHash: published.ContentHash,
+		ContentType: published.ContentType,
+		FileSize:    published.FileSize,
+		Width:       published.Width,
+		Height:      published.Height,
+		URL:         published.URL,
+		S3Key:       published.S3Key,
+		PublishedAt: published.PublishedAt,
+	}, nil
+}
+
+// UnpublishEditorialMedia best-effort removes durable public serving minted for
+// one internal asset when a publish fails before the article is committed.
+func (a cmsEditorialPublishMinter) UnpublishEditorialMedia(ctx context.Context, mediaID string) error {
+	if a.svc == nil {
+		return errors.New("editorial media publish service is unavailable")
+	}
+	return a.svc.UnpublishMediaDurably(ctx, mediaID)
 }
 
 // Series returns the series service, initializing it if necessary
@@ -1400,9 +1480,7 @@ func (r *Registry) Media() *media.Service {
 
 		// Check if repositories are available
 		if mediaRepo != nil && accountRepo != nil {
-			// Create a simple job queue service if not available
-			// In production, this would be a proper SQS-based implementation
-			jobQueue := &simpleJobQueue{logger: r.logger}
+			jobQueue := r.getJobQueue()
 
 			// Create an adapter for the media service's job queue interface
 			mediaJobQueue := &mediaJobQueueAdapter{jobQueue: jobQueue}
@@ -1420,7 +1498,7 @@ func (r *Registry) Media() *media.Service {
 				sourceBucket,
 				cdnDomain,
 			)
-			r.wireMediaDeletionDependencies(r.mediaService)
+			r.wireMediaStorageDependencies(r.mediaService)
 
 			// Wire up optional streaming services if config is available
 			r.wireMediaStreamingServices(r.mediaService)
@@ -1440,25 +1518,246 @@ func (r *Registry) Media() *media.Service {
 	return r.mediaService
 }
 
-type mediaS3ObjectDeleter struct {
-	client *s3.Client
+type mediaS3API interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	CopyObject(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
 }
 
-func (d *mediaS3ObjectDeleter) DeleteMediaObject(ctx context.Context, bucket, key string) error {
-	if d == nil || d.client == nil {
+type mediaS3PresignAPI interface {
+	PresignGetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+	PresignPutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+}
+
+type mediaS3ObjectStore struct {
+	client    mediaS3API
+	presigner mediaS3PresignAPI
+}
+
+func (s *mediaS3ObjectStore) UploadFile(
+	ctx context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+) (string, error) {
+	if s == nil || s.client == nil {
+		return "", errors.New("media S3 client is unavailable")
+	}
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 bytes.NewReader(data),
+		ContentLength:        aws.Int64(int64(len(data))),
+		ContentType:          aws.String(contentType),
+		ChecksumAlgorithm:    s3types.ChecksumAlgorithmSha256,
+		ServerSideEncryption: s3types.ServerSideEncryptionAes256,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("s3://%s/%s", bucket, key), nil
+}
+
+func (s *mediaS3ObjectStore) UploadInternalFile(
+	ctx context.Context,
+	bucket string,
+	key string,
+	data []byte,
+	contentType string,
+	kmsKeyID string,
+) (string, error) {
+	if s == nil || s.client == nil {
+		return "", errors.New("media S3 client is unavailable")
+	}
+	if strings.TrimSpace(kmsKeyID) == "" {
+		return "", errors.New("editorial media KMS key is unavailable")
+	}
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 bytes.NewReader(data),
+		ContentLength:        aws.Int64(int64(len(data))),
+		ContentType:          aws.String(contentType),
+		ChecksumAlgorithm:    s3types.ChecksumAlgorithmSha256,
+		ServerSideEncryption: s3types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String(strings.TrimSpace(kmsKeyID)),
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("s3://%s/%s", bucket, key), nil
+}
+
+func (s *mediaS3ObjectStore) CopyFileToPublished(
+	ctx context.Context,
+	bucket string,
+	sourceKey string,
+	destinationKey string,
+	contentType string,
+) (string, error) {
+	if s == nil || s.client == nil {
+		return "", errors.New("media S3 client is unavailable")
+	}
+	if strings.TrimSpace(bucket) == "" || strings.TrimSpace(sourceKey) == "" || strings.TrimSpace(destinationKey) == "" {
+		return "", errors.New("published copy requires a bucket, source key, and destination key")
+	}
+	// The source is SSE-KMS under the instance key; the durable published copy
+	// is SSE-S3 so the unsigned CloudFront origin can serve the exact bytes.
+	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:               aws.String(strings.TrimSpace(bucket)),
+		Key:                  aws.String(strings.TrimSpace(destinationKey)),
+		CopySource:           aws.String(url.PathEscape(strings.TrimSpace(bucket)) + "/" + url.PathEscape(strings.TrimSpace(sourceKey))),
+		ContentType:          aws.String(strings.TrimSpace(contentType)),
+		ServerSideEncryption: s3types.ServerSideEncryptionAes256,
+		MetadataDirective:    s3types.MetadataDirectiveReplace,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("s3://%s/%s", strings.TrimSpace(bucket), strings.TrimSpace(destinationKey)), nil
+}
+
+func (s *mediaS3ObjectStore) DeleteFile(ctx context.Context, bucket, key string) error {
+	return s.DeleteMediaObject(ctx, bucket, key)
+}
+
+func (s *mediaS3ObjectStore) GeneratePresignedURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error) {
+	if s == nil || s.presigner == nil {
+		return "", errors.New("media S3 presigner is unavailable")
+	}
+	request, err := s.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(strings.TrimSpace(bucket)),
+		Key:    aws.String(strings.TrimSpace(key)),
+	}, func(options *s3.PresignOptions) {
+		options.Expires = expiry
+	})
+	if err != nil {
+		return "", err
+	}
+	return request.URL, nil
+}
+
+// PresignPutObject mints a presigned PUT for the presigned-companion upload
+// transport. The signed headers bind the object key, the exact Content-Type,
+// and the exact sha256 of the intended bytes (S3 validates the body checksum
+// on receipt, so a PUT whose bytes do not match the declared digest fails with
+// BadDigest), and the object is stored under the instance KMS key so internal
+// bytes are never world-readable. The checksum is client-declared, so it is an
+// integrity binding, NOT a size binding: a self-consistent multi-GB PUT passes
+// S3's validation. SigV4 presigned PUTs cannot express a numeric
+// content-length-range condition (that is POST-policy-only); the size cap is
+// therefore enforced at finalize, which first gates the stored object's
+// ContentLength via HeadObject and rejects+deletes an oversized object before
+// any download, then recomputes the digest over a bounded streaming read
+// (abort at MaxSizeBytes+1) as defense-in-depth, and only admits the asset
+// when both checks pass.
+func (s *mediaS3ObjectStore) PresignPutObject(ctx context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error) {
+	if s == nil || s.presigner == nil {
+		return "", errors.New("media S3 presigner is unavailable")
+	}
+	digest, err := hex.DecodeString(strings.TrimSpace(contentSHA256Hex))
+	if err != nil || len(digest) != sha256.Size {
+		return "", errors.New("declared sha256 must be a hex-encoded 32-byte digest")
+	}
+	checksum := base64.StdEncoding.EncodeToString(digest)
+	request, err := s.presigner.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(strings.TrimSpace(bucket)),
+		Key:                  aws.String(strings.TrimSpace(key)),
+		ContentType:          aws.String(strings.TrimSpace(contentType)),
+		ChecksumSHA256:       aws.String(checksum),
+		ServerSideEncryption: s3types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String(strings.TrimSpace(kmsKeyID)),
+	}, func(options *s3.PresignOptions) {
+		options.Expires = expiry
+	})
+	if err != nil {
+		return "", err
+	}
+	return request.URL, nil
+}
+
+// HeadFile returns the stored object's ContentLength and ContentType without
+// transferring the body, so finalize can reject an oversized object before any
+// bytes enter memory.
+func (s *mediaS3ObjectStore) HeadFile(ctx context.Context, bucket, key string) (int64, string, error) {
+	if s == nil || s.client == nil {
+		return 0, "", errors.New("media S3 client is unavailable")
+	}
+	output, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(strings.TrimSpace(bucket)),
+		Key:    aws.String(strings.TrimSpace(key)),
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	contentLength := int64(0)
+	if output.ContentLength != nil {
+		contentLength = aws.ToInt64(output.ContentLength)
+	}
+	contentType := ""
+	if output.ContentType != nil {
+		contentType = aws.ToString(output.ContentType)
+	}
+	return contentLength, contentType, nil
+}
+
+// DownloadFile returns a stored object's bytes and stored content type for
+// digest verification at finalize, refusing to read past maxBytes: the read
+// aborts at maxBytes+1 so an object that grew between HeadFile and GetObject
+// cannot be pulled into memory unbounded.
+func (s *mediaS3ObjectStore) DownloadFile(ctx context.Context, bucket, key string, maxBytes int64) ([]byte, string, error) {
+	if s == nil || s.client == nil {
+		return nil, "", errors.New("media S3 client is unavailable")
+	}
+	output, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(strings.TrimSpace(bucket)),
+		Key:    aws.String(strings.TrimSpace(key)),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	defer output.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(output.Body, maxBytes+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, "", errors.New("uploaded object exceeds the declared size cap")
+	}
+	contentType := ""
+	if output.ContentType != nil {
+		contentType = aws.ToString(output.ContentType)
+	}
+	return data, contentType, nil
+}
+
+func (s *mediaS3ObjectStore) DeleteMediaObject(ctx context.Context, bucket, key string) error {
+	if s == nil || s.client == nil {
 		return errors.New("media S3 client is unavailable")
 	}
-	_, err := d.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
 	return err
 }
 
-func (r *Registry) wireMediaDeletionDependencies(mediaService *media.Service) {
+func (r *Registry) wireMediaStorageDependencies(mediaService *media.Service) {
 	if mediaService == nil || r.storage == nil {
 		return
 	}
 	var metadata media.MetadataDeleter
 	if repository := r.storage.MediaMetadata(); repository != nil {
 		metadata = repository
+	}
+	if r.mediaS3 != nil {
+		mediaService.SetS3Service(r.mediaS3)
+	}
+	if repository := r.storage.UploadGrant(); repository != nil {
+		mediaService.SetUploadGrantRepository(repository)
+	}
+	if r.config != nil && r.config.Config != nil {
+		mediaService.SetEditorialKMSKeyID(r.config.Config.KMSKeyID)
 	}
 	if r.config == nil || r.config.Config == nil || r.config.Config.IntegrationTestMode {
 		mediaService.SetDeletionDependencies(nil, metadata)
@@ -1470,7 +1769,10 @@ func (r *Registry) wireMediaDeletionDependencies(mediaService *media.Service) {
 		mediaService.SetDeletionDependencies(nil, metadata)
 		return
 	}
-	mediaService.SetDeletionDependencies(&mediaS3ObjectDeleter{client: s3.NewFromConfig(*awsCfg)}, metadata)
+	client := s3.NewFromConfig(*awsCfg)
+	objectStore := &mediaS3ObjectStore{client: client, presigner: s3.NewPresignClient(client)}
+	mediaService.SetS3Service(objectStore)
+	mediaService.SetDeletionDependencies(objectStore, metadata)
 }
 
 // wireMediaStreamingServices wires up the optional transcoding, manifest, and CloudFront services
@@ -2777,11 +3079,17 @@ func (a *queueFederationAdapter) extractUsernameFromActorURI(actorURI string) st
 
 // getJobQueue returns the job queue service, creating it if necessary
 func (r *Registry) getJobQueue() JobQueueServiceInterface {
+	if r.jobQueue != nil {
+		return r.jobQueue
+	}
 	// Try to create a real SQS-based job queue service
 	if r.config != nil && r.config.Config != nil {
-		if jobQueue, err := NewJobQueueService(r.config.Config, r.logger); err == nil {
+		jobQueue, err := NewJobQueueService(r.config.Config, r.logger)
+		if err == nil {
 			return jobQueue
 		}
+		r.logger.Warn("failed to initialize SQS job queue; falling back to simple log-only queue",
+			zap.Error(err))
 	}
 
 	// Fall back to simple job queue if SQS is not available

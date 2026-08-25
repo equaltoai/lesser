@@ -17,7 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	dynamormSchema "github.com/theory-cloud/tabletheory/v3/pkg/schema"

@@ -15,7 +15,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	frameworkoauth "github.com/theory-cloud/apptheory/v4/runtime/oauth"
 	"go.uber.org/zap"
 )
 
@@ -41,6 +42,42 @@ type dynamicRegistrationNormalizedRequest struct {
 	softwareVersion         string
 	confidential            bool
 	ownerID                 string
+}
+
+// dynamicClientRegistrationWireRequest keeps Lesser's additive registration
+// metadata around AppTheory's RFC 7591 request type. The embedded framework
+// type owns the standard DCR wire fields and Lesser validates only its
+// extensions and stricter local policy afterward.
+type dynamicClientRegistrationWireRequest struct {
+	frameworkoauth.DynamicClientRegistrationRequest
+	ApplicationType string   `json:"application_type,omitempty"`
+	ClientURI       string   `json:"client_uri,omitempty"`
+	LogoURI         string   `json:"logo_uri,omitempty"`
+	Contacts        []string `json:"contacts,omitempty"`
+	TosURI          string   `json:"tos_uri,omitempty"`
+	PolicyURI       string   `json:"policy_uri,omitempty"`
+	SoftwareID      string   `json:"software_id,omitempty"`
+	SoftwareVersion string   `json:"software_version,omitempty"`
+	ClientClass     string   `json:"client_class,omitempty"`
+}
+
+type dynamicClientRegistrationWireResponse struct {
+	frameworkoauth.DynamicClientRegistrationResponse
+	ClientName              string   `json:"client_name,omitempty"`
+	RedirectURIs            []string `json:"redirect_uris,omitempty"`
+	GrantTypes              []string `json:"grant_types,omitempty"`
+	ResponseTypes           []string `json:"response_types,omitempty"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+	Scope                   string   `json:"scope,omitempty"`
+	ClientURI               string   `json:"client_uri,omitempty"`
+	LogoURI                 string   `json:"logo_uri,omitempty"`
+	Contacts                []string `json:"contacts,omitempty"`
+	TosURI                  string   `json:"tos_uri,omitempty"`
+	PolicyURI               string   `json:"policy_uri,omitempty"`
+	SoftwareID              string   `json:"software_id,omitempty"`
+	SoftwareVersion         string   `json:"software_version,omitempty"`
+	ClientClass             string   `json:"client_class,omitempty"`
+	RegistrationSource      string   `json:"registration_source,omitempty"`
 }
 
 // HandleOAuthDynamicClientRegistrationLift serves RFC 7591 dynamic client registration.
@@ -80,28 +117,31 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		return h.oauthDynamicRegistrationError(http.StatusInternalServerError, "server_error", "failed to register oauth client")
 	}
 
-	respBody := models.OAuthDynamicClientRegistrationResponse{
-		ClientID:                client.ClientID,
-		ClientIDIssuedAt:        client.CreatedAt.UTC().Unix(),
-		ClientSecretExpiresAt:   0,
-		ClientName:              client.Name,
-		RedirectURIs:            append([]string(nil), client.RedirectURIs...),
-		GrantTypes:              append([]string(nil), client.GrantTypes...),
-		ResponseTypes:           append([]string(nil), client.ResponseTypes...),
-		TokenEndpointAuthMethod: normalized.tokenEndpointAuthMethod,
-		Scope:                   strings.Join(client.Scopes, " "),
-		ClientURI:               client.ClientURI,
-		LogoURI:                 client.LogoURI,
-		Contacts:                append([]string(nil), client.Contacts...),
-		TosURI:                  client.TosURI,
-		PolicyURI:               client.PolicyURI,
-		SoftwareID:              client.SoftwareID,
-		SoftwareVersion:         client.SoftwareVersion,
-		ClientClass:             client.ClientClass,
-		RegistrationSource:      client.RegistrationSource,
+	frameworkResponse := frameworkoauth.DynamicClientRegistrationResponse{
+		ClientID:         client.ClientID,
+		ClientIDIssuedAt: client.CreatedAt.UTC().Unix(),
+		ClientSecret:     client.ClientSecret,
 	}
-	if normalized.confidential {
-		respBody.ClientSecret = client.ClientSecret
+	if !normalized.confidential {
+		frameworkResponse.ClientSecret = ""
+	}
+	respBody := dynamicClientRegistrationWireResponse{
+		DynamicClientRegistrationResponse: frameworkResponse,
+		ClientName:                        client.Name,
+		RedirectURIs:                      append([]string(nil), client.RedirectURIs...),
+		GrantTypes:                        append([]string(nil), client.GrantTypes...),
+		ResponseTypes:                     append([]string(nil), client.ResponseTypes...),
+		TokenEndpointAuthMethod:           normalized.tokenEndpointAuthMethod,
+		Scope:                             strings.Join(client.Scopes, " "),
+		ClientURI:                         client.ClientURI,
+		LogoURI:                           client.LogoURI,
+		Contacts:                          append([]string(nil), client.Contacts...),
+		TosURI:                            client.TosURI,
+		PolicyURI:                         client.PolicyURI,
+		SoftwareID:                        client.SoftwareID,
+		SoftwareVersion:                   client.SoftwareVersion,
+		ClientClass:                       client.ClientClass,
+		RegistrationSource:                client.RegistrationSource,
 	}
 
 	return apptheory.JSON(http.StatusCreated, respBody)
@@ -121,10 +161,10 @@ func (h *Handler) parseOAuthDynamicClientRegistrationRequest(ctx *apptheory.Cont
 		return nil, resp, err
 	}
 
-	var req models.OAuthDynamicClientRegistrationRequest
+	var wire dynamicClientRegistrationWireRequest
 	decoder := json.NewDecoder(bytes.NewReader(ctx.Request.Body))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil {
+	if err := decoder.Decode(&wire); err != nil {
 		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", "unsupported or malformed client metadata")
 		return nil, resp, respErr
 	}
@@ -133,13 +173,37 @@ func (h *Handler) parseOAuthDynamicClientRegistrationRequest(ctx *apptheory.Cont
 		return nil, resp, respErr
 	}
 
-	return &req, nil, nil
+	return &models.OAuthDynamicClientRegistrationRequest{
+		ClientName:              wire.ClientName,
+		RedirectURIs:            append([]string(nil), wire.RedirectURIs...),
+		Scope:                   wire.Scope,
+		GrantTypes:              append([]string(nil), wire.GrantTypes...),
+		ResponseTypes:           append([]string(nil), wire.ResponseTypes...),
+		TokenEndpointAuthMethod: wire.TokenEndpointAuthMethod,
+		ApplicationType:         wire.ApplicationType,
+		ClientURI:               wire.ClientURI,
+		LogoURI:                 wire.LogoURI,
+		Contacts:                append([]string(nil), wire.Contacts...),
+		TosURI:                  wire.TosURI,
+		PolicyURI:               wire.PolicyURI,
+		SoftwareID:              wire.SoftwareID,
+		SoftwareVersion:         wire.SoftwareVersion,
+		ClientClass:             wire.ClientClass,
+	}, nil, nil
 }
 
 func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req *models.OAuthDynamicClientRegistrationRequest) (*dynamicRegistrationNormalizedRequest, *apptheory.Response, error) {
 	if req == nil {
 		resp, err := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", "registration request body is required")
 		return nil, resp, err
+	}
+	if err := validateFrameworkDynamicClientRegistrationRequest(req); err != nil {
+		if _, redirectErr := normalizeDynamicRegistrationRedirectURIs(req.RedirectURIs); redirectErr != nil {
+			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_redirect_uri", redirectErr.Error())
+			return nil, resp, respErr
+		}
+		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+		return nil, resp, respErr
 	}
 
 	clientName := strings.TrimSpace(req.ClientName)
@@ -257,6 +321,34 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		confidential:            confidential,
 		ownerID:                 ownerID,
 	}, nil, nil
+}
+
+func validateFrameworkDynamicClientRegistrationRequest(req *models.OAuthDynamicClientRegistrationRequest) error {
+	frameworkRequest := &frameworkoauth.DynamicClientRegistrationRequest{
+		ClientName:              req.ClientName,
+		RedirectURIs:            append([]string(nil), req.RedirectURIs...),
+		TokenEndpointAuthMethod: req.TokenEndpointAuthMethod,
+		GrantTypes:              append([]string(nil), req.GrantTypes...),
+		ResponseTypes:           append([]string(nil), req.ResponseTypes...),
+		Scope:                   req.Scope,
+	}
+
+	// AllowedRedirectURIs is AppTheory's policy seam. Populate it only with
+	// redirect URIs that satisfy Lesser's HTTPS/loopback/custom-scheme policy;
+	// the sentinel keeps the allowlist non-empty when every submitted URI is
+	// unsafe, so framework validation fails closed instead of accepting all.
+	allowedRedirectURIs := []string{"https://invalid.invalid/lesser-redirect-policy"}
+	for _, redirectURI := range req.RedirectURIs {
+		redirectURI = strings.TrimSpace(redirectURI)
+		if validateDynamicRegistrationRedirectURI(redirectURI) == nil {
+			allowedRedirectURIs = append(allowedRedirectURIs, redirectURI)
+		}
+	}
+	method := strings.ToLower(strings.TrimSpace(req.TokenEndpointAuthMethod))
+	return frameworkoauth.ValidateDynamicClientRegistrationRequest(frameworkRequest, frameworkoauth.DynamicClientRegistrationPolicy{
+		AllowedRedirectURIs: allowedRedirectURIs,
+		RequirePublicClient: method == "" || method == oauthTokenEndpointAuthMethodNone,
+	})
 }
 
 func normalizeDynamicRegistrationRedirectURIs(redirectURIs []string) ([]string, error) {

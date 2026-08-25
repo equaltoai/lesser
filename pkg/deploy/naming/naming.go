@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Stage identifies a deployment stage.
@@ -133,7 +134,7 @@ func sanitizeS3BucketName(name string) string {
 	lastDash := false
 	for _, r := range raw {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			out = append(out, byte(r))
+			out = utf8.AppendRune(out, r)
 			lastDash = false
 			continue
 		}

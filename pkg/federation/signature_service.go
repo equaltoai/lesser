@@ -171,14 +171,14 @@ func (s *SignatureService) getCachedPublicKey(ctx context.Context, actorURL stri
 
 // fetchPublicKeyWithRetry fetches a public key with exponential backoff retry logic
 func (s *SignatureService) fetchPublicKeyWithRetry(ctx context.Context, actorURL string, log *zap.Logger) (crypto.PublicKey, string, string, error) {
-	const maxRetries = 3
-	retryDelays := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
+	retryDelays := []time.Duration{0, 1 * time.Second, 2 * time.Second}
+	maxRetries := len(retryDelays)
 
 	var lastErr error
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			if err := s.sleep(ctx, retryDelays[attempt-1]); err != nil {
+	for attempt, retryDelay := range retryDelays {
+		if retryDelay > 0 {
+			if err := s.sleep(ctx, retryDelay); err != nil {
 				return nil, "", "", err
 			}
 		}

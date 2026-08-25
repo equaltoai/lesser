@@ -58,6 +58,7 @@ func setupPermissiveFederationRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.M
 	}).Return(nil).Maybe()
 
 	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
 	mockQuery.On("Count").Return(int64(1), nil).Maybe()

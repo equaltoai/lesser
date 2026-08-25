@@ -477,7 +477,7 @@ func (r *InstanceRepository) SetInstanceRules(ctx context.Context, rules []stora
 
 	config := models.NewInstanceRulesConfig(string(rulesJSON))
 
-	err = r.Create(ctx, config)
+	err = r.CreateOrUpdate(ctx, config)
 	if err != nil {
 		r.logger.Error("Failed to save instance rules", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "instance rules", "configuration")
@@ -512,7 +512,7 @@ func (r *InstanceRepository) GetExtendedDescription(ctx context.Context) (string
 func (r *InstanceRepository) SetExtendedDescription(ctx context.Context, description string) error {
 	config := models.NewExtendedDescriptionConfig(description)
 
-	err := r.Create(ctx, config)
+	err := r.CreateOrUpdate(ctx, config)
 	if err != nil {
 		r.logger.Error("Failed to save extended description", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "instance metadata", "extended description")
@@ -902,7 +902,7 @@ func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string
 			userHistory.CalculateDelta(prevValue)
 		}
 
-		if err := r.historyRepo.Create(ctx, userHistory); err != nil {
+		if err := r.historyRepo.CreateOrUpdate(ctx, userHistory); err != nil {
 			r.logger.Error("Failed to record daily user metrics", zap.Error(err), zap.String("date", date))
 			return ErrorHandler.HandleCreateError(err, "instance metrics", "user metrics")
 		}
@@ -920,7 +920,7 @@ func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string
 			storageHistory.CalculateDelta(prevValue)
 		}
 
-		if err := r.historyRepo.Create(ctx, storageHistory); err != nil {
+		if err := r.historyRepo.CreateOrUpdate(ctx, storageHistory); err != nil {
 			r.logger.Error("Failed to record daily storage metrics", zap.Error(err), zap.String("date", date))
 			return ErrorHandler.HandleCreateError(err, "instance metrics", "storage metrics")
 		}
@@ -939,7 +939,7 @@ func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string
 			postHistory.CalculateDelta(prevValue)
 		}
 
-		if err := r.historyRepo.Create(ctx, postHistory); err != nil {
+		if err := r.historyRepo.CreateOrUpdate(ctx, postHistory); err != nil {
 			r.logger.Error("Failed to record daily post metrics", zap.Error(err), zap.String("date", date))
 			return ErrorHandler.HandleCreateError(err, "instance metrics", "post metrics")
 		}
@@ -956,7 +956,7 @@ func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string
 			fedHistory.CalculateDelta(prevValue)
 		}
 
-		if err := r.historyRepo.Create(ctx, fedHistory); err != nil {
+		if err := r.historyRepo.CreateOrUpdate(ctx, fedHistory); err != nil {
 			r.logger.Error("Failed to record daily federation metrics", zap.Error(err), zap.String("date", date))
 			return ErrorHandler.HandleCreateError(err, "instance metrics", "federation metrics")
 		}

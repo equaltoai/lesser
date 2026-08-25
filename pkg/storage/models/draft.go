@@ -39,8 +39,22 @@ type Draft struct {
 	ScheduledAt          *time.Time `theorydb:"attr:scheduledAt" json:"scheduled_at,omitempty"`
 	PublishFailureReason string     `theorydb:"attr:publishFailureReason" json:"publish_failure_reason,omitempty"`
 
+	// PublishAttemptedAt records the moment the draft transitioned into the
+	// publishing status. It is written ONLY by the publish transition's
+	// field-scoped repository lane (TransitionDraftToPublishing); content
+	// writers never select the attribute, so an author editing a crash-stuck
+	// publishing draft cannot re-arm the orphan-reconciliation stale-publishing
+	// horizon by advancing UpdatedAt. Absent on rows that never entered
+	// publishing and on legacy publishing rows that predate the attribute;
+	// those fall back to UpdatedAt for the sweep horizon.
+	PublishAttemptedAt *time.Time `theorydb:"attr:publishAttemptedAt,omitempty" json:"publish_attempted_at,omitempty"`
+
 	// Metadata snapshot (full object metadata for preview)
 	MetadataJSON string `theorydb:"attr:metadataJSON" json:"metadata_json,omitempty"`
+
+	// EditorialMedia is an ordered, modeled association with internal media.
+	// M2 will bind these usages into revision integrity and publication state.
+	EditorialMedia []DraftMediaUsage `theorydb:"attr:editorialMedia,omitempty" json:"editorial_media,omitempty"`
 
 	// Authoring attribution
 	GeneratedBy  string `theorydb:"attr:generatedBy,omitempty" json:"generated_by,omitempty"`
@@ -60,6 +74,21 @@ type Draft struct {
 	// Timestamps
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+
+	// ModelVersion provides optimistic concurrency for the field-scoped
+	// editorial-media writer (UpdateDraftEditorialMedia), closing the
+	// setDraftEditorialMedia lost-update seam with a version-conditioned CAS.
+	// It is deliberately NOT tagged theorydb:"version": that tag would arm
+	// TableTheory's automatic optimistic lock on every full-model content write
+	// (UpdateDraft/autosave), whose condition (`version = <read>`) fails in real
+	// DynamoDB for pre-M4 rows that never carried the attribute — every existing
+	// draft would break on its next content save. The media lane instead
+	// conditions explicitly (attribute_exists AND (attribute_not_exists OR
+	// version = read)), migrating pre-version rows on their first media write.
+	// The omitempty modifier keeps content writers from selecting a zero-valued
+	// version and resetting a versioned row; a fetched non-zero version
+	// round-trips unchanged because the field is not auto-incremented.
+	ModelVersion int `theorydb:"attr:modelVersion,omitempty" json:"-"`
 }
 
 // TableName returns the DynamoDB table backing Draft.

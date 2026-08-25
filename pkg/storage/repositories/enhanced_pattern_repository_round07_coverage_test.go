@@ -325,7 +325,7 @@ func TestEnhancedPatternRepository_CacheAndMetrics(t *testing.T) {
 		assert.GreaterOrEqual(t, cache.CacheHits, int64(3))
 	})
 
-	t.Run("SetPatternCache nil input and create-then-update fallback", func(t *testing.T) {
+	t.Run("SetPatternCache nil input and upsert success", func(t *testing.T) {
 		repo := newEnhancedPatternRepo(t, new(mocks.MockDB))
 		require.Error(t, repo.SetPatternCache(ctx, nil))
 
@@ -333,8 +333,7 @@ func TestEnhancedPatternRepository_CacheAndMetrics(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(assert.AnError).Once()
-		mockQuery.On("Update", mock.Anything).Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		repo = newEnhancedPatternRepo(t, mockDB)
 		err := repo.SetPatternCache(ctx, &models.PatternCache{PatternID: "p1", PatternType: "text"})
@@ -564,13 +563,12 @@ func TestEnhancedPatternRepository_ErrorPaths(t *testing.T) {
 		assert.ErrorIs(t, err, storage.ErrPatternCacheNotFound)
 	})
 
-	t.Run("SetPatternCache update failure is surfaced", func(t *testing.T) {
+	t.Run("SetPatternCache upsert failure is surfaced", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Create").Return(assert.AnError).Once()
-		mockQuery.On("Update", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("CreateOrUpdate").Return(assert.AnError).Once()
 
 		repo := newEnhancedPatternRepo(t, mockDB)
 		err := repo.SetPatternCache(ctx, &models.PatternCache{PatternID: "p1", PatternType: "text"})

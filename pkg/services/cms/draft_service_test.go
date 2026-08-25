@@ -51,7 +51,52 @@ func (r *memDraftRepo) UpdateDraft(ctx context.Context, authorID string, draft *
 	if strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
 		return apperrors.NotFound("draft")
 	}
+	stored, ok := r.items[r.key(authorID, draft.ID)]
+	if !ok {
+		return apperrors.NotFound("draft")
+	}
+	updated := cloneDraft(draft)
+	// The production content lane never writes PublishAttemptedAt (the
+	// transition lane is its only writer), so preserve the stored publish-attempt
+	// stamp: an author editing a crash-stuck publishing draft must not re-arm
+	// the stale-publishing sweep.
+	if stored.PublishAttemptedAt != nil {
+		stamp := *stored.PublishAttemptedAt
+		updated.PublishAttemptedAt = &stamp
+	}
+	r.items[r.key(authorID, draft.ID)] = updated
+	return nil
+}
+
+// TransitionDraftToPublishing models the production field-scoped transition
+// lane: it is the only writer of the PublishAttemptedAt stamp.
+func (r *memDraftRepo) TransitionDraftToPublishing(ctx context.Context, authorID string, draft *models.Draft) error {
+	if draft == nil || strings.TrimSpace(authorID) == "" {
+		return apperrors.ValidationFailedWithField("draft")
+	}
+	if err := draft.UpdateKeys(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
+		return apperrors.NotFound("draft")
+	}
+	if _, ok := r.items[r.key(authorID, draft.ID)]; !ok {
+		return apperrors.NotFound("draft")
+	}
 	r.items[r.key(authorID, draft.ID)] = cloneDraft(draft)
+	return nil
+}
+
+func (r *memDraftRepo) UpdateDraftEditorialMedia(ctx context.Context, authorID string, draft *models.Draft) error {
+	if draft == nil || strings.TrimSpace(authorID) == "" {
+		return apperrors.ValidationFailedWithField("draft")
+	}
+	stored, ok := r.items[r.key(authorID, draft.ID)]
+	if !ok || strings.TrimSpace(draft.AuthorID) != strings.TrimSpace(authorID) {
+		return apperrors.NotFound("draft")
+	}
+	stored.EditorialMedia = append([]models.DraftMediaUsage(nil), draft.EditorialMedia...)
+	stored.UpdatedAt = draft.UpdatedAt
 	return nil
 }
 
@@ -83,6 +128,17 @@ func cloneDraft(d *models.Draft) *models.Draft {
 	if d.ScheduledAt != nil {
 		v := *d.ScheduledAt
 		cp.ScheduledAt = &v
+	}
+	if d.PublishAttemptedAt != nil {
+		v := *d.PublishAttemptedAt
+		cp.PublishAttemptedAt = &v
+	}
+	cp.EditorialMedia = append([]models.DraftMediaUsage(nil), d.EditorialMedia...)
+	for i := range cp.EditorialMedia {
+		if d.EditorialMedia[i].InlinePosition != nil {
+			position := *d.EditorialMedia[i].InlinePosition
+			cp.EditorialMedia[i].InlinePosition = &position
+		}
 	}
 	return &cp
 }
@@ -191,6 +247,8 @@ func TestDraftServicePreviewUsesPublicationRenderer(t *testing.T) {
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-preview",
@@ -326,6 +384,8 @@ func TestDraftServiceScheduleAndCancelDraft(t *testing.T) {
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	draft := &models.Draft{
 		ID:              "draft-1",
@@ -387,6 +447,8 @@ func TestDraftServicePublishDraftCreatesArticleAndDeletesDraft(t *testing.T) {
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-1",
@@ -425,6 +487,8 @@ func TestDraftServicePublishDraftAlreadyExistsSameAuthorMarksFailed(t *testing.T
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	existing := &models.Article{
 		Object: models.Object{
@@ -476,6 +540,8 @@ func TestDraftServicePublishDraftAlreadyExistsDifferentAuthorMarksFailed(t *test
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "alice", nil })
 
 	existing := &models.Article{
 		Object: models.Object{
@@ -519,6 +585,8 @@ func TestCMSSmokeDraftLifecycle(t *testing.T) {
 		scheduling:     true,
 		logger:         zap.NewNop(),
 	}
+	// The owner is the instance principal, so the doctrine floor is implicit.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "smoke", nil })
 
 	draft := &models.Draft{
 		ID:            "draft-smoke",

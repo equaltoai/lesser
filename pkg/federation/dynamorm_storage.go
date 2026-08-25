@@ -34,7 +34,7 @@ type dynamormFederationActorRepository interface {
 }
 
 type dynamormFederationActivityRepository interface {
-	Create(ctx context.Context, activity *models.FederationActivity) error
+	CreateOrUpdate(ctx context.Context, activity *models.FederationActivity) error
 }
 
 type dynamormFederationRelationshipRepository interface {
@@ -143,29 +143,14 @@ func (s *DynamORMFederationStorage) CacheRemoteActor(ctx context.Context, handle
 	// Update keys for DynamORM
 	remoteActor.UpdateKeys()
 
-	// Store in database
-	err := s.db.WithContext(ctx).Model(remoteActor).Create()
-	if err != nil {
-		// If already exists, update it
-		if dynamormErrors.IsConditionFailed(err) {
-			err = s.db.WithContext(ctx).Model(remoteActor).
-				Where("PK", "=", remoteActor.PK).
-				Where("SK", "=", remoteActor.SK).
-				Update()
-			if err != nil {
-				zap.L().Error("failed to update cached remote actor",
-					zap.String("handle", canonicalHandle),
-					zap.String("actorID", cachedActor.ID),
-					zap.Error(err))
-				return errors.Join(ErrRemoteActorCacheUpdateFailed, err)
-			}
-		} else {
-			zap.L().Error("failed to cache remote actor",
-				zap.String("handle", canonicalHandle),
-				zap.String("actorID", cachedActor.ID),
-				zap.Error(err))
-			return errors.Join(ErrRemoteActorCacheStoreFailed, err)
-		}
+	// Remote actors are refreshable cache rows; key rotation and concurrent
+	// resolution must replace the deterministic handle entry.
+	if err := s.db.WithContext(ctx).Model(remoteActor).CreateOrUpdate(); err != nil {
+		zap.L().Error("failed to cache remote actor",
+			zap.String("handle", canonicalHandle),
+			zap.String("actorID", cachedActor.ID),
+			zap.Error(err))
+		return errors.Join(ErrRemoteActorCacheStoreFailed, err)
 	}
 
 	return nil
@@ -190,7 +175,10 @@ func (s *DynamORMFederationStorage) RecordFederationActivity(ctx context.Context
 		modelActivity.InboundSize = activity.ByteSize
 	}
 
-	return s.federationActivityRepository.Create(ctx, modelActivity)
+	// Legacy callers do not consistently provide an activity ID. Their
+	// second-granularity keys can therefore collide during delivery bursts;
+	// preserve the pre-v3.0.5 last-write-wins metrics behavior explicitly.
+	return s.federationActivityRepository.CreateOrUpdate(ctx, modelActivity)
 }
 
 func normalizeFederationCachedActor(handle string, actor *activitypub.Actor) *activitypub.Actor {

@@ -16,8 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend/types"
 	"github.com/google/uuid"
-	"github.com/theory-cloud/apptheory/v3/pkg/streamer"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	"github.com/theory-cloud/apptheory/v4/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 
@@ -958,8 +958,9 @@ func (np *NoteProcessor) broadcastNoteUpdate(ctx context.Context, note *storage.
 			failureCount++
 
 			// Handle stale connections by attempting cleanup
+			cleanupCtx := context.WithoutCancel(ctx)
 			go func(connID string) {
-				if cleanupErr := np.wsRepo.HandleDisconnect(context.Background(), connID); cleanupErr != nil {
+				if cleanupErr := np.wsRepo.HandleDisconnect(cleanupCtx, connID); cleanupErr != nil {
 					np.logger.Warn("failed to cleanup stale connection",
 						zap.String("connection_id", connID),
 						zap.Error(cleanupErr))

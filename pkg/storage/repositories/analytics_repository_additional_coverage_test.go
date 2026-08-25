@@ -56,6 +56,7 @@ func setupPermissiveAnalyticsRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.Mo
 	}).Return(nil).Maybe()
 
 	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Count").Return(int64(1), nil).Maybe()
@@ -729,7 +730,7 @@ func TestTrendingRepository_storeTrendInternal_ErrorPaths(t *testing.T) {
 
 		mockDB.On("WithContext", ctx).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.HashtagTrend")).Return(mockQuery)
-		mockQuery.On("Create").Return(errors.New("create failed")).Once()
+		mockQuery.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 		require.Error(t, repo.storeTrendInternal(ctx, model, "hashtag", model.Name))
 	})
@@ -806,7 +807,7 @@ func TestTrendingRepository_RecordEngagement_CreateError(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.EngagementMetrics")).Return(mockQuery)
-	mockQuery.On("Create").Return(errors.New("create failed")).Once()
+	mockQuery.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 	err := repo.RecordEngagement(ctx, "status", "status-1", "2025-01-01", &storage.EngagementData{Views: 1})
 	require.Error(t, err)
@@ -982,7 +983,7 @@ func TestTrendingRepository_RecordModerationAction_NotFoundAndCreateError(t *tes
 		mockDB.On("Model", mock.AnythingOfType("*models.ModerationAnalytics")).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
-		mockQuery.On("Create").Return(nil).Once()
+		mockQuery.On("CreateOrUpdate").Return(nil).Once()
 
 		require.NoError(t, repo.RecordModerationAction(ctx, "2025-01-01", "spam", &storage.ModerationAction{
 			Resolved:       false,
@@ -1000,7 +1001,7 @@ func TestTrendingRepository_RecordModerationAction_NotFoundAndCreateError(t *tes
 		mockDB.On("Model", mock.AnythingOfType("*models.ModerationAnalytics")).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
-		mockQuery.On("Create").Return(errors.New("create failed")).Once()
+		mockQuery.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 		require.Error(t, repo.RecordModerationAction(ctx, "2025-01-01", "spam", &storage.ModerationAction{
 			Resolved:    true,
@@ -1034,7 +1035,7 @@ func TestTrendingRepository_StoreEngagementMetrics_CreateError(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.EngagementMetrics")).Return(mockQuery)
-	mockQuery.On("Create").Return(errors.New("create failed")).Once()
+	mockQuery.On("CreateOrUpdate").Return(errors.New("create failed")).Once()
 
 	err := repo.StoreEngagementMetrics(ctx, &storage.EngagementMetrics{
 		StatusID:         "status-1",

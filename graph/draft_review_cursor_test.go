@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/services"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -38,23 +39,21 @@ func (*cursorRecordingDraftRepository) RevokeDraftReviewGrant(context.Context, *
 	return nil
 }
 
-func (*cursorRecordingDraftRepository) GetDraftReviewGrant(context.Context, string, string, string) (*models.DraftReviewGrant, error) {
-	return nil, nil
+func (r *cursorRecordingDraftRepository) GetDraftReviewGrant(_ context.Context, owner, draft, reviewer string) (*models.DraftReviewGrant, error) {
+	for _, source := range [][]*models.DraftReviewGrant{r.ownedDraftReviews, r.sharedDraftReviews} {
+		for _, grant := range source {
+			if grant != nil && grant.OwnerID == owner && grant.DraftID == draft && grant.Reviewer == reviewer {
+				copy := *grant
+				return &copy, nil
+			}
+		}
+	}
+	return nil, storage.ErrNotFound
 }
 
 func (r *cursorRecordingDraftRepository) ListActiveDraftReviewGrants(_ context.Context, _ string, _ int, cursor string) ([]*models.DraftReviewGrant, string, error) {
 	r.sharedDraftReviewsCursor = cursor
 	return r.sharedDraftReviews, "", nil
-}
-
-func (r *cursorRecordingDraftRepository) CountActiveDraftReviewGrants(_ context.Context, reviewer string) (int, error) {
-	count := 0
-	for _, grant := range r.sharedDraftReviews {
-		if grant != nil && grant.Reviewer == reviewer && grant.RevokedAt == nil {
-			count++
-		}
-	}
-	return count, nil
 }
 
 func (r *cursorRecordingDraftRepository) ListDraftReviewGrants(_ context.Context, owner, draftID string) ([]*models.DraftReviewGrant, error) {

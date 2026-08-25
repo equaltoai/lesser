@@ -6,14 +6,14 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap"
 )
 
 func TestRound12_ZeroCoverageTargets(t *testing.T) {
 	require.NotNil(t, failedToConvertStatus())
 
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 	RegisterHealthRoutes(app, nil, zap.NewNop())
 
 	h := &Handler{

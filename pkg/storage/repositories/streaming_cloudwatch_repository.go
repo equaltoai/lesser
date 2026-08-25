@@ -42,7 +42,7 @@ func (r *StreamingCloudWatchRepository) CacheQualityBreakdown(ctx context.Contex
 	metrics := &models.StreamingCloudWatchMetrics{}
 	metrics.SetQualityBreakdown(mediaID, qualityMetrics)
 
-	return r.ValidateAndCreate(ctx, metrics)
+	return r.ValidateAndCreateOrUpdate(ctx, metrics)
 }
 
 // GetGeographicData retrieves cached geographic distribution metrics

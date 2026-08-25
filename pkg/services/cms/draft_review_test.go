@@ -122,15 +122,6 @@ func (r *reviewMemRepo) ListActiveDraftReviewGrants(_ context.Context, reviewer 
 	}
 	return out, nextCursor, nil
 }
-func (r *reviewMemRepo) CountActiveDraftReviewGrants(_ context.Context, reviewer string) (int, error) {
-	count := 0
-	for _, g := range r.grants {
-		if g.Reviewer == reviewer && g.RevokedAt == nil {
-			count++
-		}
-	}
-	return count, nil
-}
 func (r *reviewMemRepo) ListDraftReviewGrants(_ context.Context, owner, draft string) ([]*models.DraftReviewGrant, error) {
 	r.listGrantCalls++
 	if r.listGrantErr != nil {
@@ -230,22 +221,67 @@ func TestDraftReviewContentHashUsesCanonicalReviewedFields(t *testing.T) {
 		Slug:          "first-slug",
 		MetadataJSON:  `{"version":1}`,
 	}
-	original := draftReviewContentHash(draft)
+	original := draftReviewContentHash(draft, nil)
 	require.Len(t, original, 64)
 	require.Equal(t, original, DraftReviewContentHash(draft))
 
 	draft.Slug = "renamed"
-	require.NotEqual(t, original, draftReviewContentHash(draft), "the published permalink requires re-review")
+	require.NotEqual(t, original, draftReviewContentHash(draft, nil), "the published permalink requires re-review")
 	draft.Slug = "first-slug"
 	draft.MetadataJSON = `{"version":2}`
 	draft.AutosaveVersion++
 	draft.UpdatedAt = time.Now().UTC()
-	require.Equal(t, original, draftReviewContentHash(draft))
+	require.Equal(t, original, draftReviewContentHash(draft, nil))
 
 	left := &models.Draft{ContentFormat: "a\x00b", Slug: "c"}
 	right := &models.Draft{ContentFormat: "a", Slug: "b\x00c"}
-	require.NotEqual(t, draftReviewContentHash(left), draftReviewContentHash(right),
+	require.NotEqual(t, draftReviewContentHash(left, nil), draftReviewContentHash(right, nil),
 		"length prefixes must keep control characters from crossing field boundaries")
+}
+
+func TestDraftReviewContentHashInlinePositionGuard(t *testing.T) {
+	position0, position2 := 0, 2
+	draft := &models.Draft{
+		ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c",
+		EditorialMedia: []models.DraftMediaUsage{
+			{MediaID: "hero", Role: models.EditorialMediaRoleHero},
+			{MediaID: "i0", Role: models.EditorialMediaRoleInline, InlinePosition: &position0},
+			{MediaID: "i1", Role: models.EditorialMediaRoleInline, InlinePosition: &position2},
+		},
+	}
+	digests := map[string]string{"hero": "d1", "i0": "d2", "i1": "d3"}
+
+	// Golden value produced by the pre-fix encoding (nil position as
+	// uint64(int64(-1)) == math.MaxUint64, non-negative positions as
+	// themselves). The guarded conversion must stay byte-identical so verdicts
+	// recorded against the old revision hash remain valid after the fix.
+	require.Equal(t,
+		"0f68df96d6222855e927a3b2aaab829d22f1604bd6c37da978d7a9569585cd0a",
+		draftReviewContentHash(draft, digests))
+
+	// A nil position (hero/social-card) must not collide with inline position 0.
+	inlineAt0 := &models.Draft{
+		ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c",
+		EditorialMedia: []models.DraftMediaUsage{
+			{MediaID: "i0", Role: models.EditorialMediaRoleInline, InlinePosition: &position0},
+		},
+	}
+	require.NotEqual(t, draftReviewContentHash(draft, digests), draftReviewContentHash(inlineAt0, digests),
+		"the nil-position sentinel must not hash as inline position 0")
+
+	// Inline positions are load-bearing: moving an asset to a different slot
+	// must stale the revision hash.
+	position1 := 1
+	reshuffled := &models.Draft{
+		ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c",
+		EditorialMedia: []models.DraftMediaUsage{
+			{MediaID: "hero", Role: models.EditorialMediaRoleHero},
+			{MediaID: "i0", Role: models.EditorialMediaRoleInline, InlinePosition: &position1},
+			{MediaID: "i1", Role: models.EditorialMediaRoleInline, InlinePosition: &position2},
+		},
+	}
+	require.NotEqual(t, draftReviewContentHash(draft, digests), draftReviewContentHash(reshuffled, digests),
+		"repositioning an inline asset must change the revision hash")
 }
 
 func TestDraftReviewApprovalBindsToCurrentContent(t *testing.T) {
@@ -333,7 +369,7 @@ func TestDraftReviewStateExposesRevisionBoundEligibility(t *testing.T) {
 	require.NoError(t, err)
 	state, err := svc.DraftReviewState(ctx, "owner", "d1", draft)
 	require.NoError(t, err)
-	require.Equal(t, draftReviewContentHash(draft), state.ContentHash)
+	require.Equal(t, draftReviewContentHash(draft, nil), state.ContentHash)
 	require.Len(t, state.Grants, 1)
 	require.Contains(t, state.CurrentVerdicts, "principal")
 	require.Equal(t, verdict.ContentHash, state.CurrentVerdicts["principal"].ContentHash)
@@ -523,17 +559,17 @@ func TestDraftReviewGateHashesTheSnapshotBeingScheduledOrPublished(t *testing.T)
 func TestHumanDraftWithoutReviewersHasNoApprovalGateRead(t *testing.T) {
 	svc, repo := newReviewService(t)
 	ctx := context.Background()
-	draft, err := repo.GetDraft(ctx, "owner", "d1")
-	require.NoError(t, err)
-	draft.GeneratedBy = ""
-	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
+	// The releasing owner is the instance principal, so the vacuous gate holds:
+	// a human draft with no reviewers schedules without any approval reads
+	// beyond the operation's own draft load.
+	svc.SetPrincipalUsernameProvider(func(context.Context) (string, error) { return "owner", nil })
 
 	repo.getDraftCalls = 0
 	require.NoError(t, svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour)))
 	require.Equal(t, 1, repo.getDraftCalls, "schedule must load the draft only once")
 }
 
-func TestHumanDraftWithoutReviewersSkipsApprovalDetailReads(t *testing.T) {
+func TestHumanDraftWithoutReviewersRemainsVacuouslyApproved(t *testing.T) {
 	svc, repo := newReviewService(t)
 	ctx := context.Background()
 	draft, err := repo.GetDraft(ctx, "owner", "d1")
@@ -541,19 +577,14 @@ func TestHumanDraftWithoutReviewersSkipsApprovalDetailReads(t *testing.T) {
 	draft.GeneratedBy = ""
 	require.NoError(t, repo.UpdateDraft(ctx, "owner", draft))
 
-	repo.getDraftCalls = 0
 	repo.listGrantCalls = 0
 	repo.listVerdictCalls = 0
-	repo.afterGetDraft = func(int) {
-		panic("zero-grant approval must not reload the draft")
-	}
-
 	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
-	require.True(t, approved)
+	require.True(t, approved, "no grants and no verdicts leave the required set empty")
 	require.Equal(t, 1, repo.listGrantCalls)
-	require.Zero(t, repo.listVerdictCalls, "zero active grants make verdict history irrelevant")
-	require.Zero(t, repo.getDraftCalls, "zero active grants must return before loading draft content")
+	require.Equal(t, 1, repo.listVerdictCalls,
+		"the ever-verdict rule must always read verdict history: a revoked-grant reviewer is still required")
 }
 
 func TestDraftReviewApprovalStateRejectsLegacyHashlessVerdict(t *testing.T) {
@@ -576,7 +607,7 @@ func TestDraftReviewApprovalStateRejectsLegacyHashlessVerdict(t *testing.T) {
 	require.Contains(t, state.active, "reviewer")
 	require.NotContains(t, state.latest, "reviewer",
 		"a pre-migration verdict without a content hash must require re-review")
-	require.False(t, allActiveReviewersApproved(state))
+	require.False(t, allRequiredReviewersApproved(state))
 }
 
 func TestDraftReviewGateApprovalsAcceptsNilDraftSnapshot(t *testing.T) {
@@ -588,7 +619,7 @@ func TestDraftReviewGateApprovalsAcceptsNilDraftSnapshot(t *testing.T) {
 	require.NoError(t, err)
 
 	repo.getDraftCalls = 0
-	unanimous, principal, err := svc.draftReviewGateApprovals(ctx, "owner", "d1", nil)
+	unanimous, principal, _, err := svc.draftReviewGateApprovals(ctx, "owner", "owner", "d1", nil)
 	require.NoError(t, err)
 	require.True(t, unanimous)
 	require.True(t, principal)
@@ -644,7 +675,7 @@ func TestSubmitDraftReviewPreservesConcurrentOwnerEdit(t *testing.T) {
 	require.Equal(t, "reviewer", stored.ReviewedBy)
 	require.Equal(t, DraftReviewApproved, stored.ReviewStatus)
 	require.Equal(t, "ready", stored.EditorNotes)
-	require.NotEqual(t, verdict.ContentHash, draftReviewContentHash(stored),
+	require.NotEqual(t, verdict.ContentHash, draftReviewContentHash(stored, nil),
 		"the verdict must remain bound to the snapshot the reviewer saw")
 	approved, err := svc.HasUnanimousActiveApproval(ctx, "owner", "d1")
 	require.NoError(t, err)
@@ -701,14 +732,21 @@ func TestHumanDraftWithActiveReviewsRequiresUnanimousApproval(t *testing.T) {
 	require.NoError(t, err)
 
 	err = svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour))
-	require.ErrorContains(t, err, "every active reviewer", "a missing current verdict must block")
+	require.ErrorContains(t, err, "every required reviewer", "a missing current verdict must block")
 
 	_, err = svc.SubmitDraftReview(ctx, "reviewer-b", "owner", "d1", DraftReviewChangesRequested, "revise")
 	require.NoError(t, err)
 	_, err = svc.PublishDraft(ctx, "owner", "d1")
-	require.ErrorContains(t, err, "every active reviewer", "changes requested must block")
+	require.ErrorContains(t, err, "every required reviewer", "changes requested must block")
 
 	_, err = svc.SubmitDraftReview(ctx, "reviewer-b", "owner", "d1", DraftReviewApproved, "ready")
+	require.NoError(t, err)
+	// The releasing owner is not the instance principal, so the doctrine floor
+	// demands a current principal approval even though the content is
+	// human-written (no GeneratedBy).
+	_, err = svc.ShareDraftForReview(ctx, "owner", "d1", "principal")
+	require.NoError(t, err)
+	_, err = svc.SubmitDraftReview(ctx, "principal", "owner", "d1", DraftReviewApproved, "operator approval")
 	require.NoError(t, err)
 	require.NoError(t, svc.ScheduleDraft(ctx, "owner", "d1", time.Now().Add(time.Hour)))
 	article, err := svc.PublishDraft(ctx, "owner", "d1")
@@ -831,7 +869,9 @@ func TestSharedDraftReviewsPaginationRoundTrip(t *testing.T) {
 	for i, draftID := range []string{"older", "middle", "newer"} {
 		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
 		require.NoError(t, svc.CreateDraft(ctx, draft))
-		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: base.Add(time.Duration(i) * time.Minute)}
+		grantedAt := base.Add(time.Duration(i) * time.Minute)
+		expiresAt := grantedAt.Add(2 * time.Hour)
+		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: grantedAt, ExpiresAt: &expiresAt}
 		require.NoError(t, repo.CreateDraftReviewGrant(ctx, grant))
 	}
 
@@ -855,10 +895,11 @@ func TestSharedDraftReviewsPaginationRoundTrip(t *testing.T) {
 func TestOwnedDraftReviewsFiltersRevokedAndOrdersAssignments(t *testing.T) {
 	svc, repo := newReviewService(t)
 	now := time.Now().UTC()
-	activeLater := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d2", Reviewer: "reviewer-b", GrantedAt: now.Add(time.Minute)}
-	activeEarlier := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d1", Reviewer: "reviewer-a", GrantedAt: now}
+	expiresAt := now.Add(2 * time.Hour)
+	activeLater := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d2", Reviewer: "reviewer-b", GrantedAt: now.Add(time.Minute), ExpiresAt: &expiresAt}
+	activeEarlier := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d1", Reviewer: "reviewer-a", GrantedAt: now, ExpiresAt: &expiresAt}
 	revokedAt := now.Add(2 * time.Minute)
-	revoked := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d3", Reviewer: "reviewer-c", GrantedAt: now, RevokedAt: &revokedAt}
+	revoked := &models.DraftReviewGrant{OwnerID: "owner", DraftID: "d3", Reviewer: "reviewer-c", GrantedAt: now, ExpiresAt: &expiresAt, RevokedAt: &revokedAt}
 	require.NoError(t, repo.storeGrant(activeLater))
 	require.NoError(t, repo.storeGrant(activeEarlier))
 	require.NoError(t, repo.storeGrant(revoked))
@@ -880,7 +921,9 @@ func TestDraftReviewForCallerPagesPastFormerTwoHundredGrantCap(t *testing.T) {
 		draftID := fmt.Sprintf("paged-%03d", i)
 		draft := &models.Draft{ID: draftID, AuthorID: "owner", ContentType: activitypub.ArticleType, Title: draftID, Slug: draftID, Content: "draft", ContentFormat: "markdown"}
 		require.NoError(t, svc.CreateDraft(ctx, draft))
-		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: base.Add(time.Duration(i) * time.Second)}
+		grantedAt := base.Add(time.Duration(i) * time.Second)
+		expiresAt := grantedAt.Add(2 * time.Hour)
+		grant := &models.DraftReviewGrant{OwnerID: "owner", DraftID: draftID, Reviewer: "reviewer", GrantedAt: grantedAt, ExpiresAt: &expiresAt}
 		require.NoError(t, repo.CreateDraftReviewGrant(ctx, grant))
 	}
 

@@ -1,123 +1,108 @@
 package main
 
 import (
-	"reflect"
+	"bufio"
+	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	apiHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"go.uber.org/zap/zaptest"
 )
 
-type routeAuthState struct {
-	authRequired     bool
-	optionalAuth     bool
-	requiredScopes   []string
-	requiredAnyScope []string
+func TestConfigureRoutes_PostureInventoryParity(t *testing.T) {
+	logger = zaptest.NewLogger(t)
+	apiHandler = &apiHandlers.Handler{}
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
+	configureRoutes(app)
+	actual := configuredSecureRoutes(app)
+
+	file, err := os.Open("testdata/secure_route_posture_inventory.tsv") // #nosec G304 -- committed test fixture.
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, file.Close()) })
+
+	scanner := bufio.NewScanner(file)
+	require.True(t, scanner.Scan())
+	require.Equal(t, "route\tsecure_posture\tsecure_scopes\tpre_classification\tlegacy_route_auth", scanner.Text())
+	seen := make(map[string]struct{})
+	for scanner.Scan() {
+		columns := strings.Split(scanner.Text(), "\t")
+		require.Len(t, columns, 5, scanner.Text())
+		route, posture, scopes, preClassification, legacyAuth := columns[0], columns[1], columns[2], columns[3], columns[4]
+		registered, ok := actual[route]
+		require.True(t, ok, route)
+		require.Equal(t, posture, string(registered.Posture), route)
+		require.Equal(t, scopes, strings.Join(registered.Scopes, ","), route)
+
+		expectedPosture := string(apptheory.AuthPosturePublic)
+		switch {
+		case preClassification == "contract_auth/internal_only":
+			expectedPosture = string(apptheory.AuthPostureInternalOnly)
+		case legacyAuth == "optionalAuth":
+			expectedPosture = string(apptheory.AuthPostureOptional)
+		case strings.HasPrefix(legacyAuth, "require"), preClassification == "auth_required":
+			expectedPosture = string(apptheory.AuthPostureAuthenticated)
+		}
+		require.Equal(t, expectedPosture, posture, route+" changed its pre-migration public/authenticated split")
+		seen[route] = struct{}{}
+	}
+	require.NoError(t, scanner.Err())
+	require.Len(t, seen, len(actual), "every registered API route must have a pre-migration parity row")
 }
 
-func TestConfigureRoutes_AuthOptions(t *testing.T) {
+func TestConfigureRoutes_SecurePostures(t *testing.T) {
 	logger = zaptest.NewLogger(t)
 	apiHandler = &apiHandlers.Handler{}
 
-	app := apptheory.New()
+	app := apptheory.NewSecure(apptheory.SecureOptions{Tier: apptheory.TierP2})
 	configureRoutes(app)
+	routes := configuredSecureRoutes(app)
 
-	routes := configuredRouteAuthStates(t, app)
-
-	require.Equal(t, routeAuthState{optionalAuth: true}, routes["POST /api/v1/apps"])
-	require.Equal(t, routeAuthState{}, routes["POST /api/v1/auth/webauthn/signup/begin"])
-	require.Equal(t, routeAuthState{}, routes["POST /api/v1/auth/webauthn/signup/finish"])
-	require.Equal(t, routeAuthState{
-		authRequired:   true,
-		requiredScopes: []string{"read"},
-	}, routes["GET /api/v1/accounts/verify_credentials"])
-	require.Equal(t, routeAuthState{
-		authRequired: true,
-		requiredAnyScope: []string{
-			"follow",
-			"write:follows",
-			"write",
-		},
-	}, routes["POST /api/v1/accounts/{id}/follow"])
-	require.Equal(t, routeAuthState{optionalAuth: true}, routes["GET /api/v1/statuses/{id}"])
-	require.Equal(t, routeAuthState{authRequired: true}, routes["GET /api/v1/admin/accounts"])
-	require.Equal(t, routeAuthState{
-		authRequired:   true,
-		requiredScopes: []string{"admin"},
-	}, routes["GET /api/v1/admin/agents/policy"])
-	require.Equal(t, routeAuthState{
-		authRequired: true,
-		requiredAnyScope: []string{
-			"admin",
-			"admin:read",
-		},
-	}, routes["GET /api/v1/admin/skills/proposals"])
-	require.Equal(t, routeAuthState{
-		authRequired: true,
-		requiredAnyScope: []string{
-			"admin",
-			"admin:write",
-		},
-	}, routes["POST /api/v1/admin/skills/{skillId}/revisions/{revisionNumber}/approve"])
-	require.Equal(t, routeAuthState{authRequired: true}, routes["POST /api/v1/trust/previews"])
-	require.Equal(t, routeAuthState{}, routes["POST /api/v1/notifications/deliver"])
-	require.Equal(t, routeAuthState{}, routes["POST /api/v1/agents/{username}/access-leases/{leaseID}/token"])
-
-	// Rate-limited conversation lookup (CSR-031 regression): authenticated read
-	// access with rate limiting to prevent unbound remote actor fetches.
-	require.Equal(t, routeAuthState{
-		authRequired:   true,
-		requiredScopes: []string{"read"},
-	}, routes["GET /api/v1/conversations/lookup"])
-
-	// Public skill catalog routes (CSR-039 route registration coverage): these
-	// routes are registered with optional auth and rate limiting at the route
-	// level. The scan-bound enforcement lives in pkg/services/skills.ListCatalog
-	// (maxCatalogScanRevisions cap). This assertion confirms correct route wiring
-	// and auth posture, not rate-limit functionality.
-	require.Equal(t, routeAuthState{optionalAuth: true}, routes["GET /api/v1/skills/catalog"])
-	require.Equal(t, routeAuthState{optionalAuth: true}, routes["GET /api/v1/skills"])
+	require.Equal(t, apptheory.AuthPostureOptional, routes["POST /api/v1/apps"].Posture)
+	require.Equal(t, apptheory.AuthPosturePublic, routes["POST /api/v1/auth/webauthn/signup/begin"].Posture)
+	require.Equal(t, apptheory.AuthPostureAuthenticated, routes["GET /api/v1/accounts/verify_credentials"].Posture)
+	require.Equal(t, []string{"read"}, routes["GET /api/v1/accounts/verify_credentials"].Scopes)
+	require.Equal(t, apptheory.AuthPostureAuthenticated, routes["POST /api/v1/accounts/{id}/follow"].Posture)
+	require.Empty(t, routes["POST /api/v1/accounts/{id}/follow"].Scopes) // any-of compatibility wrapper
+	require.Equal(t, apptheory.AuthPostureOptional, routes["GET /api/v1/statuses/{id}"].Posture)
+	require.Equal(t, apptheory.AuthPostureAuthenticated, routes["GET /api/v1/admin/accounts"].Posture)
+	require.Equal(t, []string{"admin"}, routes["GET /api/v1/admin/agents/policy"].Scopes)
+	require.Equal(t, apptheory.AuthPostureInternalOnly, routes["POST /api/v1/notifications/deliver"].Posture)
+	require.Equal(t, apptheory.AuthPosturePublic, routes["POST /api/v1/agents/{username}/access-leases/{leaseID}/token"].Posture)
+	require.Equal(t, []string{"read"}, routes["GET /api/v1/conversations/lookup"].Scopes)
+	require.Equal(t, apptheory.AuthPostureOptional, routes["GET /api/v1/skills/catalog"].Posture)
 }
 
-func configuredRouteAuthStates(t *testing.T, app *apptheory.App) map[string]routeAuthState {
-	t.Helper()
-
-	appValue := reflect.ValueOf(app)
-	require.Equal(t, reflect.Ptr, appValue.Kind())
-
-	routerValue := appValue.Elem().FieldByName("router")
-	require.True(t, routerValue.IsValid())
-	require.False(t, routerValue.IsNil())
-
-	routesValue := routerValue.Elem().FieldByName("routes")
-	require.True(t, routesValue.IsValid())
-
-	out := make(map[string]routeAuthState, routesValue.Len())
-	for i := 0; i < routesValue.Len(); i++ {
-		routeValue := routesValue.Index(i)
-		key := routeValue.FieldByName("Method").String() + " " + routeValue.FieldByName("Pattern").String()
-		out[key] = routeAuthState{
-			authRequired:     routeValue.FieldByName("AuthRequired").Bool(),
-			optionalAuth:     routeValue.FieldByName("OptionalAuth").Bool(),
-			requiredScopes:   stringSliceValue(routeValue.FieldByName("RequiredScopes")),
-			requiredAnyScope: stringSliceValue(routeValue.FieldByName("RequiredAnyScope")),
-		}
+func configuredSecureRoutes(app *apptheory.SecureApp) map[string]apptheory.SecureRoute {
+	out := make(map[string]apptheory.SecureRoute)
+	for _, route := range app.Routes() {
+		out[route.Method+" "+route.Path] = route
 	}
-
 	return out
 }
 
-func stringSliceValue(value reflect.Value) []string {
-	if !value.IsValid() || value.Len() == 0 {
-		return nil
-	}
+func TestRequireAnySecureScopePreservesAliasSemantics(t *testing.T) {
+	called := false
+	handler := requireAnySecureScope(func(*apptheory.Context) (*apptheory.Response, error) {
+		called = true
+		return &apptheory.Response{Status: 204}, nil
+	}, "read:accounts", "read")
 
-	out := make([]string, 0, value.Len())
-	for i := 0; i < value.Len(); i++ {
-		out = append(out, value.Index(i).String())
-	}
+	ctx := &apptheory.Context{AuthPrincipal: &apptheory.AuthPrincipal{Identity: "alice", Scopes: []string{"read"}}}
+	response, err := handler(ctx)
+	require.NoError(t, err)
+	require.True(t, called)
+	require.Equal(t, 204, response.Status)
 
-	return out
+	called = false
+	ctx.AuthPrincipal.Scopes = []string{"write"}
+	response, err = handler(ctx)
+	require.Nil(t, response)
+	require.False(t, called)
+	var appErr *apptheory.AppTheoryError
+	require.True(t, errors.As(err, &appErr))
+	require.Equal(t, "app.forbidden", appErr.Code)
 }

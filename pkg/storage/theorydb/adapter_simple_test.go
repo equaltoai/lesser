@@ -128,12 +128,14 @@ func (s *SimpleRepositoryStorage) StreamingConnection() interfaces.StreamingConn
 	return nil
 }
 
-func (s *SimpleRepositoryStorage) Article() interfaces.ArticleRepository         { return nil }
-func (s *SimpleRepositoryStorage) Draft() interfaces.DraftRepository             { return nil }
-func (s *SimpleRepositoryStorage) Revision() interfaces.RevisionRepository       { return nil }
-func (s *SimpleRepositoryStorage) Series() interfaces.SeriesRepository           { return nil }
-func (s *SimpleRepositoryStorage) Category() interfaces.CategoryRepository       { return nil }
-func (s *SimpleRepositoryStorage) Publication() interfaces.PublicationRepository { return nil }
+func (s *SimpleRepositoryStorage) Article() interfaces.ArticleRepository           { return nil }
+func (s *SimpleRepositoryStorage) Draft() interfaces.DraftRepository               { return nil }
+func (s *SimpleRepositoryStorage) UploadGrant() interfaces.UploadGrantRepository   { return nil }
+func (s *SimpleRepositoryStorage) PromoPackage() interfaces.PromoPackageRepository { return nil }
+func (s *SimpleRepositoryStorage) Revision() interfaces.RevisionRepository         { return nil }
+func (s *SimpleRepositoryStorage) Series() interfaces.SeriesRepository             { return nil }
+func (s *SimpleRepositoryStorage) Category() interfaces.CategoryRepository         { return nil }
+func (s *SimpleRepositoryStorage) Publication() interfaces.PublicationRepository   { return nil }
 func (s *SimpleRepositoryStorage) PublicationMember() interfaces.PublicationMemberRepository {
 	return nil
 }

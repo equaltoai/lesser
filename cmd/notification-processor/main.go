@@ -18,8 +18,8 @@ import (
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	"github.com/theory-cloud/apptheory/v3/pkg/streamer"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	"github.com/theory-cloud/apptheory/v4/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 
@@ -518,18 +518,17 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 	// Create cost tracking record
 	costTracking := costBuilder.Build()
 
-	// Store cost tracking record asynchronously to avoid impacting delivery performance
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := np.storeCostTracking(ctx, costTracking); err != nil {
-			np.logger.Warn("failed to store notification cost tracking",
-				zap.String("notification_id", notification.ID),
-				zap.String("channel", channel),
-				zap.Error(err))
-		}
-	}()
+	// Keep cost persistence inside the SQS invocation lifecycle. Lambda may
+	// freeze execution immediately after the handler returns, so detached work
+	// can race with the next record and is not a reliable delivery mechanism.
+	costCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := np.storeCostTracking(costCtx, costTracking); err != nil {
+		np.logger.Warn("failed to store notification cost tracking",
+			zap.String("notification_id", notification.ID),
+			zap.String("channel", channel),
+			zap.Error(err))
+	}
 
 	np.logger.Info("delivery attempt completed",
 		zap.String("notification_id", notification.ID),

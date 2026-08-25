@@ -336,7 +336,7 @@ func (r *InstanceHealthRepository) SaveHealthSummary(ctx context.Context, summar
 	}
 
 	// Save using summary repository
-	err := r.summaryRepo.Create(ctx, summary)
+	err := r.summaryRepo.ValidateAndCreateOrUpdate(ctx, summary)
 	if err != nil {
 		r.logger.Error("Failed to save health summary",
 			zap.String("domain", summary.Domain),

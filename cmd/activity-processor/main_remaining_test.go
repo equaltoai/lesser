@@ -23,7 +23,8 @@ func TestActivityProcessor_RemoteAnnounceAndRemoteObjectReference(t *testing.T) 
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	objectRepo := testmocks.NewMockObjectRepository()
 	actorRepo := testmocks.NewMockActorRepository()
@@ -80,7 +81,8 @@ func TestActivityProcessor_DeletionHandlersAndErrorBranches(t *testing.T) {
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Create").Return(nil)
+	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Maybe()
 
 	ap := &ActivityProcessor{
 		db:     mockDB,

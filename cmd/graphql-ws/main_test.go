@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
@@ -38,11 +38,15 @@ func newWebSocketEvent(routeKey, connectionID, body string, query map[string]str
 	}
 }
 
-func newWebSocketApp(s *wsServer) *apptheory.App {
-	app := apptheory.New()
-	app.WebSocket("$connect", s.handleConnect)
-	app.WebSocket("$disconnect", s.handleDisconnect)
-	app.WebSocket("$default", s.handleDefault)
+func newWebSocketApp(s *wsServer) *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier:              apptheory.TierP2,
+		PrincipalResolver: s.resolveWebSocketPrincipal,
+		WebSocketSupport:  true,
+	})
+	app.WebSocket("$connect", s.handleConnect, apptheory.Optional())
+	app.WebSocket("$disconnect", s.handleDisconnect, apptheory.Optional())
+	app.WebSocket("$default", s.handleDefault, apptheory.Optional())
 	return app
 }
 

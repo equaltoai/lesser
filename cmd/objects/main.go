@@ -26,7 +26,7 @@ import (
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
-	apptheory "github.com/theory-cloud/apptheory/v3/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
 	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"go.uber.org/zap"
 )
@@ -147,15 +147,18 @@ func NewHandler() *Handler {
 }
 
 // RegisterRoutes registers all ActivityPub object routes.
-func (h *Handler) RegisterRoutes(app *apptheory.App) error {
+func (h *Handler) RegisterRoutes(app *apptheory.SecureApp) error {
 	return registerObjectsRoutes(app, h.HandleGetObject)
 }
 
-func registerObjectsRoutes(app *apptheory.App, handleGetObject apptheory.Handler) error {
+func registerObjectsRoutes(app *apptheory.SecureApp, handleGetObject apptheory.Handler) error {
+	if app == nil {
+		return nil
+	}
 	for _, route := range objectsRouteInventory() {
 		switch route.Method {
 		case http.MethodGet:
-			app.Get(route.Path, handleGetObject)
+			app.Get(route.Path, handleGetObject, apptheory.Public())
 		default:
 			return fmt.Errorf("unsupported objects route method %q for %s", route.Method, route.Path)
 		}
@@ -1064,9 +1067,10 @@ func runObjects() {
 	})
 }
 
-func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
-	app := apptheory.New(
-		apptheory.WithCORS(apptheory.CORSConfig{
+func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.SecureApp {
+	app := apptheory.NewSecure(apptheory.SecureOptions{
+		Tier: apptheory.TierP2,
+		CORS: apptheory.CORSConfig{
 			AllowedOrigins:   []string{"*"},
 			AllowCredentials: false,
 			AllowHeaders: []string{
@@ -1082,12 +1086,12 @@ func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
 				common.XLesserForwardedHost,
 				common.XLesserForwardedProto,
 			},
-		}),
-		apptheory.WithLimits(apptheory.Limits{
+		},
+		Limits: apptheory.Limits{
 			MaxRequestBytes:  1024 * 1024,
 			MaxResponseBytes: 0,
-		}),
-	)
+		},
+	})
 
 	// Panic recovery middleware (MUST be first to catch all panics).
 	app.Use(objectsPanicRecovery(lambdaLogger))
