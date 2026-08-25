@@ -173,8 +173,8 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 		if !strings.HasPrefix(call, "gosec ") {
 			continue
 		}
-		if strings.Contains(call, "github.com/equaltoai/lesser/cmd/lesser") &&
-			strings.Contains(call, "github.com/equaltoai/lesser/pkg/common") {
+		if strings.Contains(call, "./cmd/lesser") &&
+			strings.Contains(call, "./pkg/common") {
 			sawBatchedSecScan = true
 			break
 		}
