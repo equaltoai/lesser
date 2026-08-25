@@ -651,6 +651,20 @@ func TestMisc_NotificationFiltersAndGroupingOptions_Round12(t *testing.T) {
 		require.Equal(t, 1, handler.getActiveMonthlyUsers(ctx))
 	})
 
+	t.Run("active monthly users caches success", func(t *testing.T) {
+		cfg := round11TestConfig()
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/test", nil, nil, nil)
+		require.NoError(t, err)
+
+		// First call computes; the second call within the 60s TTL is served
+		// from the success-only cache.
+		first := handler.getActiveMonthlyUsers(ctx)
+		second := handler.getActiveMonthlyUsers(ctx)
+		require.Equal(t, first, second)
+	})
+
 	t.Run("unique accounts returns 0 on instance repo error", func(t *testing.T) {
 		cfg := round11TestConfig()
 		state := &round10QueryState{firstErrorOnce: errors.New("boom")}

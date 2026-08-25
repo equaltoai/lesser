@@ -129,6 +129,12 @@ func TestHandler_instanceCountsAndContactAccountAndTipsConfig(t *testing.T) {
 		require.Equal(t, int64(7), statuses)
 		require.Equal(t, int64(3), domains)
 
+		// Second call within the 60s TTL hits the success-only cache.
+		users, statuses, domains = h.instanceCounts(ctx)
+		require.Equal(t, 2, users)
+		require.Equal(t, int64(7), statuses)
+		require.Equal(t, int64(3), domains)
+
 		errorState := &round10QueryState{
 			allErrorOnce: errors.New("boom"),
 			instanceMetrics: map[string]storagemodels.InstanceMetrics{

@@ -527,6 +527,9 @@ func releaseActorDomain(ctx context.Context, db core.DB, logger *zap.Logger, dom
 		logger.Warn("failed to delete empty domain counter",
 			zap.String("domain", domain),
 			zap.Error(err))
+		// Keep the global counter unchanged: the stale per-domain item at
+		// zero is harmless and a later actor for the domain will tally it.
+		return
 	}
 	bumpInstanceTotalDomains(ctx, db, logger, -1)
 }
