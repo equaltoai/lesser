@@ -148,7 +148,7 @@ func resolveLintBatchSize() int {
 }
 
 func runLintInBatches(repoRoot string, baseArgs []string, env map[string]string, batchSize int) error {
-	dirs, err := listGoPackageDirsForLint(repoRoot, env)
+	dirs, err := listGoPackageDirs(repoRoot, env)
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,11 @@ func runLintInBatches(repoRoot string, baseArgs []string, env map[string]string,
 	return nil
 }
 
-func listGoPackageDirsForLint(repoRoot string, env map[string]string) ([]string, error) {
+// listGoPackageDirs returns the module's package directories as "./rel" paths,
+// sorted and deduplicated. Both golangci-lint (batched lint) and gosec (batched
+// sec-scan) resolve package arguments to files only in directory form, so this
+// is the shared target-list producer for their batch loops.
+func listGoPackageDirs(repoRoot string, env map[string]string) ([]string, error) {
 	out, err := captureCommandOutputFn(context.Background(), repoRoot, env, "go", "list", "-f", "{{.Dir}}", "./...")
 	if err != nil {
 		return nil, err

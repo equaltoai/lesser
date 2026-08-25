@@ -24,12 +24,30 @@ func TestListGoPackagesForSecurityTool_IgnoresGoDownloadNoise(t *testing.T) {
 			"github.com/equaltoai/lesser/pkg/b\n", nil
 	}
 
-	pkgs, err := listGoPackagesForSecurityTool(t.TempDir(), map[string]string{"GOCACHE": t.TempDir()})
+	pkgs, err := listGoPackagesForSecurityTool(t.TempDir(), map[string]string{"GOCACHE": t.TempDir()}, false)
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"github.com/equaltoai/lesser/pkg/a",
 		"github.com/equaltoai/lesser/pkg/b",
 	}, pkgs)
+}
+
+func TestListGoPackagesForSecurityTool_DirsMode(t *testing.T) {
+	previousCapture := captureCommandOutputFn
+	t.Cleanup(func() { captureCommandOutputFn = previousCapture })
+
+	repoRoot := t.TempDir()
+	captureCommandOutputFn = func(context.Context, string, map[string]string, string, ...string) (string, error) {
+		return filepath.Join(repoRoot, "pkg", "a") + "\n" +
+			filepath.Join(repoRoot, "pkg", "b") + "\n" +
+			filepath.Join(repoRoot, "tmp", "scratch") + "\n" +
+			filepath.Join(repoRoot, "infra", "scratch") + "\n", nil
+	}
+
+	dirs, err := listGoPackagesForSecurityTool(repoRoot, nil, true)
+	require.NoError(t, err)
+	require.Equal(t, []string{"./pkg/a", "./pkg/b"}, dirs,
+		"tmp/ and infra/ directories must be dropped (the -exclude-dir flags cannot filter explicit directory arguments)")
 }
 
 func TestListPackagesForOverallCoverage_IgnoresGoDownloadNoise(t *testing.T) {

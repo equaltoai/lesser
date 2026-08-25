@@ -24,6 +24,7 @@ func setupVerifyCIRound20Harness(t *testing.T) string {
 		captureCommandOutputFn = previousCapture
 		ensureToolAvailableFn = previousEnsureTool
 	})
+	stubLookPathInEnv(t)
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
@@ -33,6 +34,9 @@ func setupVerifyCIRound20Harness(t *testing.T) string {
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
 
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, name string, args ...string) (string, error) {
+		if out, ok := gosecVersionCaptureBranch(pinnedGosecVersion, args); ok {
+			return out, nil
+		}
 		if name == "golangci-lint" && firstArgOrEmpty(args) == "version" {
 			return "golangci-lint has version v2.10.1\n", nil
 		}

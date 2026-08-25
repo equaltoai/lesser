@@ -22,6 +22,7 @@ func TestSecurityCommands_Round14_ErrorBranches(t *testing.T) {
 		ensureToolAvailableFn = previousEnsureTool
 		captureCommandOutputFn = previousCapture
 	})
+	stubLookPathInEnv(t)
 
 	findRepoRootFn = func() (string, error) { return "", errSentinel }
 	require.ErrorIs(t, runSecScan(nil), errSentinel)
@@ -42,6 +43,9 @@ func TestSecurityCommands_Round14_ErrorBranches(t *testing.T) {
 	ensureToolAvailableFn = func(string) error { return nil }
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.26\n"), 0o644))
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
+		if out, ok := gosecVersionCaptureBranch(pinnedGosecVersion, args); ok {
+			return out, nil
+		}
 		if len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
 			return "github.com/equaltoai/lesser/cmd/lesser\n", nil
 		}
@@ -108,6 +112,7 @@ func TestRunSecScan_Round14_BatchesByPackage(t *testing.T) {
 		ensureToolAvailableFn = previousEnsureTool
 		captureCommandOutputFn = previousCapture
 	})
+	stubLookPathInEnv(t)
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
@@ -116,12 +121,13 @@ func TestRunSecScan_Round14_BatchesByPackage(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.26\n"), 0o644))
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
-		if len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
-			return strings.Join([]string{
-				"github.com/equaltoai/lesser/cmd/lesser",
-				"github.com/equaltoai/lesser/pkg/common",
-				"github.com/equaltoai/lesser/pkg/services",
-			}, "\n"), nil
+		if out, ok := gosecVersionCaptureBranch(pinnedGosecVersion, args); ok {
+			return out, nil
+		}
+		if len(args) >= 2 && args[0] == "list" && args[1] == "-f" {
+			return filepath.Join(repoRoot, "cmd", "lesser") + "\n" +
+				filepath.Join(repoRoot, "pkg", "common") + "\n" +
+				filepath.Join(repoRoot, "pkg", "services") + "\n", nil
 		}
 		return "", nil
 	}
@@ -141,14 +147,16 @@ func TestRunSecScan_Round14_BatchesByPackage(t *testing.T) {
 		"-exclude-generated",
 		"-exclude-dir=tmp",
 		"-exclude-dir=infra",
-		"github.com/equaltoai/lesser/cmd/lesser",
-		"github.com/equaltoai/lesser/pkg/common",
+		"-exclude=G703,G204,G304,G117,G702,G306,G302,G301,G101,G710,G704,G124,G115",
+		"./cmd/lesser",
+		"./pkg/common",
 	}, calls[0])
 	require.Equal(t, []string{
 		"-quiet",
 		"-exclude-generated",
 		"-exclude-dir=tmp",
 		"-exclude-dir=infra",
-		"github.com/equaltoai/lesser/pkg/services",
+		"-exclude=G703,G204,G304,G117,G702,G306,G302,G301,G101,G710,G704,G124,G115",
+		"./pkg/services",
 	}, calls[1])
 }

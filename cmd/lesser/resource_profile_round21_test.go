@@ -67,7 +67,7 @@ func TestRunGoPackageSecurityTool_Round21_Fallbacks(t *testing.T) {
 			return nil
 		}
 
-		require.NoError(t, runGoPackageSecurityTool("govulncheck", nil, repoRoot, env, 0))
+		require.NoError(t, runGoPackageSecurityTool("govulncheck", nil, repoRoot, env, 0, false))
 		require.Equal(t, "govulncheck", gotName)
 		require.Equal(t, []string{"./..."}, gotArgs)
 	})
@@ -85,7 +85,7 @@ func TestRunGoPackageSecurityTool_Round21_Fallbacks(t *testing.T) {
 			return nil
 		}
 
-		require.NoError(t, runGoPackageSecurityTool("gosec", []string{"-quiet"}, repoRoot, env, 2))
+		require.NoError(t, runGoPackageSecurityTool("gosec", []string{"-quiet"}, repoRoot, env, 2, true))
 		require.Equal(t, "gosec", gotName)
 		require.Equal(t, []string{"-quiet", "./..."}, gotArgs)
 	})
@@ -100,11 +100,11 @@ func TestRunGoPackageSecurityTool_Round21_Fallbacks(t *testing.T) {
 			return nil
 		}
 
-		require.ErrorIs(t, runGoPackageSecurityTool("govulncheck", nil, repoRoot, env, 2), errSentinel)
+		require.ErrorIs(t, runGoPackageSecurityTool("govulncheck", nil, repoRoot, env, 2, false), errSentinel)
 	})
 }
 
-func TestListGoPackageDirsForLint_Round21_NormalizesUniqueDirectories(t *testing.T) {
+func TestListGoPackageDirs_Round21_NormalizesUniqueDirectories(t *testing.T) {
 	previousCapture := captureCommandOutputFn
 	t.Cleanup(func() {
 		captureCommandOutputFn = previousCapture
@@ -117,7 +117,7 @@ func TestListGoPackageDirsForLint_Round21_NormalizesUniqueDirectories(t *testing
 			filepath.Join(repoRoot, "pkg", "common") + "\n", nil
 	}
 
-	dirs, err := listGoPackageDirsForLint(repoRoot, map[string]string{"GOCACHE": t.TempDir()})
+	dirs, err := listGoPackageDirs(repoRoot, map[string]string{"GOCACHE": t.TempDir()})
 	require.NoError(t, err)
 	require.Equal(t, []string{".", "./pkg/common"}, dirs)
 }
