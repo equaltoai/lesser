@@ -3900,6 +3900,7 @@ components:
                     type: integer
                 activeMonth:
                     type: integer
+                    description: "Sum of per-UTC-day distinct-actor counts over the trailing 30 days. An actor active on multiple days is counted once per day, so the value can overcount the true window-distinct user count; it is bounded by days x monthly-active-users and is an approximation accepted for this surface."
                 total:
                     type: integer
             required:
