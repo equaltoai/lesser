@@ -42,18 +42,6 @@ func (c *instanceCountsCache) get() (int, int64, int64, bool) {
 	return c.users, c.statuses, c.domains, true
 }
 
-// lastKnown returns the most recently cached triple regardless of freshness,
-// for stale-serving when a recompute fails. ok is false when nothing was ever
-// cached.
-func (c *instanceCountsCache) lastKnown() (int, int64, int64, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.hasValue {
-		return 0, 0, 0, false
-	}
-	return c.users, c.statuses, c.domains, true
-}
-
 // getOrCompute returns the fresh cached triple when available; otherwise it
 // computes once under a per-process mutex (re-checking the cache after
 // acquiring the lock, so concurrent misses collapse) and caches only when the
@@ -83,17 +71,6 @@ func (c *instanceCountsCache) getOrCompute(compute func() (int, int64, int64, bo
 	return users, statuses, domains
 }
 
-// set stores a triple and refreshes the TTL.
-func (c *instanceCountsCache) set(users int, statuses, domains int64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.users = users
-	c.statuses = statuses
-	c.domains = domains
-	c.expiresAt = time.Now().Add(instanceStatsCacheTTL)
-	c.hasValue = true
-}
-
 // activeMonthUsersCache caches the /api/v2/instance usage.users.active_month
 // count with the same success-only, compute-under-lock semantics.
 type activeMonthUsersCache struct {
@@ -107,15 +84,6 @@ func (c *activeMonthUsersCache) get() (int, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.hasValue || time.Now().After(c.expiresAt) {
-		return 0, false
-	}
-	return c.count, true
-}
-
-func (c *activeMonthUsersCache) lastKnown() (int, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.hasValue {
 		return 0, false
 	}
 	return c.count, true
@@ -143,12 +111,4 @@ func (c *activeMonthUsersCache) getOrCompute(compute func() (int, bool)) int {
 		return c.count
 	}
 	return count
-}
-
-func (c *activeMonthUsersCache) set(count int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.count = count
-	c.expiresAt = time.Now().Add(instanceStatsCacheTTL)
-	c.hasValue = true
 }

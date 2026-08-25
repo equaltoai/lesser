@@ -11,32 +11,43 @@ import (
 func TestInstanceCountsCache_TTLAndValues(t *testing.T) {
 	var c instanceCountsCache
 
-	// Empty cache is a miss with no last-known value.
+	// Empty cache is a miss.
 	_, _, _, ok := c.get()
 	require.False(t, ok)
-	_, _, _, ok = c.lastKnown()
-	require.False(t, ok)
 
-	c.set(1, 7, 3)
-	users, statuses, domains, ok := c.get()
+	// A successful compute populates the cache.
+	users, statuses, domains := c.getOrCompute(func() (int, int64, int64, bool) {
+		return 1, 7, 3, true
+	})
+	require.Equal(t, 1, users)
+	require.Equal(t, int64(7), statuses)
+	require.Equal(t, int64(3), domains)
+	users, statuses, domains, ok = c.get()
 	require.True(t, ok)
 	require.Equal(t, 1, users)
 	require.Equal(t, int64(7), statuses)
 	require.Equal(t, int64(3), domains)
 
-	// Expiry produces a miss without clobbering the stored values; the stale
-	// value is still recoverable via lastKnown for the stale-fallback path.
+	// Expiry produces a miss; the stored values are not clobbered and are
+	// served stale by getOrCompute when a recompute fails.
 	c.expiresAt = time.Now().Add(-time.Second)
 	_, _, _, ok = c.get()
 	require.False(t, ok)
-	users, statuses, domains, ok = c.lastKnown()
-	require.True(t, ok)
+	users, statuses, domains = c.getOrCompute(func() (int, int64, int64, bool) {
+		return 0, 0, 0, false
+	})
 	require.Equal(t, 1, users)
 	require.Equal(t, int64(7), statuses)
 	require.Equal(t, int64(3), domains)
 
-	// Re-setting refreshes the TTL.
-	c.set(2, 8, 4)
+	// A fresh successful compute refreshes the TTL.
+	c.expiresAt = time.Now().Add(-time.Second)
+	users, statuses, domains = c.getOrCompute(func() (int, int64, int64, bool) {
+		return 2, 8, 4, true
+	})
+	require.Equal(t, 2, users)
+	require.Equal(t, int64(8), statuses)
+	require.Equal(t, int64(4), domains)
 	users, statuses, domains, ok = c.get()
 	require.True(t, ok)
 	require.Equal(t, 2, users)
@@ -157,20 +168,17 @@ func TestActiveMonthUsersCache_TTLAndValues(t *testing.T) {
 
 	_, ok := c.get()
 	require.False(t, ok)
-	_, ok = c.lastKnown()
-	require.False(t, ok)
 
-	c.set(42)
+	require.Equal(t, 42, c.getOrCompute(func() (int, bool) { return 42, true }))
 	count, ok := c.get()
 	require.True(t, ok)
 	require.Equal(t, 42, count)
 
+	// Expiry produces a miss; the stale value is served when a recompute fails.
 	c.expiresAt = time.Now().Add(-time.Second)
 	_, ok = c.get()
 	require.False(t, ok)
-	count, ok = c.lastKnown()
-	require.True(t, ok)
-	require.Equal(t, 42, count)
+	require.Equal(t, 42, c.getOrCompute(func() (int, bool) { return 1, false }))
 }
 
 // TestActiveMonthUsersCache_GetOrCompute_SuccessOnly pins the F3 semantics for

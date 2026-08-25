@@ -316,7 +316,7 @@ func TestInstanceCounts_Domains_Maintenance(t *testing.T) {
 
 func mustReadDomains(t *testing.T, ctx context.Context, db core.DB) int64 {
 	t.Helper()
-	count, err := readTotalDomainsCount(ctx, db, zap.NewNop())
+	count, err := readInstanceMetricsField(ctx, db, zap.NewNop(), models.TotalDomainsMetricSK, "Value")
 	require.NoError(t, err)
 	return count
 }

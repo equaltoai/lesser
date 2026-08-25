@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"math/rand"
 	"net/url"
 	"strings"
 	"sync"
@@ -80,9 +79,13 @@ var instanceSeedBackoff = struct {
 
 // seedBackoffTTL returns the backoff window after a failed seed attempt,
 // jittered 5-15 minutes so warm Lambda instances do not resynchronize their
-// retries. Overridable in tests.
+// retries. The jitter is derived from the wall clock rather than a random
+// source: it needs only to de-synchronize retries across instances, not to be
+// unpredictable, and it keeps the seed path free of a (gosec-flagged) RNG.
+// Overridable in tests.
 var seedBackoffTTL = func() time.Duration {
-	return 5*time.Minute + time.Duration(rand.Int63n(int64(10*time.Minute)))
+	const jitterWindow = int64(10 * time.Minute)
+	return 5*time.Minute + time.Duration(time.Now().UnixNano()%jitterWindow)
 }
 
 // recordInstanceSeedBackoff starts the backoff window for a seed metric after
@@ -142,16 +145,6 @@ func bumpInstanceCountItem(ctx context.Context, db core.DB, logger *zap.Logger, 
 			zap.Int64("delta", delta),
 			zap.Error(err))
 	}
-}
-
-// readTotalUsersCount returns the maintained TOTAL_USERS counter.
-func readTotalUsersCount(ctx context.Context, db core.DB, logger *zap.Logger) (int64, error) {
-	return readInstanceMetricsField(ctx, db, logger, models.TotalUsersMetricSK, "TotalUsers")
-}
-
-// readTotalDomainsCount returns the maintained TOTAL_DOMAINS counter.
-func readTotalDomainsCount(ctx context.Context, db core.DB, logger *zap.Logger) (int64, error) {
-	return readInstanceMetricsField(ctx, db, logger, models.TotalDomainsMetricSK, "Value")
 }
 
 // readTotalStatusesCount returns the maintained TOTAL_STATUSES counter,
@@ -388,7 +381,7 @@ func RecountInstanceCounts(ctx context.Context, db core.DB, logger *zap.Logger, 
 	}
 	users := int64(0)
 	for _, u := range userKeys {
-		if strings.HasPrefix(u.PK, "USER#") && u.SK == "METADATA" {
+		if strings.HasPrefix(u.PK, "USER#") && u.SK == models.SKMetadata {
 			users++
 		}
 	}

@@ -60,7 +60,7 @@ func TestInstanceCounts_Recount_DryRunReportsWithoutWriting(t *testing.T) {
 	require.Equal(t, int64(1), result.StaleDomainCounters)
 
 	// Nothing written: the counters are untouched.
-	users, err := readTotalUsersCount(ctx, db, zap.NewNop())
+	users, err := readInstanceMetricsField(ctx, db, zap.NewNop(), models.TotalUsersMetricSK, "TotalUsers")
 	require.NoError(t, err)
 	require.EqualValues(t, 1000, users)
 
@@ -89,11 +89,11 @@ func TestInstanceCounts_Recount_RewritesCountersAndStaleItems(t *testing.T) {
 	require.Equal(t, int64(2), result.DomainCounters)
 	require.Equal(t, int64(1), result.StaleDomainCounters)
 
-	users, err := readTotalUsersCount(ctx, db, zap.NewNop())
+	users, err := readInstanceMetricsField(ctx, db, zap.NewNop(), models.TotalUsersMetricSK, "TotalUsers")
 	require.NoError(t, err)
 	require.EqualValues(t, 3, users)
 
-	domains, err := readTotalDomainsCount(ctx, db, zap.NewNop())
+	domains, err := readInstanceMetricsField(ctx, db, zap.NewNop(), models.TotalDomainsMetricSK, "Value")
 	require.NoError(t, err)
 	require.EqualValues(t, 2, domains)
 
