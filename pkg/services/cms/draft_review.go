@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -63,12 +64,17 @@ func draftReviewContentHash(d *models.Draft, mediaDigests map[string]string) str
 	for _, usage := range canonicalDraftMediaOrder(d.EditorialMedia) {
 		write(mediaDigests[usage.MediaID])
 		write(string(usage.Role))
-		position := int64(-1)
-		if usage.InlinePosition != nil {
-			position = int64(*usage.InlinePosition)
+		// InlinePosition is schema-validated non-negative; hero and social-card
+		// usages carry no position and encode as the MaxUint64 sentinel that the
+		// legacy int64(-1) conversion produced, so existing revision hashes stay
+		// byte-identical. A negative position (only reachable from corrupt data)
+		// fails closed to the same sentinel instead of a wrapping conversion.
+		position := uint64(math.MaxUint64)
+		if usage.InlinePosition != nil && *usage.InlinePosition >= 0 {
+			position = uint64(*usage.InlinePosition)
 		}
 		var positionBytes [8]byte
-		binary.BigEndian.PutUint64(positionBytes[:], uint64(position))
+		binary.BigEndian.PutUint64(positionBytes[:], position)
 		_, _ = h.Write(positionBytes[:])
 		write(usage.Caption)
 		write(usage.CreditLine)

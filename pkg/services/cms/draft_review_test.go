@@ -239,6 +239,51 @@ func TestDraftReviewContentHashUsesCanonicalReviewedFields(t *testing.T) {
 		"length prefixes must keep control characters from crossing field boundaries")
 }
 
+func TestDraftReviewContentHashInlinePositionGuard(t *testing.T) {
+	position0, position2 := 0, 2
+	draft := &models.Draft{
+		ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c",
+		EditorialMedia: []models.DraftMediaUsage{
+			{MediaID: "hero", Role: models.EditorialMediaRoleHero},
+			{MediaID: "i0", Role: models.EditorialMediaRoleInline, InlinePosition: &position0},
+			{MediaID: "i1", Role: models.EditorialMediaRoleInline, InlinePosition: &position2},
+		},
+	}
+	digests := map[string]string{"hero": "d1", "i0": "d2", "i1": "d3"}
+
+	// Golden value produced by the pre-fix encoding (nil position as
+	// uint64(int64(-1)) == math.MaxUint64, non-negative positions as
+	// themselves). The guarded conversion must stay byte-identical so verdicts
+	// recorded against the old revision hash remain valid after the fix.
+	require.Equal(t,
+		"0f68df96d6222855e927a3b2aaab829d22f1604bd6c37da978d7a9569585cd0a",
+		draftReviewContentHash(draft, digests))
+
+	// A nil position (hero/social-card) must not collide with inline position 0.
+	inlineAt0 := &models.Draft{
+		ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c",
+		EditorialMedia: []models.DraftMediaUsage{
+			{MediaID: "i0", Role: models.EditorialMediaRoleInline, InlinePosition: &position0},
+		},
+	}
+	require.NotEqual(t, draftReviewContentHash(draft, digests), draftReviewContentHash(inlineAt0, digests),
+		"the nil-position sentinel must not hash as inline position 0")
+
+	// Inline positions are load-bearing: moving an asset to a different slot
+	// must stale the revision hash.
+	position1 := 1
+	reshuffled := &models.Draft{
+		ContentFormat: "markdown", Slug: "s", Title: "t", Content: "c",
+		EditorialMedia: []models.DraftMediaUsage{
+			{MediaID: "hero", Role: models.EditorialMediaRoleHero},
+			{MediaID: "i0", Role: models.EditorialMediaRoleInline, InlinePosition: &position1},
+			{MediaID: "i1", Role: models.EditorialMediaRoleInline, InlinePosition: &position2},
+		},
+	}
+	require.NotEqual(t, draftReviewContentHash(draft, digests), draftReviewContentHash(reshuffled, digests),
+		"repositioning an inline asset must change the revision hash")
+}
+
 func TestDraftReviewApprovalBindsToCurrentContent(t *testing.T) {
 	testCases := map[string]func(*models.Draft){
 		"title": func(draft *models.Draft) { draft.Title = "Edited title" },
