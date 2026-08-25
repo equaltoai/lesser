@@ -2489,12 +2489,11 @@ func (r *TrendingRepository) GetActiveUserCount(ctx context.Context, days int) (
 // GetTotalUserCount returns the total number of users.
 //
 // O(1) read: returns the maintained TOTAL_USERS counter, seeded lazily once
-// from a one-time scan and kept current by the user/account write paths.
+// from a one-time scan and kept current by the user/account write paths. While
+// a failed seed is in its backoff window the last known value is served and
+// the scan is never re-armed (see instance_counts.go).
 func (r *TrendingRepository) GetTotalUserCount(ctx context.Context) (int, error) {
-	if err := ensureTotalUsersSeeded(ctx, r.db, r.logger); err != nil {
-		return 0, err
-	}
-	count, err := readTotalUsersCount(ctx, r.db, r.logger)
+	count, err := ensureTotalUsersSeeded(ctx, r.db, r.logger)
 	if err != nil {
 		return 0, err
 	}
@@ -2517,12 +2516,11 @@ func (r *TrendingRepository) GetTotalStatusCount(ctx context.Context) (*int, err
 // GetTotalDomainCount returns the total number of known domains.
 //
 // O(1) read: returns the maintained TOTAL_DOMAINS counter, seeded lazily once
-// from a one-time scan and kept current by the actor/account write paths.
+// from a one-time scan and kept current by the actor/account write paths. While
+// a failed seed is in its backoff window the last known value is served and
+// the scan is never re-armed (see instance_counts.go).
 func (r *TrendingRepository) GetTotalDomainCount(ctx context.Context) (int, error) {
-	if err := ensureTotalDomainsSeeded(ctx, r.db, r.logger); err != nil {
-		return 0, err
-	}
-	count, err := readTotalDomainsCount(ctx, r.db, r.logger)
+	count, err := ensureTotalDomainsSeeded(ctx, r.db, r.logger)
 	if err != nil {
 		return 0, err
 	}

@@ -89,18 +89,22 @@ func TestInstanceCounts_ReadField_UnknownAndError(t *testing.T) {
 
 func TestInstanceCounts_EnsureTotalUsersSeeded_ErrorBranches(t *testing.T) {
 	ctx := context.Background()
+	t.Cleanup(resetInstanceSeedBackoffForTest)
 
 	t.Run("seed check error propagates", func(t *testing.T) {
+		resetInstanceSeedBackoffForTest()
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", ctx).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.InstanceMetrics")).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("First", mock.Anything).Return(errors.New("boom")).Once()
-		require.Error(t, ensureTotalUsersSeeded(ctx, mockDB, zap.NewNop()))
+		_, err := ensureTotalUsersSeeded(ctx, mockDB, zap.NewNop())
+		require.Error(t, err)
 	})
 
-	t.Run("compute scan error propagates", func(t *testing.T) {
+	t.Run("compute scan error propagates and backoffs", func(t *testing.T) {
+		resetInstanceSeedBackoffForTest()
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", ctx).Return(mockDB)
@@ -109,10 +113,14 @@ func TestInstanceCounts_EnsureTotalUsersSeeded_ErrorBranches(t *testing.T) {
 		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Times(2)
 		mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
-		require.Error(t, ensureTotalUsersSeeded(ctx, mockDB, zap.NewNop()))
+		_, err := ensureTotalUsersSeeded(ctx, mockDB, zap.NewNop())
+		require.Error(t, err)
+		// The failed scan must enter backoff so it is not re-armed next read.
+		requireBackoffActive(t, models.TotalUsersMetricSK)
 	})
 
-	t.Run("persist error propagates", func(t *testing.T) {
+	t.Run("persist failure serves last known value and backoffs", func(t *testing.T) {
+		resetInstanceSeedBackoffForTest()
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockUpdate := new(mocks.MockUpdateBuilder)
@@ -121,16 +129,23 @@ func TestInstanceCounts_EnsureTotalUsersSeeded_ErrorBranches(t *testing.T) {
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Times(2)
 		mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Once()
+		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+			users := args.Get(0).(*[]models.User)
+			*users = []models.User{{Username: "a"}, {Username: "b"}}
+		}).Return(nil).Once()
 		mockQuery.On("UpdateBuilder").Return(mockUpdate)
 		mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate)
 		mockUpdate.On("Execute").Return(errors.New("persist failed")).Once()
-		require.Error(t, ensureTotalUsersSeeded(ctx, mockDB, zap.NewNop()))
+		value, err := ensureTotalUsersSeeded(ctx, mockDB, zap.NewNop())
+		require.NoError(t, err)
+		require.EqualValues(t, 2, value)
+		requireBackoffActive(t, models.TotalUsersMetricSK)
 	})
 }
 
 func TestInstanceCounts_EnsureTotalDomainsSeeded_ScanError(t *testing.T) {
 	ctx := context.Background()
+	t.Cleanup(resetInstanceSeedBackoffForTest)
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	mockDB.On("WithContext", ctx).Return(mockDB)
@@ -139,11 +154,14 @@ func TestInstanceCounts_EnsureTotalDomainsSeeded_ScanError(t *testing.T) {
 	mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Times(2)
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
-	require.Error(t, ensureTotalDomainsSeeded(ctx, mockDB, zap.NewNop()))
+	_, err := ensureTotalDomainsSeeded(ctx, mockDB, zap.NewNop())
+	require.Error(t, err)
+	requireBackoffActive(t, models.TotalDomainsMetricSK)
 }
 
 func TestInstanceCounts_EnsureActiveMonthSeeded_ScanError(t *testing.T) {
 	ctx := context.Background()
+	t.Cleanup(resetInstanceSeedBackoffForTest)
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	mockDB.On("WithContext", ctx).Return(mockDB)
@@ -152,7 +170,9 @@ func TestInstanceCounts_EnsureActiveMonthSeeded_ScanError(t *testing.T) {
 	mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Times(2)
 	mockDB.On("Model", mock.AnythingOfType("*models.Activity")).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
-	require.Error(t, ensureActiveMonthSeeded(ctx, mockDB, zap.NewNop(), 30))
+	err := ensureActiveMonthSeeded(ctx, mockDB, zap.NewNop(), 30)
+	require.Error(t, err)
+	requireBackoffActive(t, models.ActiveMonthSeedMetricSK)
 }
 
 func TestInstanceCounts_RecordActivityActorDay_ErrorBranches(t *testing.T) {

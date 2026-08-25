@@ -2011,20 +2011,21 @@ func (h *Handler) getUniqueAccountsForDay(ctx *apptheory.Context, day string) st
 
 // getActiveMonthlyUsers returns the count of active users in the current month
 func (h *Handler) getActiveMonthlyUsers(ctx *apptheory.Context) int {
-	// 60s single-flight cache: bursts collapse to one compute, and only
-	// successful reads are cached so transient errors never stick.
-	if count, ok := h.activeMonthUsersCache.get(); ok {
-		return count
+	if h == nil || h.repos == nil || h.repos.Analytics() == nil {
+		return 1 // documented fallback
 	}
 
-	// Get count of users who have been active in the last 30 days
-	count, err := h.repos.Analytics().GetActiveUserCount(ctx.Context(), 30)
-	if err != nil {
-		h.logger.Error("failed to get active monthly users", zap.Error(err))
-		return 1 // Default fallback
-	}
-	h.activeMonthUsersCache.set(count)
-	return count
+	// 60s per-process cache with compute-under-lock: only successful reads are
+	// cached, and a previous value is served stale when a recompute fails.
+	return h.activeMonthUsersCache.getOrCompute(func() (int, bool) {
+		// Get count of users who have been active in the last 30 days
+		count, err := h.repos.Analytics().GetActiveUserCount(ctx.Context(), 30)
+		if err != nil {
+			h.logger.Error("failed to get active monthly users", zap.Error(err))
+			return 1, false // documented fallback
+		}
+		return count, true
+	})
 }
 
 // getAdminAccount returns the admin account for the instance
