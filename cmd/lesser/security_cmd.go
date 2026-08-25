@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,7 +15,20 @@ const (
 	defaultVulnCheckBatchSize   = 3
 	lesserSecScanBatchSizeEnv   = "LESSER_SEC_SCAN_BATCH_SIZE"
 	lesserVulnCheckBatchSizeEnv = "LESSER_VULNCHECK_BATCH_SIZE"
+
+	// pinnedGosecVersion is the exact gosec version the sec-scan triage record
+	// (docs/security/security-gate-honesty-triage-1460.md) was produced under.
+	// scripts/install_ci_tools.sh reads this constant for its install pin, and
+	// assertPinnedGosecVersion fails the gate closed on any other resolved
+	// version, so the enforcement environment always runs the toolchain the
+	// excludes were justified against.
+	pinnedGosecVersion = "v2.28.0"
+	// gosecModulePath is the module the gosec binary embeds in its build info
+	// (`go version -m`), used to locate the version in the assertion.
+	gosecModulePath = "github.com/securego/gosec/v2"
 )
+
+var lookPathInEnvFn = lookPathInEnv
 
 func runSecScan(_ []string) error {
 	repoRoot, err := findRepoRootFn()
@@ -22,6 +36,9 @@ func runSecScan(_ []string) error {
 		return err
 	}
 	if err := ensureToolAvailableFn("gosec"); err != nil {
+		return err
+	}
+	if err := assertPinnedGosecVersion(repoRoot); err != nil {
 		return err
 	}
 
@@ -53,6 +70,47 @@ func runSecScan(_ []string) error {
 	}
 
 	return nil
+}
+
+// assertPinnedGosecVersion enforces the exact gosec toolchain the triage record
+// and the sec-scan excludes were produced under. The gate must scan with the
+// pinned version and nothing else: an older binary lacks the taint rules the
+// excludes rely on (CI previously pinned v2.22.11 and silently enforced a
+// subset of the triaged set), and a newer binary can emit untriaged rules.
+// Resolution, read, and parse failures fail closed too, so an environment that
+// cannot prove the pinned toolchain cannot run the scan.
+func assertPinnedGosecVersion(repoRoot string) error {
+	env := mergeEnvForDir(os.Environ(), nil, repoRoot)
+	binary, err := lookPathInEnvFn("gosec", env)
+	if err != nil {
+		return fmt.Errorf("sec-scan gosec version assertion: resolve gosec: %w", err)
+	}
+	out, err := captureCommandOutputFn(context.Background(), repoRoot, nil, "go", "version", "-m", binary)
+	if err != nil {
+		return fmt.Errorf("sec-scan gosec version assertion: read build info of %s: %w", binary, err)
+	}
+	version, ok := gosecVersionFromBuildInfo(out)
+	if !ok {
+		return fmt.Errorf("sec-scan gosec version assertion: cannot determine gosec version of %s (expected %s): build info does not name module %s", binary, pinnedGosecVersion, gosecModulePath)
+	}
+	if version != pinnedGosecVersion {
+		return fmt.Errorf("sec-scan gosec version assertion failed: resolved gosec %s is %s, but the gate requires exactly %s (install via scripts/install_ci_tools.sh)", binary, version, pinnedGosecVersion)
+	}
+	return nil
+}
+
+// gosecVersionFromBuildInfo extracts the module version of the gosec binary
+// from `go version -m` output (the mod line for the gosec module, e.g.
+// "v2.28.0"). The binary's -version flag is not usable here: binaries installed
+// via `go install` carry no release ldflags and report "Version: dev".
+func gosecVersionFromBuildInfo(out string) (string, bool) {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[0] == "mod" && fields[1] == gosecModulePath {
+			return fields[2], true
+		}
+	}
+	return "", false
 }
 
 func runVulnCheck(_ []string) error {

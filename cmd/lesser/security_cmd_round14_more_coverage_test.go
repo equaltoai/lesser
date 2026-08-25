@@ -22,6 +22,7 @@ func TestSecurityCommands_Round14_ErrorBranches(t *testing.T) {
 		ensureToolAvailableFn = previousEnsureTool
 		captureCommandOutputFn = previousCapture
 	})
+	stubLookPathInEnv(t)
 
 	findRepoRootFn = func() (string, error) { return "", errSentinel }
 	require.ErrorIs(t, runSecScan(nil), errSentinel)
@@ -42,6 +43,9 @@ func TestSecurityCommands_Round14_ErrorBranches(t *testing.T) {
 	ensureToolAvailableFn = func(string) error { return nil }
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.26\n"), 0o644))
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
+		if out, ok := gosecVersionCaptureBranch(pinnedGosecVersion, args); ok {
+			return out, nil
+		}
 		if len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
 			return "github.com/equaltoai/lesser/cmd/lesser\n", nil
 		}
@@ -108,6 +112,7 @@ func TestRunSecScan_Round14_BatchesByPackage(t *testing.T) {
 		ensureToolAvailableFn = previousEnsureTool
 		captureCommandOutputFn = previousCapture
 	})
+	stubLookPathInEnv(t)
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
@@ -116,6 +121,9 @@ func TestRunSecScan_Round14_BatchesByPackage(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.26\n"), 0o644))
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
+		if out, ok := gosecVersionCaptureBranch(pinnedGosecVersion, args); ok {
+			return out, nil
+		}
 		if len(args) >= 2 && args[0] == "list" && args[1] == "-f" {
 			return filepath.Join(repoRoot, "cmd", "lesser") + "\n" +
 				filepath.Join(repoRoot, "pkg", "common") + "\n" +
