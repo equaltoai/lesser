@@ -85,19 +85,20 @@ Source mode additionally requires:
 - `pnpm` installed
 - repo-local auth UI source at `auth-ui/package.json`
 
-### VAPID credentials for live
+### VAPID credentials for every stage
 
-Every `lesser up` invocation that targets `live` requires `VAPID_SECRET_ARN`. The CLI checks this before preparing
-artifacts or invoking CDK, so a missing ARN cannot first surface as an API Lambda startup failure after the live stack
-has been updated. Dev- or staging-only deploys may omit it; those stages retain their warning-and-skip behavior.
+Every `lesser up` invocation requires `VAPID_SECRET_ARN`, regardless of stage. The CLI checks this before preparing
+artifacts or invoking CDK, so a missing ARN cannot first surface as an API Lambda startup failure after a stack has
+been updated. Managed instances receive a stage-specific secret automatically from lesser-host's provisioner;
+self-managed installs provision one with the helper below.
 
 Provision the stage-specific Secrets Manager value with the existing helper, then evaluate the deployment exports
 it prints before running `lesser up`:
 
 ```bash
 eval "$(AWS_PROFILE=<profile> AWS_REGION=<region> \
-  scripts/ensure_vapid_credentials.sh live <base-domain>)"
-./lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> --stage live
+  scripts/ensure_vapid_credentials.sh <stage> <base-domain>)"
+./lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> --stage <stage>
 ```
 
 The secret referenced by `VAPID_SECRET_ARN` contains the private key together with its matching `public_key` and the

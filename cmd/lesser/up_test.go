@@ -670,8 +670,19 @@ func TestUpEnvRun_VAPIDDeployPreflight(t *testing.T) {
 			secretARN: " arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-live ",
 		},
 		{
-			name:  "non-live empty ARN proceeds",
-			stage: naming.StageStaging,
+			name:          "dev empty ARN aborts",
+			stage:         naming.StageDev,
+			wantPreflight: true,
+		},
+		{
+			name:      "dev configured ARN proceeds",
+			stage:     naming.StageDev,
+			secretARN: " arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-dev ",
+		},
+		{
+			name:          "staging empty ARN aborts",
+			stage:         naming.StageStaging,
+			wantPreflight: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -684,9 +695,9 @@ func TestUpEnvRun_VAPIDDeployPreflight(t *testing.T) {
 
 			err := (&upEnv{stages: []naming.Stage{tc.stage}}).run(context.Background())
 			if tc.wantPreflight {
-				require.ErrorContains(t, err, "VAPID_SECRET_ARN is required before deploying the live stage")
+				require.ErrorContains(t, err, "VAPID_SECRET_ARN is required before deploying any stage")
 				require.ErrorContains(t, err, "scripts/ensure_vapid_credentials.sh")
-				require.False(t, toolsCalled, "live preflight must abort before deploy tooling or synth can run")
+				require.False(t, toolsCalled, "preflight must abort before deploy tooling or synth can run")
 				return
 			}
 
@@ -783,6 +794,7 @@ func TestUpEnvDeployFromSource_PassesInstancePlaneContext(t *testing.T) {
 }
 
 func TestUpEnv_Run_UsesReleaseDirLambdaArtifacts(t *testing.T) {
+	t.Setenv("VAPID_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-dev")
 	previousTools := ensureToolsAvailableFn
 	previousReleaseTools := ensureReleaseDeployToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
@@ -1306,6 +1318,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 }
 
 func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
+	t.Setenv("VAPID_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:123456789012:secret:vapid-dev")
 	previousTools := ensureToolsAvailableFn
 	previousReleaseTools := ensureReleaseDeployToolsAvailableFn
 	previousBuildZips := buildLambdaZipsFn
