@@ -53,8 +53,10 @@ under v2.28.0 (95 root findings, including G703/G702/G117/G710/G704), while CI e
 ran v2.22.11 (only 22 root findings, none of the taint rules): CI silently enforced a subset
 of the triaged set, and any machine with a newer gosec would fail the gate on untriaged
 rules. (Re-verified for this remediation with the gate's exact flags: v2.28.0 → 94–95 root
-findings across runs, v2.22.11 → 22, zero taint rules; the G703 taint count varies ±1
-run-to-run under the same version, with no effect on the excluded set.) Remediation: the
+findings across runs, v2.22.11 → 22, zero taint rules. The taint counts are nondeterministic
+run-to-run under identical version and flags — G703 47–48, G702 0–5 for v2.28.0 — with no
+effect on the excluded set; the gate's excluded-rule set makes this immaterial.) Remediation:
+the
 gate now **pins and asserts** gosec v2.28.0 —
 `scripts/install_ci_tools.sh` installs the version named by the `pinnedGosecVersion`
 constant in `cmd/lesser/security_cmd.go` (one source of truth), and `sec-scan` fails closed
@@ -111,16 +113,29 @@ honest mechanism, and each excluded rule maps 1:1 to the uniformly-false-positiv
 
 Residual visibility is the honest caveat of rule-level exclusion, and it differs per rule:
 
-- **G101 has zero automated coverage.** It is excluded here AND pre-existing in
-  `.golangci.yml` (the gosec linter's `excludes` list), so neither `sec-scan` nor
-  `./lesser lint` reports it. The 3 triaged G101 rows above were verified by hand to be
-  credential **names**, not values (env-var names in `pkg/config/validator.go`, a DynamoDB
-  partition-key format string, OAuth scope names); a future genuine hardcoded-credential
-  finding would be invisible to every automated gate until the lint config changes.
-- For the other **12** excluded rules, the lint surface (`golangci-lint` gosec,
-  `.golangci.yml`, which enforces G115 and the rest of the excluded rules) still reports new
-  genuine findings — but only where the flagged line carries no `//nolint:gosec`
-  annotation; annotated lines remain invisible to lint while direct gosec would flag them.
+- **4 of the 13 excluded rules have zero automated coverage: G101, G702, G710, G124.**
+  - **G101** is excluded here AND pre-existing in `.golangci.yml` (the gosec linter's
+    `excludes` list), so neither `sec-scan` nor `./lesser lint` reports it. The 3 triaged
+    G101 rows above were verified by hand to be credential **names**, not values (env-var
+    names in `pkg/config/validator.go`, a DynamoDB partition-key format string, OAuth scope
+    names); a future genuine hardcoded-credential finding would be invisible to every
+    automated gate until the lint config changes.
+  - **G702, G710, G124 postdate the lint toolchain's embedded gosec.** The repo pins
+    golangci-lint **v2.11.4** (`scripts/install_ci_tools.sh`), which embeds gosec
+    **v2.24.8-dev** — a build predating those three rules. Verified with an isolated probe:
+    gosec v2.28.0 fires all three on identical trigger code; the pinned lint fires none.
+    The lint surface therefore cannot report them, on any machine, until the golangci-lint
+    pin is bumped (see Follow-ups).
+- **In CI, all 13 excluded rules have zero lint coverage.** `./lesser verify ci` runs lint
+  with `--disable-gosec` (`cmd/lesser/verify_cmd.go`), so gosec never runs in the CI lint
+  pass; the "lint still reports" surface below exists only on a developer's manual
+  `./lesser lint` with the pinned golangci-lint.
+- For the other **9** excluded rules that do exist in the pinned lint's embedded gosec
+  (G703, G204, G304, G117, G306, G302, G301, G704, G115), a manual `./lesser lint`
+  (`golangci-lint` gosec, `.golangci.yml`, which enforces G115 and the rest of the excluded
+  rules) still reports new genuine findings — but only where the flagged line carries no
+  `//nolint:gosec` annotation; annotated lines remain invisible to lint while direct gosec
+  would flag them.
 
 | gate | exclude | traces to (§3 entries) |
 |---|---|---|
@@ -239,3 +254,12 @@ Residual visibility is the honest caveat of rule-level exclusion, and it differs
 | `pkg/storage/models/passkey_registration_proof.go:14` | G101 | HIGH | false-positive |
 | `pkg/storage/repositories/push_subscription_repository.go:348` | G117 | MEDIUM | false-positive |
 | `tools/openapi/main.go:379-408` | G101 | HIGH | false-positive |
+
+## 7. Follow-ups
+
+- **Bump the golangci-lint pin (named follow-up, deliberately NOT in this PR).** The repo
+  pins golangci-lint **v2.11.4** (`scripts/install_ci_tools.sh`), which embeds gosec
+  **v2.24.8-dev** — predating rules G702, G710, G124 — so the lint surface cannot report
+  them (see §4). Bumping to a golangci-lint release embedding gosec ≥ v2.28.0 can surface
+  new lint findings, which is a new triage pass under this record's methodology; it is
+  therefore a separate, named change rather than a silent addition here.
