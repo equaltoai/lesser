@@ -124,7 +124,7 @@ require (
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
-	github.com/theory-cloud/apptheory/v4 v4.0.0
+	github.com/theory-cloud/apptheory/v4 v4.1.0
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.69.0 // indirect
