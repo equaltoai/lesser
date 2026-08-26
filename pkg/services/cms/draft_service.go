@@ -281,7 +281,7 @@ func (s *DraftService) SetEditorialMedia(ctx context.Context, authorID, draftID 
 			return nil, getErr
 		}
 		if media == nil || !strings.EqualFold(strings.TrimSpace(media.UserID), authorID) {
-			return nil, stdErrors.New("editorial media does not belong to draft author")
+			return nil, fmt.Errorf("editorial media %s (owner %s) does not belong to draft author %s", usage.MediaID, media.UserID, authorID)
 		}
 		if !media.IsInternalEditorial() || media.Provenance == nil || media.Provenance.ContentIntegrity != media.ContentHash {
 			return nil, stdErrors.New("editorial media is not an integrity-bound internal asset")
