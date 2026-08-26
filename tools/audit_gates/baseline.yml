@@ -80,6 +80,17 @@ goDynamoDBBadPKWhere:
 # whose Where(...) field/operator is not a string literal, is statically
 # indeterminate and deliberately not flagged.
 #
+# Model-blind key trust (disclosed 2026-08-26, wave part 1 rework): the
+# detector treats a literal Where("PK"/"gsiNPK"/"oauthClientsPK", "=", ...) as
+# a bound without checking the model declares the index — ~250 unflagged sites
+# rely on the uniform lowercase naming convention the models actually write.
+# Indeterminate sites (non-literal field/operator) are never flagged; of the 5
+# inspected during closure, 2 are runtime GSI partition-key queries
+# (alert_repository.go:181, metrics_repository.go:591 — callers pass matching
+# index/field config) and 3 were production-unused helpers
+# (base_repository.go QueryHistoryWithDateRange / QueryMetricsByTimeRange /
+# FindBySK) deleted in this PR. See docs/architecture/dynamodb-scan-inventory.md.
+#
 # Dispositions (see docs/architecture/dynamodb-scan-inventory.md):
 # - pkg/storage/repositories/instance_counts.go: 5 — DELIBERATE offline-only
 #   tooling: the 5 bounded recount reads (key-only projections of the offline
@@ -115,6 +126,22 @@ goDynamoDBAllNoKey:
   pkg/storage/repositories/search_cost_repository.go: 2
   pkg/storage/repositories/search_repository.go: 2
   pkg/storage/repositories/threat_intel_repository.go: 1
+
+# Key-less TableTheory `Count(...)` on freshly-built query chains, which
+# compiles to a DynamoDB Scan with Select=COUNT — a counted full-table/index
+# scan the All-only gate could not see. Count() shares All()'s compile path
+# (tabletheory v3.0.6 pkg/query/query_execution.go:80-111: Compile() decides
+# Query vs Scan, then ExecuteScan runs the count). The same key-condition,
+# indeterminate, and model-blind-trust rules as goDynamoDBAllNoKey apply
+# (tracked by count per file). Gate added 2026-08-26 (wave part 1 rework).
+#
+# Dispositions (see docs/architecture/dynamodb-scan-inventory.md):
+# - pkg/storage/theorydb/patterns/soft_delete.go: 2 — SoftDeleteRepository.
+#   GetSoftDeleteStats counts total items (:323) and soft-deleted items
+#   (:330) with full-table counted scans. ENUMERATION ONLY in this PR — the
+#   site is NOT modified; disposition "elimination pending — wave #1469".
+goDynamoDBCountNoKey:
+  pkg/storage/theorydb/patterns/soft_delete.go: 2
 
 # Exact occurrences of unsafe CSP directives in CloudFront/CDK code (tracked by count per file).
 infraCdkCspUnsafeInline:

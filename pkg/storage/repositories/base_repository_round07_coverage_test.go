@@ -456,7 +456,7 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("FindByPK and FindBySK return results", func(t *testing.T) {
+	t.Run("FindByPK returns results", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -470,10 +470,6 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 
 		repo := NewBaseRepositoryWithCostTracking[*baseRepoPtrModel](mockDB, "table", zap.NewNop(), newTestCostService(t), "repo")
 		items, err := repo.FindByPK(ctx, "PK#1")
-		require.NoError(t, err)
-		require.Len(t, items, 1)
-
-		items, err = repo.FindBySK(ctx, "SK#1", "GSI1")
 		require.NoError(t, err)
 		require.Len(t, items, 1)
 	})
@@ -715,106 +711,6 @@ func TestBaseRepository_ConsolidationHelpers(t *testing.T) {
 
 		err = DeleteEntityWithLogging(ctx, repo, "PK#3", "SK#3", "entity", map[string]string{"id": "3"})
 		require.NoError(t, err)
-	})
-
-	t.Run("QueryHistoryWithDateRange and QueryMetricsByTimeRange return records", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Index", mock.Anything).Return(mockQuery)
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			switch dest := args.Get(0).(type) {
-			case *[]collectionModel:
-				*dest = []collectionModel{{PK: "PK#1", SK: "DATE#2025-01-01"}}
-			case *[]baseRepoValModel:
-				*dest = []baseRepoValModel{{PK: "PK#1", SK: "SK#1"}}
-			default:
-				// No-op
-			}
-		})
-
-		repo := NewBaseRepository[collectionModel](mockDB, "table", zap.NewNop())
-		history, err := QueryHistoryWithDateRange(ctx, repo, HistoryQueryConfig{
-			MetricType: "storage_bytes",
-			IndexName:  "gsi1",
-			PKField:    "gsi1PK",
-			SKField:    "gsi1SK",
-			LogName:    "history",
-			Converter: func(model interface{}) map[string]interface{} {
-				return map[string]interface{}{"ok": true}
-			},
-		}, 0)
-		require.NoError(t, err)
-		require.Len(t, history, 1)
-
-		metrics, err := QueryMetricsByTimeRange(ctx, repo, MetricsQueryConfig{
-			IndexName: "gsi2",
-			PKField:   "gsi2PK",
-			SKField:   "gsi2SK",
-			PKPattern: "SERVICE#%s",
-			LogName:   "metrics",
-		}, "service", time.Now().Add(-time.Hour), time.Now())
-		require.NoError(t, err)
-		require.Len(t, metrics, 1)
-	})
-
-	t.Run("QueryHistoryWithDateRange converter default branch and error path", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Index", mock.Anything).Return(mockQuery)
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]collectionModel)
-			*dest = []collectionModel{{PK: "PK#1", SK: "DATE#2025-01-01"}}
-		}).Once()
-
-		repo := NewBaseRepository[collectionModel](mockDB, "table", zap.NewNop())
-		history, err := QueryHistoryWithDateRange(ctx, repo, HistoryQueryConfig{
-			MetricType: "storage_bytes",
-			IndexName:  "gsi1",
-			PKField:    "gsi1PK",
-			SKField:    "gsi1SK",
-			LogName:    "history",
-			Converter:  nil,
-		}, 0)
-		require.NoError(t, err)
-		require.Len(t, history, 1)
-
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
-		_, err = QueryHistoryWithDateRange(ctx, repo, HistoryQueryConfig{
-			MetricType: "storage_bytes",
-			IndexName:  "gsi1",
-			PKField:    "gsi1PK",
-			SKField:    "gsi1SK",
-			LogName:    "history",
-		}, 1)
-		require.Error(t, err)
-	})
-
-	t.Run("QueryMetricsByTimeRange error path", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Index", mock.Anything).Return(mockQuery)
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
-
-		repo := NewBaseRepository[collectionModel](mockDB, "table", zap.NewNop())
-		_, err := QueryMetricsByTimeRange(ctx, repo, MetricsQueryConfig{
-			IndexName: "gsi2",
-			PKField:   "gsi2PK",
-			SKField:   "gsi2SK",
-			PKPattern: "SERVICE#%s",
-			LogName:   "metrics",
-		}, "service", time.Now().Add(-time.Hour), time.Now())
-		require.Error(t, err)
 	})
 
 	t.Run("ListAggregatedByPeriod paginates via cursor", func(t *testing.T) {
@@ -1159,7 +1055,7 @@ func TestBaseRepository_QueryBetweenPaginated_CursorAsc(t *testing.T) {
 func TestBaseRepository_ErrorPathsMore(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("FindByPK and FindBySK errors are wrapped", func(t *testing.T) {
+	t.Run("FindByPK error is wrapped", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -1170,8 +1066,6 @@ func TestBaseRepository_ErrorPathsMore(t *testing.T) {
 
 		repo := NewBaseRepository[*baseRepoPtrModel](mockDB, "table", zap.NewNop())
 		_, err := repo.FindByPK(ctx, "PK#1")
-		require.Error(t, err)
-		_, err = repo.FindBySK(ctx, "SK#1", "GSI1")
 		require.Error(t, err)
 	})
 
