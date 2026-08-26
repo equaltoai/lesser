@@ -32,17 +32,23 @@ var openRecountDBFn = func(awsCfg aws.Config) (core.DB, func() error, error) {
 }
 
 type recountInstanceCountsSummary struct {
-	Users               int64
-	Domains             int64
-	DomainCounters      int64
-	StaleDomainCounters int64
+	Users                int64
+	Domains              int64
+	DomainCounters       int64
+	StaleDomainCounters  int64
+	ActiveMonthDays      int64
+	StaleActiveMonthDays int64
+	ActiveMonthSum       int64
+	ActiveMonthSeedMarker bool
 }
 
-// runRecountInstanceCounts is the offline drift remedy for the O(1) instance
-// counters: it recomputes TOTAL_USERS and TOTAL_DOMAINS from bounded key-only
-// reads and rewrites the counters. It never runs on a request path — it is a
-// deliberately invoked maintenance command (`--apply` writes; the default is a
-// dry-run report). See repositories.RecountInstanceCounts.
+// runRecountInstanceCounts is the offline drift remedy and sanctioned seed
+// mechanism for the O(1) instance counters: it recomputes TOTAL_USERS,
+// TOTAL_DOMAINS, the per-domain DomainCounter items, and the active-month
+// per-day rollup (+ SEED#ACTIVE_MONTH marker) from bounded key-only reads and
+// rewrites them. It never runs on a request path — it is a deliberately
+// invoked maintenance command (`--apply` writes; the default is a dry-run
+// report). See repositories.RecountInstanceCounts.
 func runRecountInstanceCounts(argv []string) error {
 	fs := flag.NewFlagSet("lesser recount-instance-counts", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -95,10 +101,14 @@ func runRecountInstanceCounts(argv []string) error {
 	}
 
 	summary := recountInstanceCountsSummary{
-		Users:               result.Users,
-		Domains:             result.Domains,
-		DomainCounters:      result.DomainCounters,
-		StaleDomainCounters: result.StaleDomainCounters,
+		Users:                 result.Users,
+		Domains:               result.Domains,
+		DomainCounters:        result.DomainCounters,
+		StaleDomainCounters:   result.StaleDomainCounters,
+		ActiveMonthDays:       result.ActiveMonthDays,
+		StaleActiveMonthDays:  result.StaleActiveMonthDays,
+		ActiveMonthSum:        result.ActiveMonthSum,
+		ActiveMonthSeedMarker: result.ActiveMonthSeedMarker,
 	}
 	printRecountInstanceCountsSummary(summary, resolvedTableName, resolvedProfile, apply)
 	return nil
@@ -115,6 +125,12 @@ func printRecountInstanceCountsSummary(summary recountInstanceCountsSummary, tab
 	fmt.Printf("  total_domains:  %d\n", summary.Domains)
 	fmt.Printf("  domain counters upserted: %d\n", summary.DomainCounters)
 	fmt.Printf("  stale domain counters removed: %d\n", summary.StaleDomainCounters)
+	fmt.Printf("  active_month days upserted: %d\n", summary.ActiveMonthDays)
+	fmt.Printf("  stale active_month days removed: %d\n", summary.StaleActiveMonthDays)
+	fmt.Printf("  active_month sum (retention window): %d\n", summary.ActiveMonthSum)
+	if apply && summary.ActiveMonthSeedMarker {
+		fmt.Println("  SEED#ACTIVE_MONTH marker: written")
+	}
 	if !apply {
 		fmt.Println("  dry-run: pass --apply to rewrite the counters")
 	}

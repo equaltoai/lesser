@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -17,7 +19,8 @@ import (
 
 // TestRunRecountInstanceCounts_EndToEnd drives the recount CLI end-to-end with
 // a fakedb-backed database: dry-run reports without writing, --apply rewrites
-// the counters.
+// the counters, rebuilds the active-month rollup, and persists the
+// SEED#ACTIVE_MONTH marker.
 func TestRunRecountInstanceCounts_EndToEnd(t *testing.T) {
 	prevTable := models.MainTableName
 	models.MainTableName = "lesser-test-recount"
@@ -27,7 +30,7 @@ func TestRunRecountInstanceCounts_EndToEnd(t *testing.T) {
 	fake := fakedb.New()
 	db, err := tabletheory.NewWithClient(session.Config{Region: "us-east-1"}, fake)
 	require.NoError(t, err)
-	for _, m := range []any{&models.User{}, &models.Actor{}, &models.DomainCounter{}, &models.InstanceMetrics{}} {
+	for _, m := range []any{&models.User{}, &models.Actor{}, &models.DomainCounter{}, &models.InstanceMetrics{}, &models.Activity{}, &models.ActivityDayCounter{}, &models.ActivityActorDay{}} {
 		require.NoError(t, db.CreateTable(m))
 	}
 
@@ -52,6 +55,25 @@ func TestRunRecountInstanceCounts_EndToEnd(t *testing.T) {
 	require.NoError(t, stale.UpdateKeys())
 	require.NoError(t, db.WithContext(ctx).Model(stale).Create())
 
+	// Two distinct actors active today, one yesterday.
+	now := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		published := now
+		if i == 2 {
+			published = now.AddDate(0, 0, -1)
+		}
+		act := &models.Activity{
+			Activity: &activitypub.Activity{
+				BaseObject: activitypub.BaseObject{ID: fmt.Sprintf("act-%d", i), Type: "Create", Published: &published},
+				Actor:      "https://example.com/users/actor-" + string(rune('a'+i)),
+				Object:     map[string]any{"content": "hello"},
+			},
+			CreatedAt: published,
+		}
+		require.NoError(t, act.UpdateKeys())
+		require.NoError(t, db.WithContext(ctx).Model(act).Create())
+	}
+
 	prevLoad := loadAWSConfigForCLIFn
 	prevOpen := openRecountDBFn
 	t.Cleanup(func() {
@@ -74,7 +96,8 @@ func TestRunRecountInstanceCounts_EndToEnd(t *testing.T) {
 		First(&metric)
 	require.Error(t, err) // counter not written in dry-run
 
-	// Apply: rewrites the counters and drops the stale domain counter.
+	// Apply: rewrites the counters, drops the stale domain counter, rebuilds
+	// the active-month rollup, and persists the SEED#ACTIVE_MONTH marker.
 	require.NoError(t, runRecountInstanceCountsFn([]string{"--table", "lesser-test-recount", "--apply"}))
 	metric = models.InstanceMetrics{}
 	require.NoError(t, db.WithContext(ctx).Model(&models.InstanceMetrics{}).
@@ -89,6 +112,20 @@ func TestRunRecountInstanceCounts_EndToEnd(t *testing.T) {
 		Where("SK", "=", models.TotalDomainsMetricSK).
 		First(&metric))
 	require.EqualValues(t, 2, metric.Value)
+
+	metric = models.InstanceMetrics{}
+	require.NoError(t, db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", models.InstanceMetricsPK).
+		Where("SK", "=", models.ActiveMonthSeedMetricSK).
+		First(&metric), "SEED#ACTIVE_MONTH marker must be persisted by --apply")
+
+	today := models.DayFormat(now)
+	var dayCounter models.ActivityDayCounter
+	require.NoError(t, db.WithContext(ctx).Model(&models.ActivityDayCounter{}).
+		Where("PK", "=", models.ActivityDayKey(today)).
+		Where("SK", "=", models.DayCounterSK).
+		First(&dayCounter))
+	require.EqualValues(t, 2, dayCounter.Value)
 }
 
 func TestRunRecountInstanceCounts_FlagAndDBOpenErrors(t *testing.T) {
@@ -118,10 +155,13 @@ func TestRunRecountInstanceCounts_FlagAndDBOpenErrors(t *testing.T) {
 func TestPrintRecountInstanceCountsSummary(t *testing.T) {
 	output := captureStdout(t, func() {
 		printRecountInstanceCountsSummary(recountInstanceCountsSummary{
-			Users:               3,
-			Domains:             2,
-			DomainCounters:      2,
-			StaleDomainCounters: 1,
+			Users:                3,
+			Domains:              2,
+			DomainCounters:       2,
+			StaleDomainCounters:  1,
+			ActiveMonthDays:      4,
+			StaleActiveMonthDays: 1,
+			ActiveMonthSum:       77,
 		}, "lesser-dev", "Theory", false)
 	})
 
@@ -132,13 +172,18 @@ func TestPrintRecountInstanceCountsSummary(t *testing.T) {
 	require.Contains(t, output, "total_domains:  2")
 	require.Contains(t, output, "domain counters upserted: 2")
 	require.Contains(t, output, "stale domain counters removed: 1")
+	require.Contains(t, output, "active_month days upserted: 4")
+	require.Contains(t, output, "stale active_month days removed: 1")
+	require.Contains(t, output, "active_month sum (retention window): 77")
 	require.Contains(t, output, "dry-run: pass --apply to rewrite the counters")
 
 	output = captureStdout(t, func() {
 		printRecountInstanceCountsSummary(recountInstanceCountsSummary{
-			Users: 4, Domains: 3, DomainCounters: 3,
+			Users: 4, Domains: 3, DomainCounters: 3, ActiveMonthDays: 5,
+			ActiveMonthSum: 10, ActiveMonthSeedMarker: true,
 		}, "lesser-dev", "", true)
 	})
 	require.Contains(t, output, "recount-instance-counts apply complete")
+	require.Contains(t, output, "SEED#ACTIVE_MONTH marker: written")
 	require.NotContains(t, output, "dry-run: pass --apply")
 }

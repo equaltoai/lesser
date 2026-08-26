@@ -126,6 +126,8 @@ type permissiveDBOptions struct {
 	allErrorTimes            int
 	firstMetricError         error
 	metricErrorTimes         int
+	firstActiveDayCounterError error
+	activeDayCounterErrorTimes int
 	firstScanError           error
 	firstCountError          error
 
@@ -294,6 +296,15 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 			q.On("First", mock.AnythingOfType("*models.InstanceMetrics")).Return(opts.firstMetricError).Times(opts.metricErrorTimes)
 		} else {
 			q.On("First", mock.AnythingOfType("*models.InstanceMetrics")).Return(opts.firstMetricError).Once()
+		}
+	}
+	// The active-month read is a point read of the per-day counters; a failure
+	// on the first day-counter First of each window exercises the fallback.
+	if opts.firstActiveDayCounterError != nil {
+		if opts.activeDayCounterErrorTimes > 0 {
+			q.On("First", mock.AnythingOfType("*models.ActivityDayCounter")).Return(opts.firstActiveDayCounterError).Times(opts.activeDayCounterErrorTimes)
+		} else {
+			q.On("First", mock.AnythingOfType("*models.ActivityDayCounter")).Return(opts.firstActiveDayCounterError).Once()
 		}
 	}
 
@@ -2065,9 +2076,11 @@ func TestService_Round13_MoreBranchCoverage(t *testing.T) {
 
 	t.Run("GetInstanceStats error fallbacks", func(t *testing.T) {
 		svc, _ := newPermissiveAccountsService(t, permissiveDBOptions{
-			domain:           "example.com",
-			firstMetricError: errors.New("metrics down"),
-			metricErrorTimes: 3,
+			domain:                     "example.com",
+			firstMetricError:           errors.New("metrics down"),
+			metricErrorTimes:           1, // TOTAL_USERS point read
+			firstActiveDayCounterError: errors.New("counters down"),
+			activeDayCounterErrorTimes: 2, // monthly + halfyear windows
 		})
 		stats, err := svc.GetInstanceStats(ctx, &GetInstanceStatsQuery{})
 		require.NoError(t, err)

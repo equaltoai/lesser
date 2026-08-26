@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -28,93 +27,34 @@ import (
 // totals on create/delete, and the activity repository maintains the
 // per-day distinct-actor rollup via ActivityActorDay markers.
 //
-// All counters are seeded lazily ONCE from a deliberate table scan on first
-// read. The scan is gated by a persisted marker on success and by an in-memory
-// backoff on failure (see below), so it runs at most once per seed, plus one
-// retry after each backoff expiry. Tradeoffs, documented and disclosed:
+// NO request-adjacent full-table scan is sanctioned on any of these paths,
+// marker-gated or not. The prior "deliberate one-time lazy seed" disposition
+// (introduced by #1468, revoked by operator doctrine 2026-08-26) is removed:
+// the reads below are point reads (or sums of point reads) and NEVER call
+// All() on User/Actor/Activity. An unseeded counter reads as the documented
+// default (0) until maintenance or the offline recount populates it.
 //
-//   - The first public read after deploy pays one table scan per unseeded
-//     counter (per-process single-flight under instanceCountsSeedMu, then
-//     persisted). After that every read is a point read.
-//   - The seed is single-flight only within one process (Lambda instance).
-//     A burst across warm instances is bounded by the persisted seed marker
-//     (after a successful seed) and by the jittered in-memory seed backoff
-//     (after a failed attempt), NOT by single-flight.
-//   - A write that lands in the deploy-to-first-read window can be counted
-//     once by the maintenance path and once by the seed scan (or lost by an
-//     eventually-consistent seed scan). The error is bounded to that window
-//     and never accumulates.
+// Counters are seeded and maintained OFF the request path:
+//
+//   - write-path maintenance: user/actor/account/status/activity write paths
+//     bump the counters on create/delete;
+//   - offline recount: `lesser recount-instance-counts` (RecountInstanceCounts)
+//     recomputes TOTAL_USERS / TOTAL_DOMAINS / per-domain DomainCounter items
+//     and the active-month per-day rollup (+ the SEED#ACTIVE_MONTH marker)
+//     from bounded paginated key-only projections. This is the unblock for
+//     instances whose v1.6.24 lazy seed never completed.
+//
+// Tradeoffs, documented and disclosed:
+//
 //   - active_month is the SUM of per-day distinct actor counts, so an actor
 //     active on multiple days inside the window is counted once per day. The
 //     legacy implementation returned the true window-distinct count; the sum
 //     is an upper bound documented as acceptable for the public surface.
 //   - active_month rollup records activity on the day it is persisted
-//     (published time when available, else creation time); the legacy scan
-//     filtered on publishedAt. The lazy seed reproduces the legacy window for
-//     the first requested depth, so the transition is exact for that window.
-
-// instanceCountsSeedMu serializes the one-time lazy seeds within one process,
-// so a burst of first reads in the same Lambda instance collapses to a single
-// compute. It does NOT span Lambda instances: cross-instance storms are bounded
-// by the persisted seed marker on success and the jittered seed backoff on
-// failure.
-var instanceCountsSeedMu sync.Mutex
-
-// instanceSeedBackoff is an in-memory negative-cache that stops a failed seed
-// attempt from re-arming the one-time table scan at every read or 60s cache
-// expiry. A sustained write failure (throttle / IAM / 5xx) would otherwise turn
-// the one-time seeding scan into a recurring O(table) unauthenticated body
-// scan — the exact class this remediation prohibits. While an entry is inside
-// its window, seed paths return the last known value (or a documented default)
-// and NEVER re-scan; after expiry a single retry is allowed.
-type instanceSeedBackoffEntry struct {
-	lastValue int64
-	until     time.Time
-}
-
-var instanceSeedBackoff = struct {
-	mu      sync.Mutex
-	entries map[string]instanceSeedBackoffEntry
-}{entries: make(map[string]instanceSeedBackoffEntry)}
-
-// seedBackoffTTL returns the backoff window after a failed seed attempt,
-// jittered 5-15 minutes so warm Lambda instances do not resynchronize their
-// retries. The jitter is derived from the wall clock rather than a random
-// source: it needs only to de-synchronize retries across instances, not to be
-// unpredictable, and it keeps the seed path free of a (gosec-flagged) RNG.
-// Overridable in tests.
-var seedBackoffTTL = func() time.Duration {
-	const jitterWindow = int64(10 * time.Minute)
-	return 5*time.Minute + time.Duration(time.Now().UnixNano()%jitterWindow)
-}
-
-// recordInstanceSeedBackoff starts the backoff window for a seed metric after
-// a failed attempt, remembering the best-known value so reads keep serving
-// real data instead of zeros while the table is temporarily unwritable.
-func recordInstanceSeedBackoff(metric string, lastValue int64) {
-	instanceSeedBackoff.mu.Lock()
-	defer instanceSeedBackoff.mu.Unlock()
-	instanceSeedBackoff.entries[metric] = instanceSeedBackoffEntry{
-		lastValue: lastValue,
-		until:     time.Now().Add(seedBackoffTTL()),
-	}
-}
-
-// instanceSeedBackoffValue returns the last known value while a seed attempt
-// is inside its backoff window. Expired entries are lazily cleaned.
-func instanceSeedBackoffValue(metric string) (int64, bool) {
-	instanceSeedBackoff.mu.Lock()
-	defer instanceSeedBackoff.mu.Unlock()
-	e, ok := instanceSeedBackoff.entries[metric]
-	if !ok {
-		return 0, false
-	}
-	if time.Now().After(e.until) {
-		delete(instanceSeedBackoff.entries, metric)
-		return 0, false
-	}
-	return e.lastValue, true
-}
+//     (published time when available, else creation time).
+//   - An unseeded table reads as zeros until the write path or the offline
+//     recount populates the counters; the public surface is eventually
+//     consistent via maintained writes + offline recount.
 
 // bumpInstanceTotalUsers atomically adjusts the TOTAL_USERS counter.
 func bumpInstanceTotalUsers(ctx context.Context, db core.DB, logger *zap.Logger, delta int64) {
@@ -195,181 +135,139 @@ func readInstanceMetricsField(ctx context.Context, db core.DB, logger *zap.Logge
 	}
 }
 
-// instanceMetricExists reports whether an InstanceMetrics item with the given
-// SK already exists.
-func instanceMetricExists(ctx context.Context, db core.DB, sk string) (bool, error) {
-	var metric models.InstanceMetrics
-	err := db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", models.InstanceMetricsPK).
-		Where("SK", "=", sk).
-		First(&metric)
-	if err == nil {
-		return true, nil
-	}
-	if errors.IsNotFound(err) {
-		return false, nil
-	}
-	return false, err
+// readTotalUsersCount returns the maintained TOTAL_USERS counter (point read).
+// An unseeded counter reads as the documented default (0): seeding happens off
+// the request path via write-path maintenance and the offline recount (see the
+// file header). This path NEVER scans.
+func readTotalUsersCount(ctx context.Context, db core.DB, logger *zap.Logger) (int64, error) {
+	return readInstanceMetricsField(ctx, db, logger, models.TotalUsersMetricSK, "TotalUsers")
 }
 
-// ensureTotalUsersSeeded returns the effective TOTAL_USERS value: the
-// maintained counter once seeded, the last known value while a failed seed is
-// in backoff, or the freshly computed value after a successful one-time seed.
-func ensureTotalUsersSeeded(ctx context.Context, db core.DB, logger *zap.Logger) (int64, error) {
-	return seedInstanceTotal(ctx, db, logger, models.TotalUsersMetricSK, func(ctx context.Context, db core.DB) (int64, error) {
-		var users []models.User
-		if err := db.WithContext(ctx).Model(&models.User{}).All(&users); err != nil {
-			logger.Error("failed to compute total users seed", zap.Error(err))
-			return 0, err
-		}
-		return int64(len(users)), nil
-	}, "TotalUsers")
-}
-
-// ensureTotalDomainsSeeded returns the effective TOTAL_DOMAINS value and
-// persists the per-domain DomainCounter items from a one-time scan of actor
-// records (see seedInstanceTotal for the backoff semantics).
-func ensureTotalDomainsSeeded(ctx context.Context, db core.DB, logger *zap.Logger) (int64, error) {
-	return seedInstanceTotal(ctx, db, logger, models.TotalDomainsMetricSK, func(ctx context.Context, db core.DB) (int64, error) {
-		var actors []models.Actor
-		if err := db.WithContext(ctx).Model(&models.Actor{}).All(&actors); err != nil {
-			logger.Error("failed to compute total domains seed", zap.Error(err))
-			return 0, err
-		}
-		domainCounts := make(map[string]int)
-		for _, actor := range actors {
-			if actor.Actor == nil || actor.Actor.ID == "" {
-				continue
-			}
-			if domain := domainFromActorID(actor.Actor.ID); domain != "" {
-				domainCounts[domain]++
-			}
-		}
-		now := time.Now()
-		for domain, count := range domainCounts {
-			counter := &models.DomainCounter{Domain: domain, Value: int64(count), UpdatedAt: now}
-			_ = counter.UpdateKeys()
-			if err := db.WithContext(ctx).Model(&models.DomainCounter{}).
-				Where("PK", "=", counter.PK).
-				Where("SK", "=", counter.SK).
-				UpdateBuilder().
-				Set("Value", int64(count)).
-				Set("UpdatedAt", now).
-				Execute(); err != nil {
-				logger.Warn("failed to persist domain seed counter",
-					zap.String("domain", domain),
-					zap.Error(err))
-			}
-		}
-		return int64(len(domainCounts)), nil
-	}, "Value")
-}
-
-// seedInstanceTotal is the shared lazy-seed for the TOTAL_* counters: if the
-// counter item already exists it is authoritative and no scan runs; otherwise
-// one compute runs under a package mutex (re-checked) and the result is
-// persisted with a Set, which also creates a missing item. It returns the
-// effective value:
-//
-//   - counter already seeded -> the counter value;
-//   - a failed attempt is inside its backoff window -> the last known value
-//     without scanning again;
-//   - fresh compute succeeded -> the computed (and persisted) value;
-//   - fresh compute failed to scan -> error, with a backoff recorded so the
-//     scan is not re-armed at the next read;
-//   - persist failed -> the computed value (last known) plus a backoff, so
-//     reads keep serving real data and the scan retries only after the window.
-func seedInstanceTotal(ctx context.Context, db core.DB, logger *zap.Logger, sk string, compute func(context.Context, core.DB) (int64, error), field string) (int64, error) {
-	exists, err := instanceMetricExists(ctx, db, sk)
-	if err != nil {
-		return 0, err
-	}
-	if exists {
-		return readInstanceMetricsField(ctx, db, logger, sk, field)
-	}
-	if value, ok := instanceSeedBackoffValue(sk); ok {
-		logger.Warn("instance count seed in backoff; serving last known value",
-			zap.String("metric", sk),
-			zap.Int64("value", value))
-		return value, nil
-	}
-
-	instanceCountsSeedMu.Lock()
-	defer instanceCountsSeedMu.Unlock()
-
-	exists, err = instanceMetricExists(ctx, db, sk)
-	if err != nil {
-		return 0, err
-	}
-	if exists {
-		return readInstanceMetricsField(ctx, db, logger, sk, field)
-	}
-	if value, ok := instanceSeedBackoffValue(sk); ok {
-		logger.Warn("instance count seed in backoff; serving last known value",
-			zap.String("metric", sk),
-			zap.Int64("value", value))
-		return value, nil
-	}
-
-	value, err := compute(ctx, db)
-	if err != nil {
-		// A failed compute would re-arm the scan at the next read: back off
-		// with the documented default so the window is scan-free.
-		recordInstanceSeedBackoff(sk, 0)
-		return 0, err
-	}
-
-	now := time.Now()
-	if err := db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", models.InstanceMetricsPK).
-		Where("SK", "=", sk).
-		UpdateBuilder().
-		Set(field, value).
-		Set("UpdatedAt", now).
-		Execute(); err != nil {
-		// Persist failure must not re-arm the scan either: remember the
-		// computed value as the last known value and retry after the window.
-		logger.Error("failed to persist instance count seed; entering backoff",
-			zap.String("metric", sk),
-			zap.Int64("value", value),
-			zap.Error(err))
-		recordInstanceSeedBackoff(sk, value)
-		return value, nil
-	}
-	logger.Info("seeded instance count metric",
-		zap.String("metric", sk),
-		zap.Int64("value", value))
-	return value, nil
+// readTotalDomainsCount returns the maintained TOTAL_DOMAINS counter (point
+// read). An unseeded counter reads as the documented default (0); see
+// readTotalUsersCount. This path NEVER scans.
+func readTotalDomainsCount(ctx context.Context, db core.DB, logger *zap.Logger) (int64, error) {
+	return readInstanceMetricsField(ctx, db, logger, models.TotalDomainsMetricSK, "Value")
 }
 
 // RecountResult reports what an offline recount rewrote.
 type RecountResult struct {
-	Users               int64 // TOTAL_USERS counter rewritten to
-	Domains             int64 // TOTAL_DOMAINS counter rewritten to
-	DomainCounters      int64 // per-domain counter items upserted
-	StaleDomainCounters int64 // per-domain counter items removed
+	Users                int64 // TOTAL_USERS counter rewritten to
+	Domains              int64 // TOTAL_DOMAINS counter rewritten to
+	DomainCounters       int64 // per-domain counter items upserted
+	StaleDomainCounters  int64 // per-domain counter items removed
+	ActiveMonthDays      int64 // per-UTC-day counters upserted
+	StaleActiveMonthDays int64 // stale in-window per-day counters removed
+	ActiveMonthSum       int64 // sum of the rebuilt per-day rollup
+	ActiveMonthSeedMarker bool // SEED#ACTIVE_MONTH marker written (apply only)
 }
 
-// RecountInstanceCounts recomputes TOTAL_USERS and TOTAL_DOMAINS (and the
-// per-domain DomainCounter items) from bounded reads and, when apply is true,
-// rewrites the counters. It is the drift remedy for the maintained counters:
-// the lazy seed runs once ever, so any long-term divergence (a missed write,
-// a manual mutation, a seed-window race) is corrected by deliberately running
-// this tool — offline/invoked via `lesser recount-instance-counts`, NEVER on
-// a request path. With apply=false the same computation is reported without
-// writing anything (dry-run).
+// RecountInstanceCounts recomputes TOTAL_USERS, TOTAL_DOMAINS (and the
+// per-domain DomainCounter items), and the active-month per-UTC-day rollup
+// (+ the SEED#ACTIVE_MONTH marker) from bounded reads and, when apply is true,
+// rewrites them. It is the drift remedy AND the sanctioned seed mechanism for
+// the maintained counters: there is no request-adjacent lazy seed, so any
+// long-term divergence (a missed write, a manual mutation) or an unseeded
+// table (a broken v1.6.24 deploy whose lazy seed never completed) is corrected
+// by deliberately running this tool — offline/invoked via
+// `lesser recount-instance-counts`, NEVER on a request path. With apply=false
+// the same computation is reported without writing anything (dry-run).
 //
 // The reads are bounded: paginated key-only projections (plus the single
-// `actor` attribute needed to derive domains), never full-body materialization.
+// attributes needed to derive domains and activity days), never full-body
+// materialization. They are scans in the DynamoDB sense (offline tooling), but
+// no request goroutine ever reaches them.
 //
-// Semantic note: TOTAL_USERS is computed as the number of USER#/METADATA rows
-// (the canonical account row). The lazy seed reproduces the legacy
-// whole-table scan semantics for compatibility; the recount writes the true
-// account count, so a recount may change the public number once on tables
-// whose legacy seed counted non-user item types.
+// Semantic notes:
+//
+//   - TOTAL_USERS is computed as the number of USER#/METADATA rows (the
+//     canonical account row).
+//   - The active-month rollup covers the retention window
+//     (activeMonthWindowDays) so the widest reader window
+//     (pkg/services/accounts reads 180 days) is served; day counters outside
+//     the window are left to TTL.
 func RecountInstanceCounts(ctx context.Context, db core.DB, logger *zap.Logger, apply bool) (*RecountResult, error) {
-	// TOTAL_USERS: count the canonical USER#/METADATA account rows. Only the
-	// key attributes are projected (encrypted payloads are never transferred).
+	users, err := recountTotalUsers(ctx, db, logger)
+	if err != nil {
+		return nil, err
+	}
+	domainCounts, err := recountActorDomains(ctx, db, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	result := &RecountResult{Users: users, Domains: int64(len(domainCounts))}
+
+	if err := recountDomainCounters(ctx, db, logger, result, domainCounts, apply, now); err != nil {
+		return nil, err
+	}
+	if err := recountActiveMonthRollup(ctx, db, logger, result, apply, now); err != nil {
+		return nil, err
+	}
+
+	if !apply {
+		logger.Info("recounted instance counters (dry-run, nothing written)",
+			zap.Int64("users", users),
+			zap.Int64("domains", result.Domains),
+			zap.Int64("domainCounters", result.DomainCounters),
+			zap.Int64("staleDomainCounters", result.StaleDomainCounters),
+			zap.Int64("activeMonthDays", result.ActiveMonthDays),
+			zap.Int64("staleActiveMonthDays", result.StaleActiveMonthDays),
+			zap.Int64("activeMonthSum", result.ActiveMonthSum))
+		return result, nil
+	}
+
+	// Rewrite the global counters (Set also creates a missing item).
+	if err := db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", models.InstanceMetricsPK).
+		Where("SK", "=", models.TotalUsersMetricSK).
+		UpdateBuilder().
+		Set("TotalUsers", users).
+		Set("UpdatedAt", now).
+		Execute(); err != nil {
+		logger.Error("failed to rewrite TOTAL_USERS counter", zap.Error(err))
+		return nil, err
+	}
+	if err := db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", models.InstanceMetricsPK).
+		Where("SK", "=", models.TotalDomainsMetricSK).
+		UpdateBuilder().
+		Set("Value", result.Domains).
+		Set("UpdatedAt", now).
+		Execute(); err != nil {
+		logger.Error("failed to rewrite TOTAL_DOMAINS counter", zap.Error(err))
+		return nil, err
+	}
+
+	// Persist the SEED#ACTIVE_MONTH marker so no deploy can ever re-arm a
+	// request-adjacent active-month scan. A failure is fatal: the operator
+	// re-runs the idempotent recount and retries.
+	if err := db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", models.InstanceMetricsPK).
+		Where("SK", "=", models.ActiveMonthSeedMetricSK).
+		UpdateBuilder().
+		Set("UpdatedAt", now).
+		Execute(); err != nil {
+		logger.Error("failed to persist active month seed marker", zap.Error(err))
+		return nil, err
+	}
+	result.ActiveMonthSeedMarker = true
+
+	logger.Info("recounted instance counters",
+		zap.Int64("users", users),
+		zap.Int64("domains", result.Domains),
+		zap.Int64("domainCounters", result.DomainCounters),
+		zap.Int64("staleDomainCounters", result.StaleDomainCounters),
+		zap.Int64("activeMonthDays", result.ActiveMonthDays),
+		zap.Int64("staleActiveMonthDays", result.StaleActiveMonthDays),
+		zap.Int64("activeMonthSum", result.ActiveMonthSum))
+	return result, nil
+}
+
+// recountTotalUsers counts the canonical USER#/METADATA account rows via a
+// bounded key-only projection (encrypted payloads are never transferred).
+func recountTotalUsers(ctx context.Context, db core.DB, logger *zap.Logger) (int64, error) {
 	var userKeys []models.User
 	if err := db.WithContext(ctx).Model(&models.User{}).
 		Select("PK", "SK").
@@ -377,7 +275,7 @@ func RecountInstanceCounts(ctx context.Context, db core.DB, logger *zap.Logger, 
 		Filter("SK", "=", "METADATA").
 		All(&userKeys); err != nil {
 		logger.Error("failed to recount user rows", zap.Error(err))
-		return nil, err
+		return 0, err
 	}
 	users := int64(0)
 	for _, u := range userKeys {
@@ -385,9 +283,12 @@ func RecountInstanceCounts(ctx context.Context, db core.DB, logger *zap.Logger, 
 			users++
 		}
 	}
+	return users, nil
+}
 
-	// TOTAL_DOMAINS: distinct hosts of actor IDs. Only the actor JSON
-	// attribute is projected, mirroring the seed's compute exactly.
+// recountActorDomains computes the distinct hosts of actor IDs from a bounded
+// projection of the actor JSON attribute.
+func recountActorDomains(ctx context.Context, db core.DB, logger *zap.Logger) (map[string]int64, error) {
 	var actors []models.Actor
 	if err := db.WithContext(ctx).Model(&models.Actor{}).
 		Select("PK", "SK", "Actor").
@@ -406,20 +307,20 @@ func RecountInstanceCounts(ctx context.Context, db core.DB, logger *zap.Logger, 
 			domainCounts[domain]++
 		}
 	}
+	return domainCounts, nil
+}
 
-	now := time.Now()
-	result := &RecountResult{Users: users, Domains: int64(len(domainCounts))}
-
-	// Rebuild the per-domain counters: drop stale DomainCounter items and
-	// upsert the current set, so subsequent actor create/delete maintenance
-	// starts from a consistent tally.
+// recountDomainCounters rebuilds the per-domain DomainCounter items: stale
+// counters are dropped and the current set upserted, so subsequent actor
+// create/delete maintenance starts from a consistent tally.
+func recountDomainCounters(ctx context.Context, db core.DB, logger *zap.Logger, result *RecountResult, domainCounts map[string]int64, apply bool, now time.Time) error {
 	var existing []models.DomainCounter
 	if err := db.WithContext(ctx).Model(&models.DomainCounter{}).
 		Select("PK", "SK").
 		Filter("PK", "begins_with", "DOMAIN#").
 		All(&existing); err != nil {
 		logger.Error("failed to recount existing domain counters", zap.Error(err))
-		return nil, err
+		return err
 	}
 	for _, counter := range existing {
 		domain := strings.TrimPrefix(counter.PK, "DOMAIN#")
@@ -460,44 +361,160 @@ func RecountInstanceCounts(ctx context.Context, db core.DB, logger *zap.Logger, 
 		}
 		result.DomainCounters++
 	}
+	return nil
+}
 
+// activeMonthWindowDays is the rollup horizon for the offline active-month
+// recount. It must cover the widest reader window (pkg/services/accounts reads
+// 180 days for the half-year figure) and stay inside the ActivityDayCounter
+// TTL retention (200 days) so rebuilt counters are not immediately expired.
+const activeMonthWindowDays = 200
+
+// recountActiveMonthRollup rebuilds the active-month per-UTC-day rollup from
+// the activity projection and, in apply mode, persists the day counters, drops
+// stale in-window counters, writes today's ActivityActorDay markers (so the
+// write path does not double-count today), and persists the SEED#ACTIVE_MONTH
+// marker. It reports progress on result. This is what unblocks instances whose
+// v1.6.24 lazy active-month seed never completed.
+func recountActiveMonthRollup(ctx context.Context, db core.DB, logger *zap.Logger, result *RecountResult, apply bool, now time.Time) error {
+	cutoff := now.AddDate(0, 0, -activeMonthWindowDays)
+	dayActors, err := collectActiveMonthDayActors(ctx, db, logger, cutoff)
+	if err != nil {
+		return err
+	}
+	for _, actors := range dayActors {
+		result.ActiveMonthSum += int64(len(actors))
+	}
+
+	if err := recountStaleActiveMonthDays(ctx, db, logger, result, dayActors, apply, cutoff); err != nil {
+		return err
+	}
+	if err := recountActiveMonthDayCounters(ctx, db, logger, result, dayActors, apply, now); err != nil {
+		return err
+	}
+	recountActiveMonthMarkers(ctx, db, logger, dayActors, apply, now)
+	return nil
+}
+
+// collectActiveMonthDayActors computes the distinct-actor set per UTC day from
+// a bounded projection of activity rows inside the retention window.
+func collectActiveMonthDayActors(ctx context.Context, db core.DB, logger *zap.Logger, cutoff time.Time) (map[string]map[string]bool, error) {
+	// Project only the attributes needed to bucket an activity into its UTC day:
+	// the activity JSON (actor + published time) and the creation-time fallback.
+	var activities []models.Activity
+	if err := db.WithContext(ctx).Model(&models.Activity{}).
+		Select("PK", "SK", "Activity", "CreatedAt").
+		Filter("SK", "begins_with", "ACTIVITY#").
+		All(&activities); err != nil {
+		logger.Error("failed to recount activity rows", zap.Error(err))
+		return nil, err
+	}
+
+	dayActors := make(map[string]map[string]bool)
+	for _, activity := range activities {
+		if activity.Activity == nil || activity.Activity.Actor == "" {
+			continue
+		}
+		if !activityInWindow(activity, cutoff) {
+			continue
+		}
+		day := activityDayOf(activity)
+		if dayActors[day] == nil {
+			dayActors[day] = make(map[string]bool)
+		}
+		dayActors[day][activity.Activity.Actor] = true
+	}
+	return dayActors, nil
+}
+
+// recountStaleActiveMonthDays drops in-window day counters that have no
+// activity rows, so subsequent write-path maintenance starts from a consistent
+// rollup. Days outside the retention window are left to TTL.
+func recountStaleActiveMonthDays(ctx context.Context, db core.DB, logger *zap.Logger, result *RecountResult, dayActors map[string]map[string]bool, apply bool, cutoff time.Time) error {
+	var existingDays []models.ActivityDayCounter
+	if err := db.WithContext(ctx).Model(&models.ActivityDayCounter{}).
+		Select("PK", "SK").
+		Filter("PK", "begins_with", "ACTIVITY_DAY#").
+		All(&existingDays); err != nil {
+		logger.Error("failed to recount existing active month counters", zap.Error(err))
+		return err
+	}
+	cutoffDay := models.DayFormat(cutoff)
+	for _, dayCounter := range existingDays {
+		day := strings.TrimPrefix(dayCounter.PK, "ACTIVITY_DAY#")
+		if day < cutoffDay {
+			continue // outside the retention window; TTL handles it
+		}
+		if _, keep := dayActors[day]; keep {
+			continue
+		}
+		if !apply {
+			result.StaleActiveMonthDays++
+			continue
+		}
+		if err := db.WithContext(ctx).Model(&models.ActivityDayCounter{}).
+			Where("PK", "=", dayCounter.PK).
+			Where("SK", "=", dayCounter.SK).
+			Delete(); err != nil {
+			logger.Warn("failed to delete stale active month counter",
+				zap.String("day", day),
+				zap.Error(err))
+			continue
+		}
+		result.StaleActiveMonthDays++
+	}
+	return nil
+}
+
+// recountActiveMonthDayCounters upserts the per-day counter items for the
+// recomputed rollup.
+func recountActiveMonthDayCounters(ctx context.Context, db core.DB, logger *zap.Logger, result *RecountResult, dayActors map[string]map[string]bool, apply bool, now time.Time) error {
+	for day, actors := range dayActors {
+		if !apply {
+			result.ActiveMonthDays++
+			continue
+		}
+		counter := &models.ActivityDayCounter{Date: day, Value: int64(len(actors)), UpdatedAt: now}
+		_ = counter.UpdateKeys()
+		if err := db.WithContext(ctx).Model(&models.ActivityDayCounter{}).
+			Where("PK", "=", counter.PK).
+			Where("SK", "=", counter.SK).
+			UpdateBuilder().
+			Set("Value", counter.Value).
+			Set("UpdatedAt", now).
+			Execute(); err != nil {
+			logger.Warn("failed to persist active month counter",
+				zap.String("day", day),
+				zap.Error(err))
+			continue
+		}
+		result.ActiveMonthDays++
+	}
+	return nil
+}
+
+// recountActiveMonthMarkers writes today's ActivityActorDay markers so a
+// same-day re-activation after the recount does not double count (the write
+// path bumps the counter only when the marker is newly created; markers for
+// past days can never be written again).
+func recountActiveMonthMarkers(ctx context.Context, db core.DB, logger *zap.Logger, dayActors map[string]map[string]bool, apply bool, now time.Time) {
 	if !apply {
-		logger.Info("recounted instance counters (dry-run, nothing written)",
-			zap.Int64("users", users),
-			zap.Int64("domains", result.Domains),
-			zap.Int64("domainCounters", result.DomainCounters),
-			zap.Int64("staleDomainCounters", result.StaleDomainCounters))
-		return result, nil
+		return
 	}
-
-	// Rewrite the global counters (Set also creates a missing item).
-	if err := db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", models.InstanceMetricsPK).
-		Where("SK", "=", models.TotalUsersMetricSK).
-		UpdateBuilder().
-		Set("TotalUsers", users).
-		Set("UpdatedAt", now).
-		Execute(); err != nil {
-		logger.Error("failed to rewrite TOTAL_USERS counter", zap.Error(err))
-		return nil, err
+	today := models.DayFormat(now)
+	todayActors, ok := dayActors[today]
+	if !ok {
+		return
 	}
-	if err := db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", models.InstanceMetricsPK).
-		Where("SK", "=", models.TotalDomainsMetricSK).
-		UpdateBuilder().
-		Set("Value", result.Domains).
-		Set("UpdatedAt", now).
-		Execute(); err != nil {
-		logger.Error("failed to rewrite TOTAL_DOMAINS counter", zap.Error(err))
-		return nil, err
+	for actorID := range todayActors {
+		marker := &models.ActivityActorDay{ActorID: actorID, Day: today, UpdatedAt: now}
+		_ = marker.UpdateKeys()
+		if err := db.WithContext(ctx).Model(marker).IfNotExists().Create(); err != nil && !errors.IsConditionFailed(err) {
+			logger.Warn("failed to persist active month recount marker",
+				zap.String("actor", actorID),
+				zap.Error(err))
+		}
 	}
-
-	logger.Info("recounted instance counters",
-		zap.Int64("users", users),
-		zap.Int64("domains", result.Domains),
-		zap.Int64("domainCounters", result.DomainCounters),
-		zap.Int64("staleDomainCounters", result.StaleDomainCounters))
-	return result, nil
 }
 
 // recordActivityActorDay marks an actor as active on a UTC day. The marker is
@@ -543,11 +560,11 @@ func recordActivityActorDay(ctx context.Context, db core.DB, logger *zap.Logger,
 
 // readActiveMonthCount returns the sum of per-day distinct-actor counters over
 // the last `days` UTC days. The window sum is an upper bound on the true
-// window-distinct count (see the file header).
+// window-distinct count (see the file header). Every read is a point read of a
+// maintained day counter; missing days sum as zero, and the read NEVER scans.
+// The rollup is populated off the request path (activity write path + the
+// offline recount).
 func readActiveMonthCount(ctx context.Context, db core.DB, logger *zap.Logger, days int) (int, error) {
-	if err := ensureActiveMonthSeeded(ctx, db, logger, days); err != nil {
-		return 0, err
-	}
 	var total int64
 	now := time.Now()
 	for i := 0; i < days; i++ {
@@ -571,128 +588,9 @@ func readActiveMonthCount(ctx context.Context, db core.DB, logger *zap.Logger, d
 	return int(total), nil
 }
 
-// ensureActiveMonthSeeded backfills the per-day rollup once from a scan of
-// activity records, reproducing the legacy publishedAt-window computation for
-// the first requested depth (rounded up to 30 days so a DAU-first read still
-// seeds the monthly surface). The one-time scan reads item bodies exactly once;
-// afterwards the rollup is maintained by recordActivityActorDay. A failed seed
-// (scan error or seed-marker persist error) records an in-memory backoff so
-// the scan is not re-armed at every read or 60s cache expiry; during the
-// window the read path keeps summing whatever day counters exist.
-func ensureActiveMonthSeeded(ctx context.Context, db core.DB, logger *zap.Logger, days int) error {
-	seeded, err := instanceMetricExists(ctx, db, models.ActiveMonthSeedMetricSK)
-	if err != nil {
-		return err
-	}
-	if seeded {
-		return nil
-	}
-	if _, ok := instanceSeedBackoffValue(models.ActiveMonthSeedMetricSK); ok {
-		logger.Warn("active month seed in backoff; serving existing day counters")
-		return nil
-	}
-
-	instanceCountsSeedMu.Lock()
-	defer instanceCountsSeedMu.Unlock()
-
-	seeded, err = instanceMetricExists(ctx, db, models.ActiveMonthSeedMetricSK)
-	if err != nil {
-		return err
-	}
-	if seeded {
-		return nil
-	}
-	if _, ok := instanceSeedBackoffValue(models.ActiveMonthSeedMetricSK); ok {
-		logger.Warn("active month seed in backoff; serving existing day counters")
-		return nil
-	}
-
-	seedDays := days
-	if seedDays < 30 {
-		seedDays = 30
-	}
-	cutoff := time.Now().AddDate(0, 0, -seedDays)
-
-	// One-time backfill scan. The legacy implementation filtered the scan with
-	// Filter("PublishedAt", ">", cutoff), but that attribute does not resolve
-	// portably across the table mapper and the fakedb emulator; the scan is
-	// post-filtered in-memory with identical window semantics. The scan cost is
-	// one-time, per-process single-flight, and backoff-gated after a failure.
-	var activities []models.Activity
-	if err := db.WithContext(ctx).Model(&models.Activity{}).
-		All(&activities); err != nil {
-		logger.Error("failed to compute active month seed; entering backoff", zap.Error(err))
-		recordInstanceSeedBackoff(models.ActiveMonthSeedMetricSK, 0)
-		return err
-	}
-
-	// Distinct actors per UTC day (same set semantics the legacy count used for
-	// the whole window, applied per day).
-	dayActors := make(map[string]map[string]bool)
-	for _, activity := range activities {
-		if activity.Activity == nil || activity.Activity.Actor == "" {
-			continue
-		}
-		if !activityInWindow(activity, cutoff) {
-			continue
-		}
-		day := activityDayOf(activity)
-		if dayActors[day] == nil {
-			dayActors[day] = make(map[string]bool)
-		}
-		dayActors[day][activity.Activity.Actor] = true
-	}
-
-	now := time.Now()
-	for day, actors := range dayActors {
-		if err := db.WithContext(ctx).Model(&models.ActivityDayCounter{}).
-			Where("PK", "=", models.ActivityDayKey(day)).
-			Where("SK", "=", models.DayCounterSK).
-			UpdateBuilder().
-			Set("Value", int64(len(actors))).
-			Set("UpdatedAt", now).
-			Execute(); err != nil {
-			logger.Warn("failed to persist active day seed counter",
-				zap.String("day", day),
-				zap.Error(err))
-		}
-	}
-
-	// Mark today's actors so a same-day re-activation after the seed does not
-	// double count (markers for past days can never be written again).
-	today := models.DayFormat(now)
-	if todayActors, ok := dayActors[today]; ok {
-		for actorID := range todayActors {
-			marker := &models.ActivityActorDay{ActorID: actorID, Day: today, UpdatedAt: now}
-			_ = marker.UpdateKeys()
-			if err := db.WithContext(ctx).Model(marker).IfNotExists().Create(); err != nil && !errors.IsConditionFailed(err) {
-				logger.Warn("failed to persist active month seed marker",
-					zap.String("actor", actorID),
-					zap.Error(err))
-			}
-		}
-	}
-
-	// Persist the seed marker so the scan never runs again. A persist failure
-	// here must NOT silently re-arm the scan at the next read: record the
-	// in-memory backoff (the in-memory fallback for the marker-write-failure
-	// path) so subsequent reads serve the day counters without re-scanning
-	// until the window expires.
-	if err := db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", models.InstanceMetricsPK).
-		Where("SK", "=", models.ActiveMonthSeedMetricSK).
-		UpdateBuilder().
-		Set("UpdatedAt", now).
-		Execute(); err != nil {
-		logger.Warn("failed to persist active month seed marker metric; entering backoff", zap.Error(err))
-		recordInstanceSeedBackoff(models.ActiveMonthSeedMetricSK, 0)
-	}
-	logger.Info("seeded active month rollup", zap.Int("days", seedDays))
-	return nil
-}
-
 // activityDayOf returns the UTC day bucket for an activity record: the
-// published time when available, otherwise the creation time.
+// published time when available, otherwise the creation time. Used by the
+// offline active-month recount.
 func activityDayOf(activity models.Activity) string {
 	if activity.Activity != nil && activity.Activity.Published != nil {
 		return models.DayFormat(*activity.Activity.Published)
@@ -700,8 +598,9 @@ func activityDayOf(activity models.Activity) string {
 	return models.DayFormat(activity.CreatedAt)
 }
 
-// activityInWindow reports whether an activity falls inside the seed window,
-// mirroring the legacy publishedAt-cutoff semantics (creation time fallback).
+// activityInWindow reports whether an activity falls inside the recount
+// window, mirroring the legacy publishedAt-cutoff semantics (creation time
+// fallback).
 func activityInWindow(activity models.Activity, cutoff time.Time) bool {
 	if activity.Activity != nil && activity.Activity.Published != nil {
 		return activity.Activity.Published.After(cutoff)

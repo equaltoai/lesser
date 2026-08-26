@@ -194,9 +194,11 @@ func TestMetricsHelpers_Round12Coverage(t *testing.T) {
 	})
 
 	t.Run("calculateUserProjectionLift returns fallback on MAU error", func(t *testing.T) {
+		// The active-month read is a point read of the per-day counters (the
+		// request-adjacent seed-marker read was removed; see instance_counts.go).
 		state := &round10QueryState{
 			firstErrorByType: map[string]error{
-				"*models.InstanceMetrics": errors.New("boom"),
+				"*models.ActivityDayCounter": errors.New("boom"),
 			},
 		}
 		h, _, _ := round11NewHandlerSliceC(t, state)
