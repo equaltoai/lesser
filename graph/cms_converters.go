@@ -900,9 +900,10 @@ func (r *Resolver) uploadGrantSSEHeaders() []*model.UploadGrantSignedHeader {
 // convertCMSUploadGrant maps a storage upload grant onto its inspectable
 // GraphQL surface. The status query recomputes EXPIRED at read time from the
 // bounded expiry; presignedURL is populated only while the grant is minted.
-// SignedHeaders always carries the SSE-KMS headers the minted presigned PUT
-// signs (see uploadGrantSSEHeaders), so clients can echo them on the PUT even
-// on the re-presigned uploadGrant(grantId:) query path.
+// SignedHeaders carries the SSE-KMS headers the minted presigned PUT signs
+// (see uploadGrantSSEHeaders) — an empty list when the instance key is unset,
+// never nil, since the schema declares the list non-null — so clients can echo
+// them on the PUT even on the re-presigned uploadGrant(grantId:) query path.
 func (r *Resolver) convertCMSUploadGrant(grant *models.UploadGrant, presignedURL string) *model.UploadGrant {
 	if grant == nil {
 		return nil
