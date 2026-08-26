@@ -872,20 +872,24 @@ func (r *Resolver) convertCMSDraftReviewGrant(ctx context.Context, grant *models
 // uploadGrantSSEHeaders returns the SSE-KMS headers every minted presigned PUT
 // signs, as HTTP header names and exact values the client must echo on the PUT
 // (see media.UploadGrantSSE*). The values come from the media service because
-// they are exactly the values PresignPutObject signs into the URL; an empty
-// instance key yields an empty set (the grant surface fails closed before
-// minting in that case, so every minted grant carries both headers).
+// they are exactly the values PresignPutObject signs into the URL. The list is
+// non-nil in every reachable state: the schema declares signedHeaders
+// non-null ([UploadGrantSignedHeader!]!), so an empty instance key must yield
+// an empty list, never nil — mint already fails closed without the key, and
+// this only surfaces on the re-presign uploadGrant(grantId:) query path after
+// the key was unset or removed mid-TTL, where the grant object must still
+// resolve instead of failing the whole response.
 func (r *Resolver) uploadGrantSSEHeaders() []*model.UploadGrantSignedHeader {
 	if r == nil || r.Registry == nil {
-		return nil
+		return []*model.UploadGrantSignedHeader{}
 	}
 	svc := r.Registry.Media()
 	if svc == nil {
-		return nil
+		return []*model.UploadGrantSignedHeader{}
 	}
 	algorithm, keyID := svc.UploadGrantSSE()
 	if strings.TrimSpace(keyID) == "" {
-		return nil
+		return []*model.UploadGrantSignedHeader{}
 	}
 	return []*model.UploadGrantSignedHeader{
 		{Name: media.UploadGrantSSEEncryptionHeader, Value: algorithm},

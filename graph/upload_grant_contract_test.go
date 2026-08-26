@@ -209,6 +209,39 @@ func TestUploadGrantExpiredFailsClosedGraphQL(t *testing.T) {
 	require.Nil(t, queried.PresignedURL)
 }
 
+func TestUploadGrantQueryPathEmptyKeyReturnsValidGrant(t *testing.T) {
+	resolver, _, state := newRound12UploadGrantResolver(t)
+	ctx := round12AuthContext("alice")
+
+	// Mint normally with the configured instance key, then remove the key
+	// mid-TTL (KMS_KEY_ID unset/removed while a still-valid grant is
+	// persisted). The uploadGrant(grantId:) query path must still resolve the
+	// grant object with a non-null signedHeaders list — empty, never nil —
+	// instead of failing the schema's non-null [UploadGrantSignedHeader!]!.
+	minted, err := resolver.Mutation().MintUploadGrant(ctx, model.MintUploadGrantInput{
+		ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, Sha256: round12UploadDigest(round12TinyPNG()),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, minted)
+	require.Len(t, state.uploadGrantPresigns, 1)
+	require.Equal(t, "alias/lesser-test", state.uploadGrantPresigns[0].kmsKeyID)
+
+	resolver.Registry.Media().SetEditorialKMSKeyID("")
+
+	queried, err := resolver.Query().UploadGrant(ctx, minted.ID)
+	require.NoError(t, err)
+	require.Equal(t, model.UploadGrantStatusMinted, queried.Status)
+	require.NotNil(t, queried.SignedHeaders,
+		"signedHeaders is non-null ([UploadGrantSignedHeader!]!); an empty instance key must yield an empty list, never nil")
+	require.Empty(t, queried.SignedHeaders,
+		"no SSE-KMS headers are bound when the instance key is unset")
+	// The re-presign path ran against the now-empty key, mirroring the
+	// adversary's scenario: the grant object resolves with the empty contract.
+	require.Len(t, state.uploadGrantPresigns, 2)
+	require.Equal(t, "", state.uploadGrantPresigns[1].kmsKeyID,
+		"the query-path re-presign must observe the empty instance key")
+}
+
 func TestUploadGrantActorIsolationGraphQL(t *testing.T) {
 	resolver, storage, state := newRound12UploadGrantResolver(t)
 
