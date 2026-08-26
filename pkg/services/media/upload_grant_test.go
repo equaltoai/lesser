@@ -218,6 +218,31 @@ func TestMintUploadGrant(t *testing.T) {
 	require.Equal(t, UploadGrantTTL, call.expiry)
 }
 
+func TestService_UploadGrantSSE(t *testing.T) {
+	service, _, _, _ := newUploadGrantTestService(t)
+
+	// The SSE contract is exactly what the minted presigned PUT signs: the
+	// algorithm header value and the instance KMS key id (alias/lesser-test here
+	// matches the key asserted on the recorded PresignPutObject call in
+	// TestMintUploadGrant), so a client echoing these values on the PUT satisfies
+	// the signature.
+	algorithm, keyID := service.UploadGrantSSE()
+	require.Equal(t, UploadGrantSSEAlgorithm, algorithm, "the algorithm must be the constant the presigner signs")
+	require.Equal(t, "aws:kms", algorithm)
+	require.Equal(t, "alias/lesser-test", keyID, "the returned key id must be the exact value passed to PresignPutObject")
+
+	// Header names are part of the contract and fixed.
+	require.Equal(t, "x-amz-server-side-encryption", UploadGrantSSEEncryptionHeader)
+	require.Equal(t, "x-amz-server-side-encryption-aws-kms-key-id", UploadGrantSSEKMSKeyIDHeader)
+
+	// An unconfigured key means no SSE headers are bound; the mint surface fails
+	// closed before minting in that state.
+	service.SetEditorialKMSKeyID("")
+	algorithm, keyID = service.UploadGrantSSE()
+	require.Equal(t, "aws:kms", algorithm)
+	require.Equal(t, "", keyID)
+}
+
 func TestMintUploadGrantValidation(t *testing.T) {
 	service, grantRepo, _, _ := newUploadGrantTestService(t)
 	valid := uploadGrantDigest(tinyPNG)

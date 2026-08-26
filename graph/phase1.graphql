@@ -434,6 +434,13 @@ type UploadGrant {
   status: UploadGrantStatus!
   """Presigned PUT URL. Populated at mint and refreshed while the grant is minted."""
   presignedUrl: String
+  """Headers the presigned PUT signs into its SigV4 signature (SSE-KMS under
+  the instance key). Send each as an HTTP header with the exact value on the
+  PUT; omitting or altering any yields 403 SignatureDoesNotMatch. Also send
+  Content-Type: the declared contentType (finalize rejects a mismatched stored
+  type) and the exact declared bytes (S3 validates the checksum hoisted into
+  the URL)."""
+  signedHeaders: [UploadGrantSignedHeader!]!
   """Media ID minted with the grant; set once the finalize admits the asset."""
   mediaId: ID
   grantedAt: Time!
@@ -442,6 +449,16 @@ type UploadGrant {
   usedAt: Time
   """Set on a digest-failure finalize so the owner can inspect why an upload was not admitted."""
   failureReason: String
+}
+
+"""One HTTP header the minted presigned PUT signs into its SigV4 signature.
+The client MUST send it on the PUT with the exact value; omitting or altering
+any signed header makes S3 reject the request with 403 SignatureDoesNotMatch."""
+type UploadGrantSignedHeader {
+  """HTTP header name, e.g. x-amz-server-side-encryption."""
+  name: String!
+  """Exact header value to send, e.g. aws:kms or the instance KMS key id."""
+  value: String!
 }
 
 enum UploadGrantStatus {

@@ -3715,6 +3715,7 @@ type ComplexityRoot struct {
 		MediaID        func(childComplexity int) int
 		OwnerID        func(childComplexity int) int
 		PresignedURL   func(childComplexity int) int
+		SignedHeaders  func(childComplexity int) int
 		Status         func(childComplexity int) int
 		UsedAt         func(childComplexity int) int
 	}
@@ -3731,6 +3732,11 @@ type ComplexityRoot struct {
 		Size        func(childComplexity int) int
 		Status      func(childComplexity int) int
 		Visibility  func(childComplexity int) int
+	}
+
+	UploadGrantSignedHeader struct {
+		Name  func(childComplexity int) int
+		Value func(childComplexity int) int
 	}
 
 	UploadMediaPayload struct {
@@ -24067,6 +24073,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.UploadGrant.PresignedURL(childComplexity), true
 
+	case "UploadGrant.signedHeaders":
+		if e.complexity.UploadGrant.SignedHeaders == nil {
+			break
+		}
+
+		return e.complexity.UploadGrant.SignedHeaders(childComplexity), true
+
 	case "UploadGrant.status":
 		if e.complexity.UploadGrant.Status == nil {
 			break
@@ -24136,6 +24149,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.UploadGrantMedia.Visibility(childComplexity), true
+
+	case "UploadGrantSignedHeader.name":
+		if e.complexity.UploadGrantSignedHeader.Name == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantSignedHeader.Name(childComplexity), true
+
+	case "UploadGrantSignedHeader.value":
+		if e.complexity.UploadGrantSignedHeader.Value == nil {
+			break
+		}
+
+		return e.complexity.UploadGrantSignedHeader.Value(childComplexity), true
 
 	case "UploadMediaPayload.media":
 		if e.complexity.UploadMediaPayload.Media == nil {
@@ -102954,6 +102981,8 @@ func (ec *executionContext) fieldContext_Mutation_mintUploadGrant(ctx context.Co
 				return ec.fieldContext_UploadGrant_status(ctx, field)
 			case "presignedUrl":
 				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "signedHeaders":
+				return ec.fieldContext_UploadGrant_signedHeaders(ctx, field)
 			case "mediaId":
 				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
 			case "grantedAt":
@@ -128804,6 +128833,8 @@ func (ec *executionContext) fieldContext_Query_uploadGrant(ctx context.Context, 
 				return ec.fieldContext_UploadGrant_status(ctx, field)
 			case "presignedUrl":
 				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "signedHeaders":
+				return ec.fieldContext_UploadGrant_signedHeaders(ctx, field)
 			case "mediaId":
 				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
 			case "grantedAt":
@@ -161593,6 +161624,56 @@ func (ec *executionContext) fieldContext_UploadGrant_presignedUrl(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _UploadGrant_signedHeaders(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrant_signedHeaders(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SignedHeaders, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.UploadGrantSignedHeader)
+	fc.Result = res
+	return ec.marshalNUploadGrantSignedHeader2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantSignedHeaderᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrant_signedHeaders(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrant",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "name":
+				return ec.fieldContext_UploadGrantSignedHeader_name(ctx, field)
+			case "value":
+				return ec.fieldContext_UploadGrantSignedHeader_value(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UploadGrantSignedHeader", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UploadGrant_mediaId(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrant) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_UploadGrant_mediaId(ctx, field)
 	if err != nil {
@@ -161857,6 +161938,8 @@ func (ec *executionContext) fieldContext_UploadGrantFinalizeResult_grant(_ conte
 				return ec.fieldContext_UploadGrant_status(ctx, field)
 			case "presignedUrl":
 				return ec.fieldContext_UploadGrant_presignedUrl(ctx, field)
+			case "signedHeaders":
+				return ec.fieldContext_UploadGrant_signedHeaders(ctx, field)
 			case "mediaId":
 				return ec.fieldContext_UploadGrant_mediaId(ctx, field)
 			case "grantedAt":
@@ -162186,6 +162269,94 @@ func (ec *executionContext) _UploadGrantMedia_visibility(ctx context.Context, fi
 func (ec *executionContext) fieldContext_UploadGrantMedia_visibility(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "UploadGrantMedia",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantSignedHeader_name(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantSignedHeader) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantSignedHeader_name(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantSignedHeader_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantSignedHeader",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UploadGrantSignedHeader_value(ctx context.Context, field graphql.CollectedField, obj *model.UploadGrantSignedHeader) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_UploadGrantSignedHeader_value(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Value, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_UploadGrantSignedHeader_value(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UploadGrantSignedHeader",
 		Field:      field,
 		IsMethod:   false,
 		IsResolver: false,
@@ -201014,6 +201185,11 @@ func (ec *executionContext) _UploadGrant(ctx context.Context, sel ast.SelectionS
 			}
 		case "presignedUrl":
 			out.Values[i] = ec._UploadGrant_presignedUrl(ctx, field, obj)
+		case "signedHeaders":
+			out.Values[i] = ec._UploadGrant_signedHeaders(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "mediaId":
 			out.Values[i] = ec._UploadGrant_mediaId(ctx, field, obj)
 		case "grantedAt":
@@ -201135,6 +201311,50 @@ func (ec *executionContext) _UploadGrantMedia(ctx context.Context, sel ast.Selec
 			}
 		case "visibility":
 			out.Values[i] = ec._UploadGrantMedia_visibility(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var uploadGrantSignedHeaderImplementors = []string{"UploadGrantSignedHeader"}
+
+func (ec *executionContext) _UploadGrantSignedHeader(ctx context.Context, sel ast.SelectionSet, obj *model.UploadGrantSignedHeader) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, uploadGrantSignedHeaderImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UploadGrantSignedHeader")
+		case "name":
+			out.Values[i] = ec._UploadGrantSignedHeader_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "value":
+			out.Values[i] = ec._UploadGrantSignedHeader_value(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -213200,6 +213420,60 @@ func (ec *executionContext) marshalNUploadGrantMedia2ᚖgithubᚗcomᚋequaltoai
 		return graphql.Null
 	}
 	return ec._UploadGrantMedia(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNUploadGrantSignedHeader2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantSignedHeaderᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.UploadGrantSignedHeader) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNUploadGrantSignedHeader2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantSignedHeader(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNUploadGrantSignedHeader2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantSignedHeader(ctx context.Context, sel ast.SelectionSet, v *model.UploadGrantSignedHeader) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UploadGrantSignedHeader(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNUploadGrantStatus2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUploadGrantStatus(ctx context.Context, v any) (model.UploadGrantStatus, error) {
