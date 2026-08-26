@@ -1724,7 +1724,7 @@ func (r *mutationResolver) MintUploadGrant(ctx context.Context, input model.Mint
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
-	username, err := r.requireAuth(ctx)
+	username, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1741,6 +1741,7 @@ func (r *mutationResolver) MintUploadGrant(ctx context.Context, input model.Mint
 	if err != nil {
 		return nil, err
 	}
+	r.auditActAs(ctx, acting, "media.grant_mint", grant.GrantID, nil)
 	return r.convertCMSUploadGrant(grant, url), nil
 }
 
@@ -1748,7 +1749,7 @@ func (r *mutationResolver) FinalizeUploadGrant(ctx context.Context, grantID stri
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
-	username, err := r.requireAuth(ctx)
+	username, acting, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1764,6 +1765,7 @@ func (r *mutationResolver) FinalizeUploadGrant(ctx context.Context, grantID stri
 	if err != nil {
 		return nil, err
 	}
+	r.auditActAs(ctx, acting, "media.grant_finalize", grantID, map[string]any{"media_id": media.MediaID})
 	return &model.UploadGrantFinalizeResult{
 		Grant: r.convertCMSUploadGrant(grant, ""),
 		Media: r.convertCMSUploadGrantMedia(media),

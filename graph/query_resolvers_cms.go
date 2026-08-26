@@ -1576,7 +1576,7 @@ func (r *queryResolver) UploadGrant(ctx context.Context, grantID string) (*model
 	if err := r.requireCMSDraftsEnabled(); err != nil {
 		return nil, err
 	}
-	username, err := r.requireAuth(ctx)
+	username, _, err := r.requireActingIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
