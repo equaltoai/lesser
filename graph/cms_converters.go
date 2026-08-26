@@ -869,9 +869,36 @@ func (r *Resolver) convertCMSDraftReviewGrant(ctx context.Context, grant *models
 	}
 }
 
+// uploadGrantSSEHeaders returns the SSE-KMS headers every minted presigned PUT
+// signs, as HTTP header names and exact values the client must echo on the PUT
+// (see media.UploadGrantSSE*). The values come from the media service because
+// they are exactly the values PresignPutObject signs into the URL; an empty
+// instance key yields an empty set (the grant surface fails closed before
+// minting in that case, so every minted grant carries both headers).
+func (r *Resolver) uploadGrantSSEHeaders() []*model.UploadGrantSignedHeader {
+	if r == nil || r.Registry == nil {
+		return nil
+	}
+	svc := r.Registry.Media()
+	if svc == nil {
+		return nil
+	}
+	algorithm, keyID := svc.UploadGrantSSE()
+	if strings.TrimSpace(keyID) == "" {
+		return nil
+	}
+	return []*model.UploadGrantSignedHeader{
+		{Name: media.UploadGrantSSEEncryptionHeader, Value: algorithm},
+		{Name: media.UploadGrantSSEKMSKeyIDHeader, Value: keyID},
+	}
+}
+
 // convertCMSUploadGrant maps a storage upload grant onto its inspectable
 // GraphQL surface. The status query recomputes EXPIRED at read time from the
 // bounded expiry; presignedURL is populated only while the grant is minted.
+// SignedHeaders always carries the SSE-KMS headers the minted presigned PUT
+// signs (see uploadGrantSSEHeaders), so clients can echo them on the PUT even
+// on the re-presigned uploadGrant(grantId:) query path.
 func (r *Resolver) convertCMSUploadGrant(grant *models.UploadGrant, presignedURL string) *model.UploadGrant {
 	if grant == nil {
 		return nil
@@ -895,6 +922,7 @@ func (r *Resolver) convertCMSUploadGrant(grant *models.UploadGrant, presignedURL
 		Status:         status,
 		GrantedAt:      model.Time(grant.GrantedAt),
 		ExpiresAt:      model.Time(grant.ExpiresAt),
+		SignedHeaders:  r.uploadGrantSSEHeaders(),
 	}
 	if presignedURL != "" {
 		out.PresignedURL = &presignedURL
