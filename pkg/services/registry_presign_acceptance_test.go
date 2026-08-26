@@ -85,8 +85,8 @@ func TestMediaS3PresignedPut_SSESignedHeadersRequireEcho(t *testing.T) {
 	// the registry wires it (wireMediaStorageDependencies), with static test
 	// credentials: the minted URL is a genuine SigV4 presigned PUT.
 	client := s3.NewFromConfig(aws.Config{
-		Region:      "us-east-1",
-		Credentials: credentials.NewStaticCredentialsProvider("test-access-key", "test-secret-key", ""),
+		Region:       "us-east-1",
+		Credentials:  credentials.NewStaticCredentialsProvider("test-access-key", "test-secret-key", ""),
 		BaseEndpoint: aws.String(srv.server.URL),
 	}, func(o *s3.Options) {
 		o.UsePathStyle = true
