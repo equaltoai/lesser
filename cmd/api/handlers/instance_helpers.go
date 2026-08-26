@@ -104,8 +104,9 @@ func (h *Handler) instanceCounts(ctx context.Context) (int, int64, int64) {
 	// 60s per-process cache with compute-under-lock: concurrent misses
 	// collapse to one compute, and only fully successful reads are cached, so
 	// a transient error is never pinned as public zeros (a previous value is
-	// served stale instead when one exists). Cross-instance storm bounding is
-	// the repository seed markers + backoff, not this cache.
+	// served stale instead when one exists). Cross-instance consistency comes
+	// from the maintained counters (write-path + offline recount), not this
+	// cache.
 	return h.instanceCountsCache.getOrCompute(func() (int, int64, int64, bool) {
 		userCount, userErr := h.repos.Analytics().GetTotalUserCount(ctx)
 		statusCount, statusErr := h.repos.Instance().GetTotalStatusCount(ctx)

@@ -147,7 +147,9 @@ const TotalDomainsMetricSK = "TOTAL_DOMAINS"
 // TotalStatusesMetricSK is the SK of the maintained TOTAL_STATUSES counter.
 const TotalStatusesMetricSK = "TOTAL_STATUSES"
 
-// ActiveMonthSeedMetricSK is the SK of the one-time active-month seed marker.
+// ActiveMonthSeedMetricSK is the SK of the active-month seed marker, written
+// by the offline recount (`lesser recount-instance-counts`) once the per-day
+// rollup has been rebuilt. No request-adjacent path reads or writes it.
 const ActiveMonthSeedMetricSK = "SEED#ACTIVE_MONTH"
 
 // DayFormat is the UTC date layout used for all day-bucketed rollup keys.

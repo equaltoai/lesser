@@ -2479,21 +2479,23 @@ func (r *TrendingRepository) GetReportTrends(ctx context.Context, reportTypes []
 // O(1) read: sums the maintained per-UTC-day distinct-actor counters over the
 // window (see instance_counts.go). The sum is an upper bound on the true
 // window-distinct count — an actor active on multiple days is counted once per
-// day — documented as acceptable for the public instance stats surface. The
-// per-day rollup is maintained by the activity write path and seeded lazily
-// once from a bounded scan on first read.
+// day — documented as acceptable for the public instance stats surface. Every
+// read is a point read of a maintained day counter; missing days sum as zero,
+// and the read NEVER scans. The rollup is populated off the request path
+// (activity write path + the offline recount).
 func (r *TrendingRepository) GetActiveUserCount(ctx context.Context, days int) (int, error) {
 	return readActiveMonthCount(ctx, r.db, r.logger, days)
 }
 
 // GetTotalUserCount returns the total number of users.
 //
-// O(1) read: returns the maintained TOTAL_USERS counter, seeded lazily once
-// from a one-time scan and kept current by the user/account write paths. While
-// a failed seed is in its backoff window the last known value is served and
-// the scan is never re-armed (see instance_counts.go).
+// O(1) read: returns the maintained TOTAL_USERS counter (point read; an
+// unseeded counter reads as the documented default 0), kept current by the
+// user/account write paths and seeded off the request path by the offline
+// `lesser recount-instance-counts` tool. No scan ever runs here (see
+// instance_counts.go).
 func (r *TrendingRepository) GetTotalUserCount(ctx context.Context) (int, error) {
-	count, err := ensureTotalUsersSeeded(ctx, r.db, r.logger)
+	count, err := readTotalUsersCount(ctx, r.db, r.logger)
 	if err != nil {
 		return 0, err
 	}
@@ -2515,12 +2517,13 @@ func (r *TrendingRepository) GetTotalStatusCount(ctx context.Context) (*int, err
 
 // GetTotalDomainCount returns the total number of known domains.
 //
-// O(1) read: returns the maintained TOTAL_DOMAINS counter, seeded lazily once
-// from a one-time scan and kept current by the actor/account write paths. While
-// a failed seed is in its backoff window the last known value is served and
-// the scan is never re-armed (see instance_counts.go).
+// O(1) read: returns the maintained TOTAL_DOMAINS counter (point read; an
+// unseeded counter reads as the documented default 0), kept current by the
+// actor/account write paths and seeded off the request path by the offline
+// `lesser recount-instance-counts` tool. No scan ever runs here (see
+// instance_counts.go).
 func (r *TrendingRepository) GetTotalDomainCount(ctx context.Context) (int, error) {
-	count, err := ensureTotalDomainsSeeded(ctx, r.db, r.logger)
+	count, err := readTotalDomainsCount(ctx, r.db, r.logger)
 	if err != nil {
 		return 0, err
 	}

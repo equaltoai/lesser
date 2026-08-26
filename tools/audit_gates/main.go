@@ -455,7 +455,7 @@ func checkGoDynamoDBAllNoKey(b baseline) error {
 // with no key condition. All(...) chained onto a pre-built query variable
 // (query.Limit(n).All(...)) or a field receiver is statically indeterminate
 // and is deliberately NOT flagged; the gate targets new inline key-less scan
-// callsites like the instance-count seed scans.
+// callsites like the instance-count recount reads (offline tooling only).
 func countGoUnkeyedAllCalls(roots []string, opts scanOptions) (map[string]int, error) {
 	counts := make(map[string]int)
 	for _, root := range roots {

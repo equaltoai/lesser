@@ -553,11 +553,12 @@ func (r *InstanceRepository) GetRulesByCategory(ctx context.Context, category st
 // GetTotalUserCount returns the total number of users
 // Since legacy doesn't implement this, use instance metrics pattern
 func (r *InstanceRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
-	// Lazy one-time seed: computes the counter from a scan on first read and
-	// persists it; afterwards this is a point read. A failed seed enters an
-	// in-memory backoff window during which the last known value is served and
-	// the scan is never re-armed (see instance_counts.go).
-	return ensureTotalUsersSeeded(ctx, r.metricsRepo.GetDB(), r.logger)
+	// O(1) point read of the maintained TOTAL_USERS counter; an unseeded
+	// counter reads as the documented default (0). The counter is seeded and
+	// maintained OFF the request path (write-path maintenance + the offline
+	// `lesser recount-instance-counts` tool) — no scan ever runs here (see
+	// instance_counts.go).
+	return readTotalUsersCount(ctx, r.metricsRepo.GetDB(), r.logger)
 }
 
 // GetTotalStatusCount returns the total number of statuses
@@ -578,11 +579,12 @@ func (r *InstanceRepository) GetTotalStatusCount(ctx context.Context) (int64, er
 
 // GetTotalDomainCount returns the total number of known domains
 func (r *InstanceRepository) GetTotalDomainCount(ctx context.Context) (int64, error) {
-	// Lazy one-time seed: computes the counter from a scan on first read and
-	// persists it; afterwards this is a point read. A failed seed enters an
-	// in-memory backoff window during which the last known value is served and
-	// the scan is never re-armed (see instance_counts.go).
-	return ensureTotalDomainsSeeded(ctx, r.metricsRepo.GetDB(), r.logger)
+	// O(1) point read of the maintained TOTAL_DOMAINS counter; an unseeded
+	// counter reads as the documented default (0). The counter is seeded and
+	// maintained OFF the request path (write-path maintenance + the offline
+	// `lesser recount-instance-counts` tool) — no scan ever runs here (see
+	// instance_counts.go).
+	return readTotalDomainsCount(ctx, r.metricsRepo.GetDB(), r.logger)
 }
 
 // GetActiveUserCount returns the number of active users in the last N days

@@ -10,13 +10,12 @@ import (
 // back-to-back or concurrent requests within the TTL collapse to a single
 // compute per process (under a mutex), and a transient repository failure is
 // never cached as public zeros. The compute itself is already O(1) counter
-// reads, so the cache mainly bounds seed storms and burst amplification.
+// reads, so the cache mainly bounds burst amplification.
 //
 // Honest scope: "single-flight" here is per-process only. Each warm Lambda
 // instance has its own in-memory cache, so a burst across instances computes
-// once per instance. The cross-instance storm is bounded by the persisted seed
-// markers (on success) and the jittered seed backoff (after a failed seed) in
-// the repository layer — not by this cache.
+// once per instance. The counters themselves are maintained off the request
+// path (write-path + offline recount) — this cache never hides a scan.
 const instanceStatsCacheTTL = 60 * time.Second
 
 // instanceCountsCache caches the /api/v1/instance user/status/domain counts.

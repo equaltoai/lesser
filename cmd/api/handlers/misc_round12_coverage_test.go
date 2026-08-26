@@ -643,9 +643,11 @@ func TestMisc_NotificationFiltersAndGroupingOptions_Round12(t *testing.T) {
 
 	t.Run("active monthly users returns fallback on analytics error", func(t *testing.T) {
 		cfg := round11TestConfig()
+		// The active-month read is a point read of the per-day counters (the
+		// request-adjacent seed-marker read was removed; see instance_counts.go).
 		state := &round10QueryState{
 			firstErrorByType: map[string]error{
-				"*models.InstanceMetrics": errors.New("boom"),
+				"*models.ActivityDayCounter": errors.New("boom"),
 			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)

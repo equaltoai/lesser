@@ -77,18 +77,19 @@ goDynamoDBBadPKWhere:
 # indeterminate and deliberately not flagged.
 #
 # Dispositions (see docs/architecture/dynamodb-scan-inventory.md):
-# - pkg/storage/repositories/instance_counts.go: 6 — DELIBERATE one-time
-#   migration paths (3 lazy seed scans: TOTAL_USERS, TOTAL_DOMAINS,
-#   active_month) + 3 bounded offline recount reads (key-only projections of
-#   the recount tool). Seed scans are marker-gated on success and backoff-gated
-#   on failure; the recount is invoked manually offline. Tracked under umbrella
-#   issue "Eliminate baselined unbounded scans — operator doctrine 2026-08-25".
+# - pkg/storage/repositories/instance_counts.go: 5 — DELIBERATE offline-only
+#   tooling: the 5 bounded recount reads (key-only projections of the offline
+#   `lesser recount-instance-counts` tool: users, actors, domain counters,
+#   activities, existing day counters). The 3 request-adjacent lazy seed scans
+#   (TOTAL_USERS, TOTAL_DOMAINS, active_month) were REMOVED in PR #1476 — no
+#   scan may run on any request path, marker-gated or not (operator doctrine
+#   2026-08-26).
 # - The other 9 calls are pre-existing unkeyed scans baselined for tracking,
 #   scheduled for elimination under the same umbrella issue.
 goDynamoDBAllNoKey:
   pkg/storage/repositories/announcement_repository.go: 1
   pkg/storage/repositories/dlq_repository.go: 1
-  pkg/storage/repositories/instance_counts.go: 6
+  pkg/storage/repositories/instance_counts.go: 5
   pkg/storage/repositories/media_repository.go: 1
   pkg/storage/repositories/moderation_repository.go: 1
   pkg/storage/repositories/rate_limit_repository.go: 1
