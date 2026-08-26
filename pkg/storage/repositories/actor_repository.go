@@ -202,6 +202,10 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 		return err
 	}
 
+	// Maintain the O(1) instance TOTAL_DOMAINS counter (best-effort, never
+	// fails the create — see instance_counts.go).
+	recordActorDomain(ctx, r.db, r.logger, domainFromActorID(actor.ID))
+
 	return nil
 }
 
@@ -615,6 +619,19 @@ func (r *ActorRepository) SetActorFields(ctx context.Context, username string, f
 
 // DeleteActor deletes an actor
 func (r *ActorRepository) DeleteActor(ctx context.Context, username string) error {
+	// Capture the actor's domain before the row is gone so the O(1)
+	// TOTAL_DOMAINS counter can be released on delete. Reads are best-effort:
+	// a missing row simply skips the release.
+	var actorModel models.Actor
+	_ = r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
+		First(&actorModel)
+	domain := ""
+	if actorModel.Actor != nil {
+		domain = domainFromActorID(actorModel.Actor.ID)
+	}
+
 	// Delete the actor using BaseRepository
 	err := r.Delete(ctx, "ACTOR#"+username, "PROFILE")
 	if err != nil {
@@ -622,6 +639,12 @@ func (r *ActorRepository) DeleteActor(ctx context.Context, username string) erro
 			return common.ActorNotFoundError{Username: username}
 		}
 		return ErrorHandler.HandleDeleteError(err, EntityActor, username)
+	}
+
+	// Maintain the O(1) instance TOTAL_DOMAINS counter (best-effort, never
+	// fails the delete — see instance_counts.go).
+	if domain != "" {
+		releaseActorDomain(ctx, r.db, r.logger, domain)
 	}
 
 	if err := r.deleteNumericIDMapping(ctx, common.GenerateNumericID(username)); err != nil {

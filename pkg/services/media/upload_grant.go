@@ -26,6 +26,26 @@ import (
 // bound.
 const UploadGrantTTL = 15 * time.Minute
 
+// Presigned-companion PUT SSE contract. The minted presigned PUT signs these
+// two server-side-encryption headers into the SigV4 signature, so a compliant
+// client MUST echo each header on the PUT with the exact value returned by the
+// grant surface (UploadGrant.signedHeaders). Omitting or altering either makes
+// S3 recompute a different signature and reject the request with
+// 403 SignatureDoesNotMatch — the header values are undiscoverable from the
+// client side, which is why the grant response must carry them.
+const (
+	// UploadGrantSSEAlgorithm is the server-side encryption algorithm bound
+	// into every minted presigned PUT; it is sent as the value of the
+	// x-amz-server-side-encryption header.
+	UploadGrantSSEAlgorithm = "aws:kms"
+	// UploadGrantSSEEncryptionHeader is the HTTP header carrying the SSE
+	// algorithm on the presigned PUT.
+	UploadGrantSSEEncryptionHeader = "x-amz-server-side-encryption"
+	// UploadGrantSSEKMSKeyIDHeader is the HTTP header carrying the instance KMS
+	// key id (alias or key id) on the presigned PUT.
+	UploadGrantSSEKMSKeyIDHeader = "x-amz-server-side-encryption-aws-kms-key-id"
+)
+
 var (
 	// ErrUploadGrantUnavailable reports that the upload grant surface is not
 	// wired (missing repository or object-store capability); it fails closed.
@@ -71,6 +91,10 @@ type uploadGrantObjectStore interface {
 	// PresignPutObject mints a presigned PUT whose signed headers bind the
 	// content type, the exact sha256 of the intended bytes (S3 validates the
 	// body checksum at upload), and SSE-KMS encryption under the instance key.
+	// The URL signs x-amz-server-side-encryption and
+	// x-amz-server-side-encryption-aws-kms-key-id, so the PUT must echo both
+	// headers with the exact signed values (UploadGrantSSEAlgorithm and the
+	// kmsKeyID passed here) or S3 rejects it with 403 SignatureDoesNotMatch.
 	PresignPutObject(ctx context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error)
 	// HeadFile returns the stored object's ContentLength and ContentType
 	// without downloading, so finalize can reject an oversized object before

@@ -418,7 +418,19 @@ func TestInstanceRepository_MetricGet_NotFoundBranches(t *testing.T) {
 		db.On("WithContext", mock.Anything).Return(db).Maybe()
 		db.On("Model", mock.Anything).Return(q).Maybe()
 		q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
+		q.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
 		q.On("First", mock.AnythingOfType("*models.InstanceMetrics")).Return(firstErr).Maybe()
+		// Lazy-seed paths: a missing counter triggers the one-time scan + persist
+		// (see instance_counts.go) before the counter read.
+		q.On("All", mock.Anything).Return(nil).Maybe()
+		q.On("IfNotExists").Return(q).Maybe()
+		ub := new(dynamormmocks.MockUpdateBuilder)
+		q.On("UpdateBuilder").Return(ub).Maybe()
+		ub.On("Set", mock.Anything, mock.Anything).Return(ub).Maybe()
+		ub.On("Add", mock.Anything, mock.Anything).Return(ub).Maybe()
+		ub.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(ub).Maybe()
+		ub.On("Execute").Return(nil).Maybe()
+		ub.On("ExecuteWithResult", mock.Anything).Return(nil).Maybe()
 		return NewInstanceRepository(db, "test-table", zap.NewNop())
 	}
 

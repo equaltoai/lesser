@@ -86,6 +86,30 @@ credential for at most five minutes; S3 access logs are the audit control for
 use during that residual window. The ordinary `media(id:)` path rejects
 internal media for every non-owner, including unauthenticated readers.
 
+### Presigned-companion PUT contract
+
+`mintUploadGrant` returns `UploadGrant.presignedUrl`, a SigV4 presigned PUT
+whose signature binds the object key and the SSE-KMS headers. The declared
+sha256 checksum is hoisted into the URL as `X-Amz-Checksum-Sha256`; S3 validates
+the body against it. A compliant PUT must send:
+
+- `x-amz-server-side-encryption: aws:kms`
+- `x-amz-server-side-encryption-aws-kms-key-id: <instance KMS key id>`
+- `Content-Type: <declared contentType>` (not signed, but finalize rejects a
+  stored type that does not match the declaration, so a client that omits it
+  stores `binary/octet-stream` and fails finalize with FAILED_DIGEST)
+- the exact declared bytes as the body
+
+The signed SSE header names and their exact values are returned on the grant
+itself (`UploadGrant.signedHeaders`, populated by both `mintUploadGrant` and the
+`uploadGrant(grantId:)` query) because the instance KMS key id is an internal
+deployment detail no client can discover out-of-band — that return value is
+what makes the flow fulfillable. Omitting or altering any signed header makes
+S3 reject the PUT with `403 SignatureDoesNotMatch`; sending a body that does
+not hash to the declared sha256 fails with `BadDigest`. Client-added headers
+that are not signed (for example `Cache-Control`) do not invalidate the
+signature, but they must not overwrite a signed header's value.
+
 ## Preview contract
 
 `Draft`, `DraftReview`, and `DraftPreview` expose `editorialMedia`. The canonical

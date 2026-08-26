@@ -636,15 +636,38 @@ func TestMisc_NotificationFiltersAndGroupingOptions_Round12(t *testing.T) {
 		require.Equal(t, "Cost tracking not configured", body["error"])
 	})
 
+	t.Run("active monthly users nil handler guard returns fallback", func(t *testing.T) {
+		var handler *Handler
+		require.Equal(t, 1, handler.getActiveMonthlyUsers(nil))
+	})
+
 	t.Run("active monthly users returns fallback on analytics error", func(t *testing.T) {
 		cfg := round11TestConfig()
-		state := &round10QueryState{allErrorOnce: errors.New("boom")}
+		state := &round10QueryState{
+			firstErrorByType: map[string]error{
+				"*models.InstanceMetrics": errors.New("boom"),
+			},
+		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/test", nil, nil, nil)
 		require.NoError(t, err)
 
 		require.Equal(t, 1, handler.getActiveMonthlyUsers(ctx))
+	})
+
+	t.Run("active monthly users caches success", func(t *testing.T) {
+		cfg := round11TestConfig()
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/test", nil, nil, nil)
+		require.NoError(t, err)
+
+		// First call computes; the second call within the 60s TTL is served
+		// from the success-only cache.
+		first := handler.getActiveMonthlyUsers(ctx)
+		second := handler.getActiveMonthlyUsers(ctx)
+		require.Equal(t, first, second)
 	})
 
 	t.Run("unique accounts returns 0 on instance repo error", func(t *testing.T) {

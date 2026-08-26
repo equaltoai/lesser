@@ -163,6 +163,10 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 	user.CreatedAt = userModel.CreatedAt
 	user.UpdatedAt = userModel.UpdatedAt
 
+	// Maintain the O(1) instance TOTAL_USERS counter (best-effort, never
+	// fails the create — see instance_counts.go).
+	bumpInstanceTotalUsers(ctx, r.GetDB(), r.logger, 1)
+
 	return nil
 }
 
@@ -256,6 +260,10 @@ func (r *UserRepository) DeleteUser(ctx context.Context, username string) error 
 		}
 		return ErrorHandler.HandleDeleteError(err, EntityUser, username)
 	}
+
+	// Maintain the O(1) instance TOTAL_USERS counter (best-effort, never
+	// fails the delete — see instance_counts.go).
+	bumpInstanceTotalUsers(ctx, r.GetDB(), r.logger, -1)
 
 	return nil
 }

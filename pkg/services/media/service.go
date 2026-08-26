@@ -204,6 +204,17 @@ func (s *Service) SetEditorialKMSKeyID(keyID string) {
 	s.editorialKMSKeyID = strings.TrimSpace(keyID)
 }
 
+// UploadGrantSSE returns the SSE-KMS contract every minted presigned PUT
+// signs: the encryption algorithm (UploadGrantSSEAlgorithm) and the instance
+// KMS key id. The upload grant surface MUST return both as header names and
+// values (see UploadGrantSSE*Header) so clients can echo them on the PUT — the
+// values returned here are exactly what PresignPutObject signs, and echoing
+// them is what makes the PUT succeed. An empty keyID means no SSE headers are
+// bound (the grant surface fails closed before minting in that case).
+func (s *Service) UploadGrantSSE() (algorithm, keyID string) {
+	return UploadGrantSSEAlgorithm, s.editorialKMSKeyID
+}
+
 // SetMaxFileSize sets the maximum allowed file size
 func (s *Service) SetMaxFileSize(maxSize int64) {
 	s.maxFileSize = maxSize

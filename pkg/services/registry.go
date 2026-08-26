@@ -1641,19 +1641,29 @@ func (s *mediaS3ObjectStore) GeneratePresignedURL(ctx context.Context, bucket, k
 }
 
 // PresignPutObject mints a presigned PUT for the presigned-companion upload
-// transport. The signed headers bind the object key, the exact Content-Type,
-// and the exact sha256 of the intended bytes (S3 validates the body checksum
-// on receipt, so a PUT whose bytes do not match the declared digest fails with
-// BadDigest), and the object is stored under the instance KMS key so internal
-// bytes are never world-readable. The checksum is client-declared, so it is an
-// integrity binding, NOT a size binding: a self-consistent multi-GB PUT passes
-// S3's validation. SigV4 presigned PUTs cannot express a numeric
-// content-length-range condition (that is POST-policy-only); the size cap is
-// therefore enforced at finalize, which first gates the stored object's
-// ContentLength via HeadObject and rejects+deletes an oversized object before
-// any download, then recomputes the digest over a bounded streaming read
-// (abort at MaxSizeBytes+1) as defense-in-depth, and only admits the asset
-// when both checks pass.
+// transport. The signed headers bind the object key and the exact sha256 of
+// the intended bytes (S3 validates the body checksum on receipt, so a PUT
+// whose bytes do not match the declared digest fails with BadDigest), and the
+// object is stored under the instance KMS key so internal bytes are never
+// world-readable. Content-Type is not signed, but finalize compares the stored
+// object's Content-Type to the declared type, so a compliant client sends it
+// as well. The checksum is client-declared, so it is an integrity binding, NOT
+// a size binding: a self-consistent multi-GB PUT passes S3's validation. SigV4
+// presigned PUTs cannot express a numeric content-length-range condition (that
+// is POST-policy-only); the size cap is therefore enforced at finalize, which
+// first gates the stored object's ContentLength via HeadObject and
+// rejects+deletes an oversized object before any download, then recomputes the
+// digest over a bounded streaming read (abort at MaxSizeBytes+1) as
+// defense-in-depth, and only admits the asset when both checks pass.
+//
+// Client PUT contract: the URL signs the SSE-KMS headers
+// x-amz-server-side-encryption and x-amz-server-side-encryption-aws-kms-key-id,
+// so the PUT must echo both with the exact signed values (media.UploadGrantSSEAlgorithm
+// and kmsKeyID) or S3 rejects it with 403 SignatureDoesNotMatch. Content-Type
+// is not signed, but finalize compares the stored object's Content-Type to the
+// declared type, so a compliant client sends Content-Type: <declared type> as
+// well. The upload grant surface returns the required header names and values
+// (UploadGrant.signedHeaders) so clients can echo them.
 func (s *mediaS3ObjectStore) PresignPutObject(ctx context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error) {
 	if s == nil || s.presigner == nil {
 		return "", errors.New("media S3 presigner is unavailable")
@@ -1668,7 +1678,7 @@ func (s *mediaS3ObjectStore) PresignPutObject(ctx context.Context, bucket, key, 
 		Key:                  aws.String(strings.TrimSpace(key)),
 		ContentType:          aws.String(strings.TrimSpace(contentType)),
 		ChecksumSHA256:       aws.String(checksum),
-		ServerSideEncryption: s3types.ServerSideEncryptionAwsKms,
+		ServerSideEncryption: s3types.ServerSideEncryption(media.UploadGrantSSEAlgorithm),
 		SSEKMSKeyId:          aws.String(strings.TrimSpace(kmsKeyID)),
 	}, func(options *s3.PresignOptions) {
 		options.Expires = expiry

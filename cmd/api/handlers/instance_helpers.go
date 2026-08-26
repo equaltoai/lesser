@@ -101,31 +101,31 @@ func (h *Handler) instanceCounts(ctx context.Context) (int, int64, int64) {
 		return 0, 0, 0
 	}
 
-	userCount, err := h.repos.Analytics().GetTotalUserCount(ctx)
-	if err != nil {
-		if h.logger != nil {
-			h.logger.Warn("failed to get user count", zap.Error(err))
+	// 60s per-process cache with compute-under-lock: concurrent misses
+	// collapse to one compute, and only fully successful reads are cached, so
+	// a transient error is never pinned as public zeros (a previous value is
+	// served stale instead when one exists). Cross-instance storm bounding is
+	// the repository seed markers + backoff, not this cache.
+	return h.instanceCountsCache.getOrCompute(func() (int, int64, int64, bool) {
+		userCount, userErr := h.repos.Analytics().GetTotalUserCount(ctx)
+		statusCount, statusErr := h.repos.Instance().GetTotalStatusCount(ctx)
+		domainCount, domainErr := h.repos.Instance().GetTotalDomainCount(ctx)
+		if userErr != nil || statusErr != nil || domainErr != nil {
+			if h.logger != nil {
+				if userErr != nil {
+					h.logger.Warn("failed to get user count", zap.Error(userErr))
+				}
+				if statusErr != nil {
+					h.logger.Warn("failed to get status count", zap.Error(statusErr))
+				}
+				if domainErr != nil {
+					h.logger.Warn("failed to get domain count", zap.Error(domainErr))
+				}
+			}
+			return 0, 0, 0, false
 		}
-		userCount = 0
-	}
-
-	statusCount, err := h.repos.Instance().GetTotalStatusCount(ctx)
-	if err != nil {
-		if h.logger != nil {
-			h.logger.Warn("failed to get status count", zap.Error(err))
-		}
-		statusCount = 0
-	}
-
-	domainCount, err := h.repos.Instance().GetTotalDomainCount(ctx)
-	if err != nil {
-		if h.logger != nil {
-			h.logger.Warn("failed to get domain count", zap.Error(err))
-		}
-		domainCount = 0
-	}
-
-	return userCount, statusCount, domainCount
+		return userCount, statusCount, domainCount, true
+	})
 }
 
 func (h *Handler) instanceContactAccount(ctx context.Context) map[string]any {

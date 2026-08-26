@@ -26,6 +26,9 @@ func TestActorRepository_branch_sweep_more_lines(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		// Domain pre-read (actor absent -> no domain release) + actor + numeric
+		// mapping deletes.
+		mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 		mockQuery.On("Delete").Return(nil).Twice()
 
 		repo := NewActorRepository(mockDB, "test-table", logger)

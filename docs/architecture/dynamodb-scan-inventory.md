@@ -164,6 +164,21 @@ This leverages the existing schema and eliminates the entire class of “wrong m
    - **Current (fixed):** query the existing `WebSocketConnection` GSI2 state partitions (`gsi2PK = STATE#<state>`) and filter by `LastActivity` / `ttl` in memory (no scans).
    - **Future enhancement:** if ordering by `LastActivity` becomes necessary at scale, add a time-bucketed listing key (unused GSI) rather than scanning.
 
+23) Public instance stats counts (issue #1467) – `TrendingRepository.GetActiveUserCount` / `GetTotalUserCount` / `GetTotalStatusCount` / `GetTotalDomainCount` (previously `analytics_repository.go` scans of every Activity/User/Object/Actor row into memory, unique-counted in Go) and `InstanceRepository.GetTotalUserCount` / `GetTotalDomainCount` (reads of unmaintained metrics items)
+   - **Current (fixed):** all four public counts are O(1) point reads of maintained counter items:
+     - `active_month` → sum of per-UTC-day `ActivityDayCounter` items (`PK=ACTIVITY_DAY#<date>`, `SK=COUNTER`), maintained by the activity write path via `ActivityActorDay` markers (`PK=ACTIVITY_ACTOR#<actor>`, `SK=DAY#<date>`) so an actor counts once per day.
+     - `TOTAL_USERS` → `InstanceMetrics` item `SK=TOTAL_USERS` (`totalUsers` attr), bumped on user/account create/delete.
+     - `TOTAL_STATUSES` → `InstanceMetrics` item `SK=TOTAL_STATUSES` (existing counter, see entry 17).
+     - `TOTAL_DOMAINS` → `InstanceMetrics` item `SK=TOTAL_DOMAINS` (`value` attr), maintained via per-domain `DomainCounter` items (`PK=DOMAIN#<host>`, `SK=COUNTER`) on actor create/delete.
+   - **Lazy one-time seed (scan-gated, not scan-once-by-promise):** each counter is computed from a single scan and persisted on first read. The scan is gated two ways:
+     - *Marker-gated on success:* the persisted counter item (or the `SEED#ACTIVE_MONTH` marker) makes the seed idempotent — the scan never runs again once persisted.
+     - *Backoff-gated on failure:* a failed seed attempt (scan error, counter persist failure, or active-month seed-marker write failure) records an in-memory jittered backoff (5–15 min). Reads inside the window serve the last known value (or the day-counter rollup) and **never re-scan**; one retry is allowed after expiry. This closes the self-amplifying loop where a sustained write failure (throttle/IAM/5xx) converts the one-time seed into a recurring O(table) unauthenticated body scan at every 60s cache expiry.
+   - **Single-flight is per-process only:** the seed mutex and the 60s handler cache collapse concurrent misses within one Lambda instance. A burst across warm instances is bounded by the persisted seed marker (success) and the jittered backoff (failure) — not by single-flight.
+   - **Approximation (disclosed):** active_month is the SUM of per-day distinct actor counts — an actor active on multiple days counts once per day, so the sum can exceed the true window-distinct count. Documented as acceptable for the public stats surface (and in the `NodeInfoUsers.activeMonth` OpenAPI description). Totals can drift ±1 in the deploy-to-first-read window (seed vs. concurrent write); the error is bounded and does not accumulate.
+   - **Seed runs once ever; the recount tool is the drift remedy:** `RecountInstanceCounts` (CLI: `lesser recount-instance-counts`, offline, `--apply` to write) recomputes `TOTAL_USERS` / `TOTAL_DOMAINS` / per-domain `DomainCounter` items from bounded paginated key-only projections and rewrites them. Semantic note: the recount writes the true `USER#`/`METADATA` account count; the lazy seed reproduces the legacy whole-table scan semantics for `TOTAL_USERS` (the legacy `GetTotalUserCount` counted every item the scan surfaced), so a recount can correct that legacy-inherited value once. Domain semantics agree between seed and recount (only real actor rows carry the `actor` attribute).
+   - **`TOTAL_STATUSES` source shift on federated instances (disclosed):** the legacy `GetTotalStatusCount` scanned `Object` rows with `Type = "Note"`; the counter counts canonical `Status` rows maintained by the status write path. Federated Notes that are stored **only** as Object rows — the activity-processor announce-fetch path (`cmd/activity-processor` `storeRemoteObject`) and the thread-sync reply path (`pkg/federation/sync` `storeNote`) — do NOT go through `StatusRepository.CreateStatus` and are therefore not counted. Inbox Notes materialized via `federation.MaterializeRemoteNote` DO create a Status and are counted. On federated instances with object-only Notes, the counter reads lower than the legacy scan; this is the intended semantic (the counter reflects actual statuses), documented here and in the PR body.
+   - **Cache:** the public `/api/v1/instance` and `/api/v2/instance` count blocks are gated by a 60s instance-local TTL cache. The cache is success-only (a failed read is never cached as zeros — a previous value is served stale instead), and computes under a per-process mutex so concurrent misses within one instance collapse.
+
 ### P1 – Partition-key prefix/range misuse (guaranteed scans)
 
 23) `pkg/storage/repositories/trust_repository.go:240` – `TrustRepository.GetTrustRelationships`
@@ -228,6 +243,37 @@ This leverages the existing schema and eliminates the entire class of “wrong m
 
 34) `pkg/storage/repositories/analytics_repository.go:1659` – `TrendingRepository.PruneStaleTrends`
    - **Current (fixed):** TTL-only. Manual cleanup is a no-op (no scans).
+
+---
+
+## Baselined scan backlog — dispositions (operator doctrine 2026-08-25)
+
+The audit gates (`./lesser verify audit`) baseline every remaining scan callsite so CI fails on any new or changed occurrence. This section gives every baselined callsite a disposition: **fixed-in-PR**, **deliberate (documented) tooling**, or **tracked for elimination** under the umbrella issue [Eliminate baselined unbounded scans — operator doctrine 2026-08-25](https://github.com/equaltoai/lesser/issues/1469).
+
+### `goDynamoDBAllNoKey` (key-less `All(...)` on fresh chains — scan with no key condition)
+
+| Callsite | What it does | Disposition |
+|---|---|---|
+| `pkg/storage/repositories/instance_counts.go` (6) | 3 lazy one-time seed scans (`TOTAL_USERS`, `TOTAL_DOMAINS`, `active_month`) + 3 bounded recount reads (`RecountInstanceCounts` key-only projections) | **Deliberate, documented** (entry 23): seed is marker-gated on success / backoff-gated on failure, runs at most once per counter; recount is an offline `lesser recount-instance-counts` tool |
+| `pkg/storage/repositories/announcement_repository.go:500` (1) | scans dismissals for cleanup (no GSI) | tracked in #1469 |
+| `pkg/storage/repositories/dlq_repository.go:632` (1) | `GetSimilarMessages` filter-scan by `SimilarityHash` | tracked in #1469 |
+| `pkg/storage/repositories/media_repository.go:1438` (1) | full `Media` scan | tracked in #1469 |
+| `pkg/storage/repositories/moderation_repository.go:1302` (1) | scans reviews by reviewer (no reviewer index) | tracked in #1469 |
+| `pkg/storage/repositories/rate_limit_repository.go:225` (1) | clears rate limits via `PK begins_with` filter-scan | tracked in #1469 |
+| `pkg/storage/repositories/search_cost_repository.go:233,270` (2) | scans `SearchQueryStats` by period | tracked in #1469 |
+| `pkg/storage/repositories/search_repository.go:1614,1720` (2) | prunes old suggestions / scans by `last_used` | tracked in #1469 |
+
+Notes: `All(...)` chained onto a pre-built query variable (`query.Limit(n).All(...)`) is statically indeterminate and is deliberately not flagged; the gate targets new inline key-less scan callsites.
+
+### `goDynamoDBQueryScan` (literal `.Scan(...)` callsites)
+
+The full count-per-file baseline lives in `tools/audit_gates/baseline.yml` (~40 files). Disposition classes:
+
+- **Deliberate offline tools (documented):** `cmd/lesser/migrate_*.go` — one-time operator migrations, baselined with the same doctrine allowance as the seed scans. Not on any request path.
+- **Fixed / scan-free redesigns:** the entries 1–34 above already carry their scan-free redesigns; most are implemented (TTL-only cleanups, GSI queries, exact-partition queries).
+- **Tracked for elimination:** the remaining production-path scans are scheduled for removal under #1469 (e.g. `pkg/federation/relationship_tracker.go`, `pkg/storage/repositories/federation_repository.go`, `pkg/moderation/advanced/reputation.go`), with redesigns to be proposed in their own PRs referencing #1469.
+
+The umbrella issue #1469 is the single tracking point for the backlog elimination; do not attempt to fix the backlog inside unrelated PRs.
 
 ---
 

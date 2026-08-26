@@ -49,6 +49,7 @@ var (
 	runMigrateRemoteNoteStatusesFn               = runMigrateRemoteNoteStatuses
 	runMigrateNotificationGSI4Fn                 = runMigrateNotificationGSI4
 	runMigrateFn                                 = runMigrate
+	runRecountInstanceCountsFn                   = runRecountInstanceCounts
 )
 
 func runCLI(args []string, stderr io.Writer) int {
@@ -123,6 +124,7 @@ func commandRunner(cmd string) (func([]string) error, bool) {
 		"migrate-mcp-auth-cutover":       func(argv []string) error { return runMigrateMCPAuthCutoverFn(argv) },
 		"migrate-remote-note-statuses":   func(argv []string) error { return runMigrateRemoteNoteStatusesFn(argv) },
 		"migrate-notification-gsi4":      func(argv []string) error { return runMigrateNotificationGSI4Fn(argv) },
+		"recount-instance-counts":        func(argv []string) error { return runRecountInstanceCountsFn(argv) },
 	}
 
 	runner, ok := runners[cmd]
@@ -192,6 +194,7 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser migrate-mcp-auth-cutover [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-remote-note-statuses [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-notification-gsi4 [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
+	_, _ = fmt.Fprintln(w, "  lesser recount-instance-counts [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--apply]")
 }
 
 func exitCodeFromErr(err error, stderr io.Writer) int {

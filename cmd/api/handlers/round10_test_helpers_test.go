@@ -1181,6 +1181,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockUpdate.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionNotExists", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
+	// O(1) instance-count maintenance uses ExecuteWithResult for the domain
+	// release path (see instance_counts.go); report a drained domain so the
+	// empty-domain delete + global decrement run.
+	mockUpdate.On("ExecuteWithResult", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		if dest, ok := args.Get(0).(*storagemodels.DomainCounter); ok {
+			dest.Value = 0
+		}
+	}).Maybe()
 	if state.executeErrorOnce != nil {
 		mockUpdate.On("Execute").Return(state.executeErrorOnce).Once()
 	} else if state.updateErrorOnce != nil {
