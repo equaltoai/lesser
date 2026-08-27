@@ -66,7 +66,24 @@ const (
 	maxHomeTimelinePageLimit        = 40
 	homeTimelineStatusesPerActor    = 20
 	homeTimelineFollowingSampleSize = 1000
+	// maxStatusPageLimit is the hard max for paginated status reads (wave
+	// #1469): the public timeline surface legitimately serves up to
+	// common.MaxPaginationLimit (100), and no caller may request more.
+	maxStatusPageLimit = 100
 )
+
+// sanitizeStatusPageLimit normalizes a paginated status read limit (wave
+// #1469): 0 (or negative) becomes the default page size and oversized limits
+// are clamped to maxStatusPageLimit, so the keyed read is always bounded.
+func sanitizeStatusPageLimit(limit int) int {
+	if limit <= 0 {
+		return defaultHomeTimelinePageLimit
+	}
+	if limit > maxStatusPageLimit {
+		return maxStatusPageLimit
+	}
+	return limit
+}
 
 // CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
@@ -361,9 +378,10 @@ func (r *StatusRepository) canonicalizeStatusIndexes(ctx context.Context, status
 }
 
 func (r *StatusRepository) queryPublicTimelineDirect(ctx context.Context, opts interfaces.PaginationOptions) ([]*models.Status, error) {
-	if opts.Limit <= 0 {
-		opts.Limit = defaultHomeTimelinePageLimit
-	}
+	// Clamp the requested limit (wave #1469): 0 becomes the default page size
+	// and oversized limits are cut to the hard max, so the keyed GSI2 read is
+	// always bounded.
+	opts.Limit = sanitizeStatusPageLimit(opts.Limit)
 
 	var statusModels []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
@@ -951,31 +969,44 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 	// Normalize the URL for consistent indexing (same as in Status.setupGSIKeys)
 	normalizedURL := strings.ToLower(strings.TrimSpace(url))
 
-	// Query GSI7 for URL-indexed statuses
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("gsi7").
-		Where("gsi7PK", "=", "URL#"+normalizedURL).
-		All(&statuses)
+	// Query GSI7 for URL-indexed statuses. The partition holds every status
+	// whose primary URL matches (Status.setupGSIKeys indexes URLs[0]), so the
+	// read is a bounded page walk that stops at the first exact match (wave
+	// #1469): 500 statuses/page, 100 pages max, fail-closed on exhaustion. The
+	// two match loops preserve the original selection semantics exactly.
+	var found *models.Status
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Status{}).
+			Index("gsi7").
+			Where("gsi7PK", "=", "URL#"+normalizedURL),
+		500, 100,
+		func(page []models.Status) (bool, error) {
+			// Find exact match by checking the Note.ID field
+			for i := range page {
+				if page[i].Note != nil && page[i].Note.ID == url {
+					found = &page[i]
+					return true, nil
+				}
+			}
+			// If no exact match found, also check the URLs array in case it's a link in content
+			for i := range page {
+				for _, statusURL := range page[i].URLs {
+					if statusURL == url {
+						found = &page[i]
+						return true, nil
+					}
+				}
+			}
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "query by URL")
 	}
 
-	// Find exact match by checking the Note.ID field
-	for _, status := range statuses {
-		if status.Note != nil && status.Note.ID == url {
-			return &status, nil
-		}
-	}
-
-	// If no exact match found, also check the URLs array in case it's a link in content
-	for _, status := range statuses {
-		for _, statusURL := range status.URLs {
-			if statusURL == url {
-				return &status, nil
-			}
-		}
+	if found != nil {
+		return found, nil
 	}
 
 	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityStatus, url)
@@ -1403,6 +1434,10 @@ func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag str
 
 // GetTrendingStatuses retrieves trending statuses
 func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// Clamp the requested limit (wave #1469): 0 becomes the default page size
+	// and oversized limits are cut, so the keyed GSI2 read is always bounded.
+	opts.Limit = sanitizeStatusPageLimit(opts.Limit)
+
 	// Simple implementation: get recent public statuses sorted by engagement
 	// In production, you'd want a more sophisticated trending algorithm
 	var statuses []models.Status
@@ -1478,13 +1513,27 @@ func (r *StatusRepository) createEngagementAndIncrement(ctx context.Context, use
 
 // removeEngagement removes an engagement (like or reblog) for a user and updates the status count
 func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusID, engagementType, actionName, counterField string) error {
-	// Find and delete the engagement record - need to scan since we don't know the exact timestamp
+	// Find and delete the engagement record. The STATUS_ENGAGEMENT partition is
+	// keyed by type prefix (SK = <type>#<timestamp>#<userID>); the user's row is
+	// matched by a post-limit filter, so the read is a bounded page walk over
+	// the type prefix that stops at the first match (wave #1469): 500 rows/page,
+	// 100 pages max, fail-closed on exhaustion. Deleting the first match keeps
+	// the original "there should only be one" semantics.
 	var engagements []models.StatusEngagement
-	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
-		Filter("EngagementType", "=", engagementType).
-		Filter("UserID", "=", userID).
-		All(&engagements)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+			Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
+			Where("SK", "BEGINS_WITH", engagementType+"#").
+			Filter("UserID", "=", userID),
+		500, 100,
+		func(page []models.StatusEngagement) (bool, error) {
+			if len(page) > 0 {
+				engagements = append(engagements, page[0])
+				return true, nil
+			}
+			return false, nil
+		},
+	)
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, actionName, "find engagement")
 	}
@@ -1613,25 +1662,48 @@ func (r *StatusRepository) GetStatusContext(ctx context.Context, statusID string
 	return ancestors, replies.Items, nil
 }
 
+// hasEngagement reports whether a (status, user, engagementType) engagement row
+// exists. The keyed type-prefix read is a bounded page walk that stops at the
+// first match (wave #1469): 500 rows/page, 100 pages max. A partition that
+// exceeds the page cap fails closed (returned as an error) instead of silently
+// answering false; transient read errors preserve the historical behavior and
+// surface as "not engaged".
+func (r *StatusRepository) hasEngagement(ctx context.Context, statusID, userID, engagementType string) (bool, error) {
+	var found bool
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+			Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
+			Where("SK", "BEGINS_WITH", engagementType+"#").
+			Filter("UserID", "=", userID),
+		500, 100,
+		func(page []models.StatusEngagement) (bool, error) {
+			if len(page) > 0 {
+				found = true
+				return true, nil
+			}
+			return false, nil
+		},
+	)
+	if err != nil {
+		if stdErrors.Is(err, errBoundedPageCapExceeded) {
+			return false, err
+		}
+		return false, nil
+	}
+	return found, nil
+}
+
 // GetStatusEngagement gets user's engagement state with a status
 func (r *StatusRepository) GetStatusEngagement(ctx context.Context, statusID, userID string) (liked, reblogged, bookmarked bool, err error) {
-	// Check for like
-	var likeEngagements []models.StatusEngagement
-	err = r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
-		Filter("EngagementType", "=", "like").
-		Filter("UserID", "=", userID).
-		All(&likeEngagements)
-	liked = (err == nil && len(likeEngagements) > 0)
+	liked, err = r.hasEngagement(ctx, statusID, userID, "like")
+	if err != nil {
+		return false, false, false, err
+	}
 
-	// Check for reblog/boost
-	var boostEngagements []models.StatusEngagement
-	err = r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
-		Filter("EngagementType", "=", "boost").
-		Filter("UserID", "=", userID).
-		All(&boostEngagements)
-	reblogged = (err == nil && len(boostEngagements) > 0)
+	reblogged, err = r.hasEngagement(ctx, statusID, userID, "boost")
+	if err != nil {
+		return false, false, false, err
+	}
 
 	// Check for bookmark via bookmark repository
 	if repo := r.getBookmarkRepository(); repo != nil {
@@ -1696,6 +1768,9 @@ func (r *StatusRepository) GetStatusesByIDs(ctx context.Context, statusIDs []str
 
 // GetPublicTimeline retrieves the public timeline with pagination
 func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// Clamp the requested limit before the read (wave #1469) so HasMore below
+	// is computed against the same sanitized value the query used.
+	opts.Limit = sanitizeStatusPageLimit(opts.Limit)
 	statuses, err := r.queryPublicTimelineDirect(ctx, opts)
 	if err != nil {
 		r.logger.Error("failed to query public timeline",
@@ -1714,6 +1789,10 @@ func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interface
 
 // GetReplies retrieves replies to a status with pagination
 func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// Clamp the requested limit (wave #1469): 0 becomes the default page size
+	// and oversized limits are cut, so the keyed GSI4 read is always bounded.
+	opts.Limit = sanitizeStatusPageLimit(opts.Limit)
+
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("gsi4").
