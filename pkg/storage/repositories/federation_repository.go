@@ -2634,6 +2634,12 @@ func (r *FederationRepository) GetDetailedMetricsByPeriod(ctx context.Context, p
 		period = "5min"
 	}
 
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed gsi2 read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	var metrics []models.FederationAnalyticsTimeSeries
 
 	// Use GSI2 to query by period across all domains

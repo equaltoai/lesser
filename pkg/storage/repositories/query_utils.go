@@ -261,7 +261,11 @@ func (q *QueryUtils) GSIStatusQuery(ctx context.Context, indexName, status strin
 	}, nil
 }
 
-// CountQuery performs count operations with consistent error handling
+// CountQuery performs count operations with consistent error handling.
+// The whole keyed partition must be read to count every row, so the read is a
+// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+// on exhaustion. A keyed Count() would be unbounded by construction
+// (tabletheory strips Limit from Count).
 func (q *QueryUtils) CountQuery(ctx context.Context, pk string, indexName string) (int, error) {
 	var model map[string]interface{}
 	query := q.db.WithContext(ctx).Model(&model).
@@ -271,15 +275,25 @@ func (q *QueryUtils) CountQuery(ctx context.Context, pk string, indexName string
 		query = query.Index(indexName)
 	}
 
-	count, err := query.Count()
+	var items []map[string]interface{}
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []map[string]interface{}) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "count", pk)
 	}
 
-	return int(count), nil
+	return len(items), nil
 }
 
-// ExistsQuery checks if an item exists with consistent error handling
+// ExistsQuery checks if an item exists with consistent error handling. The
+// PK+SK equality read is a point read (at most one row by key semantics), so
+// the Count() form is bounded by construction — no walk needed (wave #1469).
 func (q *QueryUtils) ExistsQuery(ctx context.Context, pk, sk string) (bool, error) {
 	count, err := q.db.WithContext(ctx).Model(&map[string]interface{}{}).
 		Where("PK", "=", pk).

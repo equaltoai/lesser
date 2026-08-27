@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"math"
 	"sort"
@@ -20,6 +21,28 @@ import (
 )
 
 // Remove duplicate constants - they are defined in constants.go
+
+// Search page-size clamps (wave #1469 BOUNDED-QUERY class): caller-supplied
+// limits are normalized so the compiled Limit is always > 0 — tabletheory
+// v3.0.6 compiles Limit(n) with n <= 0 to NO limit, an unbounded keyed
+// partition read. The search API sites clamp to default 20 / hard max 100;
+// the internal account-search strategy fetch windows floor 0/negative to the
+// default (a max would narrow the limit+offset pagination window).
+const (
+	searchDefaultLimit = 20
+	searchMaxLimit     = 100
+)
+
+// clampSearchLimit normalizes a caller-supplied search page size.
+func clampSearchLimit(limit int) int {
+	if limit <= 0 {
+		return searchDefaultLimit
+	}
+	if limit > searchMaxLimit {
+		return searchMaxLimit
+	}
+	return limit
+}
 
 // SearchRepositoryDeps interface for dependencies - implemented by the storage adapter
 type SearchRepositoryDeps interface {
@@ -247,11 +270,18 @@ func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query strin
 	prefixKey := query[:2]
 	var prefixMatches []models.Actor
 
+	// Floor the fetch window (wave #1469): a limit+offset <= 0 previously
+	// compiled Limit(<=0) — no limit — an unbounded keyed GSI1 read.
+	fetchWindow := limit + offset
+	if fetchWindow <= 0 {
+		fetchWindow = searchDefaultLimit
+	}
+
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USERNAME_SEARCH#%s", prefixKey)).
 		Where("gsi1SK", "BEGINS_WITH", query).
-		Limit(limit + offset).
+		Limit(fetchWindow).
 		All(&prefixMatches)
 
 	if err != nil {
@@ -291,6 +321,12 @@ func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, 
 
 	displayNameKey := query[:2]
 	var displayNameMatches []models.Actor
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI2 read.
+	if limit <= 0 {
+		limit = searchDefaultLimit
+	}
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("gsi2").
@@ -1239,6 +1275,10 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 		return []*storage.Hashtag{}, nil
 	}
 
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI1 read.
+	limit = clampSearchLimit(limit)
+
 	// Search hashtags using GSI
 	var hashtags []models.Hashtag
 	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
@@ -1522,6 +1562,10 @@ func (r *SearchRepository) GetSearchSuggestions(ctx context.Context, prefix stri
 	suggestions := make([]*models.SearchSuggestion, 0)
 	seen := make(map[string]bool)
 
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read per type.
+	limit = clampSearchLimit(limit)
+
 	// Search different suggestion types concurrently
 	sugTypes := []string{"username", "hashtag", "display_name"}
 
@@ -1636,6 +1680,10 @@ func (r *SearchRepository) SearchStatusesByHashtag(ctx context.Context, hashtag 
 	normalizedHashtag := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 	results := make([]*storage.StatusSearchResult, 0)
 
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read.
+	limit = clampSearchLimit(limit)
+
 	// Use the new HashtagStatusIndex for efficient hashtag timeline queries
 	var hashtagIndex []models.HashtagStatusIndex
 
@@ -1682,6 +1730,10 @@ func (r *SearchRepository) SearchStatusesByHashtag(ctx context.Context, hashtag 
 // SearchStatusesByAuthor searches for statuses by a specific author
 func (r *SearchRepository) SearchStatusesByAuthor(ctx context.Context, authorID string, limit int) ([]*storage.StatusSearchResult, error) {
 	results := make([]*storage.StatusSearchResult, 0)
+
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI1 read.
+	limit = clampSearchLimit(limit)
 
 	// Query statuses by author using GSI1 (AUTHOR#{author_id})
 	var statuses []models.Status
@@ -1839,11 +1891,26 @@ func (r *SearchRepository) GetSearchAnalytics(ctx context.Context, startDate, en
 		dateStr := current.Format(common.DateFormat)
 		var dayAnalytics []models.SearchAnalytics
 
-		err := r.db.WithContext(ctx).Model(&models.SearchAnalytics{}).
-			Where("PK", "=", fmt.Sprintf("SEARCH_LOG#%s", dateStr)).
-			All(&dayAnalytics)
+		// Each day is a keyed SEARCH_LOG#<date> partition; the whole partition
+		// must be read, so the read is a bounded page walk (wave #1469):
+		// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+		err := walkKeyedPages(
+			r.db.WithContext(ctx).Model(&models.SearchAnalytics{}).
+				Where("PK", "=", fmt.Sprintf("SEARCH_LOG#%s", dateStr)),
+			500, 100,
+			func(page []models.SearchAnalytics) (bool, error) {
+				dayAnalytics = append(dayAnalytics, page...)
+				return false, nil
+			},
+		)
 
 		if err != nil {
+			// Cap exhaustion must fail closed (wave #1469): never degrade a
+			// truncated partition read into a partial analytics set. Other
+			// (transient) errors keep the skip-this-day behavior.
+			if stdErrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Warn("failed to get analytics for date",
 				zap.String("date", dateStr),
 				zap.Error(err))

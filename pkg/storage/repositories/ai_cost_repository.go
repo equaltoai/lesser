@@ -124,7 +124,19 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 			Where("gsi1SK", "<=", endSK).
 			OrderBy("gsi1SK", "ASC")
 
-		if err := query.All(&bucketCosts); err != nil {
+		// Each month bucket is a keyed gsi1 partition read with no enforced
+		// limit; the whole window must be read to aggregate, so the read is a
+		// bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+		// fail-closed on exhaustion.
+		err := walkKeyedPages(
+			query,
+			500, 100,
+			func(page []*models.AICost) (bool, error) {
+				bucketCosts = append(bucketCosts, page...)
+				return false, nil
+			},
+		)
+		if err != nil {
 			r.logger.Error("Failed to query AI costs by time range",
 				zap.Time("start", startTime),
 				zap.Time("end", endTime),

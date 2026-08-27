@@ -116,6 +116,12 @@ func (r *MetricsRepository) ListByType(ctx context.Context, metricType string, s
 	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
 
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read.
+	if limit <= 0 {
+		limit = 20
+	}
+
 	query := r.db.WithContext(ctx).Model(&models.Metrics{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
@@ -138,6 +144,12 @@ func (r *MetricsRepository) ListByService(ctx context.Context, service string, s
 	// Use GSI1 for service-based queries
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI1 read.
+	if limit <= 0 {
+		limit = 20
+	}
 
 	query := r.db.WithContext(ctx).Model(&models.Metrics{}).
 		Index("gsi1").
@@ -440,15 +452,24 @@ func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context
 	deletedCount := 0
 
 	// Query for old aggregated metrics via GSI2, which is keyed by period (exact) and window start (rangeable).
+	// The whole keyed gsi2 METRICS_AGG#<period> window must be read, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion — never a silent partial cleanup.
 	var oldMetrics []models.AggregatedMetrics
 
 	normalizedPeriod := strings.TrimSpace(period)
 	cutoffKey := fmt.Sprintf("WINDOW#%s", cutoffTime.UTC().Format(time.RFC3339))
-	err := r.aggregatedRepo.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("METRICS_AGG#%s", normalizedPeriod)).
-		Where("gsi2SK", "<", cutoffKey).
-		All(&oldMetrics)
+	err := walkKeyedPages(
+		r.aggregatedRepo.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("METRICS_AGG#%s", normalizedPeriod)).
+			Where("gsi2SK", "<", cutoffKey),
+		500, 100,
+		func(page []models.AggregatedMetrics) (bool, error) {
+			oldMetrics = append(oldMetrics, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "aggregated metrics", "cleanup")
@@ -588,13 +609,22 @@ func (r *MetricRecordRepository) queryMetricsByTimeRange(ctx context.Context, pk
 	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
 
-	err := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
-		Index(indexName).
-		Where(pkField, "=", pkValue).
-		Where(skField, ">=", startSK).
-		Where(skField, "<=", endSK).
-		OrderBy(skField, "DESC").
-		All(&records)
+	// The whole keyed GSI window must be read, so the read is a bounded page
+	// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion. Ordering follows the query's OrderBy via cursor handoff.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MetricRecord{}).
+			Index(indexName).
+			Where(pkField, "=", pkValue).
+			Where(skField, ">=", startSK).
+			Where(skField, "<=", endSK).
+			OrderBy(skField, "DESC"),
+		500, 100,
+		func(page []*models.MetricRecord) (bool, error) {
+			records = append(records, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		logFields := []zap.Field{
@@ -641,7 +671,17 @@ func (r *MetricRecordRepository) GetMetricsByDate(ctx context.Context, date time
 		query = query.Where("gsi3SK", "BEGINS_WITH", skPrefix)
 	}
 
-	err := query.OrderBy("gsi3SK", "DESC").All(&records)
+	// The whole keyed gsi3 DATE#<date> partition must be read, so the read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion. Ordering follows the query's OrderBy via cursor handoff.
+	err := walkKeyedPages(
+		query.OrderBy("gsi3SK", "DESC"),
+		500, 100,
+		func(page []*models.MetricRecord) (bool, error) {
+			records = append(records, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get metrics by date",

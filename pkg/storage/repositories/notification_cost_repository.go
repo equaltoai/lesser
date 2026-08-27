@@ -67,6 +67,12 @@ func (r *NotificationCostRepository) GetCostTrackingByNotification(ctx context.C
 
 	pk := fmt.Sprintf("NOTIF_COST#%s", notificationID)
 
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	query := r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC").
@@ -97,6 +103,12 @@ func (r *NotificationCostRepository) GetDailyCostTracking(ctx context.Context, d
 	var trackingRecords []*models.NotificationCostTracking
 
 	dateStr := date.Format(common.CompactDateFormat)
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed gsi3 read.
+	if limit <= 0 {
+		limit = 500
+	}
 
 	query := r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Index("gsi3").
@@ -177,6 +189,12 @@ func (r *NotificationCostRepository) ListAggregationsByPeriod(ctx context.Contex
 	startSK := fmt.Sprintf("WINDOW#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("WINDOW#%s", endTime.Format(time.RFC3339))
 
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	query := r.GetDB().WithContext(ctx).Model(&models.NotificationCostAggregation{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
@@ -254,11 +272,19 @@ func (r *NotificationCostRepository) GetUserBudgets(ctx context.Context, usernam
 
 	pk := fmt.Sprintf("NOTIF_BUDGET#%s", username)
 
-	query := r.GetDB().WithContext(ctx).Model(&models.NotificationBudget{}).
-		Where("PK", "=", pk).
-		OrderBy("SK", "ASC")
-
-	err := query.All(&budgets)
+	// The whole keyed NOTIF_BUDGET#<user> partition must be read, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.NotificationBudget{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "ASC"),
+		500, 100,
+		func(page []*models.NotificationBudget) (bool, error) {
+			budgets = append(budgets, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "notification budget", "user budgets")
 	}
@@ -891,19 +917,25 @@ func (r *NotificationCostRepository) GetDailySpending(ctx context.Context, usern
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	tomorrow := today.Add(24 * time.Hour)
 
-	// Query cost records for today
-	var costs []models.NotificationCostTracking
-
-	// Query by GSI1 (user index) with timestamp range
+	// Query cost records for today. The whole keyed gsi1 USER#<user> partition
+	// window must be read, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	gsi1PK := fmt.Sprintf("USER#%s", username)
 	startSK := fmt.Sprintf("COST#%s", today.Format(time.RFC3339))
 	endSK := fmt.Sprintf("COST#%s", tomorrow.Format(time.RFC3339))
 
-	err := r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
-		Where("gsi1PK", "=", gsi1PK).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<", endSK).
-		All(&costs)
+	var costs []models.NotificationCostTracking
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
+			Where("gsi1PK", "=", gsi1PK).
+			Where("gsi1SK", ">=", startSK).
+			Where("gsi1SK", "<", endSK),
+		500, 100,
+		func(page []models.NotificationCostTracking) (bool, error) {
+			costs = append(costs, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {

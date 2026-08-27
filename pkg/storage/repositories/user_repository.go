@@ -385,18 +385,29 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 func (r *UserRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
 	r.logger.Debug("getting total user count")
 
-	// Use GSI1 (user listing index) where all users have GSI1PK = "USERS"
-	// This is much more efficient than scanning the main table
-	count, err := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "USERS").
-		Count()
+	// Use GSI1 (user listing index) where all users have GSI1PK = "USERS".
+	// The whole keyed gsi1 partition must be read to count every user, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion. A keyed Count() would be unbounded by
+	// construction (tabletheory strips Limit from Count).
+	var users []models.User
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.User{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", "USERS"),
+		500, 100,
+		func(page []models.User) (bool, error) {
+			users = append(users, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count total users", zap.Error(err))
 		return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count total")
 	}
 
+	count := int64(len(users))
 	r.logger.Debug("retrieved total user count", zap.Int64("count", count))
 	return count, nil
 }

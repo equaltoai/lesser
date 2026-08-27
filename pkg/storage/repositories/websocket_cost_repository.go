@@ -151,6 +151,14 @@ func (r *WebSocketCostRepository) queryByGSIWithTimeRange(ctx context.Context, i
 	// Get direct access to BaseRepository's db field
 	db := r.db
 
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed GSI read. No max is applied: the internal
+	// aggregation callers pass 10000 (websocket_cost_repository.go) and expect
+	// the full window.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	// Build query
 	query := db.WithContext(ctx).Model(&models.WebSocketCostRecord{}).
 		Index(indexName).
@@ -207,9 +215,12 @@ func (r *WebSocketCostRepository) queryBudgetsByGSI(ctx context.Context, indexNa
 		Where(pkField, "=", pkValue).
 		OrderBy("gsi1SK", "ASC")
 
-	if limit > 0 {
-		query = query.Limit(limit)
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed GSI read.
+	if limit <= 0 {
+		limit = 500
 	}
+	query = query.Limit(limit)
 
 	err := query.All(&budgets)
 	if err != nil {
@@ -261,9 +272,12 @@ func (r *WebSocketCostRepository) queryAggregationsByGSI(ctx context.Context, in
 		query = query.Where(skField, "=", skValue)
 	}
 
-	if limit > 0 {
-		query = query.Limit(limit)
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed GSI read.
+	if limit <= 0 {
+		limit = 500
 	}
+	query = query.Limit(limit)
 
 	err := query.All(&aggregations)
 	if err != nil {

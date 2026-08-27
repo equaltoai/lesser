@@ -159,15 +159,31 @@ func (r *SearchCostRepository) GetSearchCosts(ctx context.Context, userID string
 		dateStr := current.Format(common.DateFormat)
 
 		var dayCosts []models.SearchCostTracking
-		err := r.GetDB().WithContext(ctx).Model(&models.SearchCostTracking{}).
-			Where("PK", "=", fmt.Sprintf("SEARCH_COST#%s#%s", dateStr, userID)).
-			All(&dayCosts)
+		// Each day is a keyed SEARCH_COST#<date>#<user> partition; the whole
+		// partition must be read, so the read is a bounded page walk (wave
+		// #1469): Limit(500)/page, 100-page cap. Cap exhaustion must fail closed
+		// — the pre-existing warn-and-skip swallow would otherwise silently drop
+		// it; other (transient) errors keep the skip-this-day behavior.
+		err := walkKeyedPages(
+			r.GetDB().WithContext(ctx).Model(&models.SearchCostTracking{}).
+				Where("PK", "=", fmt.Sprintf("SEARCH_COST#%s#%s", dateStr, userID)),
+			500, 100,
+			func(page []models.SearchCostTracking) (bool, error) {
+				dayCosts = append(dayCosts, page...)
+				return false, nil
+			},
+		)
 
-		if err != nil && !dynamormErrors.IsNotFound(err) {
-			r.logger.Warn("failed to get search costs for date",
-				zap.String("user_id", userID),
-				zap.String("date", dateStr),
-				zap.Error(err))
+		if err != nil {
+			if errors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
+			if !dynamormErrors.IsNotFound(err) {
+				r.logger.Warn("failed to get search costs for date",
+					zap.String("user_id", userID),
+					zap.String("date", dateStr),
+					zap.Error(err))
+			}
 		} else {
 			for i := range dayCosts {
 				costs = append(costs, &dayCosts[i])

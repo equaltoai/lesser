@@ -83,9 +83,18 @@ func (r *MediaAnalyticsRepository) GetMediaAnalyticsByID(ctx context.Context, fo
 func (r *MediaAnalyticsRepository) GetMediaAnalyticsByDate(ctx context.Context, date string) ([]*models.MediaAnalytics, error) {
 	gsi1pk := fmt.Sprintf("DATE#%s", date)
 
-	// Use BaseRepository database for GSI queries (not yet abstracted in BaseRepository)
+	// The whole keyed gsi1 DATE#<date> partition must be read, so the read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion.
 	var analyticsList []*models.MediaAnalytics
-	err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("gsi1PK", "=", gsi1pk).All(&analyticsList)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("gsi1PK", "=", gsi1pk),
+		500, 100,
+		func(page []*models.MediaAnalytics) (bool, error) {
+			analyticsList = append(analyticsList, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("Failed to get media analytics by date",
@@ -108,9 +117,18 @@ func (r *MediaAnalyticsRepository) GetMediaAnalyticsByDate(ctx context.Context, 
 func (r *MediaAnalyticsRepository) GetMediaAnalyticsByVariant(ctx context.Context, variantKey string) ([]*models.MediaAnalytics, error) {
 	gsi2pk := fmt.Sprintf("VARIANT#%s", variantKey)
 
-	// Use BaseRepository database for GSI queries
+	// The whole keyed gsi2 VARIANT#<variant> partition must be read, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var analyticsList []*models.MediaAnalytics
-	err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("gsi2PK", "=", gsi2pk).All(&analyticsList)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("gsi2PK", "=", gsi2pk),
+		500, 100,
+		func(page []*models.MediaAnalytics) (bool, error) {
+			analyticsList = append(analyticsList, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("Failed to get media analytics by variant",
@@ -543,11 +561,20 @@ func (r *MediaAnalyticsRepository) GetMediaAnalyticsByTimeRange(ctx context.Cont
 		dateStr := currentDate.Format(common.DateFormat)
 		gsi1pk := fmt.Sprintf("DATE#%s", dateStr)
 
-		// Query this day's analytics
+		// Query this day's analytics. Each day is a keyed gsi1 DATE#<date>
+		// partition read with no enforced limit, so the read is a bounded page
+		// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+		// exhaustion.
 		var dayAnalytics []*models.MediaAnalytics
-		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
-			Where("gsi1PK", "=", gsi1pk).
-			All(&dayAnalytics)
+		err := walkKeyedPages(
+			r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
+				Where("gsi1PK", "=", gsi1pk),
+			500, 100,
+			func(page []*models.MediaAnalytics) (bool, error) {
+				dayAnalytics = append(dayAnalytics, page...)
+				return false, nil
+			},
+		)
 
 		if err != nil {
 			r.logger.Error("Failed to get media analytics for day",
@@ -593,11 +620,20 @@ func (r *MediaAnalyticsRepository) GetAllMediaAnalyticsByTimeRange(ctx context.C
 		dateStr := currentDate.Format(common.DateFormat)
 		gsi1pk := fmt.Sprintf("DATE#%s", dateStr)
 
-		// Query this day's analytics
+		// Query this day's analytics. Each day is a keyed gsi1 DATE#<date>
+		// partition read with no enforced limit, so the read is a bounded page
+		// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+		// exhaustion.
 		var dayAnalytics []*models.MediaAnalytics
-		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
-			Where("gsi1PK", "=", gsi1pk).
-			All(&dayAnalytics)
+		err := walkKeyedPages(
+			r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
+				Where("gsi1PK", "=", gsi1pk),
+			500, 100,
+			func(page []*models.MediaAnalytics) (bool, error) {
+				dayAnalytics = append(dayAnalytics, page...)
+				return false, nil
+			},
+		)
 
 		if err != nil {
 			r.logger.Error("Failed to get all media analytics for day",
@@ -652,11 +688,20 @@ func (r *MediaAnalyticsRepository) GetBandwidthByTimeRange(ctx context.Context, 
 		dateStr := currentDate.Format(common.DateFormat)
 		gsi1pk := fmt.Sprintf("DATE#%s", dateStr)
 
-		// Query this day's analytics
+		// Query this day's analytics. Each day is a keyed gsi1 DATE#<date>
+		// partition read with no enforced limit, so the read is a bounded page
+		// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+		// exhaustion.
 		var dayAnalytics []*models.MediaAnalytics
-		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
-			Where("gsi1PK", "=", gsi1pk).
-			All(&dayAnalytics)
+		err := walkKeyedPages(
+			r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
+				Where("gsi1PK", "=", gsi1pk),
+			500, 100,
+			func(page []*models.MediaAnalytics) (bool, error) {
+				dayAnalytics = append(dayAnalytics, page...)
+				return false, nil
+			},
+		)
 
 		if err != nil {
 			r.logger.Error("Failed to get bandwidth data for day",

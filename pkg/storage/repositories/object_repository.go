@@ -930,9 +930,20 @@ func (r *ObjectRepository) IsInCollection(ctx context.Context, collection, itemI
 
 // CountCollectionItems returns the count of items in a collection
 func (r *ObjectRepository) CountCollectionItems(ctx context.Context, collection string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.CollectionItem{}).
-		Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)).
-		Count()
+	// The whole keyed COLLECTION#<collection> partition must be read to count
+	// every item, so the read is a bounded page walk (wave #1469): Limit(500)/
+	// page, 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var items []models.CollectionItem
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.CollectionItem{}).
+			Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)),
+		500, 100,
+		func(page []models.CollectionItem) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count collection items",
@@ -941,16 +952,26 @@ func (r *ObjectRepository) CountCollectionItems(ctx context.Context, collection 
 		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "count_collection")
 	}
 
-	return int(count), nil
+	return len(items), nil
 }
 
 // CountQuotes counts the number of quotes for a specific note
 func (r *ObjectRepository) CountQuotes(ctx context.Context, noteID string) (int, error) {
-	// Query quotes using GSI1 where GSI1PK = QUOTED#<noteID>
-	count, err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
-		Count()
+	// The whole keyed gsi1 QUOTED#<noteID> partition must be read to count every
+	// quote, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var quotes []models.QuoteRelationship
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)),
+		500, 100,
+		func(page []models.QuoteRelationship) (bool, error) {
+			quotes = append(quotes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count quotes",
@@ -961,9 +982,9 @@ func (r *ObjectRepository) CountQuotes(ctx context.Context, noteID string) (int,
 
 	r.logger.Debug("counted quotes for note",
 		zap.String("note_id", noteID),
-		zap.Int64("count", count))
+		zap.Int("count", len(quotes)))
 
-	return int(count), nil
+	return len(quotes), nil
 }
 
 // CountWithdrawnQuotes counts the number of withdrawn quotes for a specific note
@@ -1006,11 +1027,21 @@ func (r *ObjectRepository) CountReplies(ctx context.Context, objectID string) (i
 		parentID = fmt.Sprintf("%s/objects/%s", r.getDomainURL(), objectID)
 	}
 
-	// Use GSI6 to efficiently count replies
-	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi6").
-		Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
-		Count()
+	// The whole keyed gsi6 REPLIES#<parentID> partition must be read to count
+	// every reply, so the read is a bounded page walk (wave #1469): Limit(500)/
+	// page, 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var objects []models.Object
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Object{}).
+			Index("gsi6").
+			Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)),
+		500, 100,
+		func(page []models.Object) (bool, error) {
+			objects = append(objects, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count replies",
@@ -1023,9 +1054,9 @@ func (r *ObjectRepository) CountReplies(ctx context.Context, objectID string) (i
 	r.logger.Debug("counted replies for object",
 		zap.String("object_id", objectID),
 		zap.String("parent_id", parentID),
-		zap.Int64("count", count))
+		zap.Int("count", len(objects)))
 
-	return int(count), nil
+	return len(objects), nil
 }
 
 // CreateQuoteRelationship creates a new quote relationship between notes
@@ -1180,11 +1211,21 @@ func (r *ObjectRepository) GetStatus(ctx context.Context, statusID string) (any,
 
 // GetUserStatusCount counts the number of statuses by a user
 func (r *ObjectRepository) GetUserStatusCount(ctx context.Context, userID string) (int, error) {
-	// Use GSI1 to query by actor
-	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("actor#%s", userID)).
-		Count()
+	// The whole keyed gsi1 actor#<userID> partition must be read to count every
+	// status, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var objects []models.Object
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Object{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("actor#%s", userID)),
+		500, 100,
+		func(page []models.Object) (bool, error) {
+			objects = append(objects, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count user statuses",
@@ -1193,7 +1234,7 @@ func (r *ObjectRepository) GetUserStatusCount(ctx context.Context, userID string
 		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "user_statuses")
 	}
 
-	return int(count), nil
+	return len(objects), nil
 }
 
 // GetStatusReplyCount counts replies to a specific status (alias for CountReplies)

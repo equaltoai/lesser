@@ -90,6 +90,13 @@ func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domai
 		return nil, fmt.Errorf("%w: end time must be after start time", ErrFederationCostQueryFailed)
 	}
 
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely (the `if limit > 0` gate) — an unbounded keyed GSI1 partition
+	// read per month bucket.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	startUTC := startTime.UTC()
 	endUTC := endTime.UTC()
 
@@ -153,6 +160,12 @@ func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domai
 // PRESERVED: Critical cost tracking business logic - activity type GSI queries for cost analysis
 func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationCostTracking, error) {
 	var costs []*models.FederationCostTracking
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed gsi2 read.
+	if limit <= 0 {
+		limit = 500
+	}
 
 	// Use GSI2 for activity type queries
 	timestampStart := startTime.Format(common.CompactTimeFormat)
@@ -324,6 +337,14 @@ func (r *FederationCostRepository) UpdateBudgetUsage(ctx context.Context, domain
 // PRESERVED: Critical budget monitoring - GSI queries for active budget tracking
 func (r *FederationCostRepository) GetActiveBudgets(ctx context.Context, limit int) ([]*models.FederationBudget, error) {
 	var budgets []*models.FederationBudget
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed gsi1 read. No max is applied:
+	// the internal callers pass 1000 (GetBudgetsOverLimit/GetBudgetsNeedingAlerts)
+	// and expect the full active set.
+	if limit <= 0 {
+		limit = 500
+	}
 
 	query := r.GetDB().WithContext(ctx).Model(&models.FederationBudget{}).
 		Index("gsi1").
