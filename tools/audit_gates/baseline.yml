@@ -56,24 +56,29 @@ goInsecureSkipVerify:
 # moderation_repository.go GetAuditLogs/getAuditLogsByGSI (2 keyed .Scan
 # admin reads, own batch) and analytics_repository.go GetUserSearchHistory
 # (keyed .Scan, own batch).
+# Wave part 2 (batch L, umbrella #1469, 2026-08-27) eliminated 10 LATENT-class
+# `.Scan` sites: account_repository.go GetSuggestedAccounts/GetFeaturedAccounts/
+# GetLoginHistory/GetAccountsCount (keyed-but-.Scan → keyed .All; GetFeaturedAccounts
+# enumerates the two ROLE gsi3 partitions since IN cannot be a key condition;
+# GetAccountsCount page-caps the keyed GSI1 iteration), account_repository_oauth.go
+# DeleteRefreshTokensByUsernameAndClientID (deleted — unkeyed non-key scan, zero
+# callers), ai_cost_repository.go GetAICostsByOperationType/GetTopCostlyOperations/
+# GetAggregatedCosts (keyed-but-.Scan → keyed .All + clamped Limit),
+# hashtag_trending_calculator.go GetTrendingAnalytics (deleted — zero callers),
+# pkg/moderation/advanced/reputation.go GetActorsByReputation (deleted — zero callers).
 goDynamoDBQueryScan:
-  cmd/lesser/migrate_direct_message_state.go: 2
   cmd/lesser/migrate_conversation_metadata.go: 1
   cmd/lesser/migrate_conversation_participant_snapshots.go: 1
   cmd/lesser/migrate_conversations.go: 1
+  cmd/lesser/migrate_direct_message_state.go: 2
   cmd/lesser/migrate_mcp_auth_cutover.go: 1
   cmd/lesser/migrate_notification_gsi4.go: 1
   cmd/lesser/migrate_numeric_ids.go: 1
   cmd/lesser/migrate_security_findings_hashtags.go: 1
   cmd/lesser/migrate_user_keys.go: 1
   pkg/cost/dynamorm_tracker.go: 1
-  pkg/moderation/advanced/reputation.go: 1
-  pkg/storage/repositories/account_repository.go: 4
-  pkg/storage/repositories/account_repository_oauth.go: 1
-  pkg/storage/repositories/ai_cost_repository.go: 3
   pkg/storage/repositories/analytics_repository.go: 2
   pkg/storage/repositories/hashtag_repository.go: 1
-  pkg/storage/repositories/hashtag_trending_calculator.go: 1
   pkg/storage/repositories/moderation_ml_repository.go: 4
   pkg/storage/repositories/moderation_ml_repository_ext.go: 2
   pkg/storage/repositories/moderation_repository.go: 2
@@ -152,28 +157,38 @@ goDynamoDBBadPKWhere:
 #   scans in the batch E rework (2026-08-27): Hashtag metadata rows are only
 #   written by HashtagRepository.IndexHashtag, which has zero production
 #   callers, so no live writer would populate the index — the reads stay on
-#   SK = METADATA scans with a no-live-writer disposition. Latent/no-live-caller
-#   sites stay baselined for their own batch:
-#   analytics_repository.go GetActorInteraction (2), moderation_repository.go
-#   GetFlag (1).
-# - The other 27 calls are pre-existing unkeyed scans baselined for tracking,
+#   SK = METADATA scans with a no-live-writer disposition.
+# - Wave part 2 (batch L, umbrella #1469, 2026-08-27) eliminated 10 LATENT-class
+#   key-less All sites: analytics_repository.go GetActorInteraction (2, deleted —
+#   zero callers; analytics_repository.go drops 3 → 1, leaving GetRecentHashtags
+#   with the batch E no-live-writer disposition), account_repository_auth.go
+#   GetUserByRecoveryCode (deleted — zero callers), account_repository_refresh_tokens.go
+#   CleanupExpiredAdvancedTokens (deleted — zero callers), activity_repository.go
+#   GetHashtagActivity (bounded — page-capped AllPaginated iteration, Limit 500/page,
+#   max 100 pages), dlq_repository.go GetSimilarMessages (deleted — zero callers;
+#   interface/mock/inmemory dropped), enhanced_pattern_repository.go
+#   CleanupExpiredPatterns (deleted — zero callers), media_repository.go
+#   GetTotalStorageUsage (bounded — page-capped AllPaginated iteration, Limit
+#   500/page, max 100 pages; the two media sites invisible to this gate,
+#   GetUnusedMedia/GetModerationPendingMedia, are clamped in place), search_cost_repository.go
+#   GetPopularQueries + ResetBudgets (deleted — zero callers), search_repository.go
+#   PruneOldSuggestions + UnindexStatus (deleted — zero callers; wrapper forwards
+#   dropped).
+# - moderation_repository.go GetFlag (1) REMAINS baselined but is NOT latent:
+#   it is reached from the event path via DeleteFlag ← cmd/activity-processor
+#   (flag-undo handling). It is already bounded (Limit 10 on the SK LIKE
+#   suffix lookup — no existing index serves a flag-ID lookup without the
+#   object key) and stays for the request/event-path batch.
+# - The other 8 calls are pre-existing unkeyed scans baselined for tracking,
 #   scheduled for elimination under the same umbrella issue (disposition:
 #   "elimination pending — wave #1469", NOT sanctioned).
 goDynamoDBAllNoKey:
-  pkg/storage/repositories/account_repository_auth.go: 1
-  pkg/storage/repositories/account_repository_refresh_tokens.go: 1
-  pkg/storage/repositories/activity_repository.go: 1
-  pkg/storage/repositories/analytics_repository.go: 3
-  pkg/storage/repositories/dlq_repository.go: 1
-  pkg/storage/repositories/enhanced_pattern_repository.go: 1
+  pkg/storage/repositories/analytics_repository.go: 1
   pkg/storage/repositories/filter_repository.go: 1
   pkg/storage/repositories/hashtag_trending_engine.go: 1
   pkg/storage/repositories/instance_counts.go: 5
-  pkg/storage/repositories/media_repository.go: 1
   pkg/storage/repositories/moderation_repository.go: 1
   pkg/storage/repositories/object_repository.go: 1
-  pkg/storage/repositories/search_cost_repository.go: 2
-  pkg/storage/repositories/search_repository.go: 2
 
 # Key-less TableTheory `Count(...)` on freshly-built query chains, which
 # compiles to a DynamoDB Scan with Select=COUNT — a counted full-table/index
