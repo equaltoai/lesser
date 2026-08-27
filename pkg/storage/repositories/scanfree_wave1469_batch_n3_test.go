@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1141,6 +1142,233 @@ func TestBatchN3_GetMetricsInRange_ZeroLimitFloored(t *testing.T) {
 
 	repo := NewRouteOptimizerRepository(mockDB, "test-table", zap.NewNop(), nil)
 	results, err := repo.GetMetricsInRange(ctx, "r1", start, start.Add(time.Hour), 0)
+	require.NoError(t, err)
+	require.Empty(t, results)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+// ===== Additional branch coverage for newly-bounded sites (verify ci gate) =====
+
+func TestBatchN3_CountReplies_PageCapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Return(mockQuery)
+	mockQuery.On("Index", "gsi6").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi6PK", "=", "REPLIES#https://example.com/objects/status-1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Object)
+		*dest = make([]models.Object, 500)
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Object")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	_, err := repo.CountReplies(ctx, "status-1")
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetUnreadNotificationCount_PageCapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Notification")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "USER#alice").Return(mockQuery).Once()
+	mockQuery.On("Filter", "IsRead", "=", false).Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Notification)
+		*dest = make([]models.Notification, 500)
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Notification")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	_, err := repo.GetUnreadNotificationCount(ctx, "alice")
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetOpenReportsCount_CapFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Report")).Return(mockQuery)
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3PK", "=", "STATUS#open").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Report)
+		*dest = make([]models.Report, 500)
+	}
+	// The legacy 0-nil swallow would drop this; the sentinel split must
+	// propagate it (wave #1469).
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Report")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
+	_, err := repo.GetOpenReportsCount(ctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_CountPendingFlags_CapFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Flag")).Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2PK", "=", "FLAG_STATUS#pending").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Flag)
+		*dest = make([]models.Flag, 500)
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Flag")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
+	_, err := repo.CountPendingFlags(ctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_CountStatusesForAdmin_PageCappedWalk(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Status")).Return(mockQuery)
+	mockQuery.On("Index", "gsi8").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery).Once()
+	mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Status)
+		*dest = []models.Status{{StatusID: "s1"}, {StatusID: "s2"}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
+	count, err := repo.CountStatusesForAdmin(ctx, &interfaces.StatusFilter{})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), count)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetSearchCosts_TransientErrorSkipsDay(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.SearchCostTracking")).Return(mockQuery)
+	// Day 1: transient (non-cap) error keeps the skip-this-day behavior.
+	mockQuery.On("Where", "PK", "=", "SEARCH_COST#2026-08-26#user-1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.SearchCostTracking")).Return(nil, errors.New("transient")).Once()
+	// Day 2: one cost record collected.
+	mockQuery.On("Where", "PK", "=", "SEARCH_COST#2026-08-27#user-1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.SearchCostTracking")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.SearchCostTracking)
+		*dest = []models.SearchCostTracking{{UserID: "user-1", TotalCostMicros: 50}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewSearchCostRepository(mockDB, "test-table", zap.NewNop(), nil)
+	costs, err := repo.GetSearchCosts(ctx, "user-1", time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Len(t, costs, 1)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetRecentResults_ZeroLimitFloored(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.RouteDeliveryResult")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "RESULTS").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", ">", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.RouteDeliveryResult")).Return(nil).Once()
+
+	repo := NewRouteOptimizerRepository(mockDB, "test-table", zap.NewNop(), nil)
+	results, err := repo.GetRecentResults(ctx, time.Now().Add(-time.Hour), 0)
+	require.NoError(t, err)
+	require.Empty(t, results)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetFederationCostsByActivityType_ZeroLimitFloored(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.FederationCostTracking")).Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2PK", "=", "FED_TYPE#announce").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationCostTracking")).Return(nil).Once()
+
+	baseRepo := NewBaseRepository[*models.FederationCostTracking](mockDB, "test-table", zap.NewNop())
+	budgetRepo := NewBaseRepository[*models.FederationBudget](mockDB, "test-table", zap.NewNop())
+	repo := NewFederationCostRepositoryFromBase(baseRepo, budgetRepo, nil)
+	costs, err := repo.GetFederationCostsByActivityType(ctx, "announce", start, start.Add(time.Hour), 0)
+	require.NoError(t, err)
+	require.Empty(t, costs)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetMetricsInRange_NoEndZeroLimitFloored(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.RouteDeliveryResult")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "ROUTE#r1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.RouteDeliveryResult")).Return(nil).Once()
+
+	repo := NewRouteOptimizerRepository(mockDB, "test-table", zap.NewNop(), nil)
+	// end.IsZero() skips the <= filter branch.
+	results, err := repo.GetMetricsInRange(ctx, "r1", start, time.Time{}, 0)
 	require.NoError(t, err)
 	require.Empty(t, results)
 	mockDB.AssertExpectations(t)
