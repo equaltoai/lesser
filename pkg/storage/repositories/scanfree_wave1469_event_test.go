@@ -72,6 +72,70 @@ func TestScanFreeWave_Event_GetPendingModerationCount(t *testing.T) {
 	require.Zero(t, s.scanCalls, "GetPendingModerationCount must not scan")
 }
 
+// 2b) UnassignReport must REMOVE the GSI4 assignee keys. tabletheory v3.0.6's
+// implicit Update() skips empty omitempty attributes, so after UpdateKeys
+// zeroes gsi4PK/gsi4SK an unassigned report would otherwise keep its stale
+// ASSIGNED#<mod> partition entry and overcount GetPendingModerationCount.
+// Probe (adversary shape): assign → unassign → count must be 0 and the stored
+// item must not carry the stale keys; UpdateReportStatus-while-unassigned
+// must keep them gone; re-assign + status change must move the sort key.
+func TestScanFreeWave_Event_UnassignReportClearsGSI4(t *testing.T) {
+	ctx := context.Background()
+	db, s := newWave1469ScanForbiddingTestDB(t, &models.Report{}, &models.Flag{})
+	repo := NewModerationRepository(db, "test-table", zap.NewNop())
+
+	require.NoError(t, repo.CreateReport(ctx, &storage.Report{ID: "r1", ReporterID: "u1", TargetAccountID: "u2", Status: "open"}))
+	require.NoError(t, repo.AssignReport(ctx, "r1", "mod-1"))
+
+	count, err := repo.GetPendingModerationCount(ctx, "mod-1")
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "assigned open report counts for its assignee")
+
+	// Unassign → the stored item must not carry the stale GSI4 keys.
+	require.NoError(t, repo.UnassignReport(ctx, "r1"))
+	var unassigned models.Report
+	require.NoError(t, db.WithContext(ctx).Model(&unassigned).
+		Where("PK", "=", "REPORT#r1").
+		Where("SK", "=", "REPORT").
+		First(&unassigned))
+	require.Empty(t, unassigned.GSI4PK, "unassigned report must not keep stale gsi4PK")
+	require.Empty(t, unassigned.GSI4SK, "unassigned report must not keep stale gsi4SK")
+
+	count, err = repo.GetPendingModerationCount(ctx, "mod-1")
+	require.NoError(t, err)
+	require.Zero(t, count, "unassigned report must not overcount its former assignee")
+
+	// UpdateReportStatus-while-unassigned must not resurrect the stale keys.
+	require.NoError(t, repo.UpdateReportStatus(ctx, "r1", storage.ReportStatusResolved, "", "mod-1"))
+	var afterStatus models.Report
+	require.NoError(t, db.WithContext(ctx).Model(&afterStatus).
+		Where("PK", "=", "REPORT#r1").
+		Where("SK", "=", "REPORT").
+		First(&afterStatus))
+	require.Empty(t, afterStatus.GSI4PK, "status update on unassigned report must not restore gsi4PK")
+	require.Empty(t, afterStatus.GSI4SK, "status update on unassigned report must not restore gsi4SK")
+
+	count, err = repo.GetPendingModerationCount(ctx, "mod-1")
+	require.NoError(t, err)
+	require.Zero(t, count, "status update must not re-count an unassigned report")
+
+	// Re-assign + status change moves the GSI4 sort key to the new status.
+	require.NoError(t, repo.AssignReport(ctx, "r1", "mod-1"))
+	require.NoError(t, repo.UpdateReportStatus(ctx, "r1", storage.ReportStatusInProgress, "", "mod-1"))
+	var reassigned models.Report
+	require.NoError(t, db.WithContext(ctx).Model(&reassigned).
+		Where("PK", "=", "REPORT#r1").
+		Where("SK", "=", "REPORT").
+		First(&reassigned))
+	require.Equal(t, "ASSIGNED#mod-1", reassigned.GSI4PK)
+	require.Contains(t, reassigned.GSI4SK, "in_progress#REPORT#")
+
+	count, err = repo.GetPendingModerationCount(ctx, "mod-1")
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "in-progress assigned report counts for its assignee")
+	require.Zero(t, s.scanCalls, "report assignment lifecycle must not scan")
+}
+
 // 3) GetModerationDecisionsByModerator — keyed gsi1 (REVIEWER#<reviewerID>).
 func TestScanFreeWave_Event_GetModerationDecisionsByModerator(t *testing.T) {
 	ctx := context.Background()

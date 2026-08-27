@@ -1926,7 +1926,21 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 	}
 	model.UpdateKeys() // Internal model operation
 
-	err = r.db.WithContext(ctx).Model(model).Update()
+	// UnassignReport writes through an explicit UpdateBuilder so the GSI4
+	// assignee keys are REMOVED from storage: tabletheory v3.0.6's implicit
+	// Update() skips empty omitempty attributes, so the stale ASSIGNED#<mod>
+	// partition entry would otherwise survive and overcount
+	// GetPendingModerationCount (wave part 2 batch E rework, #1469).
+	builder := r.db.WithContext(ctx).Model(model).
+		Where("PK", "=", model.PK).
+		Where("SK", "=", model.SK).
+		UpdateBuilder()
+	builder.Set("AssignedTo", model.AssignedTo) // "" — cleared
+	builder.Set("UpdatedAt", model.UpdatedAt)
+	builder.Remove("GSI4PK")
+	builder.Remove("GSI4SK")
+	builder.ConditionExists("PK")
+	err = builder.Execute()
 
 	if err != nil {
 		r.logger.Error("Failed to unassign report",
@@ -2528,7 +2542,36 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 	}
 	model.UpdateKeys() // Internal model operation
 
-	err = r.db.WithContext(ctx).Model(model).Update()
+	// UpdateReportStatus writes through an explicit UpdateBuilder so the GSI
+	// keys derived by UpdateKeys are maintained even when cleared: the status
+	// change moves the item between GSI3 status partitions, and an unassigned
+	// report must have its GSI4 assignee keys REMOVED (tabletheory v3.0.6's
+	// implicit Update() skips empty omitempty attributes, so the stale
+	// ASSIGNED#<mod> entry would otherwise survive and overcount
+	// GetPendingModerationCount — wave part 2 batch E rework, #1469).
+	builder := r.db.WithContext(ctx).Model(model).
+		Where("PK", "=", model.PK).
+		Where("SK", "=", model.SK).
+		UpdateBuilder()
+	builder.Set("Status", model.Status)
+	builder.Set("ActionTaken", model.ActionTaken)
+	builder.Set("ModeratorID", model.ModeratorID)
+	builder.Set("UpdatedAt", model.UpdatedAt)
+	builder.Set("AssignedTo", model.AssignedTo)
+	if model.ActionTakenAt != nil {
+		builder.Set("ActionTakenAt", model.ActionTakenAt)
+	}
+	builder.Set("GSI3PK", model.GSI3PK)
+	builder.Set("GSI3SK", model.GSI3SK)
+	if model.AssignedTo != "" {
+		builder.Set("GSI4PK", model.GSI4PK)
+		builder.Set("GSI4SK", model.GSI4SK)
+	} else {
+		builder.Remove("GSI4PK")
+		builder.Remove("GSI4SK")
+	}
+	builder.ConditionExists("PK")
+	err = builder.Execute()
 
 	if err != nil {
 		r.logger.Error("Failed to update report status",

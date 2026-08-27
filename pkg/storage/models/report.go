@@ -70,10 +70,14 @@ func (r *Report) UpdateKeys() {
 	r.GSI3PK = fmt.Sprintf(KeyPatternStatus, r.Status)
 	r.GSI3SK = fmt.Sprintf("REPORT#%d", r.CreatedAt.Unix())
 
-	// GSI4: assignee index (maintained by every Report writer — CreateReport,
-	// AssignReport, UnassignReport, UpdateReportStatus all call UpdateKeys).
-	// Unassigned reports carry no GSI4 keys so they drop out of the assignee
-	// partitions.
+	// GSI4: assignee index. UpdateKeys derives the keys on every Report writer
+	// (CreateReport, AssignReport, UnassignReport, UpdateReportStatus all call
+	// it); UnassignReport and UpdateReportStatus persist the cleared shape
+	// through an explicit UpdateBuilder that REMOVEs the attributes — tabletheory
+	// v3.0.6's implicit Update() skips empty omitempty fields, so a plain
+	// update would leave the stale ASSIGNED#<mod> entry behind and overcount
+	// GetPendingModerationCount (wave part 2 batch E rework, #1469). Unassigned
+	// reports carry no GSI4 keys and drop out of the assignee partitions.
 	if r.AssignedTo != "" {
 		r.GSI4PK = fmt.Sprintf("ASSIGNED#%s", r.AssignedTo)
 		r.GSI4SK = fmt.Sprintf("%s#REPORT#%d", r.Status, r.CreatedAt.Unix())

@@ -43,6 +43,16 @@ func setupPermissiveDynamormMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQue
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
 	mockQuery.On("Count").Return(int64(1), nil).Maybe()
+
+	// UpdateBuilder — fluent builder used by the report writers
+	// (UnassignReport / UpdateReportStatus maintain GSI keys explicitly, wave
+	// part 2 batch E rework #1469).
+	updateBuilder := new(mocks.MockUpdateBuilder)
+	updateBuilder.On("Set", mock.Anything, mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("Remove", mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("ConditionExists", mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("Execute").Return(nil).Maybe()
+	mockQuery.On("UpdateBuilder").Return(updateBuilder).Maybe()
 }
 
 func populateStructResult(target any) {
