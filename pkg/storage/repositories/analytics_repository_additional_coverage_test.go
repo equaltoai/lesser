@@ -436,8 +436,6 @@ func TestTrendingRepository_AnalyticsAdditionalCoverage(t *testing.T) {
 		require.NoError(t, repo.IncrementQueryCount(ctx, "golang", 1))
 		_, _ = repo.GetQueryCount(ctx, "golang")
 		_, _ = repo.GetTopQueries(ctx, 5, 24*time.Hour)
-
-		_, _ = repo.GetActorInteraction(ctx, "https://example.com/users/a", "https://example.com/users/b")
 	})
 }
 
@@ -576,23 +574,6 @@ func TestTrendingRepository_GetQueryCount_NotFound(t *testing.T) {
 	count, err := repo.GetQueryCount(ctx, "golang")
 	require.NoError(t, err)
 	require.Equal(t, 0, count)
-}
-
-func TestTrendingRepository_GetActorInteraction_NotFound(t *testing.T) {
-	ctx := context.Background()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Twice()
-
-	_, err := repo.GetActorInteraction(ctx, "actor-1", "actor-2")
-	require.Error(t, err)
 }
 
 func TestTrendingRepository_GetTotalUserCount_QueryError(t *testing.T) {
@@ -1200,23 +1181,6 @@ func TestTrendingRepository_GetQueryCount_QueryError(t *testing.T) {
 	mockQuery.On("First", mock.Anything).Return(errors.New("query failed")).Once()
 
 	_, err := repo.GetQueryCount(ctx, "golang")
-	require.Error(t, err)
-}
-
-func TestTrendingRepository_GetActorInteraction_QueryError(t *testing.T) {
-	ctx := context.Background()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
-
-	_, err := repo.GetActorInteraction(ctx, "actor-1", "actor-2")
 	require.Error(t, err)
 }
 

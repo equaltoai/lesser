@@ -432,58 +432,6 @@ func (r *AccountRepository) UpdateLastLogin(ctx context.Context, username string
 	})
 }
 
-// GetUserByRecoveryCode retrieves a user by recovery code (for email-free auth)
-func (r *AccountRepository) GetUserByRecoveryCode(ctx context.Context, recoveryCode string) (*storage.User, error) {
-	// Recovery codes are hashed using bcrypt, stored per user
-	// We need to query all users with recovery codes and check each one
-
-	// Get all recovery codes from all users
-	var recoveryCodes []models.RecoveryCode
-
-	err := r.db.WithContext(ctx).Model(&models.RecoveryCode{}).
-		Where("SK", "BEGINS_WITH", "RECOVERY_CODE#").
-		All(&recoveryCodes)
-
-	if err != nil {
-		r.logger.Error("failed to query recovery codes",
-			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "recovery code", "query")
-	}
-
-	// Check each recovery code hash against the provided code
-	for _, code := range recoveryCodes {
-		// Skip already used codes
-		if code.UsedAt != nil {
-			continue
-		}
-
-		// Verify the recovery code hash
-		if r.verifyRecoveryCodeHash(recoveryCode, code.CodeHash) {
-			// Found matching code, return the user
-			username := extractUsernameFromPK(code.PK)
-			if err := common.ValidateRequiredParam("username", username); err != nil {
-				r.logger.Error("invalid recovery code PK format",
-					zap.String("pk", code.PK))
-				continue
-			}
-
-			// Mark code as used (best effort)
-			now := time.Now()
-			code.UsedAt = &now
-			if updateErr := r.db.WithContext(ctx).Model(&code).Update(); updateErr != nil {
-				r.logger.Error("failed to mark recovery code as used",
-					zap.String("username", username),
-					zap.Error(updateErr))
-			}
-
-			// Return the user
-			return r.GetUser(ctx, username)
-		}
-	}
-
-	return nil, common.UserNotFoundError{Username: "recovery:" + recoveryCode}
-}
-
 // generateSecureToken generates a cryptographically secure token.
 func generateSecureToken() (string, error) {
 	randomBytes := make([]byte, 32)
@@ -501,19 +449,6 @@ func generateSessionID() (string, error) {
 		return "", err
 	}
 	return "session_" + hex.EncodeToString(randomBytes), nil
-}
-
-// verifyRecoveryCodeHash verifies a recovery code against its bcrypt hash
-func (r *AccountRepository) verifyRecoveryCodeHash(code, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(code))
-	if err != nil {
-		if err != bcrypt.ErrMismatchedHashAndPassword {
-			r.logger.Debug("error verifying recovery code hash",
-				zap.Error(err))
-		}
-		return false
-	}
-	return true
 }
 
 // extractUsernameFromPK extracts username from USER#{username} format

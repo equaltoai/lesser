@@ -149,9 +149,6 @@ type DLQRepository interface {
 	// SearchDLQMessages searches DLQ messages with various filters
 	SearchDLQMessages(ctx context.Context, filter *DLQSearchFilter) ([]*models.DLQMessage, string, error)
 
-	// GetSimilarMessages finds messages with the same similarity hash
-	GetSimilarMessages(ctx context.Context, similarityHash string, limit int) ([]*models.DLQMessage, error)
-
 	// ===== Analytics Operations =====
 
 	// GetDLQAnalytics returns analytics data for DLQ messages

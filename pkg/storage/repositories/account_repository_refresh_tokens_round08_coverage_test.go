@@ -172,18 +172,6 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens(t *testing.T) {
 		err = repo.UpdateAdvancedTokenLastUsed(ctx, "update", "127.0.0.1")
 		require.NoError(t, err)
 
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
-			dst := args.Get(0).(*[]models.AuthRefreshToken)
-			nowUnix := time.Now().Unix()
-			*dst = []models.AuthRefreshToken{
-				{Token: "token-expired", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix - 10},
-				{Token: "token-active-02", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix + 3600},
-			}
-		}).Return(nil).Once()
-		deleted, err := repo.CleanupExpiredAdvancedTokens(ctx)
-		require.NoError(t, err)
-		require.Equal(t, 0, deleted)
-
 		stats, err := repo.GetAdvancedTokenStats(ctx, "user-1")
 		require.NoError(t, err)
 		require.Equal(t, "user-1", stats.UserID)

@@ -75,9 +75,6 @@ func TestRound08_AccountRepositoryAuth_CoverageSweep(t *testing.T) {
 	_ = repo.ClearLoginAttempts(ctx, "user-1")
 	_, _ = repo.GetLoginAttemptCount(ctx, "user-1", time.Now().Add(-time.Hour))
 
-	// Recovery codes.
-	_, _ = repo.GetUserByRecoveryCode(ctx, "password")
-
 	// Device management.
 	_ = repo.CreateDevice(ctx, nil)
 	require.NoError(t, repo.CreateDevice(ctx, &storage.Device{

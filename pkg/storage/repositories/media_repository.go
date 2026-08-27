@@ -1139,13 +1139,15 @@ func (r *MediaRepository) GetUnusedMedia(ctx context.Context, olderThan time.Tim
 		zap.Time("older_than", olderThan),
 		zap.Int("limit", opts.Limit))
 
-	// Query all media and filter by usage
-	var mediaList []*models.Media
-	query := r.db.WithContext(ctx).Model(&models.Media{})
-
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit * 2) // Get more to account for filtering
+	// Query all media and filter by usage. The read is clamped (wave #1469):
+	// a zero/negative opts.Limit previously left the scan unbounded.
+	limit := opts.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
 	}
+	var mediaList []*models.Media
+	query := r.db.WithContext(ctx).Model(&models.Media{}).
+		Limit(limit * 2) // Get more to account for filtering
 
 	err := query.All(&mediaList)
 	if err != nil {
@@ -1358,14 +1360,17 @@ func (r *MediaRepository) GetModerationPendingMedia(ctx context.Context, opts in
 	r.logger.Debug("getting moderation pending media",
 		zap.Int("limit", opts.Limit))
 
-	// Query media that needs moderation (has no moderation score or labels)
+	// Query media that needs moderation (has no moderation score or labels).
+	// The read is clamped (wave #1469): a zero/negative opts.Limit previously
+	// left the scan unbounded; the existing CreatedAt cursor remains.
+	limit := opts.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
 	var mediaList []*models.Media
 	query := r.db.WithContext(ctx).Model(&models.Media{}).
-		Filter("ModerationScore", "=", 0.0) // Assuming 0.0 means not moderated yet
-
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit)
-	}
+		Filter("ModerationScore", "=", 0.0). // Assuming 0.0 means not moderated yet
+		Limit(limit)
 
 	// Resume from the provided cursor when present
 	if opts.Cursor != "" {
@@ -1380,7 +1385,7 @@ func (r *MediaRepository) GetModerationPendingMedia(ctx context.Context, opts in
 	// Build pagination result
 	nextCursor := ""
 	hasMore := false
-	if len(mediaList) > 0 && opts.Limit > 0 && len(mediaList) == opts.Limit {
+	if len(mediaList) > 0 && limit > 0 && len(mediaList) == limit {
 		// Use the last item's creation time as the next cursor
 		lastItem := mediaList[len(mediaList)-1]
 		nextCursor = lastItem.CreatedAt.Format(time.RFC3339)
@@ -1457,16 +1462,34 @@ func (r *MediaRepository) GetMediaStorageUsage(ctx context.Context, userID strin
 func (r *MediaRepository) GetTotalStorageUsage(ctx context.Context) (int64, error) {
 	r.logger.Debug("getting total storage usage")
 
-	// This is an expensive operation - consider caching or aggregation in production
-	var mediaList []*models.Media
-	err := r.db.WithContext(ctx).Model(&models.Media{}).All(&mediaList)
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, EntityMedia, "all media for total storage")
-	}
+	// The contract requires the full media set, so the read is a page-bounded
+	// iteration with an explicit page cap (wave #1469): each page carries a
+	// clamped Limit and the loop stops after maxStoragePages pages instead of
+	// one unbounded scan.
+	const storagePageSize = 500
+	const maxStoragePages = 100
 
-	totalSize := int64(0)
-	for _, media := range mediaList {
-		totalSize += media.GetTotalSize() // Includes variants
+	baseQuery := r.db.WithContext(ctx).Model(&models.Media{}).Limit(storagePageSize)
+
+	var totalSize int64
+	cursor := ""
+	for page := 0; page < maxStoragePages; page++ {
+		var pageMedia []*models.Media
+		query := baseQuery
+		if cursor != "" {
+			query = query.Cursor(cursor)
+		}
+		res, err := query.AllPaginated(&pageMedia)
+		if err != nil {
+			return 0, ErrorHandler.HandleQueryError(err, EntityMedia, "all media for total storage")
+		}
+		for _, media := range pageMedia {
+			totalSize += media.GetTotalSize() // Includes variants
+		}
+		if res == nil || !res.HasMore || res.NextCursor == "" || len(pageMedia) < storagePageSize {
+			break
+		}
+		cursor = res.NextCursor
 	}
 
 	r.logger.Info("calculated total storage usage", zap.Int64("total_bytes", totalSize))

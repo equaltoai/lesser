@@ -238,32 +238,6 @@ func (r *DLQRepository) SearchDLQMessages(_ context.Context, filter *interfaces.
 	return applyPagination(results, filter.Limit, filter.Cursor)
 }
 
-// GetSimilarMessages finds messages with the same similarity hash.
-func (r *DLQRepository) GetSimilarMessages(_ context.Context, similarityHash string, limit int) ([]*models.DLQMessage, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var results []*models.DLQMessage
-
-	for _, msg := range r.messages {
-		if msg.SimilarityHash == similarityHash {
-			results = append(results, msg)
-		}
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].FirstSeenAt.After(results[j].FirstSeenAt)
-	})
-
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	return results, nil
-}
-
-// ===== Analytics Operations =====
-
 // GetDLQAnalytics returns analytics data for DLQ messages.
 func (r *DLQRepository) GetDLQAnalytics(_ context.Context, service string, timeRange interfaces.DLQTimeRange) (*interfaces.DLQAnalytics, error) {
 	r.mu.RLock()

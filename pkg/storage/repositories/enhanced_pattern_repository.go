@@ -720,40 +720,6 @@ func (r *EnhancedPatternRepository) GetPerformanceMetrics(ctx context.Context, p
 
 // ===== MAINTENANCE AND CLEANUP =====
 
-// CleanupExpiredPatterns removes patterns that have expired
-func (r *EnhancedPatternRepository) CleanupExpiredPatterns(ctx context.Context) (int, error) {
-	// Get all patterns to check expiration
-	patterns := []*models.EnhancedModerationPattern{}
-	err := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("SK", "=", models.SKMetadata).
-		All(&patterns)
-
-	if err != nil {
-		return 0, fmt.Errorf("%w: %w", storage.ErrPatternQueryFailed, err)
-	}
-
-	cleanedCount := 0
-	for _, pattern := range patterns {
-		if pattern.IsExpired() {
-			err := r.DeletePattern(ctx, pattern.PatternID)
-			if err != nil {
-				r.logger.Warn("failed to cleanup expired pattern",
-					zap.String("pattern_id", pattern.PatternID),
-					zap.Error(err))
-			} else {
-				cleanedCount++
-			}
-		}
-	}
-
-	if cleanedCount > 0 {
-		r.logger.Info("cleaned up expired patterns",
-			zap.Int("count", cleanedCount))
-	}
-
-	return cleanedCount, nil
-}
-
 // GetPatternStatistics returns aggregate statistics for patterns
 func (r *EnhancedPatternRepository) GetPatternStatistics(ctx context.Context) (map[string]interface{}, error) {
 	patterns := []*models.EnhancedModerationPattern{}

@@ -13,48 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestSearchCostRepository_ResetBudgets(t *testing.T) {
-	t.Run("success resets and updates budgets", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		logger := zap.NewNop()
-		repo := NewSearchCostRepository(mockDB, "test-table", logger, nil)
-
-		ctx := context.Background()
-
-		mockDB.On("WithContext", ctx).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.SearchBudget")).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]models.SearchBudget)
-			*dest = []models.SearchBudget{
-				{UserID: "user-1", UsedBudgetMicros: 100, CurrentRequests: 3},
-				{UserID: "user-2", UsedBudgetMicros: 200, CurrentRequests: 7},
-			}
-		}).Return(nil).Once()
-
-		mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
-
-		require.NoError(t, repo.ResetBudgets(ctx, "daily"))
-	})
-
-	t.Run("scan error returns query error", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		logger := zap.NewNop()
-		repo := NewSearchCostRepository(mockDB, "test-table", logger, nil)
-
-		ctx := context.Background()
-
-		mockDB.On("WithContext", ctx).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.SearchBudget")).Return(errors.New("scan failed")).Once()
-
-		require.Error(t, repo.ResetBudgets(ctx, "daily"))
-	})
-}
-
 func TestSearchCostRepository_CalculateTotalCostMicros_CoversBedrockAndLambda(t *testing.T) {
 	repo := &SearchCostRepository{}
 	costData := &models.SearchCostTracking{

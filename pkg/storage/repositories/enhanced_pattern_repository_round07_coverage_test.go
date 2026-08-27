@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -435,36 +434,6 @@ func TestEnhancedPatternRepository_CacheAndMetrics(t *testing.T) {
 func TestEnhancedPatternRepository_Maintenance(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("CleanupExpiredPatterns returns cleaned count", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-
-		// CleanupExpiredPatterns initial scan
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.EnhancedModerationPattern)
-			*dest = []*models.EnhancedModerationPattern{
-				{PatternID: "expired", Active: true, ExpiresAt: time.Now().Add(-time.Hour)},
-				{PatternID: "active", Active: true},
-			}
-		}).Once()
-
-		// DeletePattern -> GetPattern
-		mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*models.EnhancedModerationPattern)
-			*dest = models.EnhancedModerationPattern{PatternID: "expired", Active: true}
-			_ = dest.UpdateKeys()
-		}).Once()
-		mockQuery.On("Update", mock.Anything).Return(nil).Once()
-
-		repo := newEnhancedPatternRepo(t, mockDB)
-		count, err := repo.CleanupExpiredPatterns(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, 1, count)
-	})
-
 	t.Run("GetPatternStatistics aggregates", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
@@ -627,7 +596,7 @@ func TestEnhancedPatternRepository_ErrorPaths(t *testing.T) {
 		assert.ErrorIs(t, err, storage.ErrPatternMetricsQueryFailed)
 	})
 
-	t.Run("CleanupExpiredPatterns and GetPatternStatistics query failures", func(t *testing.T) {
+	t.Run("GetPatternStatistics query failure", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -637,12 +606,7 @@ func TestEnhancedPatternRepository_ErrorPaths(t *testing.T) {
 		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
 
 		repo := newEnhancedPatternRepo(t, mockDB)
-		_, err := repo.CleanupExpiredPatterns(ctx)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, storage.ErrPatternQueryFailed)
-
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
-		_, err = repo.GetPatternStatistics(ctx)
+		_, err := repo.GetPatternStatistics(ctx)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, storage.ErrPatternQueryFailed)
 	})

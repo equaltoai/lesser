@@ -107,6 +107,11 @@ func TestMediaRepository_Sweep_ExportedMethods(t *testing.T) {
 		}
 	}).Return(nil).Maybe()
 
+	// AllPaginated (page-capped reads, wave #1469): returning a nil result
+	// ends the page loop immediately; permissive tests only exercise the
+	// bounded iteration path, not pagination depth.
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, nil).Maybe()
+
 	mockQuery.On("Count").Return(int64(0), nil).Maybe()
 
 	job := &models.MediaJob{JobID: "job-1", MediaID: "m1", Username: "alice", Status: "pending", S3Key: "s3://bucket/key", MimeType: "image/png"}

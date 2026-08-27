@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
-	"golang.org/x/crypto/bcrypt"
 )
 
 func TestAccountRepositoryAuthRandomIdentifiers(t *testing.T) {
@@ -121,12 +120,6 @@ func TestAccountRepositoryAuthSmallHelpers(t *testing.T) {
 	require.Equal(t, "alice", extractUsernameFromPK("USER#alice"))
 	require.Empty(t, extractUsernameFromPK("alice"))
 	require.Equal(t, "bob", extractUsernameFromUserID("USER#bob"))
-
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte("recovery-code"), bcrypt.MinCost)
-	require.NoError(t, err)
-	repo := NewAccountRepository(nil, "test-table", "example.com", zaptest.NewLogger(t))
-	require.True(t, repo.verifyRecoveryCodeHash("recovery-code", string(passwordHash)))
-	require.False(t, repo.verifyRecoveryCodeHash("wrong-code", string(passwordHash)))
 }
 
 func TestAccountRepositoryProjectionTableNames(t *testing.T) {

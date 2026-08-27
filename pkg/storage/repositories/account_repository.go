@@ -2632,7 +2632,10 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 		}
 	}
 
-	err := queryBuilder.Scan(&users)
+	// Keyed GSI1 query (gsi1PK = USERS, gsi1SK > cursor, Limit clamped above) —
+	// .All compiles to a DynamoDB Query instead of the previous .Scan, which
+	// applied the gsi1PK condition as a post-limit FilterExpression.
+	err := queryBuilder.All(&users)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "suggestions")
 	}
@@ -2673,27 +2676,37 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 // GetFeaturedAccounts retrieves featured accounts
 func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
 	// Featured accounts are typically admins and moderators
-	var users []models.User
-	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index(models.IndexGSI3).
-		Where("gsi3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
-
 	limit := opts.Limit
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
-	queryBuilder = queryBuilder.Limit(limit + 1)
 
+	// gsi3PK IN (admin, moderator) cannot be a single keyed DynamoDB Query
+	// (partition keys must be matched by equality), so enumerate the two role
+	// partitions and merge the bounded page from each (batch A pattern).
+	var cursorSK string
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
-		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("gsi3SK", ">", sk)
+		if err == nil {
+			cursorSK = sk
 		}
 	}
 
-	err := queryBuilder.Scan(&users)
+	users, err := r.queryFeaturedRoleUsers(ctx, "ROLE#admin", cursorSK, limit+1)
 	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "featured")
+		return nil, err
+	}
+	moderators, err := r.queryFeaturedRoleUsers(ctx, "ROLE#moderator", cursorSK, limit+1)
+	if err != nil {
+		return nil, err
+	}
+
+	// Merge and sort by gsi3SK descending so cursor pagination stays
+	// deterministic across the two enumerated partitions.
+	users = append(users, moderators...)
+	sort.Slice(users, func(i, j int) bool { return users[i].GSI3SK > users[j].GSI3SK })
+	if len(users) > limit+1 {
+		users = users[:limit+1]
 	}
 
 	// Convert to accounts
@@ -2726,6 +2739,26 @@ func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interf
 		HasMore:    hasMore,
 		Total:      -1,
 	}, nil
+}
+
+// queryFeaturedRoleUsers runs one keyed GSI3 query over a single role
+// partition with a bounded page size and the optional cursor SK lower bound.
+func (r *AccountRepository) queryFeaturedRoleUsers(ctx context.Context, rolePK, cursorSK string, pageSize int) ([]models.User, error) {
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index(models.IndexGSI3).
+		Where("gsi3PK", "=", rolePK).
+		OrderBy("gsi3SK", "DESC").
+		Limit(pageSize)
+
+	if cursorSK != "" {
+		queryBuilder = queryBuilder.Where("gsi3SK", ">", cursorSK)
+	}
+
+	var users []models.User
+	if err := queryBuilder.All(&users); err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "featured")
+	}
+	return users, nil
 }
 
 // ===== Account Preferences Operations =====
@@ -3009,7 +3042,9 @@ func (r *AccountRepository) GetLoginHistory(ctx context.Context, username string
 	// Sort by SK descending to get most recent first
 	queryBuilder = queryBuilder.OrderBy("SK", "DESC")
 
-	err := queryBuilder.Scan(&logins)
+	// Keyed PK query (USER#username, SK BEGINS_WITH LOGIN#, Limit clamped above)
+	// — .All compiles to a DynamoDB Query instead of the previous .Scan.
+	err := queryBuilder.All(&logins)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "login_history")
 	}
@@ -3083,18 +3118,38 @@ func (r *AccountRepository) GetAccountsByUsernames(ctx context.Context, username
 
 // GetAccountsCount retrieves the total number of accounts
 func (r *AccountRepository) GetAccountsCount(ctx context.Context) (int64, error) {
-	// Count users using GSI1 (user listing index)
-	var users []models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
+	// Count users using GSI1 (user listing index). The contract requires the
+	// full user base, so the read is a keyed GSI1 query iterated in bounded
+	// pages with an explicit page cap (wave #1469: no unbounded partition
+	// read). Each page carries a clamped Limit; iteration stops at maxPages.
+	const countPageSize = 500
+	const maxCountPages = 100
+
+	baseQuery := r.db.WithContext(ctx).Model(&models.User{}).
 		Index(models.IndexGSI1).
 		Where("gsi1PK", "=", "USERS").
-		Scan(&users)
+		Limit(countPageSize)
 
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count")
+	var total int64
+	cursor := ""
+	for page := 0; page < maxCountPages; page++ {
+		var pageUsers []models.User
+		query := baseQuery
+		if cursor != "" {
+			query = query.Cursor(cursor)
+		}
+		res, err := query.AllPaginated(&pageUsers)
+		if err != nil {
+			return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count")
+		}
+		total += int64(len(pageUsers))
+		if res == nil || !res.HasMore || res.NextCursor == "" || len(pageUsers) < countPageSize {
+			break
+		}
+		cursor = res.NextCursor
 	}
 
-	return int64(len(users)), nil
+	return total, nil
 }
 
 // Note: This is the core file. Additional methods will be organized into:

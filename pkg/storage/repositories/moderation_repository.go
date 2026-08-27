@@ -2051,6 +2051,8 @@ func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Fla
 // GetFlag retrieves a flag by ID
 func (r *ModerationRepository) GetFlag(ctx context.Context, id string) (*storage.Flag, error) {
 	// We need to scan for the flag since we don't know which object it's under
+	// (no existing index serves a flag-ID lookup without the object key). The
+	// read is deliberately bounded: Limit 10 caps the scan.
 	var models []models.Flag
 	err := r.db.WithContext(ctx).Model(&models).
 		Where("SK", "LIKE", fmt.Sprintf("%%#%s", id)). // SK ends with the flag ID

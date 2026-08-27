@@ -264,12 +264,10 @@ func TestSearchRepository_CoverageSweep(t *testing.T) {
 	_ = repo.UpdateSearchSuggestion(ctx, "username", "al", map[string]interface{}{"score": 1.5})
 	_, _ = repo.GetSearchSuggestions(ctx, "al", 5)
 	_ = repo.IncrementSuggestionUse(ctx, "username", "al")
-	_ = repo.PruneOldSuggestions(ctx, time.Now().Add(-24*time.Hour))
 
 	// Indexing
 	_ = repo.IndexStatus(ctx, nil)
 	_ = repo.IndexStatus(ctx, &models.Object{ID: "status-1", Type: ActivityTypeNote, Content: "hello #tag"})
-	_ = repo.UnindexStatus(ctx, "status-1")
 
 	_, _ = repo.SearchStatusesByHashtag(ctx, "#tag", 10)
 	_, _ = repo.SearchStatusesByAuthor(ctx, "https://example.com/users/alice", 10)

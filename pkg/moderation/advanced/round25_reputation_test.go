@@ -161,39 +161,6 @@ func TestReputationScorer_GetReputationHistory_ParsesItems(t *testing.T) {
 	query.AssertExpectations(t)
 }
 
-func TestReputationScorer_GetActorsByReputation_ParsesItems(t *testing.T) {
-	db := new(mocks.MockDB)
-	query := new(mocks.MockQuery)
-
-	db.On("WithContext", mock.Anything).Return(db).Once()
-	db.On("Model", mock.Anything).Return(query).Once()
-
-	query.On("Filter", "SK", "=", skReputation).Return(query).Once()
-	query.On("Filter", "Score", "BETWEEN", []any{50.0, 80.0}).Return(query).Once()
-	query.On("Limit", 10).Return(query).Once()
-	query.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]reputationScoreRecord)
-		*dest = []reputationScoreRecord{
-			{
-				PK:        "ACTOR#actor-1",
-				SK:        skReputation,
-				Score:     75.0,
-				Level:     reputationLevelNormal,
-				UpdatedAt: time.Now().UTC(),
-			},
-		}
-	}).Return(nil).Once()
-
-	rs := NewReputationScorer(db, zap.NewNop(), DefaultModerationConfig())
-	scores, err := rs.GetActorsByReputation(context.Background(), 50, 80, 10)
-	require.NoError(t, err)
-	require.Len(t, scores, 1)
-	assert.Equal(t, "actor-1", scores[0].ActorID)
-
-	db.AssertExpectations(t)
-	query.AssertExpectations(t)
-}
-
 func TestReputationScorer_CalculateReputationImpact_AppliesSeverityAndConfidence(t *testing.T) {
 	rs := NewReputationScorer(nil, zap.NewNop(), DefaultModerationConfig())
 	impact := rs.CalculateReputationImpact(&ModerationDecision{

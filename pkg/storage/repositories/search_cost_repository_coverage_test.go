@@ -327,56 +327,6 @@ func TestSearchCostRepository_GetSearchCostSummary_Monthly(t *testing.T) {
 }
 
 // ============================================================================
-// GetPopularQueries Tests
-// ============================================================================
-
-func TestSearchCostRepository_GetPopularQueries_Success(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	logger := zap.NewNop()
-	repo := NewSearchCostRepository(mockDB, "test-table", logger, nil)
-
-	ctx := context.Background()
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", 10).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.SearchQueryStats")).Run(func(args mock.Arguments) {
-		stats := args.Get(0).(*[]models.SearchQueryStats)
-		*stats = []models.SearchQueryStats{
-			{QueryHash: "hash1", QueryCount: 100},
-			{QueryHash: "hash2", QueryCount: 50},
-		}
-	}).Return(nil)
-
-	results, err := repo.GetPopularQueries(ctx, 5, "daily")
-
-	require.NoError(t, err)
-	require.Len(t, results, 2)
-}
-
-func TestSearchCostRepository_GetPopularQueries_QueryError(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	logger := zap.NewNop()
-	repo := NewSearchCostRepository(mockDB, "test-table", logger, nil)
-
-	ctx := context.Background()
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.SearchQueryStats")).Return(errors.New("query failed"))
-
-	results, err := repo.GetPopularQueries(ctx, 10, "daily")
-
-	require.Error(t, err)
-	require.Nil(t, results)
-}
-
-// ============================================================================
 // RecordBudgetUsage Tests
 // ============================================================================
 

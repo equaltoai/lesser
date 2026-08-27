@@ -109,24 +109,15 @@ func TestInstanceHealthRepository_DomainsSummaryAndUnhealthy(t *testing.T) {
 		s = reflect.Append(s, reflect.ValueOf(&models.InstanceHealthSummary{Domain: "meh.com", HealthScore: 70, Availability: 0.95, ErrorRate: 0.05}))
 		s = reflect.Append(s, reflect.ValueOf(&models.InstanceHealthSummary{Domain: "good.com", HealthScore: 99, Availability: 1.0, ErrorRate: 0.0}))
 		v.Elem().Set(s)
-	}).Return(nil).Twice()
-
-	domains, err := repo.GetDomainsForHealthCheck(context.Background(), 10)
-	require.NoError(t, err)
-	require.Len(t, domains, 3)
+	}).Return(nil).Once()
 
 	unhealthy, err := repo.GetUnhealthyInstances(context.Background(), 0)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(unhealthy), 2)
 
-	// NotFound is allowed
-	mockQuery.On("All", mock.Anything).Return(dmerrors.ErrItemNotFound).Once()
-	_, err = repo.GetDomainsForHealthCheck(context.Background(), 10)
-	require.NoError(t, err)
-
 	// Query error should fail
 	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
-	_, err = repo.GetDomainsForHealthCheck(context.Background(), 10)
+	_, err = repo.GetUnhealthyInstances(context.Background(), 0)
 	require.Error(t, err)
 
 	requireNoMockExpectations(t, mockDB, mockQuery)
