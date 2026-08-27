@@ -250,18 +250,56 @@ The audit gates (`./lesser verify audit`) baseline every remaining scan callsite
 
 ### `goDynamoDBAllNoKey` (key-less `All(...)` on fresh chains — scan with no key condition)
 
+**Gate gap — Where-clause blindness (closed in wave part 1, umbrella #1469):** until 2026-08-26 the detector treated *any* `Where(...)` in the chain as proof of a key condition, so every `.All()` chain that carried a filter was invisible to the gate and absent from this baseline. The detector now counts a fresh `Model(...)`/`WithContext(...)` `.All()` chain whenever no `Where(...)` constrains a partition key (`PK`/`gsiNPK`/`oauthClientsPK`) with equality — the only shape TableTheory compiles to a DynamoDB Query (its `partitionConditionsForKeys` demotes a partition key with any operator other than `=` to a filter condition, which still scans). Sort-key ranges, non-key attribute predicates, and partition-key operators other than `=` are filters, not bounds, and are counted. Chains whose `Where(...)` field/operator is not a string literal, and chains on pre-built query variables, remain statically indeterminate and are deliberately not flagged. Of the 5 indeterminate sites identified during this closure, 2 are **runtime GSI partition-key queries** (`alert_repository.go:181`, `metrics_repository.go:591` — the field name is caller-supplied configuration, and both callers pass index/field pairs whose partition attribute matches the model, so the query genuinely binds a key); the other 3 (`base_repository.go:1235` `QueryHistoryWithDateRange`, `:1292` `QueryMetricsByTimeRange`, `:1516` `FindBySK`) were **production-unused helpers** — zero callers anywhere in the repo outside their own coverage tests — whose queries were bounded *only* when a caller passed matching index/field configuration. The 3 dead helpers and their coverage tests are **deleted in this PR** (2026-08-26 rework), shrinking the gate's blind surface; the 2 runtime GSI queries remain. Result: 31 sites newly visible, 45 total baselined (5 deliberate + 40 elimination-pending).
+
+**Model-blind key trust (disclosed, wave part 1 rework):** the detector treats any literal `Where("gsiNPK","=",…)` (or `Where("oauthClientsPK","=",…)`) as a bound without checking that the model actually declares the index — ~250 unflagged sites rely on the uniform lowercase naming convention, and a query whose index/field pair is not declared by the model would compile to a Scan (or fail loudly at the real DynamoDB), not a Query. This is accepted deliberately: the flagged set must stay free of false positives, every recognized partition-key field name matches the lowercase convention the models actually write, and the sibling `goDynamoDBBadPKWhere` gate keeps the same names consistent.
+
 | Callsite | What it does | Disposition |
 |---|---|---|
 | `pkg/storage/repositories/instance_counts.go` (5) | 5 bounded offline recount reads (`RecountInstanceCounts` key-only projections: users, actors, domain counters, activities, existing day counters). The 3 request-adjacent lazy seed scans were removed (PR #1476) — no scan runs on any request path | **Deliberate, documented** (entry 23): offline `lesser recount-instance-counts` tool only; the recount is the sanctioned seed mechanism (it also writes the active-month rollup + `SEED#ACTIVE_MONTH` marker) |
-| `pkg/storage/repositories/announcement_repository.go:500` (1) | scans dismissals for cleanup (no GSI) | tracked in #1469 |
-| `pkg/storage/repositories/dlq_repository.go:632` (1) | `GetSimilarMessages` filter-scan by `SimilarityHash` | tracked in #1469 |
-| `pkg/storage/repositories/media_repository.go:1438` (1) | full `Media` scan | tracked in #1469 |
-| `pkg/storage/repositories/moderation_repository.go:1302` (1) | scans reviews by reviewer (no reviewer index) | tracked in #1469 |
-| `pkg/storage/repositories/rate_limit_repository.go:225` (1) | clears rate limits via `PK begins_with` filter-scan | tracked in #1469 |
-| `pkg/storage/repositories/search_cost_repository.go:233,270` (2) | scans `SearchQueryStats` by period | tracked in #1469 |
-| `pkg/storage/repositories/search_repository.go:1614,1720` (2) | prunes old suggestions / scans by `last_used` | tracked in #1469 |
+| `pkg/storage/repositories/announcement_repository.go:500` (1) | scans dismissals for cleanup (no GSI) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/dlq_repository.go:632` (1) | `GetSimilarMessages` filter-scan by `SimilarityHash` | elimination pending — wave #1469 |
+| `pkg/storage/repositories/media_repository.go:1438` (1) | full `Media` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/moderation_repository.go:1302` (1) | scans reviews by reviewer (no reviewer index) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/rate_limit_repository.go:225` (1) | clears rate limits via `PK begins_with` filter-scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/search_cost_repository.go:233,270` (2) | scans `SearchQueryStats` by period | elimination pending — wave #1469 |
+| `pkg/storage/repositories/search_repository.go:1614,1720` (2) | prunes old suggestions / scans by `last_used` | elimination pending — wave #1469 |
+| `graph/query_resolvers_cms.go:999` (1) | `cmsScanSeriesBySlug` back-compat fallback: `SK BEGINS_WITH ID#` scan | elimination pending — wave #1469 |
+| `graph/query_resolvers_cms.go:1348` (1) | CMS membership back-compat fallback: `SK = USER#…` scan | elimination pending — wave #1469 |
+| `pkg/federation/cost/repository_adapter.go:319` (1) | `ListInstanceConfigs`: scan by `Type = InstanceConfig` | elimination pending — wave #1469 |
+| `pkg/storage/repositories/account_repository_auth.go:443` (1) | `GetUserByRecoveryCode`: `SK BEGINS_WITH RECOVERY_CODE#` scan (request-adjacent: recovery-code login) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/account_repository_refresh_tokens.go:346` (1) | `CleanupExpiredAdvancedTokens`: `SK = TOKEN` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/activity_repository.go:492` (1) | weekly activity time-range scan (`CreatedAt` range) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/activity_repository.go:570` (1) | `GetHashtagActivity`: `CreatedAt >= since` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/analytics_repository.go:633` (1) | hashtag metadata scan by `SK = METADATA` (filters `LastUsed`) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/analytics_repository.go:669` (1) | `GetRecentStatusesWithEngagement`: `EngagedAt >= since` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/analytics_repository.go:735` (1) | `GetRecentLinks`: `SharedAt >= since` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/analytics_repository.go:2193` (1) | `queryQualityChangeEvents`: `PK begins_with QUALITY_CHANGE#` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/analytics_repository.go:2740,2756` (2) | engagement scans by `SK begins_with like#` | elimination pending — wave #1469 |
+| `pkg/storage/repositories/enhanced_pattern_repository.go:719` (1) | `CleanupExpiredPatterns`: `SK = METADATA` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/enhanced_pattern_repository.go:752` (1) | `GetPatternStatistics`: `SK = METADATA` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/federation_activity_repository.go:145` (1) | recent federation activities: GSI1 sort-key range scan (`gsi1SK >= since`, no `gsi1PK`) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/filter_repository.go:343` (1) | filter-status lookup by `SK` pattern | elimination pending — wave #1469 |
+| `pkg/storage/repositories/hashtag_trending_engine.go:351` (1) | `getCandidateHashtags`: `SK = METADATA` + `LastUsed` filter | elimination pending — wave #1469 |
+| `pkg/storage/repositories/instance_health_repository.go:519` (1) | health summaries: `SK = SUMMARY#1h` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/moderation_repository.go:653` (1) | moderation patterns: `SK = PATTERN` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/moderation_repository.go:1676,1712,1725` (3) | keyword / filter-entity lookups by `SK` (no FilterID known) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/moderation_repository.go:2095` (1) | `GetFlag`: `SK LIKE %#id` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/moderation_repository.go:2945,2957,2972` (3) | reports/flags by `AssignedTo` (no assignee index) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/notification_repository.go:760` (1) | notification delete-cascade by `ObjectID` | elimination pending — wave #1469 |
+| `pkg/storage/repositories/object_repository.go:957` (1) | `CountWithdrawnQuotes`: `SK = QUOTED#…` scan | elimination pending — wave #1469 |
+| `pkg/storage/repositories/scheduled_status_repository.go:147` (1) | scheduled status by `SK = ID#…` scan (no username known) | elimination pending — wave #1469 |
+| `pkg/storage/repositories/threat_intel_repository.go:229` (1) | threat metadata: `SK = METADATA` scan | elimination pending — wave #1469 |
 
-Notes: `All(...)` chained onto a pre-built query variable (`query.Limit(n).All(...)`) is statically indeterminate and is deliberately not flagged; the gate targets new inline key-less scan callsites.
+Notes: `All(...)` chained onto a pre-built query variable (`query.Limit(n).All(...)`), or a fresh chain whose `Where(...)` field/operator is not a string literal, is statically indeterminate and is deliberately not flagged; the gate targets inline key-less scan callsites. Of the 5 indeterminate sites verified during wave part 1, 2 are runtime GSI partition-key queries (`alert_repository.go:181`, `metrics_repository.go:591`) and 3 were production-unused helpers (`base_repository.go` `QueryHistoryWithDateRange`/`QueryMetricsByTimeRange`/`FindBySK`) deleted in the wave part 1 rework (2026-08-26).
+
+### `goDynamoDBCountNoKey` (key-less `Count(...)` on fresh chains — counted full-table scan)
+
+**Gate gap — Count() blindness (closed in wave part 1 rework, umbrella #1469):** TableTheory `Count()` shares `All()`'s compile path (`pkg/query/query_execution.go:80-111` in tabletheory v3.0.6 — `Compile()` decides Query vs Scan from the same key-condition rules, then `ExecuteScan` runs `Select=COUNT`), so a fresh-chain key-less `Count()` is a counted full-table scan the `goDynamoDBAllNoKey` gate could not see. This gate applies the exact same rules as its `All()` sibling: a fresh `Model(...)`/`WithContext(...)` `Count()` chain is counted unless a `Where(...)` constrains a partition key with equality; pre-built-query-variable and non-literal-`Where` chains stay indeterminate and are not flagged. Raw-condition shape `Where("PK = ? AND SK = ?", …)`: TableTheory v3.0.6's `Where(field, op, value)` is strictly 3-arg, so the field string is taken literally and the condition is a filter at most — never a key condition. The detector parses the shape determinately when the bound values are string literals (flagged, correctly — it compiles to a Scan) and treats it as indeterminate when the bound values are variables (conservatively not flagged). **Enumeration only in this PR** — the live site below is recorded, not modified; elimination lands under the wave.
+
+| Callsite | What it does | Disposition |
+|---|---|---|
+| `pkg/storage/theorydb/patterns/soft_delete.go:323,330` (2) | `SoftDeleteRepository.GetSoftDeleteStats`: counts all items (`:323`, no conditions) and soft-deleted items (`:330`, `deleted_at` filter) via full-table counted scans | **elimination pending — wave #1469** (enumeration only; not modified in this PR) |
 
 ### `goDynamoDBQueryScan` (literal `.Scan(...)` callsites)
 
