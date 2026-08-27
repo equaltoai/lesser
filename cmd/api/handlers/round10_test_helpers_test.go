@@ -2795,6 +2795,12 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				}
 			}
 			*d = []*storagemodels.Activity{}
+		case *[]storagemodels.FederationInstance:
+			// FederationRepository.GetKnownInstances / GetFederationStatistics
+			// resolve through keyed gsi1 queries (FEDERATION_ACTIVE) after the
+			// #1469 batch F scan elimination — the fake must answer .All, not
+			// .Scan, for these admin federation endpoints.
+			*d = state.federationInstances
 		case *[]*storagemodels.AuthAuditLog:
 			pk, _ := state.whereString("gsi1PK")
 			username := strings.TrimPrefix(pk, "USER#")
