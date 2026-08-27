@@ -1688,3 +1688,111 @@ func TestBatchN3_CountQuotes_PageCapExhaustionFailsClosed(t *testing.T) {
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
+
+func TestBatchN3_GetMediaAnalyticsByTimeRange_MultiDayLimitStop(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	day1 := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	day2 := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
+	// Day 1 returns the target media row; the limit-stop fires before day 2.
+	mockQuery.On("Where", "gsi1PK", "=", "DATE#2026-08-26").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.MediaAnalytics")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.MediaAnalytics)
+		*dest = []*models.MediaAnalytics{{MediaID: "m1", Timestamp: day1.Add(time.Hour)}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "DATE#2026-08-27").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.MediaAnalytics")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.MediaAnalytics)
+		*dest = []*models.MediaAnalytics{{MediaID: "m1", Timestamp: day2.Add(time.Hour)}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewMediaAnalyticsRepository(mockDB, "test-table", zap.NewNop(), nil)
+	list, err := repo.GetMediaAnalyticsByTimeRange(ctx, "m1", day1, day2.Add(23*time.Hour+59*time.Minute), 2)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetMediaAnalyticsByTimeRange_WalkErrorPropagates(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	day := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "DATE#2026-08-27").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.MediaAnalytics")).Return(nil, errors.New("boom")).Once()
+
+	repo := NewMediaAnalyticsRepository(mockDB, "test-table", zap.NewNop(), nil)
+	_, err := repo.GetMediaAnalyticsByTimeRange(ctx, "m1", day, day, 10)
+	require.Error(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetDecisionSamples_AllBranch_TransientErrorSkipsDay(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	start := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.ModerationDecisionSample")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "SAMPLES#2026-08-26").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationDecisionSample")).Return(nil, errors.New("transient")).Once()
+	mockQuery.On("Where", "PK", "=", "SAMPLES#2026-08-27").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationDecisionSample")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]*models.ModerationDecisionSample)
+		*out = []*models.ModerationDecisionSample{{ContentID: "c1"}}
+	}).Return(&core.PaginatedResult{}, nil).Once()
+
+	repo := NewModerationMetricsRepository(mockDB, zap.NewNop())
+	samples, err := repo.GetDecisionSamples(ctx, models.ModerationMetricsTimeRange{Start: start, End: start.AddDate(0, 0, 1)}, "")
+	require.NoError(t, err)
+	require.Len(t, samples, 1)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetMetricsEntries_AllBranch_TransientErrorSkipsDay(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	start := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.ModerationMetricsEntry")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "METRICS#2026-08-26").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "begins_with", "STATS#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationMetricsEntry")).Return(nil, errors.New("transient")).Once()
+	mockQuery.On("Where", "PK", "=", "METRICS#2026-08-27").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "begins_with", "STATS#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationMetricsEntry")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]*models.ModerationMetricsEntry)
+		*out = []*models.ModerationMetricsEntry{{MetricType: "spam"}}
+	}).Return(&core.PaginatedResult{}, nil).Once()
+
+	repo := NewModerationMetricsRepository(mockDB, zap.NewNop())
+	entries, err := repo.GetMetricsEntries(ctx, models.ModerationMetricsTimeRange{Start: start, End: start.AddDate(0, 0, 1)}, nil)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
