@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -51,6 +52,13 @@ func setupPermissiveAnalyticsRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.Mo
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateAnalyticsSliceForCoverage(args.Get(0), baseTime)
 	}).Return(nil).Maybe()
+
+	// Bounded page walks (wave #1469) terminate on AllPaginated: populate a
+	// single short page so the walk stops after the first page.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateAnalyticsSliceForCoverage(args.Get(0), baseTime)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+	mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 		populateAnalyticsStructForCoverage(args.Get(0), 0, baseTime)
@@ -602,7 +610,8 @@ func TestTrendingRepository_getMediaAnalyticsStatsGeneric_QueryError(t *testing.
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, fmt.Errorf("query failed")).Once()
 
 	_, err := repo.getMediaAnalyticsStatsGeneric(ctx, "MEDIA_EVENT", "session_start", "2025-01-01", "2025-01-02")
 	require.Error(t, err)
@@ -1014,7 +1023,8 @@ func TestTrendingRepository_querySessionEvents_QueryError(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, errors.New("query failed")).Once()
 
 	_, err := repo.querySessionEvents(ctx, time.Now().Add(-24*time.Hour))
 	require.Error(t, err)
@@ -1242,7 +1252,8 @@ func TestTrendingRepository_queryBufferingEvents_ErrorIgnored(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, errors.New("query failed")).Once()
 
 	count, err := repo.queryBufferingEvents(ctx, "media-1", time.Now().Add(-24*time.Hour))
 	require.NoError(t, err)
@@ -1260,7 +1271,8 @@ func TestTrendingRepository_queryQualityChangeEvents_ErrorIgnored(t *testing.T) 
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, errors.New("query failed")).Once()
 
 	count, err := repo.queryQualityChangeEvents(ctx, "media-1", time.Now().Add(-24*time.Hour))
 	require.NoError(t, err)
@@ -1277,7 +1289,8 @@ func TestTrendingRepository_GetStreamingAnalytics_SessionQueryError(t *testing.T
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, errors.New("query failed")).Once()
 
 	_, err := repo.GetStreamingAnalytics(ctx, "media-1")
 	require.Error(t, err)

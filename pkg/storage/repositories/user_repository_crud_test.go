@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -348,14 +349,15 @@ func TestUserRepository_GetActiveUserCount_Success(t *testing.T) {
 	mockQuery.On("Index", "gsi3").Return(mockQuery)
 	mockQuery.On("Where", "gsi3PK", "=", "ACTIVITY").Return(mockQuery)
 	mockQuery.On("Where", "gsi3SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.User)
 		*out = []models.User{
 			{Username: "user1"},
 			{Username: "user2"},
 			{Username: "user3"},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	count, err := repo.GetActiveUserCount(ctx, 30)
 
@@ -376,7 +378,8 @@ func TestUserRepository_GetActiveUserCount_Error(t *testing.T) {
 	mockQuery.On("Index", "gsi3").Return(mockQuery)
 	mockQuery.On("Where", "gsi3PK", "=", "ACTIVITY").Return(mockQuery)
 	mockQuery.On("Where", "gsi3SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, ErrTestMockError).Once()
 
 	count, err := repo.GetActiveUserCount(ctx, 30)
 

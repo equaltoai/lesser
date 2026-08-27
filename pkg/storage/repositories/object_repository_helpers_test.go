@@ -1104,9 +1104,10 @@ func TestGetUpdateHistory_EmptyPreviousState(t *testing.T) {
 }
 
 func TestGetUpdateHistory_LimitValidation(t *testing.T) {
-	// Note: ValidateQueryLimit only returns error for limit < 0 or limit > maxLimit (100)
-	// So limit = 0 passes validation and is used as-is
-	// Only negative or > max limits trigger the default of 10
+	// Wave #1469: the limit is clamped via clampLimit (default 10, hard max
+	// 100). ValidateQueryLimit previously accepted 0, which compiled to
+	// Limit(0) — no limit — an unbounded read of the OBJECT#<id>#HISTORY
+	// partition; 0 now takes the default 10.
 	tests := []struct {
 		name          string
 		inputLimit    int
@@ -1118,17 +1119,17 @@ func TestGetUpdateHistory_LimitValidation(t *testing.T) {
 			expectedLimit: 10,
 		},
 		{
-			name:          "limit exceeding max is clamped to default 10",
+			name:          "limit exceeding max is clamped to hard max 100",
 			inputLimit:    200,
-			expectedLimit: 10, // Default when validation fails
+			expectedLimit: 100, // Hard max
 		},
 		{
-			name:          "zero limit passes validation and is used as-is",
+			name:          "zero limit takes the default",
 			inputLimit:    0,
-			expectedLimit: 0, // 0 passes ValidateQueryLimit (not < 0, not > 100)
+			expectedLimit: 10, // Default when limit <= 0
 		},
 		{
-			name:          "negative limit defaults to 10",
+			name:          "negative limit takes the default",
 			inputLimit:    -5,
 			expectedLimit: 10,
 		},

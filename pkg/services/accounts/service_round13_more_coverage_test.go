@@ -421,6 +421,16 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 		fillSlicePointer(t, dest, getWhere, opts, getWebAuthnCredentialsByUser)
 	}).Return(nil).Maybe()
 
+	// Bounded page walks (wave #1469) run Limit(500)/page via AllPaginated:
+	// mirror the All fill on a single short page so walks terminate and their
+	// results still flow through the same slice filler.
+	q.On("Limit", mock.Anything).Return(q).Maybe()
+	q.On("Cursor", mock.Anything).Return(q).Maybe()
+	q.On("AllPaginated", mock.Anything).Run(func(arguments mock.Arguments) {
+		dest := arguments.Get(0)
+		fillSlicePointer(t, dest, getWhere, opts, getWebAuthnCredentialsByUser)
+	}).Return(&dynamormcore.PaginatedResult{HasMore: false}, nil).Maybe()
+
 	q.On("Scan", mock.Anything).Run(func(arguments mock.Arguments) {
 		dest := arguments.Get(0)
 		fillSlicePointer(t, dest, getWhere, opts, getWebAuthnCredentialsByUser)

@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -172,6 +173,11 @@ func (r *TrendingRepository) GetTrendingLinks(ctx context.Context, _ time.Time, 
 
 // getTrendingItemsGeneric is a generic function to fetch trending items
 func (r *TrendingRepository) getTrendingItemsGeneric(ctx context.Context, trendType string, limit int, modelInstance interface{}, converter func(interface{}) interface{}) (interface{}, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(0) — no limit — an unbounded read of the whole TREND_TYPE#<type>#<date>
+	// gsi8 partition. The read is always bounded now (default 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	timeBucket := time.Now().Format(common.DateFormat)
 	pk := fmt.Sprintf("TREND_TYPE#%s#%s", trendType, timeBucket)
 
@@ -253,6 +259,11 @@ func (r *TrendingRepository) getTrendingStatusesInternal(ctx context.Context, tr
 
 // getTrendingLinksInternal handles the actual link trend fetching
 func (r *TrendingRepository) getTrendingLinksInternal(ctx context.Context, trendType string, limit int) ([]*storage.TrendingLink, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(0) — no limit — an unbounded read of the whole TREND_TYPE#<type>#<date>
+	// gsi8 partition. The read is always bounded now (default 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	timeBucket := time.Now().Format(common.DateFormat)
 	pk := fmt.Sprintf("TREND_TYPE#%s#%s", trendType, timeBucket)
 
@@ -403,12 +414,20 @@ func (r *TrendingRepository) updateHashtagTrendScore(ctx context.Context, hashta
 	// Use the correct key pattern from the existing model
 	pk := fmt.Sprintf("HASHTAG#%s", strings.ToLower(strings.TrimPrefix(hashtag, "#")))
 
+	// The whole keyed HASHTAG#<name> partition must be read to aggregate unique
+	// users and the 24h usage window, so the read is a bounded page walk (wave
+	// #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var usageRecords []models.HashtagUsage
-	err := r.db.WithContext(ctx).Model(&models.HashtagUsage{}).
-		Where("PK", "=", pk).
-		All(&usageRecords)
-
-	if err != nil && !errors.IsNotFound(err) {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.HashtagUsage{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.HashtagUsage) (bool, error) {
+			usageRecords = append(usageRecords, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		r.logger.Error("failed to query hashtag usage", zap.String("hashtag", hashtag), zap.Error(err))
 		return err
 	}
@@ -464,12 +483,20 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 
 	pk := fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)
 
+	// The whole keyed STATUS_ENGAGEMENT#<id> partition must be read to count
+	// engagement types and unique engagers, so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var engagements []models.StatusEngagement
-	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("PK", "=", pk).
-		All(&engagements)
-
-	if err != nil && !errors.IsNotFound(err) {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.StatusEngagement) (bool, error) {
+			engagements = append(engagements, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		r.logger.Error("failed to query status engagement", zap.String("statusID", statusID), zap.Error(err))
 		return err
 	}
@@ -527,15 +554,23 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 }
 
 func (r *TrendingRepository) updateLinkTrendScore(ctx context.Context, linkURL string) error {
-	// Query recent link shares
+	// Query recent link shares — the whole keyed LINK_SHARE#<url> partition
+	// must be read to count unique sharers and the 24h share window, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	pk := fmt.Sprintf("LINK_SHARE#%s", linkURL)
 
 	var shares []models.LinkShare
-	err := r.db.WithContext(ctx).Model(&models.LinkShare{}).
-		Where("PK", "=", pk).
-		All(&shares)
-
-	if err != nil && !errors.IsNotFound(err) {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.LinkShare{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.LinkShare) (bool, error) {
+			shares = append(shares, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		r.logger.Error("failed to query link shares", zap.String("url", linkURL), zap.Error(err))
 		return err
 	}
@@ -668,6 +703,13 @@ func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.T
 
 // GetRecentStatusesWithEngagement returns recent statuses with engagement since the given time
 func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(limit*10) = Limit(0) — no limit — an unbounded read of the whole
+	// ENGAGEMENTS#ALL gsi1 partition. The read is always bounded now (default
+	// 20; hard max 1000 — the trend aggregator's full-set request of 1000
+	// statuses passes through unchanged).
+	limit, _, _ = clampLimit(limit, 20, 1000)
+
 	// Recent status engagements resolve through the GSI1 global listing
 	// (ENGAGEMENTS#ALL / <EngagedAt RFC3339>#<statusID>#<userID>) maintained
 	// by StatusEngagement.UpdateKeys (wave part 2 batch E, #1469); the since
@@ -741,6 +783,13 @@ func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context
 
 // GetRecentLinks returns recent links since the given time (no trending calculation)
 func (r *TrendingRepository) GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(limit*5) = Limit(0) — no limit — an unbounded read of the whole
+	// LINK_SHARES#ALL gsi1 partition. The read is always bounded now (default
+	// 20; hard max 1000 — the trend aggregator's full-set request of 1000 links
+	// passes through unchanged).
+	limit, _, _ = clampLimit(limit, 20, 1000)
+
 	// Recent link shares resolve through the GSI1 global listing
 	// (LINK_SHARES#ALL / <SharedAt RFC3339>#<url>#<statusID>) maintained by
 	// LinkShare.UpdateKeys (wave part 2 batch E, #1469); the since window is a
@@ -1455,6 +1504,12 @@ func (r *TrendingRepository) GetEngagementMetricsData(ctx context.Context, metri
 
 // GetEngagementByDateRange retrieves engagement metrics within a date range
 func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metricType string, startDate, endDate string, limit int) ([]*storage.EngagementMetricsSummary, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously skipped
+	// Limit entirely (the `if limit > 0` gate) and read each day's keyed
+	// partition unboundedly. The read is always bounded now (default 20,
+	// hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	start, err := time.Parse(common.DateFormat, startDate)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid startDate %q", ErrFailedGetEngagementByDate, startDate)
@@ -1522,6 +1577,12 @@ func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metri
 
 // GetTopEngagedContent retrieves the most engaged content
 func (r *TrendingRepository) GetTopEngagedContent(ctx context.Context, metricType string, date string, limit int) ([]*storage.EngagementRanking, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(limit*2) = Limit(0) — no limit — an unbounded read of the whole
+	// METRICS#<type>#<date> partition. The read is always bounded now (default
+	// 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	pk := fmt.Sprintf("METRICS#%s#%s", metricType, date)
 
 	var metricsRecords []models.EngagementMetrics
@@ -1593,12 +1654,26 @@ func (r *TrendingRepository) AggregateEngagementMetrics(ctx context.Context, met
 	for _, date := range dates {
 		pk := fmt.Sprintf("METRICS#%s#%s", metricType, date)
 
+		// The whole keyed METRICS#<type>#<date> partition must be read to
+		// aggregate every record, so the read is a bounded page walk (wave
+		// #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 		var metricsRecords []models.EngagementMetrics
-		err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
-			Where("PK", "=", pk).
-			All(&metricsRecords)
-
-		if err != nil && !errors.IsNotFound(err) {
+		err := walkKeyedPages(
+			r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
+				Where("PK", "=", pk),
+			500, 100,
+			func(page []models.EngagementMetrics) (bool, error) {
+				metricsRecords = append(metricsRecords, page...)
+				return false, nil
+			},
+		)
+		if err != nil {
+			// Cap exhaustion fails the aggregation closed instead of silently
+			// truncating a date's records; transient errors keep the original
+			// skip-this-date degrade.
+			if stderrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("failed to aggregate engagement metrics",
 				zap.String("metricType", metricType),
 				zap.String("date", date),
@@ -1992,18 +2067,25 @@ func (r *TrendingRepository) RecordMediaEvent(ctx context.Context, eventType, me
 func (r *TrendingRepository) getMediaAnalyticsStatsGeneric(ctx context.Context, pkPrefix, identifier, startDate, endDate string) (map[string]int64, error) {
 	stats := make(map[string]int64)
 
-	// Query media analytics records
+	// Query media analytics records — the whole keyed
+	// <MANIFEST|MEDIA_EVENT>#<identifier> partition must be read (the Date
+	// bounds are non-key attributes, applied as post-read filters), so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var analytics []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "=", fmt.Sprintf("%s#%s", pkPrefix, identifier)).
-		Where("Date", ">=", startDate).
-		Where("Date", "<=", endDate).
-		All(&analytics)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("PK", "=", fmt.Sprintf("%s#%s", pkPrefix, identifier)).
+			Where("Date", ">=", startDate).
+			Where("Date", "<=", endDate),
+		500, 100,
+		func(page []models.MediaAnalytics) (bool, error) {
+			analytics = append(analytics, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return stats, nil
-		}
 		r.logger.Error(fmt.Sprintf("failed to get %s stats", strings.ToLower(pkPrefix)),
 			zap.String("identifier", identifier),
 			zap.String("startDate", startDate),
@@ -2046,13 +2128,21 @@ func (r *TrendingRepository) initializeAnalyticsData(mediaID string) *storage.St
 
 // querySessionEvents retrieves session start events for analysis
 func (r *TrendingRepository) querySessionEvents(ctx context.Context, last7Days time.Time) ([]models.MediaAnalytics, error) {
+	// The whole keyed MEDIA_EVENT#session_start partition (SK prefix range) is
+	// read, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
 	var sessionEvents []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "=", "MEDIA_EVENT#session_start").
-		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
-		All(&sessionEvents)
-
-	if err != nil && !errors.IsNotFound(err) {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("PK", "=", "MEDIA_EVENT#session_start").
+			Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())),
+		500, 100,
+		func(page []models.MediaAnalytics) (bool, error) {
+			sessionEvents = append(sessionEvents, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrFailedQuerySessionEvents, err)
 	}
 
@@ -2165,12 +2255,23 @@ func (r *TrendingRepository) finalizeBasicMetrics(
 
 // queryBufferingEvents retrieves and counts buffering events
 func (r *TrendingRepository) queryBufferingEvents(ctx context.Context, mediaID string, last7Days time.Time) (int, error) {
+	// The whole keyed MEDIA_EVENT#rebuffer_start partition (SK prefix range) is
+	// read, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap. Errors — including cap exhaustion — keep the original
+	// degrade-to-zero contract: the sole caller GetStreamingAnalytics discards
+	// this error (`bufferingEvents, _ := r.queryBufferingEvents(...)` at
+	// analytics_repository.go) and treats 0 as "no buffering events".
 	var bufferingEvents []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "=", "MEDIA_EVENT#rebuffer_start").
-		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
-		All(&bufferingEvents)
-
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("PK", "=", "MEDIA_EVENT#rebuffer_start").
+			Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())),
+		500, 100,
+		func(page []models.MediaAnalytics) (bool, error) {
+			bufferingEvents = append(bufferingEvents, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, nil // Ignore errors for buffering events
 	}
@@ -2222,14 +2323,25 @@ func (r *TrendingRepository) addRecentMetrics(
 // queryQualityChangeEvents retrieves and counts quality change events
 func (r *TrendingRepository) queryQualityChangeEvents(ctx context.Context, mediaID string, last7Days time.Time) (int, error) {
 	// Resolve quality-change rows per media through GSI3 instead of scanning
-	// the whole table by PK prefix.
+	// the whole table by PK prefix. The whole keyed MEDIA_QUALITY#<mediaID>
+	// partition (gsi3SK >= TS#<unix>) is read, so the read is a bounded page
+	// walk (wave #1469): Limit(500)/page, 100-page cap. Errors — including cap
+	// exhaustion — keep the original degrade-to-zero contract: the sole caller
+	// GetStreamingAnalytics discards this error (`qualityChanges, _ :=
+	// r.queryQualityChangeEvents(...)` at analytics_repository.go) and treats
+	// 0 as "no quality changes".
 	var qualityChangeEvents []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", fmt.Sprintf("MEDIA_QUALITY#%s", mediaID)).
-		Where("gsi3SK", ">=", fmt.Sprintf("TS#%d", last7Days.Unix())).
-		All(&qualityChangeEvents)
-
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", fmt.Sprintf("MEDIA_QUALITY#%s", mediaID)).
+			Where("gsi3SK", ">=", fmt.Sprintf("TS#%d", last7Days.Unix())),
+		500, 100,
+		func(page []models.MediaAnalytics) (bool, error) {
+			qualityChangeEvents = append(qualityChangeEvents, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, nil // Ignore errors for quality change events
 	}
@@ -2414,13 +2526,27 @@ func (r *TrendingRepository) GetModeratorStats(ctx context.Context, moderatorID 
 		date := now.AddDate(0, 0, -i).Format(common.DateFormat)
 		pk := fmt.Sprintf("MOD_ANALYTICS#%s", date)
 
-		// Query all report types for this date
+		// Query all report types for this date — the whole keyed
+		// MOD_ANALYTICS#<date> partition must be read to aggregate every
+		// moderator's actions, so the read is a bounded page walk (wave #1469):
+		// Limit(500)/page, 100-page cap.
 		var analyticsRecords []models.ModerationAnalytics
-		err := r.db.WithContext(ctx).Model(&models.ModerationAnalytics{}).
-			Where("PK", "=", pk).
-			All(&analyticsRecords)
-
-		if err != nil && !errors.IsNotFound(err) {
+		err := walkKeyedPages(
+			r.db.WithContext(ctx).Model(&models.ModerationAnalytics{}).
+				Where("PK", "=", pk),
+			500, 100,
+			func(page []models.ModerationAnalytics) (bool, error) {
+				analyticsRecords = append(analyticsRecords, page...)
+				return false, nil
+			},
+		)
+		if err != nil {
+			// Cap exhaustion fails the stats closed instead of silently
+			// truncating a date's records; transient errors keep the original
+			// skip-this-date degrade.
+			if stderrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Warn("failed to get moderation analytics for date",
 				zap.String("date", date),
 				zap.Error(err))
@@ -2626,10 +2752,11 @@ func (r *TrendingRepository) GetQueryCount(ctx context.Context, query string) (i
 
 // GetTopQueries retrieves the most popular queries within a time range
 func (r *TrendingRepository) GetTopQueries(ctx context.Context, limit int, timeRange time.Duration) ([]storage.SearchQueryStats, error) {
-	// Validate limit using centralized validation
-	if err := common.ValidateQueryLimit(limit, 100, "analytics"); err != nil {
-		limit = 20
-	}
+	// Clamp the limit (wave #1469): ValidateQueryLimit accepts 0, so limit=0
+	// previously compiled to Limit(0) — no limit — an unbounded read of the
+	// whole POPULAR#<bucket>#<date> gsi8 partition. The read is always bounded
+	// now (default 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
 
 	// Determine time bucket based on range
 	bucket := models.PeriodDaily

@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -28,6 +29,12 @@ func setupPermissiveObjectRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQ
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateObjectRepositorySliceForCoverage(args.Get(0), baseTime)
 	}).Return(nil).Maybe()
+
+	// Bounded page walks (wave #1469) terminate on AllPaginated: populate a
+	// single short page so the walk stops after the first page.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateObjectRepositorySliceForCoverage(args.Get(0), baseTime)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateObjectRepositorySliceForCoverage(args.Get(0), baseTime)

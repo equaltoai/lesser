@@ -358,12 +358,22 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 
 	// Query users who have been active within the specified days
 	// Use the last_activity index if available, otherwise fall back to status check
+	// The whole gsi3 ACTIVITY partition (rows >= the cutoff) must be read to
+	// count exact active users, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page via AllPaginated, explicit 100-page cap, fail-closed on
+	// exhaustion.
 	var userModels []models.User
-	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", "ACTIVITY").
-		Where("gsi3SK", ">=", fmt.Sprintf("%d", cutoffTimestamp)).
-		All(&userModels)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.User{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", "ACTIVITY").
+			Where("gsi3SK", ">=", fmt.Sprintf("%d", cutoffTimestamp)),
+		500, 100,
+		func(page []models.User) (bool, error) {
+			userModels = append(userModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count active")
 	}
@@ -481,12 +491,21 @@ func (r *UserRepository) getProviderAccountByProviderID(ctx context.Context, pro
 // UnlinkProviderAccount unlinks an OAuth provider account from a user
 func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, provider string) error {
 	// Find the provider account for this user and provider
-	// First get all provider accounts for this user
+	// First get all provider accounts for this user — the whole keyed gsi2
+	// partition is needed to filter by provider in memory, so the read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var allProviderAccounts []models.ProviderAccount
-	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", "USER_PROVIDERS#"+username).
-		All(&allProviderAccounts)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "USER_PROVIDERS#"+username),
+		500, 100,
+		func(page []models.ProviderAccount) (bool, error) {
+			allProviderAccounts = append(allProviderAccounts, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, "provider account", "query")
 	}
@@ -516,12 +535,21 @@ func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, pr
 
 // GetLinkedProviders gets all linked OAuth providers for a user
 func (r *UserRepository) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
-	// Query all provider accounts for this user
+	// Query all provider accounts for this user — the whole keyed gsi2
+	// partition is needed to extract the unique provider set, so the read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion.
 	var providerAccounts []models.ProviderAccount
-	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", "USER_PROVIDERS#"+username).
-		All(&providerAccounts)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "USER_PROVIDERS#"+username),
+		500, 100,
+		func(page []models.ProviderAccount) (bool, error) {
+			providerAccounts = append(providerAccounts, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "provider account", "query")
 	}
@@ -754,14 +782,23 @@ func (r *UserRepository) DeleteAccountPin(ctx context.Context, username, pinnedA
 
 // GetAccountPins retrieves all pinned accounts for a user
 func (r *UserRepository) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
-	// Query for all pins for this user
+	// Query for all pins for this user — the whole keyed ACCOUNT_PIN#<user>
+	// partition is needed (the SK prefix is a post-read filter), so the read is
+	// a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var pins []models.AccountPin
 	pk := fmt.Sprintf("ACCOUNT_PIN#%s", username)
 
-	err := r.GetDB().WithContext(ctx).Model(&models.AccountPin{}).
-		Where("PK", "=", pk).
-		Filter("SK", "BEGINS_WITH", "PIN#").
-		All(&pins)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.AccountPin{}).
+			Where("PK", "=", pk).
+			Filter("SK", "BEGINS_WITH", "PIN#"),
+		500, 100,
+		func(page []models.AccountPin) (bool, error) {
+			pins = append(pins, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error("failed to query account pins", zap.Error(err))
 		return nil, err
@@ -1002,6 +1039,12 @@ func (r *UserRepository) getLatestReputationByPK(ctx context.Context, actorID, p
 
 // GetReputationHistory retrieves reputation history for an actor
 func (r *UserRepository) GetReputationHistory(ctx context.Context, actorID string, limit int) ([]*storage.Reputation, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously skipped
+	// Limit entirely (the `if remaining > 0` gate) and read each keyed
+	// partition unboundedly. The read is always bounded now — default 20,
+	// hard max 100, matching the repository's list conventions.
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	pkCandidates, err := models.ReputationActorPartitionKeyCandidates(actorID)
 	if err != nil || len(pkCandidates) == 0 {
 		return []*storage.Reputation{}, nil // Return empty slice when invalid actorID
@@ -1174,7 +1217,11 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 
 // queryVouchesByGSI is a helper function to query vouches using a specific GSI
 func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiIndex, keyPrefix, errorContext string) ([]*storage.Vouch, error) {
-	// Query the specified GSI for vouches
+	// Query the specified GSI for vouches — the whole keyed partition
+	// (VOUCHER#<actor> / VOUCHEE#<actor>) must be read to return every vouch,
+	// so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. The optional Active filter is a
+	// post-read condition and is preserved on every page.
 	query := r.GetDB().Model(&models.Vouch{}).
 		Index(gsiIndex).
 		Where(fmt.Sprintf("%sPK", strings.ToLower(gsiIndex[:4])), "=", fmt.Sprintf("%s#%s", keyPrefix, actorID))
@@ -1186,7 +1233,13 @@ func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiI
 
 	// Execute query
 	var vouchModels []*models.Vouch
-	if err := query.All(&vouchModels); err != nil {
+	if err := walkKeyedPages(
+		query, 500, 100,
+		func(page []*models.Vouch) (bool, error) {
+			vouchModels = append(vouchModels, page...)
+			return false, nil
+		},
+	); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "vouch", errorContext)
 	}
 
@@ -1267,14 +1320,23 @@ func (r *UserRepository) GetMonthlyVouchCount(_ context.Context, actorID string,
 	startOfMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
 	endOfMonth := startOfMonth.AddDate(0, 1, 0)
 
-	// Query GSI1 with date range filter
+	// Query GSI1 with date range filter — the whole keyed VOUCHER#<actor>
+	// partition must be read (the month window is a non-key attribute, filtered
+	// in memory below), so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	query := r.GetDB().Model(&models.Vouch{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("VOUCHER#%s", actorID))
 
 	// Execute query - we'll filter in memory since DynamORM doesn't support BETWEEN on non-key attributes
 	var vouchModels []*models.Vouch
-	if err := query.All(&vouchModels); err != nil {
+	if err := walkKeyedPages(
+		query, 500, 100,
+		func(page []*models.Vouch) (bool, error) {
+			vouchModels = append(vouchModels, page...)
+			return false, nil
+		},
+	); err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "vouch", "monthly count")
 	}
 
@@ -2468,13 +2530,22 @@ func (r *UserRepository) GetMutedConversations(ctx context.Context, username str
 	r.logger.Info("getting muted conversations",
 		zap.String("username", username))
 
-	// Query all muted conversations for the user
+	// Query all muted conversations for the user — the whole keyed
+	// USER#<user>#CONV_MUTES partition must be read (expired mutes are filtered
+	// in memory below), so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	pk := fmt.Sprintf("USER#%s#CONV_MUTES", username)
 
 	var mutes []models.ConversationMute
-	err := r.GetDB().WithContext(ctx).Model(&models.ConversationMute{}).
-		Where("PK", "=", pk).
-		All(&mutes)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.ConversationMute{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.ConversationMute) (bool, error) {
+			mutes = append(mutes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "conversation mute", "query")
@@ -2745,6 +2816,12 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(_ context.Context, before 
 
 // getTimelineEntries is a generic function to retrieve timeline entries with pagination
 func (r *UserRepository) getTimelineEntries(ctx context.Context, pk, errorContext string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
+	// Clamp the limit (wave #1469): a negative limit previously produced
+	// Limit(limit+1) <= 0, which compiles to NO limit — an unbounded read of
+	// the timeline partition. The read is always bounded now (default 20,
+	// hard max 100; the +1 over-fetch sentinel below detects the next page).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	// Build query
 	query := r.GetDB().WithContext(ctx).Model(&models.Timeline{}).
 		Where("PK", "=", pk).
@@ -2891,13 +2968,28 @@ func (r *UserRepository) ListUsersByRole(ctx context.Context, role string) ([]*s
 		zap.String("role", role),
 	)
 
-	// Query for users by role using GSI
+	// Query for users by role using GSI — the whole keyed ROLE#<role> gsi3
+	// partition must be read to return every member, so the read is a bounded
+	// page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion.
 	var userModels []models.User
-	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", "ROLE#"+role).
-		All(&userModels)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.User{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", "ROLE#"+role),
+		500, 100,
+		func(page []models.User) (bool, error) {
+			userModels = append(userModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no users have this role" — a >50k-row partition must not degrade to
+		// an empty list; only other errors keep the pre-existing swallow.
+		if stdErrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		// If the GSI doesn't exist or no users found, return empty list
 		if errors.IsNotFound(err) {
 			return []*storage.User{}, nil
