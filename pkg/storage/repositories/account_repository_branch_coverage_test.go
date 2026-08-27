@@ -58,7 +58,7 @@ func TestAccountRepository_GetAccountPreferences_ParsesBooleans(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.UserPreference)
 		*dest = []models.UserPreference{
 			{Key: "a", Value: "true"},

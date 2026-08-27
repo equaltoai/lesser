@@ -72,15 +72,6 @@ func (m *MockActivityRepository) GetCollection(ctx context.Context, username, co
 
 // ===== Analytics and Metrics Operations =====
 
-// GetWeeklyActivity mocks the GetWeeklyActivity method
-func (m *MockActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
-	args := m.Called(ctx, weekTimestamp)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*storage.WeeklyActivity), args.Error(1)
-}
-
 // RecordActivity mocks the RecordActivity method
 func (m *MockActivityRepository) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
 	args := m.Called(ctx, activityType, actorID, timestamp)

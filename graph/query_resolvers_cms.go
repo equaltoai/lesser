@@ -943,16 +943,10 @@ func (r *queryResolver) SeriesBySlug(ctx context.Context, slug string) (*model.S
 		}
 	}
 
-	// Legacy fallback: scan for the first matching slug across all authors and backfill the index.
-	series, ok, err := cmsScanSeriesBySlug(ctx, store, slug, tenant)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		backfillSeriesSlugIndex(ctx, store.GetDB(), tenant, series)
-		return r.convertCMSSeries(ctx, series), nil
-	}
-
+	// Legacy fallback: a legacy series row without a slug-index entry is not
+	// found by slug until the index is backfilled on write. The previous
+	// fallback scanned the whole table (Where SK BEGINS_WITH ID#) and was
+	// removed because full-table scans are prohibited on request paths.
 	return nil, nil
 }
 
@@ -991,25 +985,6 @@ func cmsFindViewerSeriesBySlug(ctx context.Context, store storagecore.Repository
 			return item, true, nil
 		}
 	}
-	return nil, false, nil
-}
-
-func cmsScanSeriesBySlug(ctx context.Context, store storagecore.RepositoryStorage, slug string, tenant string) (*models.Series, bool, error) {
-	var seriesModels []models.Series
-	scanErr := store.GetDB().WithContext(ctx).Model(&models.Series{}).
-		Where("SK", "BEGINS_WITH", "ID#").
-		Limit(1000).
-		All(&seriesModels)
-	if scanErr != nil {
-		return nil, false, scanErr
-	}
-
-	for i := range seriesModels {
-		if strings.EqualFold(seriesModels[i].Slug, slug) && cmsSeriesBelongsToTenant(&seriesModels[i], tenant) {
-			return &seriesModels[i], true, nil
-		}
-	}
-
 	return nil, false, nil
 }
 
@@ -1342,21 +1317,10 @@ func (r *queryResolver) MyPublications(ctx context.Context) ([]*model.Publicatio
 		}
 	}
 
-	// Back-compat fallback: scan membership items for this user.
-	if len(membershipItems) == 0 {
-		var members []models.PublicationMember
-		err = store.GetDB().WithContext(ctx).Model(&models.PublicationMember{}).
-			Where("SK", "=", fmt.Sprintf("USER#%s", username)).
-			Limit(1000).
-			All(&members)
-		if err != nil {
-			return nil, err
-		}
-
-		for i := range members {
-			membershipItems = append(membershipItems, &members[i])
-		}
-	}
+	// Note: legacy membership rows written before GSI1 keys existed are not
+	// listed here until the index is backfilled on write. The previous
+	// back-compat fallback scanned the whole table (Where SK = USER#<user>)
+	// and was removed because full-table scans are prohibited on request paths.
 
 	out := make([]*model.Publication, 0, len(membershipItems))
 	for _, member := range membershipItems {

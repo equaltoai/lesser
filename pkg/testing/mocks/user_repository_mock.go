@@ -316,15 +316,6 @@ func (m *MockUserRepositoryInterface) GetTrustedByRelationships(ctx context.Cont
 	return args.Get(0).([]*storage.TrustRelationship), args.String(1), args.Error(2)
 }
 
-// GetAllTrustRelationships mocks the GetAllTrustRelationships method
-func (m *MockUserRepositoryInterface) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
-	args := m.Called(ctx, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.TrustRelationship), args.Error(1)
-}
-
 // Trust score operations
 
 // GetTrustScore mocks the GetTrustScore method

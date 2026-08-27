@@ -767,7 +767,7 @@ func (r *SocialRepository) GetAccountPinsPaginated(ctx context.Context, username
 	query = query.Limit(limit + 1)
 
 	var pins []models.AccountPin
-	err := query.Scan(&pins)
+	err := query.All(&pins)
 	if err != nil {
 		r.logger.Error("failed to query account pins", zap.Error(err))
 		return nil, "", err
@@ -994,7 +994,7 @@ func (r *SocialRepository) GetStatusPinsPaginated(ctx context.Context, username 
 	query = query.Limit(limit + 1)
 
 	var pins []models.StatusPin
-	err := query.Scan(&pins)
+	err := query.All(&pins)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityStatusPin, "query")
 	}

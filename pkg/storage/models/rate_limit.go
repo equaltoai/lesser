@@ -125,6 +125,10 @@ type APIRateLimit struct {
 	PK string `theorydb:"pk,attr:PK" json:"pk"` // RATELIMIT#{userID|domain}#{endpoint}
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // WINDOW#{window_start}
 
+	// GSI1 - per-user rate limit lookup (user limits only)
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk,omitempty"` // USER_RATELIMIT#{userID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk,omitempty"` // ENDPOINT#{endpoint}#WINDOW#{window_start}
+
 	// Attributes
 	Type         string    `theorydb:"attr:type" json:"type"`                  // "APIRateLimit"
 	UserID       string    `theorydb:"attr:userID" json:"user_id"`             // User identifier
@@ -155,6 +159,17 @@ func (arl *APIRateLimit) UpdateKeys() error {
 		arl.SK = fmt.Sprintf("WINDOW#%s", arl.Window.Format(time.RFC3339))
 	}
 
+	// Set GSI1 for user-scoped limits only (federation rows carry no UserID).
+	// Legacy rows written before this GSI existed carry no gsi1 keys; they are
+	// TTL-transient and are not cleared by ClearAPIRateLimitsForUser.
+	if arl.UserID != "" {
+		arl.GSI1PK = fmt.Sprintf("USER_RATELIMIT#%s", arl.UserID)
+		arl.GSI1SK = fmt.Sprintf("ENDPOINT#%s#WINDOW#%s", arl.Endpoint, arl.Window.Format(time.RFC3339))
+	} else {
+		arl.GSI1PK = ""
+		arl.GSI1SK = ""
+	}
+
 	// Note: PK must be set externally with the identifier (format: RATELIMIT#{key})
 	return nil
 }
@@ -179,7 +194,7 @@ func NewAPIRateLimit(userID, endpoint string, windowStart time.Time) *APIRateLim
 	now := time.Now()
 	key := fmt.Sprintf("%s:%s", userID, endpoint)
 
-	return &APIRateLimit{
+	arl := &APIRateLimit{
 		PK:        fmt.Sprintf("RATELIMIT#%s", key),
 		SK:        fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339)),
 		Type:      "APIRateLimit",
@@ -191,6 +206,8 @@ func NewAPIRateLimit(userID, endpoint string, windowStart time.Time) *APIRateLim
 		UpdatedAt: now,
 		TTL:       windowStart.Add(25 * time.Hour).Unix(), // TTL after window + 1 day
 	}
+	_ = arl.UpdateKeys() // Set GSI1 keys for user-scoped lookups
+	return arl
 }
 
 // NewFederationRateLimit creates a new rate limit record for federation domains

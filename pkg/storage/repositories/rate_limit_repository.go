@@ -220,10 +220,14 @@ func (r *RateLimitRepository) ClearAPIRateLimitsForUser(ctx context.Context, use
 		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityRateLimit, "api rate limits")
 	}
 
-	prefix := fmt.Sprintf("RATELIMIT#%s:", userID)
+	// Resolve the user's counters through GSI1 instead of scanning the whole
+	// table with a begins_with filter on PK.
+	// Note: legacy rows written before GSI1 existed carry no gsi1 keys; they
+	// are TTL-transient (~24h) and simply expire instead of being cleared here.
 	var rateLimits []models.APIRateLimit
 	if err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-		Filter("PK", "begins_with", prefix).
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("USER_RATELIMIT#%s", userID)).
 		All(&rateLimits); err != nil {
 		r.logger.Error("failed to query api rate limits for clearing",
 			zap.String("user_id", userID),
@@ -566,6 +570,11 @@ func (r *RateLimitRepository) CheckFixedWindowRateLimit(ctx context.Context, ide
 
 // updateAPIRateLimit updates an API rate limit record using BaseRepository
 func (r *RateLimitRepository) updateAPIRateLimit(ctx context.Context, limit *models.APIRateLimit) error {
+	// Refresh GSI keys (including the per-user GSI1) before writing;
+	// EnhancedBaseRepository write paths do not run model hooks. This also
+	// backfills gsi1 on legacy rows when they are next updated.
+	_ = limit.UpdateKeys()
+
 	// Use BaseRepository Create method which acts like PUT in DynamoDB
 	err := r.apiRateLimits.Create(ctx, limit)
 	if err != nil {

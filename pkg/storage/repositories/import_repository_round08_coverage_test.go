@@ -56,14 +56,13 @@ func TestImportRepository_Round08_CoverageSweep(t *testing.T) {
 		importRecord.UpdateKeys()
 	}).Return(nil).Maybe()
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.Import")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.Import")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]*models.Import)
 		*items = []*models.Import{
 			{ID: "imp-1", Username: "alice", Type: "followers", Status: StatusCompleted, CreatedAt: baseTime.Add(-2 * time.Hour)},
 			{ID: "imp-2", Username: "alice", Type: "archive", Status: StatusFailed, CreatedAt: baseTime.Add(-1 * time.Hour)},
 		}
 	}).Return(nil).Maybe()
-	mockQuery.On("Scan", mock.Anything).Return(nil).Maybe()
 
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Import")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]*models.Import)

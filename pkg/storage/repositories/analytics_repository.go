@@ -2189,24 +2189,20 @@ func (r *TrendingRepository) addRecentMetrics(
 
 // queryQualityChangeEvents retrieves and counts quality change events
 func (r *TrendingRepository) queryQualityChangeEvents(ctx context.Context, mediaID string, last7Days time.Time) (int, error) {
+	// Resolve quality-change rows per media through GSI3 instead of scanning
+	// the whole table by PK prefix.
 	var qualityChangeEvents []models.MediaAnalytics
 	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "begins_with", "QUALITY_CHANGE#").
-		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
+		Index("gsi3").
+		Where("gsi3PK", "=", fmt.Sprintf("MEDIA_QUALITY#%s", mediaID)).
+		Where("gsi3SK", ">=", fmt.Sprintf("TS#%d", last7Days.Unix())).
 		All(&qualityChangeEvents)
 
 	if err != nil {
 		return 0, nil // Ignore errors for quality change events
 	}
 
-	qualityChanges := 0
-	for _, event := range qualityChangeEvents {
-		if event.MediaID == mediaID {
-			qualityChanges++
-		}
-	}
-
-	return qualityChanges, nil
+	return len(qualityChangeEvents), nil
 }
 
 // GetStreamingAnalytics retrieves comprehensive streaming analytics for a media item

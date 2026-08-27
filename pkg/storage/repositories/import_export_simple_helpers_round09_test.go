@@ -46,7 +46,7 @@ func TestRound09_ImportExportSimpleHelpers_FilteringAndPagination(t *testing.T) 
 
 	mockDBErr := new(mocks.MockDB)
 	mockQueryErr := new(mocks.MockQuery)
-	mockQueryErr.On("Scan", mock.Anything).Return(errors.New("boom")).Once()
+	mockQueryErr.On("All", mock.Anything).Return(errors.New("boom")).Once()
 	setupPermissiveRound08Mocks(mockDBErr, mockQueryErr, nil, baseTime)
 	_, _, err = getImportExportItemsForUser(ctx, mockDBErr, logger, "user-1", 2, "", "export", true)
 	require.Error(t, err)

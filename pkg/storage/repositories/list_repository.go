@@ -120,7 +120,7 @@ func (r *ListRepository) DeleteList(ctx context.Context, listID string) error {
 	var members []models.ListMember
 	err = r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Where("PK", "=", fmt.Sprintf("LIST_MEMBERS#%s", listID)).
-		Scan(&members)
+		All(&members)
 	if err != nil && !dmerrors.IsNotFound(err) {
 		return ErrorHandler.HandleQueryError(err, EntityList, "member deletion")
 	}
@@ -168,7 +168,7 @@ func (r *ListRepository) GetListsForUserPaginated(ctx context.Context, username 
 	query = query.Limit(limit + 1)
 
 	var listModels []models.List
-	err := query.Scan(&listModels)
+	err := query.All(&listModels)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
 			return []*storage.List{}, "", nil
@@ -386,7 +386,7 @@ func (r *ListRepository) GetListMembers(ctx context.Context, listID string, opts
 	}
 
 	var members []models.ListMember
-	err := query.Limit(opts.Limit).Scan(&members)
+	err := query.Limit(opts.Limit).All(&members)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
 			return &interfaces.PaginatedResult[*storage.Account]{
@@ -493,7 +493,7 @@ func (r *ListRepository) GetAccountListsPaginated(ctx context.Context, accountID
 	query = query.Limit(limit + 1)
 
 	var members []models.ListMember
-	err := query.Scan(&members)
+	err := query.All(&members)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
 			return []*storage.List{}, "", nil
@@ -543,7 +543,7 @@ func (r *ListRepository) GetAccountListsForUser(ctx context.Context, accountID, 
 	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
-		Scan(&members)
+		All(&members)
 
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
@@ -595,7 +595,7 @@ func (r *ListRepository) RemoveAccountFromAllLists(ctx context.Context, accountI
 	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
-		Scan(&members)
+		All(&members)
 
 	if err != nil {
 		if dmerrors.IsNotFound(err) {

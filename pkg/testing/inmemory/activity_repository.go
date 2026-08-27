@@ -284,40 +284,6 @@ func (r *ActivityRepository) GetCollection(ctx context.Context, username, collec
 
 // ===== Analytics and Metrics Operations =====
 
-// GetWeeklyActivity retrieves weekly activity statistics
-func (r *ActivityRepository) GetWeeklyActivity(_ context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	// Check if we have cached stats
-	if stats, exists := r.weeklyStats[weekTimestamp]; exists {
-		return stats, nil
-	}
-
-	// Calculate stats from activities
-	weekStart := time.Unix(weekTimestamp, 0)
-	weekEnd := weekStart.Add(7 * 24 * time.Hour)
-
-	statuses := 0
-	logins := 0
-	registrations := 0
-
-	for _, entry := range r.activities {
-		if entry.createdAt.After(weekStart) && entry.createdAt.Before(weekEnd) {
-			if entry.activity != nil && entry.activity.Type == "Create" {
-				statuses++
-			}
-		}
-	}
-
-	return &storage.WeeklyActivity{
-		Week:          fmt.Sprintf("%d", weekTimestamp),
-		Statuses:      statuses,
-		Logins:        logins,
-		Registrations: registrations,
-	}, nil
-}
-
 // RecordActivity records general activity metrics
 func (r *ActivityRepository) RecordActivity(_ context.Context, activityType string, actorID string, timestamp time.Time) error {
 	r.mu.Lock()

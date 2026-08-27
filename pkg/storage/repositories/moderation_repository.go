@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -648,39 +647,18 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "query")
 		}
 	} else {
-		// Scan for all patterns (less efficient)
-		// DynamORM doesn't support BeginsWith, so we query and filter
-		err := r.db.WithContext(ctx).Model(&patternModels).
-			Where("SK", "=", "PATTERN").
-			Limit(limit * 2). // Get extra to account for filtering
+		// All patterns (regardless of active status or severity) through GSI3.
+		// The previous implementation scanned for SK = "PATTERN" and returned
+		// nothing (the model writes SK = METADATA); the keyed query makes this
+		// branch functional.
+		err := r.db.WithContext(ctx).Model(&models.ModerationPattern{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", "MODERATION_PATTERNS#ALL").
+			OrderBy("gsi3SK", "ASC").
+			Limit(limit).
 			All(&patternModels)
 		if err != nil {
-			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "scan")
-		}
-
-		// Filter to only moderation patterns
-		var filtered []models.ModerationPattern
-		for i := range patternModels {
-			if strings.HasPrefix(patternModels[i].PK, "MODERATION_PATTERN#") {
-				filtered = append(filtered, patternModels[i])
-				if len(filtered) >= limit {
-					break
-				}
-			}
-		}
-		patternModels = filtered
-
-		// Filter by severity if specified
-		if severity != "" {
-			// Parse severity to float64 for comparison
-			severityFloat, _ := strconv.ParseFloat(severity, 64)
-			filtered := patternModels[:0]
-			for _, p := range patternModels {
-				if p.Severity == severityFloat {
-					filtered = append(filtered, p)
-				}
-			}
-			patternModels = filtered
+			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "query")
 		}
 	}
 
@@ -1296,11 +1274,12 @@ func (r *ModerationRepository) GetReviewerStats(ctx context.Context, reviewerID 
 		stats.TrustScore = trustScore.Score
 	}
 
-	// Count all reviews by this reviewer
-	// Since we don't have a direct index for reviewer lookups, we need to scan
+	// Count all reviews by this reviewer through GSI1 instead of scanning the
+	// whole table and filtering in Go.
 	var reviews []models.ModerationReview
-	err = r.db.WithContext(ctx).Model(&reviews).
-		Limit(1000). // Reasonable limit
+	err = r.db.WithContext(ctx).Model(&models.ModerationReview{}).
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("REVIEWER#%s", reviewerID)).
 		All(&reviews)
 
 	if err != nil {
@@ -1554,7 +1533,7 @@ func (r *ModerationRepository) DeleteFilter(ctx context.Context, filterID string
 		return ErrorHandler.HandleGetError(err, EntityFilterKeyword, "deletion")
 	}
 	for _, keyword := range keywords {
-		if err := r.DeleteFilterKeyword(ctx, keyword.ID); err != nil {
+		if err := r.DeleteFilterKeyword(ctx, filterID, keyword.ID); err != nil {
 			r.logger.Error("Failed to delete filter keyword during filter deletion",
 				zap.Error(err),
 				zap.String("keyword_id", keyword.ID))
@@ -1568,7 +1547,7 @@ func (r *ModerationRepository) DeleteFilter(ctx context.Context, filterID string
 		return ErrorHandler.HandleGetError(err, EntityFilterStatus, "deletion")
 	}
 	for _, status := range statuses {
-		if err := r.DeleteFilterStatus(ctx, status.StatusID); err != nil {
+		if err := r.DeleteFilterStatus(ctx, filterID, status.StatusID); err != nil {
 			r.logger.Error("Failed to delete filter status during filter deletion",
 				zap.Error(err),
 				zap.String("status_id", status.StatusID))
@@ -1668,23 +1647,20 @@ func (r *ModerationRepository) GetFilterKeywords(ctx context.Context, filterID s
 }
 
 // UpdateFilterKeyword updates a filter keyword
-func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error {
-	// First get the existing keyword to find its FilterID
-	var existingModels []models.FilterKeyword
-
-	// We need to scan for the keyword since we don't have the FilterID
-	err := r.db.WithContext(ctx).Model(&existingModels).
+func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, filterID string, keywordID string, updates map[string]any) error {
+	// Point read the keyword within its filter partition (no scan needed)
+	var existing models.FilterKeyword
+	err := r.db.WithContext(ctx).Model(&existing).
+		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
 		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
-		All(&existingModels)
+		First(&existing)
 
-	if err != nil || len(existingModels) == 0 {
-		if errors.IsNotFound(err) || len(existingModels) == 0 {
+	if err != nil {
+		if errors.IsNotFound(err) {
 			return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilterKeyword, keywordID)
 		}
 		return ErrorHandler.HandleGetError(err, EntityFilterKeyword, keywordID)
 	}
-
-	existing := existingModels[0]
 
 	// Apply updates
 	if keyword, ok := updates["keyword"].(string); ok {
@@ -1702,57 +1678,18 @@ func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordI
 	return nil
 }
 
-// deleteFilterEntity is a helper to eliminate duplication between DeleteFilterKeyword and DeleteFilterStatus
-func (r *ModerationRepository) deleteFilterEntity(ctx context.Context, entityID, entityType string, modelType interface{}) error {
-	// First find the entity to get its FilterID
-	var filterID string
-	switch modelType.(type) {
-	case *models.FilterKeyword:
-		var existingModels []models.FilterKeyword
-		err := r.db.WithContext(ctx).Model(&existingModels).
-			Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
-			All(&existingModels)
-		if err != nil || len(existingModels) == 0 {
-			if errors.IsNotFound(err) || len(existingModels) == 0 {
-				return ErrorHandler.HandleGetError(storage.ErrNotFound, "filter entity", entityID)
-			}
-			return ErrorHandler.HandleGetError(err, "filter entity", entityID)
-		}
-		filterID = existingModels[0].FilterID
-
-	case *models.FilterStatus:
-		var existingModels []models.FilterStatus
-		err := r.db.WithContext(ctx).Model(&existingModels).
-			Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
-			All(&existingModels)
-		if err != nil || len(existingModels) == 0 {
-			if errors.IsNotFound(err) || len(existingModels) == 0 {
-				return ErrorHandler.HandleGetError(storage.ErrNotFound, "filter entity", entityID)
-			}
-			return ErrorHandler.HandleGetError(err, "filter entity", entityID)
-		}
-		filterID = existingModels[0].FilterID
-
-	default:
-		return ErrorHandler.HandleGetError(storage.ErrInvalidInput, "filter entity", entityID)
-	}
-
-	// Delete the entity
-	err := r.db.WithContext(ctx).Model(modelType).
+// DeleteFilterKeyword deletes a filter keyword
+func (r *ModerationRepository) DeleteFilterKeyword(ctx context.Context, filterID string, keywordID string) error {
+	err := r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
 		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
+		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
 		Delete()
 
 	if err != nil {
-		return ErrorHandler.HandleDeleteError(err, "filter entity", entityID)
+		return ErrorHandler.HandleDeleteError(err, "filter entity", keywordID)
 	}
 
 	return nil
-}
-
-// DeleteFilterKeyword deletes a filter keyword
-func (r *ModerationRepository) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
-	return r.deleteFilterEntity(ctx, keywordID, "KEYWORD", &models.FilterKeyword{})
 }
 
 // AddFilterStatus adds a new status to a filter
@@ -1824,8 +1761,17 @@ func (r *ModerationRepository) GetFilterStatuses(ctx context.Context, filterID s
 }
 
 // DeleteFilterStatus deletes a filter status by statusID (the ID being filtered, not the filter entry ID)
-func (r *ModerationRepository) DeleteFilterStatus(ctx context.Context, statusID string) error {
-	return r.deleteFilterEntity(ctx, statusID, "STATUS", &models.FilterStatus{})
+func (r *ModerationRepository) DeleteFilterStatus(ctx context.Context, filterID string, statusID string) error {
+	err := r.db.WithContext(ctx).Model(&models.FilterStatus{}).
+		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
+		Delete()
+
+	if err != nil {
+		return ErrorHandler.HandleDeleteError(err, "filter entity", statusID)
+	}
+
+	return nil
 }
 
 // convertReportModelToStorage converts a Report model to storage.Report

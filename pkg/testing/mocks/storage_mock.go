@@ -620,15 +620,6 @@ func (m *MockStorage) GetTotalDomainCount(ctx context.Context) (int64, error) {
 	return args.Get(0).(int64), args.Error(1)
 }
 
-// GetWeeklyActivity mocks the GetWeeklyActivity method
-func (m *MockStorage) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
-	args := m.Called(ctx, weekTimestamp)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*storage.WeeklyActivity), args.Error(1)
-}
-
 // RecordActivity mocks the RecordActivity method
 func (m *MockStorage) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
 	args := m.Called(ctx, activityType, actorID, timestamp)
@@ -1761,14 +1752,14 @@ func (m *MockStorage) GetFilterKeywords(ctx context.Context, filterID string) ([
 }
 
 // UpdateFilterKeyword mocks the UpdateFilterKeyword method
-func (m *MockStorage) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error {
-	args := m.Called(ctx, keywordID, updates)
+func (m *MockStorage) UpdateFilterKeyword(ctx context.Context, filterID string, keywordID string, updates map[string]any) error {
+	args := m.Called(ctx, filterID, keywordID, updates)
 	return args.Error(0)
 }
 
 // DeleteFilterKeyword mocks the DeleteFilterKeyword method
-func (m *MockStorage) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
-	args := m.Called(ctx, keywordID)
+func (m *MockStorage) DeleteFilterKeyword(ctx context.Context, filterID string, keywordID string) error {
+	args := m.Called(ctx, filterID, keywordID)
 	return args.Error(0)
 }
 
@@ -1788,8 +1779,8 @@ func (m *MockStorage) GetFilterStatuses(ctx context.Context, filterID string) ([
 }
 
 // DeleteFilterStatus mocks the DeleteFilterStatus method
-func (m *MockStorage) DeleteFilterStatus(ctx context.Context, statusID string) error {
-	args := m.Called(ctx, statusID)
+func (m *MockStorage) DeleteFilterStatus(ctx context.Context, filterID string, statusID string) error {
+	args := m.Called(ctx, filterID, statusID)
 	return args.Error(0)
 }
 
@@ -3278,15 +3269,6 @@ func (m *MockStorage) UpdateTrustScore(ctx context.Context, score *storage.Trust
 func (m *MockStorage) RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error {
 	args := m.Called(ctx, update)
 	return args.Error(0)
-}
-
-// GetAllTrustRelationships mocks the GetAllTrustRelationships method
-func (m *MockStorage) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
-	args := m.Called(ctx, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.TrustRelationship), args.Error(1)
 }
 
 // StoreTrustee mocks the StoreTrustee method

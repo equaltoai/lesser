@@ -549,12 +549,17 @@ func (r *TrustRepository) RecordTrustUpdate(ctx context.Context, update *storage
 
 // GetAllTrustRelationships retrieves all trust relationships for admin visualization
 func (r *TrustRepository) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
-	// Scan for all trust relationships
+	// Query the GSI3 global listing key instead of a full-table scan.
+	if limit <= 0 {
+		limit = 1000
+	}
 	var trustModels []*models.TrustRelationship
 	err := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
-		Where("Type", "=", "RELATIONSHIP").
+		Index("gsi3").
+		Where("gsi3PK", "=", "TRUST_RELATIONSHIPS").
+		OrderBy("gsi3SK", "ASC").
 		Limit(limit).
-		Scan(&trustModels)
+		All(&trustModels)
 	if err != nil {
 		return nil, err
 	}

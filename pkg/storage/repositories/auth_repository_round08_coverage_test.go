@@ -138,11 +138,10 @@ func TestRound08_AuthRepository_ChallengeAndWalletOps(t *testing.T) {
 			require.Equal(t, "user-1", cred.Username)
 		})
 
-		t.Run("fallback to scan then not found", func(t *testing.T) {
+		t.Run("empty reverse index returns not found without fallback scan", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
 			mockQuery.On("All", mock.Anything).Return(nil).Once() // index empty
-			mockQuery.On("Scan", mock.Anything).Return(nil).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 			repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
 			cred, err := repo.GetWalletByAddress(ctx, "ethereum", "0xAbC")

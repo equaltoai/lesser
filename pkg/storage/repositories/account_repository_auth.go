@@ -582,7 +582,7 @@ func (r *AccountRepository) ClearLoginAttempts(ctx context.Context, key string) 
 	var attempts []models.LoginAttempt
 	query := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
 		Where("PK", "=", fmt.Sprintf("RATELIMIT#%s", key))
-	err := query.Scan(&attempts)
+	err := query.All(&attempts)
 
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, "login attempt", "query")
@@ -624,7 +624,7 @@ func (r *AccountRepository) GetLoginAttemptCount(ctx context.Context, key string
 	query := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
 		Where("PK", "=", fmt.Sprintf("RATELIMIT#%s", key)).
 		Where("SK", ">", since.Format(time.RFC3339Nano))
-	err := query.Scan(&attempts)
+	err := query.All(&attempts)
 
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "login attempt", "count")

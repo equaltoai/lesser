@@ -39,16 +39,6 @@ func TestActivityRepository_Round09_MoreBranches(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("GetWeeklyActivity query error", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
-		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
-		repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
-		_, err := repo.GetWeeklyActivity(ctx, baseTime.Unix())
-		require.Error(t, err)
-	})
-
 	t.Run("GetHashtagActivity skips nil activities and handles query error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)

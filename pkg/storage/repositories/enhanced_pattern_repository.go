@@ -55,6 +55,10 @@ func (r *EnhancedPatternRepository) CreatePattern(ctx context.Context, pattern *
 	// Calculate initial effectiveness
 	pattern.CalculateEffectiveness()
 
+	// Refresh GSI keys (including the global listing index) before writing;
+	// EnhancedBaseRepository write paths do not run model hooks.
+	_ = pattern.UpdateKeys()
+
 	// Use BaseRepository Create method
 	err := r.ValidateAndCreate(ctx, pattern)
 	if err != nil {
@@ -93,6 +97,10 @@ func (r *EnhancedPatternRepository) UpdatePattern(ctx context.Context, pattern *
 	// Update timestamp and recalculate effectiveness
 	pattern.UpdatedAt = time.Now()
 	pattern.CalculateEffectiveness()
+
+	// Refresh GSI keys (including the global listing index) before writing;
+	// EnhancedBaseRepository write paths do not run model hooks.
+	_ = pattern.UpdateKeys()
 
 	// Use BaseRepository Update method
 	err := r.ValidateAndUpdate(ctx, pattern)
@@ -750,7 +758,8 @@ func (r *EnhancedPatternRepository) CleanupExpiredPatterns(ctx context.Context) 
 func (r *EnhancedPatternRepository) GetPatternStatistics(ctx context.Context) (map[string]interface{}, error) {
 	patterns := []*models.EnhancedModerationPattern{}
 	err := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("SK", "=", models.SKMetadata).
+		Index("gsi4").
+		Where("gsi4PK", "=", "ENHANCED_PATTERNS#ALL").
 		All(&patterns)
 
 	if err != nil {

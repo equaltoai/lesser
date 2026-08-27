@@ -956,7 +956,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("gsi7").
 		Where("gsi7PK", "=", "URL#"+normalizedURL).
-		Scan(&statuses)
+		All(&statuses)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "query by URL")

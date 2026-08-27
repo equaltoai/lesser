@@ -117,10 +117,10 @@ type ModerationRepository interface {
 	GetFilterKeywords(ctx context.Context, filterID string) ([]*storage.FilterKeyword, error)
 
 	// UpdateFilterKeyword updates a filter keyword
-	UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error
+	UpdateFilterKeyword(ctx context.Context, filterID string, keywordID string, updates map[string]any) error
 
 	// DeleteFilterKeyword deletes a filter keyword
-	DeleteFilterKeyword(ctx context.Context, keywordID string) error
+	DeleteFilterKeyword(ctx context.Context, filterID string, keywordID string) error
 
 	// AddFilterStatus adds a new status to a filter
 	AddFilterStatus(ctx context.Context, filterID string, status *storage.FilterStatus) error
@@ -129,7 +129,7 @@ type ModerationRepository interface {
 	GetFilterStatuses(ctx context.Context, filterID string) ([]*storage.FilterStatus, error)
 
 	// DeleteFilterStatus deletes a filter status
-	DeleteFilterStatus(ctx context.Context, statusID string) error
+	DeleteFilterStatus(ctx context.Context, filterID string, statusID string) error
 
 	// ===== Report Operations =====
 

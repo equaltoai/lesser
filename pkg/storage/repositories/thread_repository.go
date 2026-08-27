@@ -118,7 +118,7 @@ func (r *ThreadRepository) GetThreadNodes(ctx context.Context, rootStatusID stri
 	err := r.db.WithContext(ctx).Model(&models.ThreadNode{}).
 		Where("PK", "=", pk).
 		Where("SK", "begins_with", "NODE#").
-		Scan(&nodes)
+		All(&nodes)
 
 	if err != nil {
 		r.logger.Error("failed to get thread nodes",
@@ -232,7 +232,7 @@ func (r *ThreadRepository) GetMissingReplies(ctx context.Context, rootStatusID s
 	err := r.db.WithContext(ctx).Model(&models.MissingReply{}).
 		Where("PK", "=", pk).
 		Where("SK", "begins_with", "MISSING#").
-		Scan(&missing)
+		All(&missing)
 
 	if err != nil {
 		r.logger.Error("failed to get missing replies",

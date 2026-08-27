@@ -27,14 +27,16 @@ func getImportExportItemsForUser(
 	if isExport {
 		var exports []*models.Export
 		query := db.Model(&models.Export{}).
-			Where("Username", "=", username).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username)).
+			OrderBy("gsi1SK", "ASC").
 			Limit(limit)
 
 		if cursor != "" {
-			query = query.Where("CreatedAt", ">", cursor)
+			query = query.Where("gsi1SK", ">", "CREATED#"+cursor)
 		}
 
-		err := query.Scan(&exports)
+		err := query.All(&exports)
 		if err != nil {
 			logger.Error(fmt.Sprintf("failed to get %ss for user", itemType),
 				zap.String("username", username),
@@ -56,14 +58,16 @@ func getImportExportItemsForUser(
 
 	var imports []*models.Import
 	query := db.Model(&models.Import{}).
-		Where("Username", "=", username).
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username)).
+		OrderBy("gsi1SK", "ASC").
 		Limit(limit)
 
 	if cursor != "" {
-		query = query.Where("CreatedAt", ">", cursor)
+		query = query.Where("gsi1SK", ">", "CREATED#"+cursor)
 	}
 
-	err := query.Scan(&imports)
+	err := query.All(&imports)
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to get %ss for user", itemType),
 			zap.String("username", username),

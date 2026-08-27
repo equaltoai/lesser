@@ -786,22 +786,21 @@ func (r *ModerationRepository) GetFilterKeywords(_ context.Context, filterID str
 }
 
 // UpdateFilterKeyword updates a filter keyword
-func (r *ModerationRepository) UpdateFilterKeyword(_ context.Context, keywordID string, updates map[string]any) error {
+func (r *ModerationRepository) UpdateFilterKeyword(_ context.Context, filterID string, keywordID string, updates map[string]any) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for filterID, keywords := range r.filterKeywords {
-		for i, keyword := range keywords {
-			if keyword.ID == keywordID {
-				if kw, ok := updates["keyword"].(string); ok {
-					keyword.Keyword = kw
-				}
-				if wholeWord, ok := updates["whole_word"].(bool); ok {
-					keyword.WholeWord = wholeWord
-				}
-				r.filterKeywords[filterID][i] = keyword
-				return nil
+	keywords := r.filterKeywords[filterID]
+	for i, keyword := range keywords {
+		if keyword.ID == keywordID {
+			if kw, ok := updates["keyword"].(string); ok {
+				keyword.Keyword = kw
 			}
+			if wholeWord, ok := updates["whole_word"].(bool); ok {
+				keyword.WholeWord = wholeWord
+			}
+			r.filterKeywords[filterID][i] = keyword
+			return nil
 		}
 	}
 
@@ -809,16 +808,15 @@ func (r *ModerationRepository) UpdateFilterKeyword(_ context.Context, keywordID 
 }
 
 // DeleteFilterKeyword deletes a filter keyword
-func (r *ModerationRepository) DeleteFilterKeyword(_ context.Context, keywordID string) error {
+func (r *ModerationRepository) DeleteFilterKeyword(_ context.Context, filterID string, keywordID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for filterID, keywords := range r.filterKeywords {
-		for i, keyword := range keywords {
-			if keyword.ID == keywordID {
-				r.filterKeywords[filterID] = append(keywords[:i], keywords[i+1:]...)
-				return nil
-			}
+	keywords := r.filterKeywords[filterID]
+	for i, keyword := range keywords {
+		if keyword.ID == keywordID {
+			r.filterKeywords[filterID] = append(keywords[:i], keywords[i+1:]...)
+			return nil
 		}
 	}
 
@@ -859,16 +857,15 @@ func (r *ModerationRepository) GetFilterStatuses(_ context.Context, filterID str
 }
 
 // DeleteFilterStatus deletes a filter status
-func (r *ModerationRepository) DeleteFilterStatus(_ context.Context, statusID string) error {
+func (r *ModerationRepository) DeleteFilterStatus(_ context.Context, filterID string, statusID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for filterID, statuses := range r.filterStatuses {
-		for i, status := range statuses {
-			if status.StatusID == statusID {
-				r.filterStatuses[filterID] = append(statuses[:i], statuses[i+1:]...)
-				return nil
-			}
+	statuses := r.filterStatuses[filterID]
+	for i, status := range statuses {
+		if status.StatusID == statusID {
+			r.filterStatuses[filterID] = append(statuses[:i], statuses[i+1:]...)
+			return nil
 		}
 	}
 

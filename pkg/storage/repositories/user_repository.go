@@ -1146,7 +1146,7 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 	err := r.GetDB().Model(&models.Vouch{}).
 		Where("PK", "=", fmt.Sprintf("VOUCH#%s", vouchID)).
 		Where("SK", "=", models.SKMetadata).
-		Scan(&vouchModels)
+		All(&vouchModels)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleGetError(err, "vouch", "get")
@@ -1186,7 +1186,7 @@ func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiI
 
 	// Execute query
 	var vouchModels []*models.Vouch
-	if err := query.Scan(&vouchModels); err != nil {
+	if err := query.All(&vouchModels); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "vouch", errorContext)
 	}
 
@@ -1274,7 +1274,7 @@ func (r *UserRepository) GetMonthlyVouchCount(_ context.Context, actorID string,
 
 	// Execute query - we'll filter in memory since DynamORM doesn't support BETWEEN on non-key attributes
 	var vouchModels []*models.Vouch
-	if err := query.Scan(&vouchModels); err != nil {
+	if err := query.All(&vouchModels); err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "vouch", "monthly count")
 	}
 
@@ -1395,76 +1395,158 @@ func (r *UserRepository) DeleteTrustRelationship(ctx context.Context, trusterID,
 }
 
 // GetTrustRelationships retrieves all trust relationships for a truster
-func (r *UserRepository) GetTrustRelationships(_ context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	// We need to scan with filter since we want all categories
-	// DynamORM doesn't support begins_with, so we'll filter in memory
-	query := r.GetDB().Model(&models.TrustRelationship{}).
-		Filter("Type", "=", "RELATIONSHIP").
-		Limit(limit * 2) // Get more to account for filtering
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
-	}
-
-	var models []*models.TrustRelationship
-	err := query.Scan(&models)
+func (r *UserRepository) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
+	decodedCursor, err := decodeTrustRelationshipCursor(cursor)
 	if err != nil {
-		return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "scan")
+		return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "cursor decode")
 	}
 
-	// Filter by truster ID in memory
-	relationships := make([]*storage.TrustRelationship, 0)
-	expectedPrefix := fmt.Sprintf("TRUST#%s#", trusterID)
-	for _, model := range models {
-		if strings.HasPrefix(model.PK, expectedPrefix) {
-			relationships = append(relationships, r.modelToTrustRelationship(model))
-			if len(relationships) >= limit {
-				break
-			}
+	startCategoryIndex := 0
+	categoryCursorSK := decodedCursor.LastSK
+	if decodedCursor.Category != "" {
+		startCategoryIndex = trustCategoryIndex(decodedCursor.Category)
+		if startCategoryIndex < 0 {
+			return nil, "", ErrorHandler.HandleQueryError(storage.ErrInvalidInput, "trust relationship", "invalid cursor category")
 		}
 	}
 
-	// Scans do not expose native cursors in DynamORM, so we stop here
-	nextCursor := ""
+	relationships := make([]*storage.TrustRelationship, 0, limit)
+	for i := startCategoryIndex; i < len(trustRelationshipCategoryOrder) && len(relationships) < limit; i++ {
+		category := trustRelationshipCategoryOrder[i]
+		pk := fmt.Sprintf("TRUST#%s#%s", trusterID, category)
 
-	return relationships, nextCursor, nil
+		remaining := limit - len(relationships)
+		query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "ASC").
+			Limit(remaining + 1)
+
+		if categoryCursorSK != "" {
+			query = query.Where("SK", ">", categoryCursorSK)
+		}
+
+		var page []*models.TrustRelationship
+		if err := query.All(&page); err != nil {
+			return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "list")
+		}
+
+		if len(page) == 0 {
+			categoryCursorSK = ""
+			continue
+		}
+
+		hasMore := len(page) > remaining
+		if hasMore {
+			page = page[:remaining]
+		}
+
+		for _, model := range page {
+			relationships = append(relationships, r.modelToTrustRelationship(model))
+		}
+
+		if hasMore {
+			nextCursor := encodeTrustRelationshipCursor(trustRelationshipCursor{
+				Category: string(category),
+				LastSK:   page[len(page)-1].SK,
+			})
+			return relationships, nextCursor, nil
+		}
+
+		// If we hit the requested limit exactly at a category boundary, advance the cursor
+		// to the next category so callers can continue pagination.
+		if len(relationships) >= limit {
+			if i+1 < len(trustRelationshipCategoryOrder) {
+				nextCursor := encodeTrustRelationshipCursor(trustRelationshipCursor{
+					Category: string(trustRelationshipCategoryOrder[i+1]),
+					LastSK:   "",
+				})
+				return relationships, nextCursor, nil
+			}
+			return relationships, "", nil
+		}
+
+		categoryCursorSK = ""
+	}
+
+	return relationships, "", nil
 }
 
 // GetTrustedByRelationships retrieves all relationships where the actor is trusted
-func (r *UserRepository) GetTrustedByRelationships(_ context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	// Use GSI1 to query by trustee
-	// DynamORM doesn't support begins_with, so we'll filter in memory
-	query := r.GetDB().Model(&models.TrustRelationship{}).
-		Index("gsi1").
-		Filter("Type", "=", "RELATIONSHIP").
-		Limit(limit * 2) // Get more to account for filtering
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
-	}
-
-	var models []*models.TrustRelationship
-	err := query.Scan(&models)
+func (r *UserRepository) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
+	decodedCursor, err := decodeTrustRelationshipCursor(cursor)
 	if err != nil {
-		return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "scan trusted-by")
+		return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "cursor decode")
 	}
 
-	// Filter by trustee ID in memory
-	relationships := make([]*storage.TrustRelationship, 0)
-	expectedPrefix := fmt.Sprintf("TRUSTED#%s#", trusteeID)
-	for _, model := range models {
-		if strings.HasPrefix(model.GSI1PK, expectedPrefix) {
-			relationships = append(relationships, r.modelToTrustRelationship(model))
-			if len(relationships) >= limit {
-				break
-			}
+	startCategoryIndex := 0
+	categoryCursorSK := decodedCursor.LastSK
+	if decodedCursor.Category != "" {
+		startCategoryIndex = trustCategoryIndex(decodedCursor.Category)
+		if startCategoryIndex < 0 {
+			return nil, "", ErrorHandler.HandleQueryError(storage.ErrInvalidInput, "trust relationship", "invalid cursor category")
 		}
 	}
 
-	// Scans do not expose native cursors in DynamORM, so we stop here
-	nextCursor := ""
+	relationships := make([]*storage.TrustRelationship, 0, limit)
+	for i := startCategoryIndex; i < len(trustRelationshipCategoryOrder) && len(relationships) < limit; i++ {
+		category := trustRelationshipCategoryOrder[i]
+		gsi1PK := fmt.Sprintf("TRUSTED#%s#%s", trusteeID, category)
 
-	return relationships, nextCursor, nil
+		remaining := limit - len(relationships)
+		query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", gsi1PK).
+			OrderBy("gsi1SK", "ASC").
+			Limit(remaining + 1)
+
+		if categoryCursorSK != "" {
+			query = query.Where("gsi1SK", ">", categoryCursorSK)
+		}
+
+		var page []*models.TrustRelationship
+		if err := query.All(&page); err != nil {
+			return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "list trusted-by")
+		}
+
+		if len(page) == 0 {
+			categoryCursorSK = ""
+			continue
+		}
+
+		hasMore := len(page) > remaining
+		if hasMore {
+			page = page[:remaining]
+		}
+
+		for _, model := range page {
+			relationships = append(relationships, r.modelToTrustRelationship(model))
+		}
+
+		if hasMore {
+			nextCursor := encodeTrustRelationshipCursor(trustRelationshipCursor{
+				Category: string(category),
+				LastSK:   page[len(page)-1].GSI1SK,
+			})
+			return relationships, nextCursor, nil
+		}
+
+		// If we hit the requested limit exactly at a category boundary, advance the cursor
+		// to the next category so callers can continue pagination.
+		if len(relationships) >= limit {
+			if i+1 < len(trustRelationshipCategoryOrder) {
+				nextCursor := encodeTrustRelationshipCursor(trustRelationshipCursor{
+					Category: string(trustRelationshipCategoryOrder[i+1]),
+					LastSK:   "",
+				})
+				return relationships, nextCursor, nil
+			}
+			return relationships, "", nil
+		}
+
+		categoryCursorSK = ""
+	}
+
+	return relationships, "", nil
 }
 
 // GetTrustScore retrieves a cached trust score or calculates it
@@ -1566,32 +1648,6 @@ func (r *UserRepository) RecordTrustUpdate(_ context.Context, update *storage.Tr
 	)
 
 	return nil
-}
-
-// GetAllTrustRelationships retrieves all trust relationships for admin visualization
-func (r *UserRepository) GetAllTrustRelationships(_ context.Context, limit int) ([]*storage.TrustRelationship, error) {
-	// Scan with filter for type
-	query := r.GetDB().Model(&models.TrustRelationship{}).
-		Filter("Type", "=", "RELATIONSHIP").
-		Limit(limit)
-
-	var models []*models.TrustRelationship
-	if err := query.Scan(&models); err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "trust relationship", "scan all")
-	}
-
-	// Convert to storage types
-	relationships := make([]*storage.TrustRelationship, len(models))
-	for i, model := range models {
-		relationships[i] = r.modelToTrustRelationship(model)
-	}
-
-	r.logger.Debug("Retrieved all trust relationships",
-		zap.Int("count", len(relationships)),
-		zap.Int("limit", limit),
-	)
-
-	return relationships, nil
 }
 
 // Helper methods

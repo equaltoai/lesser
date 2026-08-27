@@ -56,14 +56,13 @@ func TestExportRepository_Round08_CoverageSweep(t *testing.T) {
 		exportRecord.UpdateKeys()
 	}).Return(nil).Maybe()
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.Export")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.Export")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]*models.Export)
 		*items = []*models.Export{
 			{ID: "exp-1", Username: "alice", Type: "archive", Status: StatusCompleted, CreatedAt: baseTime.Add(-2 * time.Hour)},
 			{ID: "exp-2", Username: "alice", Type: "followers", Status: StatusFailed, CreatedAt: baseTime.Add(-1 * time.Hour)},
 		}
 	}).Return(nil).Maybe()
-	mockQuery.On("Scan", mock.Anything).Return(nil).Maybe()
 
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Export")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]*models.Export)

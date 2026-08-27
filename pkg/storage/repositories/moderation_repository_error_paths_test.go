@@ -222,43 +222,25 @@ func TestModerationRepository_GetDecisionHistory_NotFoundAndError(t *testing.T) 
 	})
 }
 
-func TestModerationRepository_deleteFilterEntity_SuccessAndInvalidType(t *testing.T) {
+func TestModerationRepository_DeleteFilterEntity_KeyedDeletes(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("DeleteFilterKeyword succeeds when entity found", func(t *testing.T) {
+	t.Run("DeleteFilterKeyword issues keyed delete", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]models.FilterKeyword)
-			*target = []models.FilterKeyword{{FilterID: "filter-1"}}
-		}).Return(nil).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
-		require.NoError(t, repo.DeleteFilterKeyword(ctx, "keyword-1"))
+		require.NoError(t, repo.DeleteFilterKeyword(ctx, "filter-1", "keyword-1"))
 	})
 
-	t.Run("DeleteFilterStatus succeeds when entity found", func(t *testing.T) {
+	t.Run("DeleteFilterStatus issues keyed delete", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]models.FilterStatus)
-			*target = []models.FilterStatus{{FilterID: "filter-1"}}
-		}).Return(nil).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
-		require.NoError(t, repo.DeleteFilterStatus(ctx, "status-id-1"))
-	})
-
-	t.Run("invalid entity type returns error", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-
-		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
-		err := repo.deleteFilterEntity(ctx, "id-1", "KEYWORD", &struct{}{})
-		require.Error(t, err)
+		require.NoError(t, repo.DeleteFilterStatus(ctx, "filter-1", "status-id-1"))
 	})
 }
 

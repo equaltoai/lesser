@@ -236,27 +236,9 @@ func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, add
 		All(&indexRecords)
 
 	if err != nil || len(indexRecords) == 0 {
-		// Fallback to scanning (less efficient)
-		var modelList []models.WalletCredential
-		err = r.db.WithContext(ctx).Model(&models.WalletCredential{}).
-			Where("address", "=", address).
-			Where("type", "=", walletType).
-			Scan(&modelList)
-
-		if err != nil || len(modelList) == 0 {
-			return nil, ErrorHandler.HandleGetError(nil, EntityWalletCredential, address)
-		}
-
-		model := modelList[0]
-		return &storage.WalletCredential{
-			Username: model.Username,
-			Address:  model.Address,
-			ChainID:  model.ChainID,
-			Type:     model.Type,
-			ENS:      model.ENS,
-			LinkedAt: model.LinkedAt,
-			LastUsed: model.LastUsed,
-		}, nil
+		// The reverse index is the sanctioned lookup path; legacy rows that
+		// predate the index have no indexed projection and are not found.
+		return nil, ErrorHandler.HandleGetError(nil, EntityWalletCredential, address)
 	}
 
 	// Get username from index

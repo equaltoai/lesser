@@ -205,7 +205,7 @@ func TestThreadRepository_GetThreadNodes_MissingReplies(t *testing.T) {
 		mockDB.On("Model", mock.AnythingOfType("*models.ThreadNode")).Return(mockQuery)
 		mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 		mockQuery.On("Where", "SK", "begins_with", "NODE#").Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.AnythingOfType("*[]*models.ThreadNode")).Return(fmt.Errorf("scan failed")).Once()
+		mockQuery.On("All", mock.AnythingOfType("*[]*models.ThreadNode")).Return(fmt.Errorf("scan failed")).Once()
 
 		nodes, err := repo.GetThreadNodes(context.Background(), "root1")
 		assert.Nil(t, nodes)
@@ -221,7 +221,7 @@ func TestThreadRepository_GetThreadNodes_MissingReplies(t *testing.T) {
 		mockDB.On("Model", mock.AnythingOfType("*models.MissingReply")).Return(mockMissingQuery)
 		mockMissingQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockMissingQuery).Once()
 		mockMissingQuery.On("Where", "SK", "begins_with", "MISSING#").Return(mockMissingQuery).Once()
-		mockMissingQuery.On("Scan", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("scan failed")).Once()
+		mockMissingQuery.On("All", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("scan failed")).Once()
 
 		missing, err := repo.GetMissingReplies(context.Background(), "root1")
 		assert.Nil(t, missing)
@@ -278,7 +278,7 @@ func TestThreadRepository_GetThreadContext_and_helpers(t *testing.T) {
 	// GetThreadNodes query
 	mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "begins_with", "NODE#").Return(mockQuery).Once()
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.ThreadNode")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.ThreadNode")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.ThreadNode)
 		root := models.NewThreadNode("root1", "root1", "", 0, "a1")
 		root.ReplyCount = 1
@@ -291,7 +291,7 @@ func TestThreadRepository_GetThreadContext_and_helpers(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.MissingReply")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "begins_with", "MISSING#").Return(mockQuery).Once()
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MissingReply")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MissingReply")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.MissingReply)
 		*dest = []*models.MissingReply{}
 	}).Return(nil).Once()
@@ -352,7 +352,7 @@ func TestThreadRepository_GetThreadContext_missing_replies_scan_error_continues(
 	// GetThreadNodes query
 	mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "begins_with", "NODE#").Return(mockQuery).Once()
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.ThreadNode")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.ThreadNode")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.ThreadNode)
 		root := models.NewThreadNode("root1", "root1", "", 0, "a1")
 		*dest = []*models.ThreadNode{root}
@@ -362,7 +362,7 @@ func TestThreadRepository_GetThreadContext_missing_replies_scan_error_continues(
 	mockDB.On("Model", mock.AnythingOfType("*models.MissingReply")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "begins_with", "MISSING#").Return(mockQuery).Once()
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("scan failed")).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("scan failed")).Once()
 
 	res, err := repo.GetThreadContext(context.Background(), "s1")
 	assert.NoError(t, err)

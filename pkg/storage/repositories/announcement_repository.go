@@ -494,25 +494,24 @@ func (r *AnnouncementRepository) DeleteAnnouncement(ctx context.Context, id stri
 	}
 
 	// Clean up dismissals
-	// Since dismissals are stored under user keys, we need to query them differently
-	// Note: This is inefficient without a proper GSI
+	// Dismissals are stored under user keys; GSI1 resolves them by announcement.
 	var dismissals []*models.AnnouncementDismissal
 	err = r.db.WithContext(ctx).Model(&models.AnnouncementDismissal{}).
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("ANN_DISMISSED#%s", id)).
 		All(&dismissals)
 
 	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Warn("failed to scan dismissals for cleanup",
+		r.logger.Warn("failed to query dismissals for cleanup",
 			zap.String("announcement_id", id),
 			zap.Error(err))
 	} else {
-		// Delete each dismissal that matches this announcement
+		// Delete each dismissal for this announcement
 		for _, dismissal := range dismissals {
-			if dismissal.AnnouncementID == id {
-				if delErr := r.db.WithContext(ctx).Model(dismissal).Delete(); delErr != nil {
-					r.logger.Warn("failed to delete dismissal during cleanup",
-						zap.String("announcement_id", id),
-						zap.Error(delErr))
-				}
+			if delErr := r.db.WithContext(ctx).Model(dismissal).Delete(); delErr != nil {
+				r.logger.Warn("failed to delete dismissal during cleanup",
+					zap.String("announcement_id", id),
+					zap.Error(delErr))
 			}
 		}
 	}

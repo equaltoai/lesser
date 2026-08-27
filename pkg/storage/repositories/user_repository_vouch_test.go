@@ -42,7 +42,7 @@ func TestUserRepository_GetVouch_NotFound(t *testing.T) {
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = nil
 	}).Return(nil)
@@ -59,7 +59,7 @@ func TestUserRepository_GetVouch_InvalidJSON(t *testing.T) {
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{{VouchData: "not-json"}}
 	}).Return(nil)
@@ -84,7 +84,7 @@ func TestUserRepository_GetVouch_Success(t *testing.T) {
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{{VouchData: string(payload)}}
 	}).Return(nil)
@@ -113,7 +113,7 @@ func TestUserRepository_GetVouchesByActor_FiltersInvalidEntries(t *testing.T) {
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{
 			{VouchData: ""},            // dropped
@@ -143,7 +143,7 @@ func TestUserRepository_UpdateVouchStatus_UpdatesAndStores(t *testing.T) {
 
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{{VouchData: string(payload)}}
 	}).Return(nil)
@@ -162,7 +162,7 @@ func TestUserRepository_GetMonthlyVouchCount_CountsInRange(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{
 			{CreatedAt: time.Date(2025, time.January, 2, 0, 0, 0, 0, time.UTC)},

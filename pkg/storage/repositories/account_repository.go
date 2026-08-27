@@ -2790,7 +2790,7 @@ func (r *AccountRepository) GetAccountPreferences(ctx context.Context, username 
 	err := r.db.WithContext(ctx).Model(&models.UserPreference{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "begins_with", "PREFERENCE#").
-		Scan(&preferences)
+		All(&preferences)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "preferences")

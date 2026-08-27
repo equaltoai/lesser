@@ -278,7 +278,7 @@ func TestRound08_AccountRepositoryAuth_SessionsAndRateLimiting(t *testing.T) {
 		// ClearLoginAttempts deletes attempts + lockout.
 		mockQueryDelErr := new(mocks.MockQuery)
 		mockDBDelErr := new(mocks.MockDB)
-		mockQueryDelErr.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		mockQueryDelErr.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(0).(*[]models.LoginAttempt)
 			*out = append(*out, models.LoginAttempt{PK: "RATELIMIT#user-1", SK: "sk"})
 		}).Return(nil).Once()
