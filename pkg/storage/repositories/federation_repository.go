@@ -134,7 +134,7 @@ func (r *FederationRepository) GetKnownInstances(ctx context.Context, limit int,
 		Limit(limit)
 
 	var instances []models.FederationInstance
-	err := query.Scan(&instances)
+	err := query.All(&instances)
 	if err != nil {
 		r.logger.Error("Failed to query known instances",
 			zap.Int("limit", limit),
@@ -175,7 +175,7 @@ func (r *FederationRepository) GetFederationStatistics(ctx context.Context, star
 		Where("gsi1PK", "=", "FEDERATION_ACTIVE").
 		Where("gsi1SK", ">=", startTime.Format(time.RFC3339)).
 		Where("gsi1SK", "<=", endTime.Format(time.RFC3339)).
-		Scan(&instances)
+		All(&instances)
 
 	if err != nil {
 		r.logger.Error("Failed to query federation statistics",
@@ -223,7 +223,7 @@ func (r *FederationRepository) GetInstanceStats(ctx context.Context, domain stri
 		Where("PK", "=", pk).
 		Where("SK", ">=", fmt.Sprintf("ACTIVITY#%s", startTime.Format("20060102150405"))).
 		Limit(1000).
-		Scan(&activities)
+		All(&activities)
 
 	if err != nil {
 		r.logger.Debug("Failed to query recent activities",
@@ -323,7 +323,7 @@ func (r *FederationRepository) GetFederationCosts(ctx context.Context, startTime
 		Limit(limit)
 
 	var costRecords []models.FederationCost
-	err := query.Scan(&costRecords)
+	err := query.All(&costRecords)
 	if err != nil {
 		r.logger.Error("Failed to query federation costs",
 			zap.Time("start", startTime),
@@ -373,7 +373,7 @@ func (r *FederationRepository) GetInstanceHealthReport(ctx context.Context, doma
 		Where("PK", "=", pk).
 		Where("SK", ">=", fmt.Sprintf("ACTIVITY#%s", startTime.Format("20060102150405"))).
 		Limit(1000). // Sample up to 1000 recent activities
-		Scan(&activities)
+		All(&activities)
 
 	if err != nil {
 		r.logger.Error("Failed to query instance activities",
@@ -455,7 +455,7 @@ func (r *FederationRepository) GetCostProjections(ctx context.Context, period st
 	var costRecords []models.FederationCost
 	err := r.db.WithContext(ctx).Model(&models.FederationCost{}).
 		Where("PK", "=", pk).
-		Scan(&costRecords)
+		All(&costRecords)
 
 	if err != nil {
 		r.logger.Error("Failed to query current costs",
@@ -524,7 +524,7 @@ func (r *FederationRepository) GetFederationNodes(ctx context.Context, depth int
 		Index("gsi1").
 		Where("gsi1PK", "=", "FEDERATION_ACTIVE").
 		Limit(100). // Limit to 100 nodes initially
-		Scan(&nodes)
+		All(&nodes)
 
 	if err != nil {
 		r.logger.Error("Failed to query federation nodes",
@@ -575,7 +575,7 @@ func (r *FederationRepository) GetFederationNodesByHealth(ctx context.Context, h
 		query = query.Limit(100) // Default limit
 	}
 
-	err := query.Scan(&nodes)
+	err := query.All(&nodes)
 	if err != nil {
 		r.logger.Error("Failed to query federation nodes by health",
 			zap.String("health", healthStatus),
@@ -719,7 +719,7 @@ func (r *FederationRepository) CalculateFederationClusters(ctx context.Context) 
 	err := r.db.WithContext(ctx).Model(&models.InstanceCluster{}).
 		Where("PK", "=", "FEDERATION_CLUSTER#CLUSTERS").
 		Limit(50). // Limit to 50 clusters
-		Scan(&clusters)
+		All(&clusters)
 
 	if err != nil && !dynamormErrors.IsNotFound(err) {
 		r.logger.Error("Failed to query federation clusters", zap.Error(err))
@@ -1023,7 +1023,7 @@ func (r *FederationRepository) GetInstanceConnections(ctx context.Context, domai
 		Index("gsi2").
 		Where("gsi2PK", "=", pkValue).
 		Limit(100).
-		Scan(&connections)
+		All(&connections)
 
 	if err != nil {
 		r.logger.Error("Failed to query instance connections",
@@ -1509,7 +1509,7 @@ func (r *FederationRepository) GetAffectedRelationships(ctx context.Context, use
 	err := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Where("PK", "=", fmt.Sprintf("follow#%s", userID)).
 		Filter("SK", "BEGINS_WITH", "following#").
-		Scan(&relationships)
+		All(&relationships)
 
 	if err != nil {
 		r.logger.Error("Failed to query affected relationships",
@@ -1585,7 +1585,7 @@ func (r *FederationRepository) GetRecentInstanceConnections(ctx context.Context,
 		Where("gsi2PK", "=", fmt.Sprintf(storage.InstanceConnectionsKey, domain)).
 		Where("gsi2SK", ">", fmt.Sprintf("%d", cutoffTime.Unix())).
 		Limit(1000).
-		Scan(&connections)
+		All(&connections)
 
 	if err != nil {
 		r.logger.Error("Failed to query recent connections",
@@ -2214,7 +2214,7 @@ func (r *FederationRepository) ListFailedDeliveries(ctx context.Context, limit i
 		Where("gsi1PK", "=", "FAILED_DELIVERIES").
 		Where("gsi1SK", "<=", fmt.Sprintf("%d", now.Unix())).
 		Limit(limit).
-		Scan(&deliveries)
+		All(&deliveries)
 
 	if err != nil {
 		r.logger.Error("Failed to list failed deliveries",
@@ -2359,7 +2359,7 @@ func (r *FederationRepository) getActivitiesFromBoxItems(
 
 	if boxType == "INBOX" {
 		var items []models.InboxItem
-		err := query.Scan(&items)
+		err := query.All(&items)
 		if err != nil {
 			r.logger.Error("Failed to get inbox items",
 				zap.String("actor_id", actorID),
@@ -2380,7 +2380,7 @@ func (r *FederationRepository) getActivitiesFromBoxItems(
 		}
 	} else {
 		var items []models.OutboxItem
-		err := query.Scan(&items)
+		err := query.All(&items)
 		if err != nil {
 			r.logger.Error("Failed to get public outbox items",
 				zap.String("actor_id", actorID),
@@ -2453,7 +2453,7 @@ func (r *FederationRepository) GetOutboxItems(ctx context.Context, actorID strin
 		Limit(limit)
 
 	var items []models.OutboxItem
-	err := query.Scan(&items)
+	err := query.All(&items)
 	if err != nil {
 		r.logger.Error("Failed to get outbox items",
 			zap.String("actor_id", actorID),
@@ -2608,7 +2608,7 @@ func (r *FederationRepository) GetDetailedFederationMetrics(ctx context.Context,
 		query = query.Where("SK", "<=", endTime.Format(time.RFC3339))
 	}
 
-	err := query.Scan(&metrics)
+	err := query.All(&metrics)
 	if err != nil {
 		r.logger.Error("Failed to get federation time series",
 			zap.String("domain", domain),
@@ -2655,7 +2655,7 @@ func (r *FederationRepository) GetDetailedMetricsByPeriod(ctx context.Context, p
 		query = query.Limit(limit)
 	}
 
-	err := query.Scan(&metrics)
+	err := query.All(&metrics)
 	if err != nil {
 		r.logger.Error("Failed to get federation time series by period",
 			zap.String("period", period),
@@ -2918,7 +2918,7 @@ func (r *FederationRepository) GetFederationCostsByUser(ctx context.Context, use
 		query = query.Offset(offset)
 	}
 
-	err := query.Scan(&costs)
+	err := query.All(&costs)
 	if err != nil {
 		r.logger.Error("Failed to query federation costs by user",
 			zap.String("user_id", userID),
@@ -3006,18 +3006,24 @@ func (r *FederationRepository) GetAllFederationEdges(ctx context.Context, limit 
 }
 
 // fetchEdgePageWithCursor fetches a single page of federation edges using cursor
+// The page reads the GSI3 global listing key (FED_EDGES#ALL) maintained by
+// FederationEdge.UpdateKeys — never a full-table scan. The cursor is the
+// exclusive-start gsi3SK of the previous page's extra item.
 func (r *FederationRepository) fetchEdgePageWithCursor(ctx context.Context, cursor string, pageLimit int) ([]*storage.FederationEdge, string, error) {
 	// Request one extra to detect if there are more pages
 	query := r.db.WithContext(ctx).Model(&models.FederationEdge{}).
+		Index("gsi3").
+		Where("gsi3PK", "=", "FED_EDGES#ALL").
+		OrderBy("gsi3SK", "ASC").
 		Limit(pageLimit + 1)
 
-	// Apply cursor if we have one
+	// Apply cursor if we have one (exclusive start on the listing sort key)
 	if cursor != "" {
-		query = query.Cursor(cursor)
+		query = query.Where("gsi3SK", ">", cursor)
 	}
 
 	var edges []models.FederationEdge
-	err := query.Scan(&edges)
+	err := query.All(&edges)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, "federation_edge", "page")
 	}
@@ -3034,7 +3040,7 @@ func (r *FederationRepository) fetchEdgePageWithCursor(ctx context.Context, curs
 		// CRITICAL: Create cursor from the EXTRA item (at index pageLimit) BEFORE trimming
 		// This ensures the next page starts correctly and doesn't skip the extra item
 		extraEdge := edges[pageLimit]
-		nextCursor = Utils.Pagination.EncodeCursor(extraEdge.PK, extraEdge.SK)
+		nextCursor = extraEdge.GSI3SK
 
 		// Now trim to requested page size for return
 		edges = edges[:pageLimit]
@@ -3067,7 +3073,7 @@ func (r *FederationRepository) GetFederationClusters(ctx context.Context, limit 
 		Limit(limit)
 
 	var clusters []models.InstanceCluster
-	err := query.Scan(&clusters)
+	err := query.All(&clusters)
 	if err != nil {
 		r.logger.Error("Failed to query federation clusters",
 			zap.Int("limit", limit),
@@ -3225,7 +3231,7 @@ func (r *FederationRepository) fetchActivityPage(ctx context.Context, dayKey, la
 	}
 
 	var activities []models.FederationCostActivity
-	err := query.Scan(&activities)
+	err := query.All(&activities)
 	return activities, err
 }
 

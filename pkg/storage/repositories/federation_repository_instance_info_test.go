@@ -223,7 +223,7 @@ func TestFederationRepository_GetKnownInstances_Success(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "FEDERATION_ACTIVE").Return(mockQuery)
 	mockQuery.On("Limit", limit).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationInstance")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationInstance")).Run(func(args mock.Arguments) {
 		instances := args.Get(0).(*[]models.FederationInstance)
 		*instances = []models.FederationInstance{
 			{
@@ -272,7 +272,7 @@ func TestFederationRepository_GetKnownInstances_QueryError(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "FEDERATION_ACTIVE").Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationInstance")).Return(testErr)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationInstance")).Return(testErr)
 
 	// Execute
 	results, cursor, err := repo.GetKnownInstances(ctx, 10, "")
@@ -300,7 +300,7 @@ func TestFederationRepository_GetKnownInstances_EmptyResults(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "FEDERATION_ACTIVE").Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationInstance")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationInstance")).Run(func(args mock.Arguments) {
 		instances := args.Get(0).(*[]models.FederationInstance)
 		*instances = []models.FederationInstance{}
 	}).Return(nil)
@@ -339,7 +339,7 @@ func TestFederationRepository_GetFederationCosts_Success(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.FederationCost")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", expectedPK).Return(mockQuery)
 	mockQuery.On("Limit", limit).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationCost")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationCost")).Run(func(args mock.Arguments) {
 		costs := args.Get(0).(*[]models.FederationCost)
 		*costs = []models.FederationCost{
 			{
@@ -398,7 +398,7 @@ func TestFederationRepository_GetFederationCosts_QueryError(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.FederationCost")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationCost")).Return(testErr)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationCost")).Return(testErr)
 
 	// Execute
 	results, cursor, err := repo.GetFederationCosts(ctx, startTime, endTime, 10, "")

@@ -547,8 +547,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 	})
 
 	t.Run("federation instance endpoints", func(t *testing.T) {
-		t.Run("instances list scan error returns 500", func(t *testing.T) {
-			state := &round10QueryState{scanErrorOnce: errors.New("boom")}
+		t.Run("instances list query error returns 500", func(t *testing.T) {
+			state := &round10QueryState{allErrorOnce: errors.New("boom")}
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/instances", headers, nil, nil)
 			require.NoError(t, err)
@@ -671,8 +671,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			require.Equal(t, "remote.example", body.Instance.Domain)
 		})
 
-		t.Run("statistics scan error returns 500", func(t *testing.T) {
-			state := &round10QueryState{scanErrorOnce: errors.New("boom")}
+		t.Run("statistics query error returns 500", func(t *testing.T) {
+			state := &round10QueryState{allErrorOnce: errors.New("boom")}
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/statistics", headers, nil, nil)
 			require.NoError(t, err)
