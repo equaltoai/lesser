@@ -271,6 +271,37 @@ func TestBatchN2_ListUsersByRole_PageCappedWalk(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestBatchN2_ListUsersByRole_PageCapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3PK", "=", "ROLE#admin").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.User)
+		*dest = make([]models.User, 500)
+	}
+	// Exactly 100 full pages with more available: the walk must fail closed at
+	// the 100-page cap. A `>` vs `>=` off-by-one changes the call count.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.User")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	repo := NewUserRepository(mockDB, "test-table", zap.NewNop())
+	users, err := repo.ListUsersByRole(ctx, "admin")
+	// Cap exhaustion must propagate (nil result, sentinel error) — reverting to
+	// the pre-existing swallow returns an empty non-nil list with a nil error
+	// and dies on both assertions below.
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	require.Nil(t, users)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 // ===== user_repository.go — limit clamps =====
 
 func TestBatchN2_GetReputationHistory_LimitClamped(t *testing.T) {

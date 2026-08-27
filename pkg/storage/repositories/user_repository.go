@@ -2984,6 +2984,12 @@ func (r *UserRepository) ListUsersByRole(ctx context.Context, role string) ([]*s
 		},
 	)
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no users have this role" — a >50k-row partition must not degrade to
+		// an empty list; only other errors keep the pre-existing swallow.
+		if stdErrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		// If the GSI doesn't exist or no users found, return empty list
 		if errors.IsNotFound(err) {
 			return []*storage.User{}, nil
