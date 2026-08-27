@@ -1518,3 +1518,73 @@ func TestBatchN3_GetMediaAnalyticsByDate_TracksCost(t *testing.T) {
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
+
+func TestBatchN3_CountStatusesForAdmin_RemoteOnlyPageLoop(t *testing.T) {
+	t.Setenv("DOMAIN", "example.com")
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Status")).Return(mockQuery)
+	mockQuery.On("Index", "gsi8").Return(mockQuery)
+	mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
+	mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi8SK", "DESC").Return(mockQuery)
+	mockQuery.On("Limit", 201).Return(mockQuery)
+	// One page with one local and one remote status; the local-domain row is
+	// excluded from the remote-only count.
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Status)
+		*dest = []models.Status{
+			{StatusID: "local-1", AuthorID: "https://example.com/users/a"},
+			{StatusID: "remote-1", AuthorID: "https://other.example/users/b"},
+		}
+	}).Return(nil).Once()
+
+	repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
+	count, err := repo.CountStatusesForAdmin(ctx, &interfaces.StatusFilter{Remote: boolPtr(true)})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), count)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetUserBudgets_QueryError(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.NotificationBudget")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "NOTIF_BUDGET#alice").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.NotificationBudget")).Return(nil, errors.New("boom")).Once()
+
+	repo := NewNotificationCostRepository(mockDB, "test-table", zap.NewNop(), nil)
+	_, err := repo.GetUserBudgets(ctx, "alice")
+	require.Error(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetDailySpending_QueryError(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.NotificationCostTracking")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "USER#alice").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "<", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.NotificationCostTracking")).Return(nil, errors.New("boom")).Once()
+
+	repo := NewNotificationCostRepository(mockDB, "test-table", zap.NewNop(), nil)
+	_, err := repo.GetDailySpending(ctx, "alice")
+	require.Error(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
