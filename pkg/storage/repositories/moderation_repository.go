@@ -2883,14 +2883,21 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 	r.logger.Debug("Getting pending moderation count for moderator",
 		zap.String("moderator_id", moderatorID))
 
-	// Count assigned reports that are still pending (open or in progress)
+	// Count assigned reports that are still pending (open or in progress).
+	// Reports resolve through the GSI4 assignee index (ASSIGNED#<assignee> /
+	// <status>#REPORT#<createdAtUnix>) maintained by Report.UpdateKeys (wave
+	// part 2 batch E, #1469); per-status counts are keyed sort-key ranges.
+	// Legacy assigned reports written before the GSI4 shape carry no index
+	// keys and are not counted until next written (assign/status updates
+	// refresh the keys).
 	var reportCount int
 
 	// Get open reports
 	openReportModels := []models.Report{}
 	err := r.db.WithContext(ctx).Model(&models.Report{}).
-		Where("AssignedTo", "=", moderatorID).
-		Where("Status", "=", string(storage.ReportStatusOpen)).
+		Index("gsi4").
+		Where("gsi4PK", "=", fmt.Sprintf("ASSIGNED#%s", moderatorID)).
+		Where("gsi4SK", "begins_with", string(storage.ReportStatusOpen)+"#REPORT#").
 		All(&openReportModels)
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Warn("failed to query open assigned reports",
@@ -2901,8 +2908,9 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 	// Get in-progress reports
 	inProgressReportModels := []models.Report{}
 	err = r.db.WithContext(ctx).Model(&models.Report{}).
-		Where("AssignedTo", "=", moderatorID).
-		Where("Status", "=", string(storage.ReportStatusInProgress)).
+		Index("gsi4").
+		Where("gsi4PK", "=", fmt.Sprintf("ASSIGNED#%s", moderatorID)).
+		Where("gsi4SK", "begins_with", string(storage.ReportStatusInProgress)+"#REPORT#").
 		All(&inProgressReportModels)
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Warn("failed to query in-progress assigned reports",
@@ -2912,12 +2920,17 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 
 	reportCount = len(openReportModels) + len(inProgressReportModels)
 
-	// Count assigned flags that are still pending
+	// Count assigned flags that are still pending. The Flag model has no
+	// AssignedTo attribute (verified in wave part 2 batch E, #1469), so the
+	// assignee filter has never matched and this count is zero; the read is
+	// keyed on the existing GSI2 (FLAG_STATUS#pending) with the assignee
+	// filter preserved so behavior is unchanged but the query no longer scans.
 	var flagCount int
 	flagModels := []models.Flag{}
 	err = r.db.WithContext(ctx).Model(&models.Flag{}).
-		Where("AssignedTo", "=", moderatorID).
-		Where("Status", "=", string(storage.FlagStatusPending)).
+		Index("gsi2").
+		Where("gsi2PK", "=", "FLAG_STATUS#pending").
+		Filter("AssignedTo", "=", moderatorID).
 		All(&flagModels)
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Warn("failed to query assigned flags",
@@ -3291,14 +3304,16 @@ func (r *ModerationRepository) addToReviewQueue(ctx context.Context, decision *m
 
 // GetModerationDecisionsByModerator retrieves moderation decisions made by a specific moderator
 func (r *ModerationRepository) GetModerationDecisionsByModerator(ctx context.Context, moderatorUsername string, limit int) ([]*models.ModerationReview, error) {
-	// Query moderation reviews by reviewer ID using the existing key structure
-	// ModerationReview has SK=REVIEWER#{reviewer_id}, so we can scan for reviews by this moderator
+	// Query moderation reviews by reviewer via the GSI1 reviewer index
+	// (REVIEWER#<reviewerID> / TIME#<created>#REVIEW#<eventID>) maintained by
+	// ModerationReview.UpdateKeys (batch A shape, umbrella #1469). The previous
+	// SK=REVIEWER#… chain compiled to a full table scan; this binds gsi1PK.
 
 	var reviews []*models.ModerationReview
 
-	// Query reviews where SK starts with "REVIEWER#{moderatorUsername}"
 	query := r.db.WithContext(ctx).Model(&models.ModerationReview{}).
-		Where("SK", "=", fmt.Sprintf("REVIEWER#%s", moderatorUsername))
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("REVIEWER#%s", moderatorUsername))
 
 	if limit > 0 {
 		query = query.Limit(limit)

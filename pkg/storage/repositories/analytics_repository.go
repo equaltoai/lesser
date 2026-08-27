@@ -108,14 +108,13 @@ func (r *TrendingRepository) RecordHashtagUsage(ctx context.Context, hashtag str
 // RecordStatusEngagement records engagement on a status (like, boost, reply)
 func (r *TrendingRepository) RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error {
 	engagement := &models.StatusEngagement{
-		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("%s#%s#%s", engagementType, time.Now().Format("20060102150405"), userID),
 		StatusID:       statusID,
 		EngagementType: engagementType,
 		UserID:         userID,
 		EngagedAt:      time.Now(),
 		TTL:            time.Now().Add(7 * 24 * time.Hour).Unix(),
 	}
+	_ = engagement.UpdateKeys() // sets PK/SK + GSI1 global listing (wave batch E)
 
 	err := r.db.WithContext(ctx).Model(engagement).Create()
 	if err != nil {
@@ -133,14 +132,13 @@ func (r *TrendingRepository) RecordStatusEngagement(ctx context.Context, statusI
 // RecordLinkShare records when a link is shared in a status
 func (r *TrendingRepository) RecordLinkShare(ctx context.Context, linkURL string, statusID string, authorID string) error {
 	share := &models.LinkShare{
-		PK:       fmt.Sprintf("LINK_SHARE#%s", linkURL),
-		SK:       fmt.Sprintf("STATUS#%s", statusID),
 		URL:      linkURL,
 		StatusID: statusID,
 		AuthorID: authorID,
 		SharedAt: time.Now(),
 		TTL:      time.Now().Add(7 * 24 * time.Hour).Unix(),
 	}
+	_ = share.UpdateKeys() // sets PK/SK + GSI1 global listing (wave batch E)
 
 	err := r.db.WithContext(ctx).Model(share).Create()
 	if err != nil {
@@ -627,13 +625,17 @@ func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.T
 		limit = 20
 	}
 
-	// Since DynamoDB doesn't allow direct queries on non-key attributes like UsedAt,
-	// we'll use the existing hashtag metadata approach which tracks LastUsed
+	// Hashtag metadata resolves through the GSI1 global listing
+	// (HASHTAGS#ALL / <LastUsed RFC3339>#<name>) maintained by
+	// Hashtag.UpdateKeys (wave part 2 batch E, #1469); the recent window is a
+	// keyed sort-key range. Legacy hashtag rows written before the GSI1 shape
+	// carry no index keys and are not returned until next written.
 	var hashtagModels []*models.Hashtag
 	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Where("SK", "=", "METADATA").
-		Where("LastUsed", ">=", since.Format(time.RFC3339)).
-		OrderBy("LastUsed", "DESC"). // Recent first
+		Index("gsi1").
+		Where("gsi1PK", "=", "HASHTAGS#ALL").
+		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
+		OrderBy("gsi1SK", "DESC"). // Recent first
 		Limit(limit).
 		All(&hashtagModels)
 
@@ -664,11 +666,18 @@ func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.T
 
 // GetRecentStatusesWithEngagement returns recent statuses with engagement since the given time
 func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
-	// Query recent status engagements
+	// Recent status engagements resolve through the GSI1 global listing
+	// (ENGAGEMENTS#ALL / <EngagedAt RFC3339>#<statusID>#<userID>) maintained
+	// by StatusEngagement.UpdateKeys (wave part 2 batch E, #1469); the since
+	// window is a keyed sort-key range. Legacy engagement rows written before
+	// the GSI1 shape carry no index keys and are not returned until next
+	// written (engagements are TTL-transient, 7d).
 	var engagements []models.StatusEngagement
 	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("EngagedAt", ">=", since).
-		OrderBy("EngagedAt", "DESC").
+		Index("gsi1").
+		Where("gsi1PK", "=", "ENGAGEMENTS#ALL").
+		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit * 10). // Get more to aggregate by status
 		All(&engagements)
 
@@ -730,11 +739,18 @@ func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context
 
 // GetRecentLinks returns recent links since the given time (no trending calculation)
 func (r *TrendingRepository) GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
-	// Query recent link shares
+	// Recent link shares resolve through the GSI1 global listing
+	// (LINK_SHARES#ALL / <SharedAt RFC3339>#<url>#<statusID>) maintained by
+	// LinkShare.UpdateKeys (wave part 2 batch E, #1469); the since window is a
+	// keyed sort-key range. Legacy share rows written before the GSI1 shape
+	// carry no index keys and are not returned until next written (shares are
+	// TTL-transient, 7d).
 	var shares []models.LinkShare
 	err := r.db.WithContext(ctx).Model(&models.LinkShare{}).
-		Where("SharedAt", ">=", since).
-		OrderBy("SharedAt", "DESC").
+		Index("gsi1").
+		Where("gsi1PK", "=", "LINK_SHARES#ALL").
+		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit * 5). // Get more to aggregate by URL
 		All(&shares)
 
@@ -962,72 +978,14 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 
 // GetPopularSearchQueries retrieves the most popular search queries
 func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
-	// Calculate time cutoff
-	cutoff := time.Now().Add(-timeWindow)
-
-	// Query recent search queries
-	var queries []models.SearchQuery
-	err := r.db.WithContext(ctx).Model(&models.SearchQuery{}).
-		Where("SearchedAt", ">=", cutoff).
-		OrderBy("SearchedAt", "DESC").
-		Limit(1000). // Get more to aggregate
-		Scan(&queries)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return []storage.SearchQueryStats{}, nil
-		}
-		r.logger.Error("failed to query search queries", zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "search query", "popular queries")
-	}
-
-	// Aggregate by query
-	queryMap := make(map[string]*storage.SearchQueryStats)
-	userMap := make(map[string]map[string]bool) // query -> set of users
-
-	for _, q := range queries {
-		if stats, exists := queryMap[q.Query]; exists {
-			stats.Count++
-			stats.AvgResults = (stats.AvgResults*float64(stats.Count-1) + float64(q.ResultCount)) / float64(stats.Count)
-			if q.SearchedAt.After(stats.LastUsed) {
-				stats.LastUsed = q.SearchedAt
-			}
-		} else {
-			queryMap[q.Query] = &storage.SearchQueryStats{
-				Query:      q.Query,
-				Count:      1,
-				AvgResults: float64(q.ResultCount),
-				LastUsed:   q.SearchedAt,
-			}
-			userMap[q.Query] = make(map[string]bool)
-		}
-
-		// Track unique users
-		userMap[q.Query][q.UserID] = true
-	}
-
-	// Calculate unique user counts and convert to slice
-	results := make([]storage.SearchQueryStats, 0, len(queryMap))
-	for query, stats := range queryMap {
-		stats.UserCount = len(userMap[query])
-		results = append(results, *stats)
-	}
-
-	// Sort by count (most popular first)
-	for i := 0; i < len(results)-1; i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[i].Count < results[j].Count {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
-
-	// Apply limit
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	return results, nil
+	// Delegates to the maintained counter-based path: TrackSearchQuery →
+	// updatePopularQueries → IncrementQueryCount writes PopularQueryCounter
+	// rows keyed on GSI8 (POPULAR#<bucket>#<date> / COUNT#<count>#<hash>), and
+	// GetTopQueries reads them with a keyed GSI8 query. The previous raw-row
+	// scan (SearchQuery by SearchedAt) was an unkeyed full-table scan
+	// (eliminated in wave part 2 batch E, #1469); the counter rows it would
+	// have aggregated are the same ones IncrementQueryCount maintains.
+	return r.GetTopQueries(ctx, limit, timeWindow)
 }
 
 // GetUserSearchHistory retrieves a user's search history

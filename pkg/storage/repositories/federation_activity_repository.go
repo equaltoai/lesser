@@ -138,14 +138,21 @@ func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID 
 func (r *FederationActivityRepository) GetRecentActivities(ctx context.Context, since time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
-	// Use type index to get recent activities (preserve federation monitoring logic)
+	// Recent activities resolve through the GSI3 global listing
+	// (FED_ACTIVITY#ALL / <RFC3339 timestamp>#<domain>#<id>) maintained by
+	// FederationActivity.setupGSIKeys on every write (wave part 2 batch E,
+	// #1469). The previous gsi1 sort-key-only range was an index-wide scan;
+	// this binds the gsi3 partition key. Legacy activities written before the
+	// GSI3 shape carry no index keys and are not returned until next written
+	// (activities are TTL-transient, 90d).
 	startSK := since.Format(time.RFC3339)
 
 	// Use BaseRepository's underlying db but preserve federation-specific recent query logic
 	err := r.db.WithContext(ctx).Model(&models.FederationActivity{}).
-		Index("gsi1").
-		Where("gsi1SK", ">=", startSK).
-		OrderBy("gsi1SK", "DESC").
+		Index("gsi3").
+		Where("gsi3PK", "=", "FED_ACTIVITY#ALL").
+		Where("gsi3SK", ">=", startSK).
+		OrderBy("gsi3SK", "DESC").
 		Limit(limit).
 		All(&activities)
 

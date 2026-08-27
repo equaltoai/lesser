@@ -347,12 +347,18 @@ type EnhancedTrendingScore struct {
 func (te *TrendingEngine) getCandidateHashtags(ctx context.Context, since time.Time) ([]*models.Hashtag, error) {
 	var candidates []*models.Hashtag
 
-	// Query recent hashtags directly using DynamORM
+	// Hashtag metadata resolves through the GSI1 global listing
+	// (HASHTAGS#ALL / <LastUsed RFC3339>#<name>) maintained by
+	// Hashtag.UpdateKeys (wave part 2 batch E, #1469); the since window is a
+	// keyed sort-key range and the UsageCount threshold stays a filter.
+	// Legacy hashtag rows written before the GSI1 shape carry no index keys
+	// and are not candidates until next written.
 	err := te.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Where("SK", "=", "METADATA").
-		Filter("LastUsed", ">=", since.Format(time.RFC3339)).
+		Index("gsi1").
+		Where("gsi1PK", "=", "HASHTAGS#ALL").
+		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
 		Filter("UsageCount", ">=", te.config.MinimumUsage).
-		OrderBy("LastUsed", "DESC").
+		OrderBy("gsi1SK", "DESC").
 		Limit(te.config.CandidateLimit).
 		All(&candidates)
 

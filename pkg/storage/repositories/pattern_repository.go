@@ -141,7 +141,7 @@ func (r *PatternRepository) GetPattern(ctx context.Context, patternID string) (*
 func (r *PatternRepository) GetPatterns(ctx context.Context, category string, activeOnly bool) ([]*models.ModerationPattern, error) {
 	patterns := []*models.ModerationPattern{}
 
-	// Build filters for BaseRepository QueryWithFilter method
+	// Build filters for the pattern listing
 	filters := make(map[string]interface{})
 	if category != "" {
 		filters["Category"] = category
@@ -150,10 +150,14 @@ func (r *PatternRepository) GetPatterns(ctx context.Context, category string, ac
 		filters["Active"] = true
 	}
 
-	// For patterns, we need to scan all patterns (PK prefix "PATTERN#") and apply filters
-	// Since patterns don't share a common PK, we'll use the direct DB query approach
+	// The all-patterns listing resolves through the GSI3 global-listing key
+	// (MODERATION_PATTERNS#ALL) maintained by ModerationPattern.UpdateKeys —
+	// the same keyed shape batch A introduced for GetModerationPatterns
+	// (umbrella #1469). The previous SK=METADATA chain compiled to a full
+	// table scan; this query binds the gsi3 partition key.
 	query := r.GetDB().WithContext(ctx).Model(&models.ModerationPattern{}).
-		Where("SK", "=", models.SKMetadata)
+		Index("gsi3").
+		Where("gsi3PK", "=", "MODERATION_PATTERNS#ALL")
 
 	// Apply filters
 	for field, value := range filters {
@@ -176,8 +180,8 @@ func (r *PatternRepository) GetPatterns(ctx context.Context, category string, ac
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		if trackErr := r.TrackRead(ctx, "Scan", estimatedRU); trackErr != nil {
-			r.logger.Warn("failed to track pattern scan cost", zap.Error(trackErr))
+		if trackErr := r.TrackRead(ctx, "Query", estimatedRU); trackErr != nil {
+			r.logger.Warn("failed to track pattern query cost", zap.Error(trackErr))
 		}
 	}
 

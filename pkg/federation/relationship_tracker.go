@@ -527,7 +527,7 @@ func (rt *RelationshipTracker) processStateTransitions(ctx context.Context) erro
 			Index(models.IndexGSI1).
 			Where("gsi1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", state)).
 			Limit(100). // Process in batches
-			Scan(&relationships)
+			All(&relationships)
 
 		if err != nil {
 			rt.logger.Error("Failed to query relationships for state transitions",
@@ -568,7 +568,7 @@ func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) 
 		Where("gsi1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", models.StateDormant)).
 		Where("gsi1SK", "<", fmt.Sprintf("%d", time.Now().Add(-rt.archiveAfter).Unix())).
 		Limit(100).
-		Scan(&relationships)
+		All(&relationships)
 
 	if err != nil {
 		rt.logger.Error("Failed to query dormant relationships",
@@ -799,7 +799,7 @@ func (rt *RelationshipTracker) GetUserRelationships(ctx context.Context, userID 
 		Where("PK", "=", fmt.Sprintf("USER#%s#FEDERATION", userID)).
 		Limit(limit)
 
-	err := query.Scan(&relationships)
+	err := query.All(&relationships)
 	if err != nil {
 		rt.logger.Error("Failed to query user relationships",
 			zap.String("user_id", userID),
@@ -834,7 +834,7 @@ func (rt *RelationshipTracker) GetRelationshipsByState(ctx context.Context, stat
 		Where("gsi1PK", "=", fmt.Sprintf("FEDERATION_STATE#%s", state)).
 		Limit(limit)
 
-	err := query.Scan(&relationships)
+	err := query.All(&relationships)
 	if err != nil {
 		rt.logger.Error("Failed to query relationships by state",
 			zap.String("state", string(state)),

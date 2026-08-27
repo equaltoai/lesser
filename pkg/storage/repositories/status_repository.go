@@ -1446,14 +1446,13 @@ func (r *StatusRepository) createEngagementAndIncrement(ctx context.Context, use
 	// Create an engagement record using the existing StatusEngagement model
 	now := time.Now()
 	engagement := &models.StatusEngagement{
-		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("%s#%d#%s", engagementType, now.UnixNano(), userID),
 		StatusID:       statusID,
 		EngagementType: engagementType,
 		UserID:         userID,
 		EngagedAt:      now,
 		TTL:            now.AddDate(0, 0, 7).Unix(), // 7 day TTL
 	}
+	_ = engagement.UpdateKeys() // sets PK/SK + GSI1 global listing (wave batch E)
 
 	err := r.db.WithContext(ctx).Model(engagement).Create()
 	if err != nil {

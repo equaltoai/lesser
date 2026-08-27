@@ -99,7 +99,7 @@ func (r *MediaMetadataRepository) GetMediaMetadataByStatus(ctx context.Context, 
 		query = query.Limit(limit)
 	}
 
-	err := query.Scan(&metadataList)
+	err := query.All(&metadataList)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMediaMetadataStatusQueryFailed, err)
 	}
@@ -245,7 +245,7 @@ func (r *MediaMetadataRepository) CleanupExpiredMetadata(ctx context.Context) er
 		Where("gsi1PK", "=", "STATUS#failed").
 		Where("gsi1SK", "<", fmt.Sprintf("PROCESSED#%s", cutoffTime.Format(time.RFC3339))).
 		Limit(100). // Process in batches
-		Scan(&expiredMetadata)
+		All(&expiredMetadata)
 
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrExpiredMediaMetadataQueryFailed, err)

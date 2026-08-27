@@ -85,7 +85,7 @@ func (r *MediaAnalyticsRepository) GetMediaAnalyticsByDate(ctx context.Context, 
 
 	// Use BaseRepository database for GSI queries (not yet abstracted in BaseRepository)
 	var analyticsList []*models.MediaAnalytics
-	err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("gsi1PK", "=", gsi1pk).Scan(&analyticsList)
+	err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("gsi1PK", "=", gsi1pk).All(&analyticsList)
 
 	if err != nil {
 		r.logger.Error("Failed to get media analytics by date",
@@ -110,7 +110,7 @@ func (r *MediaAnalyticsRepository) GetMediaAnalyticsByVariant(ctx context.Contex
 
 	// Use BaseRepository database for GSI queries
 	var analyticsList []*models.MediaAnalytics
-	err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("gsi2PK", "=", gsi2pk).Scan(&analyticsList)
+	err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("gsi2PK", "=", gsi2pk).All(&analyticsList)
 
 	if err != nil {
 		r.logger.Error("Failed to get media analytics by variant",
@@ -547,7 +547,7 @@ func (r *MediaAnalyticsRepository) GetMediaAnalyticsByTimeRange(ctx context.Cont
 		var dayAnalytics []*models.MediaAnalytics
 		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
 			Where("gsi1PK", "=", gsi1pk).
-			Scan(&dayAnalytics)
+			All(&dayAnalytics)
 
 		if err != nil {
 			r.logger.Error("Failed to get media analytics for day",
@@ -597,7 +597,7 @@ func (r *MediaAnalyticsRepository) GetAllMediaAnalyticsByTimeRange(ctx context.C
 		var dayAnalytics []*models.MediaAnalytics
 		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
 			Where("gsi1PK", "=", gsi1pk).
-			Scan(&dayAnalytics)
+			All(&dayAnalytics)
 
 		if err != nil {
 			r.logger.Error("Failed to get all media analytics for day",
@@ -656,7 +656,7 @@ func (r *MediaAnalyticsRepository) GetBandwidthByTimeRange(ctx context.Context, 
 		var dayAnalytics []*models.MediaAnalytics
 		err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).
 			Where("gsi1PK", "=", gsi1pk).
-			Scan(&dayAnalytics)
+			All(&dayAnalytics)
 
 		if err != nil {
 			r.logger.Error("Failed to get bandwidth data for day",
