@@ -174,7 +174,7 @@ func (s *SearchServiceIntegration) BudgetManagementExample(ctx context.Context, 
 }
 
 // PerformanceAnalyticsExample demonstrates performance analytics collection
-func (s *SearchServiceIntegration) PerformanceAnalyticsExample(ctx context.Context, _ string, _ int) (*PerformanceAnalytics, error) {
+func (s *SearchServiceIntegration) PerformanceAnalyticsExample(_ context.Context, _ string, _ int) (*PerformanceAnalytics, error) {
 	// Calculate efficiency metrics
 	analytics := &PerformanceAnalytics{
 		PopularQueries: nil,

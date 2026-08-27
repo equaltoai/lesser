@@ -451,19 +451,6 @@ func generateSessionID() (string, error) {
 	return "session_" + hex.EncodeToString(randomBytes), nil
 }
 
-// verifyRecoveryCodeHash verifies a recovery code against its bcrypt hash
-func (r *AccountRepository) verifyRecoveryCodeHash(code, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(code))
-	if err != nil {
-		if err != bcrypt.ErrMismatchedHashAndPassword {
-			r.logger.Debug("error verifying recovery code hash",
-				zap.Error(err))
-		}
-		return false
-	}
-	return true
-}
-
 // extractUsernameFromPK extracts username from USER#{username} format
 func extractUsernameFromPK(pk string) string {
 	if !strings.HasPrefix(pk, "USER#") {
