@@ -8,7 +8,9 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -436,4 +438,47 @@ func TestMiddleware_WithExistingHeaders(t *testing.T) {
 	require.NotNil(t, response)
 	assert.Equal(t, "application/json", response.Headers["Content-Type"])
 	assert.Contains(t, response.Headers, "X-Cost-Total-Microcents")
+}
+
+func TestSaveCostWithRetry_BufferFlushAndRetryPaths(t *testing.T) {
+	originalStorage := globalCostStorage
+	originalBuffer := costBuffer
+	defer func() {
+		globalCostStorage = originalStorage
+		costBuffer = originalBuffer
+	}()
+
+	t.Run("flushes buffered costs then saves current", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockDB.On("WithContext", mock.Anything).Return(mockDB)
+		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("Create").Return(nil)
+
+		globalCostStorage = NewStorage(mockDB, "cost-history", zap.NewNop())
+		costBuffer = []*OperationCost{{RequestID: "buffered-1", TotalCostMicroCents: 500}}
+
+		saveCostWithRetry(context.Background(), &OperationCost{RequestID: "current-1", TotalCostMicroCents: 1000}, zap.NewNop())
+
+		// Buffer was drained and the current cost saved directly.
+		assert.Empty(t, costBuffer)
+	})
+
+	t.Run("failed current save re-buffers after flush", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockDB.On("WithContext", mock.Anything).Return(mockDB)
+		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("Create").Return(errors.New("save failed"))
+
+		globalCostStorage = NewStorage(mockDB, "cost-history", zap.NewNop())
+		costBuffer = []*OperationCost{{RequestID: "buffered-1", TotalCostMicroCents: 500}}
+
+		saveCostWithRetry(context.Background(), &OperationCost{RequestID: "current-1", TotalCostMicroCents: 1000}, zap.NewNop())
+
+		// The pre-existing entry was drained at flush time; only the failed
+		// current cost lands back in the buffer.
+		require.Len(t, costBuffer, 1)
+		assert.Equal(t, "current-1", costBuffer[0].RequestID)
+	})
 }
