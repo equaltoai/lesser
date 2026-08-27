@@ -278,7 +278,11 @@ func TestGetMediaMetadataByStatus_NoLimit(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaMetadata")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#pending").Return(mockQuery)
-	// No Limit call when limit <= 0
+	// Wave #1469 (degenerate-input class): limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed gsi1 read. The floor now always issues
+	// Limit(500); reverting it (old `if limit > 0` gate) leaves this
+	// expectation unfulfilled and the test dies.
+	mockQuery.On("Limit", 500).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{}

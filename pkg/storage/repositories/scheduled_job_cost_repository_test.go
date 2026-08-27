@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -290,14 +291,16 @@ func TestScheduledJobCostRepository_GetByID_WarnsAndNotFound(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 
-	// First status query fails => warn+continue.
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.ScheduledJobCostRecord")).Return(errors.New("query failed")).Once()
+	// GetByID is now a per-status page-capped walk (wave #1469): Limit(500)/
+	// page via AllPaginated. First status walk fails => warn+continue.
+	mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ScheduledJobCostRecord")).Return(nil, errors.New("query failed")).Once()
 
 	// Next few statuses return records without the ID.
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.ScheduledJobCostRecord")).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ScheduledJobCostRecord")).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ScheduledJobCostRecord)
 		*out = []*models.ScheduledJobCostRecord{{ID: "other", Timestamp: baseTime}}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{}, nil).Maybe()
 
 	repo := NewScheduledJobCostRepository(mockDB, "test-table", logger, nil)
 	_, err := repo.GetByID(ctx, "missing-id")

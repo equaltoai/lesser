@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -86,6 +87,12 @@ func setupPermissiveSearchRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQ
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateSearchRepositorySliceForCoverage(args.Get(0), baseTime)
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks (GetSearchAnalytics) iterate with
+	// AllPaginated.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateSearchRepositorySliceForCoverage(args.Get(0), baseTime)
+	}).Return(&core.PaginatedResult{}, nil).Maybe()
 
 	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 		populateSearchRepositoryStructForCoverage(args.Get(0), 0, baseTime)
@@ -677,7 +684,10 @@ func TestSearchRepository_GetPopularSearches_AggregatesAboveMinCount(t *testing.
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.SearchAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.SearchAnalytics")).Run(func(args mock.Arguments) {
+	// GetSearchAnalytics is a page-capped walk (wave #1469): Limit(500)/page
+	// via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.SearchAnalytics")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.SearchAnalytics)
 		events := make([]models.SearchAnalytics, 0, 6)
 		for i := range 6 {
@@ -693,7 +703,7 @@ func TestSearchRepository_GetPopularSearches_AggregatesAboveMinCount(t *testing.
 			Timestamp:  now,
 		})
 		*dest = events
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{}, nil).Once()
 
 	stats, err := repo.GetPopularSearches(context.Background(), 10, 0)
 	require.NoError(t, err)

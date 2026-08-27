@@ -1209,7 +1209,9 @@ func TestStatusRepository_more_branch_errors_for_counts_and_bookmarks(t *testing
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		// Page-capped walk (wave #1469): the walk error propagates.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -1221,7 +1223,8 @@ func TestStatusRepository_more_branch_errors_for_counts_and_bookmarks(t *testing
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)

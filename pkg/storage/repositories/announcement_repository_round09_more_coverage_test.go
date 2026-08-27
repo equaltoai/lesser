@@ -98,8 +98,12 @@ func TestAnnouncementRepository_Round09_MoreCoverage(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockQuery.On("First", mock.Anything).Return(ErrTestMockError).Once()
-		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
-		mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
+		// GetAnnouncementReactions walks (wave #1469): NotFound -> empty,
+		// other error -> propagated.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewAnnouncementRepository(mockDB, "test-table", zap.NewNop())
 

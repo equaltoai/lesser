@@ -42,8 +42,10 @@ func TestModerationRepository_GetModerationQueue_FilterBranches(t *testing.T) {
 		}
 	}).Return(nil)
 
-	// Force countReviews to take its error branch; GetModerationQueue ignores the error.
-	mockQuery.On("Count").Return(int64(0), ErrTestMockError).Maybe()
+	// Force countReviews to take its error branch; GetModerationQueue ignores
+	// the (non-cap) error. countReviews is now a page-capped walk (wave #1469).
+	mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Maybe()
 
 	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
 
@@ -170,7 +172,9 @@ func TestModerationRepository_GetOpenReportsCount_And_CountPendingFlags_ErrorBra
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
+		// Walk (wave #1469): the transient walk error keeps the legacy 0-on-error.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
@@ -182,6 +186,8 @@ func TestModerationRepository_GetOpenReportsCount_And_CountPendingFlags_ErrorBra
 	t.Run("CountPendingFlags returns 0 on count error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 
 		mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
@@ -496,7 +502,8 @@ func TestModerationRepository_GetModerationQueueCount_CountErrorReturnsZero(t *t
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 	setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())

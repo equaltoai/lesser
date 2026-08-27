@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -149,8 +150,15 @@ func TestRelationshipBase_GetRelationship_and_queries(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, got)
 
-	// ExistsRelationship + counts go through QueryUtils and are mostly DB count wrappers
+	// ExistsRelationship is a PK+SK point read (Count over ≤1 row, unchanged);
+	// CountRelationshipsByActor/ByObject go through CountQuery, which is now a
+	// page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()
+	mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]map[string]interface{})
+		*out = []map[string]interface{}{{"PK": "x", "SK": "y"}, {"PK": "a", "SK": "b"}}
+	}).Return(&core.PaginatedResult{}, nil).Maybe()
 	exists, err := base.ExistsRelationship(ctx, "alice", "bob")
 	assert.NoError(t, err)
 	assert.True(t, exists)

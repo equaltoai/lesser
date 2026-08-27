@@ -446,7 +446,8 @@ func TestObjectRepository_AdditionalNotFoundAndErrorBranches(t *testing.T) {
 	t.Run("CountCollectionItems error returns error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("Count").Return(int64(0), dynamormErrors.ErrInvalidModel).Once()
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CollectionItem")).Return(&core.PaginatedResult{}, dynamormErrors.ErrInvalidModel).Once()
 		setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
@@ -848,7 +849,8 @@ func TestObjectRepository_CountQuotes_ErrorBranch(t *testing.T) {
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	mockQuery.On("Count").Return(int64(0), dynamormErrors.ErrInvalidModel).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.QuoteRelationship")).Return(&core.PaginatedResult{}, dynamormErrors.ErrInvalidModel).Once()
 	setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
@@ -863,7 +865,8 @@ func TestObjectRepository_GetUserStatusCount_ErrorBranch(t *testing.T) {
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	mockQuery.On("Count").Return(int64(0), dynamormErrors.ErrInvalidModel).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Object")).Return(&core.PaginatedResult{}, dynamormErrors.ErrInvalidModel).Once()
 	setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
@@ -1148,7 +1151,8 @@ func TestObjectRepository_CountReplies_ErrorBranch(t *testing.T) {
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	mockQuery.On("Count").Return(int64(0), dynamormErrors.ErrInvalidModel).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Object")).Return(&core.PaginatedResult{}, dynamormErrors.ErrInvalidModel).Once()
 	setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())

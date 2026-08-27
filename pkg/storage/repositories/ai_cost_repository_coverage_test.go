@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -100,14 +101,17 @@ func TestAICostRepository_Queries_Summary_Trends_Aggregations(t *testing.T) {
 		mockQuery.On("Index", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
+		// GetAICostsByTimeRange is now a bounded page walk (wave #1469):
+		// Limit(500)/page via AllPaginated instead of a bare .All.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.AICost)
 			*dest = []*models.AICost{
 				{OperationID: "op-1", OperationType: "a", Timestamp: start.Add(10 * time.Minute), TotalCostMicroCents: 100, InputTokens: 1, OutputTokens: 1},
 				{OperationID: "op-2", OperationType: "b", Timestamp: start.Add(30 * time.Minute), TotalCostMicroCents: 200, InputTokens: 2, OutputTokens: 2},
 				{OperationID: "op-3", OperationType: "a", Timestamp: start.Add(-time.Minute), TotalCostMicroCents: 300, InputTokens: 3, OutputTokens: 3},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{}, nil).Once()
 
 		costs, err := repo.GetAICostsByTimeRange(ctx, start, end, "a", 10)
 		require.NoError(t, err)
@@ -170,10 +174,11 @@ func TestAICostRepository_Queries_Summary_Trends_Aggregations(t *testing.T) {
 		mockQuery.On("Index", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.AICost)
 			*dest = nil
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{}, nil).Once()
 
 		summary, err := repo.GetAICostSummary(ctx, start, end, "")
 		require.NoError(t, err)
@@ -190,13 +195,14 @@ func TestAICostRepository_Queries_Summary_Trends_Aggregations(t *testing.T) {
 		mockQuery.On("Index", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.AICost)
 			*dest = []*models.AICost{
 				{OperationID: "op-1", ModelName: "m1", OperationType: "a", Timestamp: start.Add(10 * time.Minute), TotalCostMicroCents: 1000, InputTokens: 10, OutputTokens: 5, RequestLatencyMs: 100, ComplexityScore: 0.5, Success: true},
 				{OperationID: "op-2", ModelName: "m1", OperationType: "b", Timestamp: start.Add(20 * time.Minute), TotalCostMicroCents: 3000, InputTokens: 20, OutputTokens: 15, RequestLatencyMs: 300, ComplexityScore: 0.1, Success: false},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{}, nil).Once()
 
 		summary, err := repo.GetAICostSummary(ctx, start, end, "")
 		require.NoError(t, err)
@@ -218,13 +224,14 @@ func TestAICostRepository_Queries_Summary_Trends_Aggregations(t *testing.T) {
 		mockQuery.On("Index", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.AICost)
 			*dest = []*models.AICost{
 				{OperationID: "op-1", Timestamp: start.Add(10 * time.Minute), TotalCostMicroCents: 100, InputTokens: 1, OutputTokens: 1, RequestLatencyMs: 10, Success: true},
 				{OperationID: "op-2", Timestamp: start.Add(70 * time.Minute), TotalCostMicroCents: 500, InputTokens: 2, OutputTokens: 3, RequestLatencyMs: 20, Success: false},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{}, nil).Once()
 
 		trends, err := repo.GetAICostTrends(ctx, start, end, models.PeriodHour)
 		require.NoError(t, err)
