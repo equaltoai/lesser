@@ -1796,3 +1796,131 @@ func TestBatchN3_GetMetricsEntries_AllBranch_TransientErrorSkipsDay(t *testing.T
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
+
+func TestBatchN3_WalkKeyedPages_NilResultStops(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	// AllPaginated returning a nil *PaginatedResult must stop the walk (the
+	// permissive-harness shape; a nil res is treated as "no more pages").
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Notification")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "USER#u1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Notification")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Notification)
+		*dest = []models.Notification{{ID: "n1"}}
+	}).Return(nil, nil).Once()
+
+	var notifications []models.Notification
+	err := walkKeyedPages(
+		mockDB.WithContext(ctx).Model(&models.Notification{}).Where("PK", "=", "USER#u1"),
+		500, 100,
+		func(page []models.Notification) (bool, error) {
+			notifications = append(notifications, page...)
+			return false, nil
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, notifications, 1)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_WalkKeyedPages_EmptyCursorStops(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	// HasMore=true with an empty NextCursor must stop (no cursor to hand off).
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Notification")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "USER#u1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Notification")).Return(&core.PaginatedResult{HasMore: true, NextCursor: ""}, nil).Once()
+
+	var notifications []models.Notification
+	err := walkKeyedPages(
+		mockDB.WithContext(ctx).Model(&models.Notification{}).Where("PK", "=", "USER#u1"),
+		500, 100,
+		func(page []models.Notification) (bool, error) {
+			notifications = append(notifications, page...)
+			return false, nil
+		},
+	)
+	require.NoError(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetFederationCosts_LimitTruncation(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 8, 1, 2, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.FederationCostTracking")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "FED_COSTS#DOMAIN#example.com#2026-08").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Once()
+	// remaining = limit(2) - gathered(0) for the first bucket.
+	mockQuery.On("Limit", 2).Return(mockQuery).Once()
+	// Three costs gathered: the in-memory limit-stop truncates to the requested 2.
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationCostTracking")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.FederationCostTracking)
+		*dest = []*models.FederationCostTracking{
+			{Domain: "example.com", TotalCostMicroCents: 1},
+			{Domain: "example.com", TotalCostMicroCents: 2},
+			{Domain: "example.com", TotalCostMicroCents: 3},
+		}
+	}).Return(nil).Once()
+
+	baseRepo := NewBaseRepository[*models.FederationCostTracking](mockDB, "test-table", zap.NewNop())
+	budgetRepo := NewBaseRepository[*models.FederationBudget](mockDB, "test-table", zap.NewNop())
+	repo := NewFederationCostRepositoryFromBase(baseRepo, budgetRepo, nil)
+	costs, err := repo.GetFederationCosts(ctx, "example.com", start, end, 2)
+	require.NoError(t, err)
+	require.Len(t, costs, 2)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetAICostsByTimeRange_LimitStop(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 8, 1, 2, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.AICost")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "AI_COSTS#2026-08").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	// Three matching rows in the window: the in-memory limit-stop keeps one.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.AICost")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.AICost)
+		*dest = []*models.AICost{
+			{OperationID: "op-1", OperationType: "a", Timestamp: start.Add(time.Minute), TotalCostMicroCents: 10},
+			{OperationID: "op-2", OperationType: "b", Timestamp: start.Add(2 * time.Minute), TotalCostMicroCents: 20},
+			{OperationID: "op-3", OperationType: "a", Timestamp: start.Add(3 * time.Minute), TotalCostMicroCents: 30},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewAICostRepository(mockDB, "test-table", zap.NewNop(), nil)
+	costs, err := repo.GetAICostsByTimeRange(ctx, start, end, "a", 1)
+	require.NoError(t, err)
+	require.Len(t, costs, 1)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
