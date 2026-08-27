@@ -553,10 +553,9 @@ func TestGetRecentHashtags_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Index", "gsi1").Return(mockQuery)
-	mockQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
-	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
+	mockQuery.On("Where", "LastUsed", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 20).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.Hashtag)
@@ -583,10 +582,9 @@ func TestGetRecentHashtags_NotFound(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Index", "gsi1").Return(mockQuery)
-	mockQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
+	mockQuery.On("Where", "LastUsed", ">=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 10).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Return(errors.ErrItemNotFound)
 
@@ -608,10 +606,9 @@ func TestGetRecentHashtags_InvalidLimit(t *testing.T) {
 	// When limit > 100, it should be clamped to default (20)
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Index", "gsi1").Return(mockQuery)
-	mockQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
+	mockQuery.On("Where", "LastUsed", ">=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 20).Return(mockQuery) // Clamped to default
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Return(nil)
 

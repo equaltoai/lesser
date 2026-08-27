@@ -625,17 +625,19 @@ func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.T
 		limit = 20
 	}
 
-	// Hashtag metadata resolves through the GSI1 global listing
-	// (HASHTAGS#ALL / <LastUsed RFC3339>#<name>) maintained by
-	// Hashtag.UpdateKeys (wave part 2 batch E, #1469); the recent window is a
-	// keyed sort-key range. Legacy hashtag rows written before the GSI1 shape
-	// carry no index keys and are not returned until next written.
+	// Hashtag metadata rows (HASHTAG#<name> / METADATA) are only written by
+	// HashtagRepository.IndexHashtag, which has zero production callers — no
+	// live writer maintains them, so no rows exist to key. A GSI listing key
+	// added to the model would never be populated and keying this read on it
+	// would silently return nothing, so this stays on the baselined
+	// SK = METADATA scan (disposition "elimination pending — wave #1469" with
+	// a no-live-writer note; see docs/architecture/dynamodb-scan-inventory.md).
+	// The wave part 2 batch E GSI1 conversion was reverted for that reason.
 	var hashtagModels []*models.Hashtag
 	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "HASHTAGS#ALL").
-		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
-		OrderBy("gsi1SK", "DESC"). // Recent first
+		Where("SK", "=", "METADATA").
+		Where("LastUsed", ">=", since.Format(time.RFC3339)).
+		OrderBy("LastUsed", "DESC"). // Recent first
 		Limit(limit).
 		All(&hashtagModels)
 
@@ -977,15 +979,87 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 }
 
 // GetPopularSearchQueries retrieves the most popular search queries
+//
+// NOTE (wave part 2 batch E rework, #1469): this stays on the baselined
+// full-table scan over raw SearchQuery rows and is NOT delegated to the GSI8
+// PopularQueryCounter path. GetTopQueries answers a different question than
+// the caller's window: the counter's GSI8 partition key re-points on every
+// increment (PopularQueryCounter.UpdateKeys sets GSI8PK = POPULAR#<bucket>#<date>
+// from the Date of the last write, moving the item between partitions), so
+// only today's partition is ever populated and a 7-day read would silently
+// return just today's counters — no per-day partitions exist to aggregate
+// across the window. The only source that answers the caller-visible 7-day
+// window (scorePopularQueries, the sole caller) is the raw-row aggregation
+// below, so the delegation was reverted; the site is dispositioned
+// "elimination pending — wave #1469" with this semantic note (see
+// docs/architecture/dynamodb-scan-inventory.md).
 func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
-	// Delegates to the maintained counter-based path: TrackSearchQuery →
-	// updatePopularQueries → IncrementQueryCount writes PopularQueryCounter
-	// rows keyed on GSI8 (POPULAR#<bucket>#<date> / COUNT#<count>#<hash>), and
-	// GetTopQueries reads them with a keyed GSI8 query. The previous raw-row
-	// scan (SearchQuery by SearchedAt) was an unkeyed full-table scan
-	// (eliminated in wave part 2 batch E, #1469); the counter rows it would
-	// have aggregated are the same ones IncrementQueryCount maintains.
-	return r.GetTopQueries(ctx, limit, timeWindow)
+	// Calculate time cutoff
+	cutoff := time.Now().Add(-timeWindow)
+
+	// Query recent search queries
+	var queries []models.SearchQuery
+	err := r.db.WithContext(ctx).Model(&models.SearchQuery{}).
+		Where("SearchedAt", ">=", cutoff).
+		OrderBy("SearchedAt", "DESC").
+		Limit(1000). // Get more to aggregate
+		Scan(&queries)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []storage.SearchQueryStats{}, nil
+		}
+		r.logger.Error("failed to query search queries", zap.Error(err))
+		return nil, ErrorHandler.HandleQueryError(err, "search query", "popular queries")
+	}
+
+	// Aggregate by query
+	queryMap := make(map[string]*storage.SearchQueryStats)
+	userMap := make(map[string]map[string]bool) // query -> set of users
+
+	for _, q := range queries {
+		if stats, exists := queryMap[q.Query]; exists {
+			stats.Count++
+			stats.AvgResults = (stats.AvgResults*float64(stats.Count-1) + float64(q.ResultCount)) / float64(stats.Count)
+			if q.SearchedAt.After(stats.LastUsed) {
+				stats.LastUsed = q.SearchedAt
+			}
+		} else {
+			queryMap[q.Query] = &storage.SearchQueryStats{
+				Query:      q.Query,
+				Count:      1,
+				AvgResults: float64(q.ResultCount),
+				LastUsed:   q.SearchedAt,
+			}
+			userMap[q.Query] = make(map[string]bool)
+		}
+
+		// Track unique users
+		userMap[q.Query][q.UserID] = true
+	}
+
+	// Calculate unique user counts and convert to slice
+	results := make([]storage.SearchQueryStats, 0, len(queryMap))
+	for query, stats := range queryMap {
+		stats.UserCount = len(userMap[query])
+		results = append(results, *stats)
+	}
+
+	// Sort by count (most popular first)
+	for i := 0; i < len(results)-1; i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[i].Count < results[j].Count {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
+
+	// Apply limit
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
 }
 
 // GetUserSearchHistory retrieves a user's search history

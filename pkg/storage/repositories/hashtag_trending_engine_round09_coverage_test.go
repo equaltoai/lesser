@@ -73,11 +73,10 @@ func TestTrendingEngine_round09_full_flow_and_helpers(t *testing.T) {
 	engine.config.CandidateLimit = 10
 
 	// Candidate hashtags
-	hashtagQuery.On("Index", "gsi1").Return(hashtagQuery).Once()
-	hashtagQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(hashtagQuery).Once()
-	hashtagQuery.On("Where", "gsi1SK", ">=", mock.Anything).Return(hashtagQuery).Once()
+	hashtagQuery.On("Where", "SK", "=", "METADATA").Return(hashtagQuery).Once()
+	hashtagQuery.On("Filter", "LastUsed", ">=", mock.Anything).Return(hashtagQuery).Once()
 	hashtagQuery.On("Filter", "UsageCount", ">=", int64(1)).Return(hashtagQuery).Once()
-	hashtagQuery.On("OrderBy", "gsi1SK", "DESC").Return(hashtagQuery).Once()
+	hashtagQuery.On("OrderBy", "LastUsed", "DESC").Return(hashtagQuery).Once()
 	hashtagQuery.On("Limit", 10).Return(hashtagQuery).Once()
 	hashtagQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Hashtag)
@@ -162,11 +161,9 @@ func TestTrendingEngine_round09_db_error_paths(t *testing.T) {
 	engine.config.MinimumUsage = 1
 	engine.config.CandidateLimit = 10
 
-	hashtagQuery.On("Index", "gsi1").Return(hashtagQuery)
-	hashtagQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(hashtagQuery)
-	hashtagQuery.On("Where", "gsi1SK", ">=", mock.Anything).Return(hashtagQuery)
-	hashtagQuery.On("Filter", "UsageCount", ">=", int64(1)).Return(hashtagQuery)
-	hashtagQuery.On("OrderBy", "gsi1SK", "DESC").Return(hashtagQuery)
+	hashtagQuery.On("Where", "SK", "=", "METADATA").Return(hashtagQuery)
+	hashtagQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(hashtagQuery)
+	hashtagQuery.On("OrderBy", mock.Anything, mock.Anything).Return(hashtagQuery)
 	hashtagQuery.On("Limit", 10).Return(hashtagQuery)
 	hashtagQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
 
@@ -226,11 +223,9 @@ func TestTrendingEngine_round09_calculate_trending_empty_and_trim_paths(t *testi
 		engine.config.MinimumUsage = 1
 		engine.config.CandidateLimit = 10
 
-		q.On("Index", "gsi1").Return(q).Once()
-		q.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(q).Once()
-		q.On("Where", "gsi1SK", ">=", mock.Anything).Return(q).Once()
-		q.On("Filter", "UsageCount", ">=", int64(1)).Return(q)
-		q.On("OrderBy", "gsi1SK", "DESC").Return(q).Once()
+		q.On("Where", "SK", "=", "METADATA").Return(q).Once()
+		q.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(q)
+		q.On("OrderBy", mock.Anything, mock.Anything).Return(q).Once()
 		q.On("Limit", 10).Return(q).Once()
 		q.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 
@@ -260,11 +255,9 @@ func TestTrendingEngine_round09_calculate_trending_empty_and_trim_paths(t *testi
 		engine.config.Scoring.ScoreThreshold = 0
 		engine.config.CandidateLimit = 10
 
-		hashtagQuery.On("Index", "gsi1").Return(hashtagQuery).Once()
-		hashtagQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(hashtagQuery).Once()
-		hashtagQuery.On("Where", "gsi1SK", ">=", mock.Anything).Return(hashtagQuery).Once()
+		hashtagQuery.On("Where", "SK", "=", "METADATA").Return(hashtagQuery).Once()
 		hashtagQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(hashtagQuery)
-		hashtagQuery.On("OrderBy", "gsi1SK", "DESC").Return(hashtagQuery).Once()
+		hashtagQuery.On("OrderBy", mock.Anything, mock.Anything).Return(hashtagQuery).Once()
 		hashtagQuery.On("Limit", 10).Return(hashtagQuery).Once()
 		hashtagQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.Hashtag)
@@ -295,11 +288,9 @@ func TestTrendingEngine_round09_calculate_trending_empty_and_trim_paths(t *testi
 		mockDB2.On("Model", mock.AnythingOfType("*models.Status")).Return(new(mocks.MockQuery))
 		engine.db = mockDB2
 
-		hashtagQuery2.On("Index", "gsi1").Return(hashtagQuery2).Once()
-		hashtagQuery2.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(hashtagQuery2).Once()
-		hashtagQuery2.On("Where", "gsi1SK", ">=", mock.Anything).Return(hashtagQuery2).Once()
+		hashtagQuery2.On("Where", "SK", "=", "METADATA").Return(hashtagQuery2).Once()
 		hashtagQuery2.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(hashtagQuery2)
-		hashtagQuery2.On("OrderBy", "gsi1SK", "DESC").Return(hashtagQuery2).Once()
+		hashtagQuery2.On("OrderBy", mock.Anything, mock.Anything).Return(hashtagQuery2).Once()
 		hashtagQuery2.On("Limit", 10).Return(hashtagQuery2).Once()
 		hashtagQuery2.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.Hashtag)

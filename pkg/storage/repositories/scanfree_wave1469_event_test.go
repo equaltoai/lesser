@@ -18,10 +18,13 @@ import (
 // resolve through a keyed query (primary or GSI on the pre-provisioned
 // gsi1–gsi8 slots). Any regression that reintroduces a DynamoDB Scan fails
 // the test through newWave1469ScanForbiddingTestDB (the fake overrides the
-// DynamoDB client Scan method itself). Batch E rerouted 12 key-less All sites
-// and converted 4 literal-.Scan files; per-site key shapes and legacy-row
-// consequences are documented in
-// docs/architecture/dynamodb-scan-inventory.md.
+// DynamoDB client Scan method itself). Batch E rerouted 10 key-less All sites
+// and converted 3 literal-.Scan files (11 keyed sites); two batch E
+// conversions (Hashtag GSI1 HASHTAGS#ALL, GetPopularSearchQueries → GSI8)
+// were reverted — no live writer populates the hashtag index, and the query
+// counter cannot answer the caller's 7-day window (see
+// docs/architecture/dynamodb-scan-inventory.md). Per-site key shapes and
+// legacy-row consequences are documented there.
 
 // ---------------------------------------------------------------------------
 // MODERATION ENGINE
@@ -158,33 +161,14 @@ func TestScanFreeWave_Event_GetModerationDecisionsByModerator(t *testing.T) {
 // ANALYTICS / TRENDS
 // ---------------------------------------------------------------------------
 
-// 4a) GetRecentHashtags — keyed gsi1 (HASHTAGS#ALL / <LastUsed>#<name>).
-func TestScanFreeWave_Event_GetRecentHashtags(t *testing.T) {
-	ctx := context.Background()
-	db, s := newWave1469ScanForbiddingTestDB(t, &models.Hashtag{})
+// NOTE (wave part 2 batch E rework, #1469): there is no scan-free test for
+// GetRecentHashtags / getCandidateHashtags. Hashtag metadata rows
+// (HASHTAG#<name> / METADATA) are only written by HashtagRepository.IndexHashtag,
+// which has zero production callers, so no live writer maintains them and a
+// GSI listing key would never be populated — the reads stay on their baselined
+// SK = METADATA scans (see docs/architecture/dynamodb-scan-inventory.md).
 
-	now := time.Now().UTC()
-	for _, tc := range []struct {
-		name     string
-		lastUsed time.Time
-	}{
-		{"golang", now},
-		{"python", now.Add(-48 * time.Hour)}, // outside the window
-	} {
-		h := &models.Hashtag{Name: tc.name, LastUsed: tc.lastUsed, UsageCount: 10}
-		require.NoError(t, h.UpdateKeys()) // sets GSI1 HASHTAGS#ALL
-		require.NoError(t, db.WithContext(ctx).Model(h).Create())
-	}
-
-	repo := NewTrendingRepository(db, zap.NewNop(), nil)
-	got, err := repo.GetRecentHashtags(ctx, now.Add(-24*time.Hour), 20)
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, "golang", got[0].Name)
-	require.Zero(t, s.scanCalls, "GetRecentHashtags must not scan")
-}
-
-// 4b) GetRecentStatusesWithEngagement — keyed gsi1 (ENGAGEMENTS#ALL).
+// 4a) GetRecentStatusesWithEngagement — keyed gsi1 (ENGAGEMENTS#ALL).
 func TestScanFreeWave_Event_GetRecentStatusesWithEngagement(t *testing.T) {
 	ctx := context.Background()
 	db, s := newWave1469ScanForbiddingTestDB(t, &models.StatusEngagement{})
@@ -236,58 +220,15 @@ func TestScanFreeWave_Event_GetRecentLinks(t *testing.T) {
 	require.Zero(t, s.scanCalls, "GetRecentLinks must not scan")
 }
 
-// 5) GetPopularSearchQueries — delegates to GetTopQueries, keyed gsi8
-// (POPULAR#<bucket>#<date> / COUNT#<count>#<hash>) on PopularQueryCounter.
-func TestScanFreeWave_Event_GetPopularSearchQueries(t *testing.T) {
-	ctx := context.Background()
-	db, s := newWave1469ScanForbiddingTestDB(t, &models.PopularQueryCounter{})
+// NOTE (wave part 2 batch E rework, #1469): there is no scan-free test for
+// GetPopularSearchQueries. The raw SearchQuery rows it aggregates are the only
+// source that answers the caller's 7-day window (scorePopularQueries); the
+// GSI8 PopularQueryCounter path answers a different question (its Date
+// partition re-points per increment, so only today's partition is populated)
+// and was reverted back to the baselined scan — see
+// docs/architecture/dynamodb-scan-inventory.md.
 
-	now := time.Now().UTC()
-	counter := &models.PopularQueryCounter{
-		QueryHash:    "abc",
-		Query:        "golang",
-		TimeBucket:   string(models.PeriodDaily),
-		Date:         now.Format(common.DateFormat),
-		Count:        7,
-		UserCount:    3,
-		AvgResults:   10,
-		LastQueried:  now,
-		FirstQueried: now,
-		UpdatedAt:    now,
-	}
-	require.NoError(t, counter.UpdateKeys()) // sets GSI8 POPULAR#daily#<date>
-	require.NoError(t, db.WithContext(ctx).Model(counter).Create())
-
-	repo := NewTrendingRepository(db, zap.NewNop(), nil)
-	got, err := repo.GetPopularSearchQueries(ctx, 10, 24*time.Hour)
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, "golang", got[0].Query)
-	require.Zero(t, s.scanCalls, "GetPopularSearchQueries must not scan")
-}
-
-// 6) getCandidateHashtags — keyed gsi1 (HASHTAGS#ALL) via the trending engine.
-func TestScanFreeWave_Event_GetCandidateHashtags(t *testing.T) {
-	ctx := context.Background()
-	db, s := newWave1469ScanForbiddingTestDB(t, &models.Hashtag{})
-
-	now := time.Now().UTC()
-	h := &models.Hashtag{Name: "golang", LastUsed: now, UsageCount: 10}
-	require.NoError(t, h.UpdateKeys())
-	require.NoError(t, db.WithContext(ctx).Model(h).Create())
-
-	engine := NewTrendingEngine(db, zap.NewNop())
-	engine.config.CandidateLimit = 500
-	engine.config.MinimumUsage = 1
-
-	got, err := engine.getCandidateHashtags(ctx, now.Add(-time.Hour))
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, "golang", got[0].Name)
-	require.Zero(t, s.scanCalls, "getCandidateHashtags must not scan")
-}
-
-// 7) Media analytics reads — keyed gsi1 (DATE#<date>) / gsi2 (VARIANT#<key>).
+// 6) Media analytics reads — keyed gsi1 (DATE#<date>) / gsi2 (VARIANT#<key>).
 func TestScanFreeWave_Event_MediaAnalyticsReads(t *testing.T) {
 	ctx := context.Background()
 	db, s := newWave1469ScanForbiddingTestDB(t, &models.MediaAnalytics{})
