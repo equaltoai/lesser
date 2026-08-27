@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -1521,6 +1522,10 @@ func TestBatchN3_GetMediaAnalyticsByDate_TracksCost(t *testing.T) {
 
 func TestBatchN3_CountStatusesForAdmin_RemoteOnlyPageLoop(t *testing.T) {
 	t.Setenv("DOMAIN", "example.com")
+	// config.Get() caches the singleton across tests, so set the domain
+	// directly to force the remote-only branch regardless of test order.
+	cfg := config.Get()
+	cfg.Domain = "example.com"
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
