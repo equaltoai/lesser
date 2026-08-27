@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -30,6 +31,12 @@ func setupPermissiveDynamormMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQue
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateSliceResult(args.Get(0))
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks iterate with AllPaginated instead of a bare
+	// All; populate the destination and report no more pages by default.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateSliceResult(args.Get(0))
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateSliceResult(args.Get(0))

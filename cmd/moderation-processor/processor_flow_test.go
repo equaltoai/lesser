@@ -464,7 +464,11 @@ func TestModeratorSelector_SelectByWorkload_SortsByPendingCount(t *testing.T) {
 
 	mockQuery.On("Filter", "AssignedTo", "=", mock.Anything).Return(mockQuery).Times(3)
 
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// GetPendingModerationCount's branches now iterate via bounded page walks
+	// (wave #1469): each of the 3 moderators × 3 branches issues a clamped
+	// Limit(500) AllPaginated read (not a bare All).
+	mockQuery.On("Limit", 500).Return(mockQuery).Times(9)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		if dest, ok := args.Get(0).(*[]models.Report); ok {
 			count := workload[currentModerator][currentStatus]
 			*dest = make([]models.Report, count)
@@ -473,7 +477,7 @@ func TestModeratorSelector_SelectByWorkload_SortsByPendingCount(t *testing.T) {
 			count := workload[currentModerator][currentStatus]
 			*dest = make([]models.Flag, count)
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Times(9)
 
 	moderationRepo := repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop())
 	selector := NewModeratorSelector(nil, moderationRepo, zap.NewNop())
@@ -917,6 +921,16 @@ func TestRepositoryStorageAdapter_BasicOperations(t *testing.T) {
 			}
 		}
 	}).Return(nil).Maybe()
+	// Wave #1469 page-capped walks (e.g. GetModerationReviews) iterate with
+	// AllPaginated instead of a bare All; populate the destination and report
+	// no more pages by default.
+	mockQueryModeration.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		if dest, ok := args.Get(0).(*[]models.ModerationReview); ok {
+			*dest = []models.ModerationReview{
+				{Type: "REVIEW", ID: "rev-1", EventID: "evt-1", ReviewerID: "mod-1", Action: "remove", Severity: "high"},
+			}
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	moderationRepo := repositories.NewModerationRepository(mockDBModeration, "test-table", zap.NewNop())
 
@@ -1466,7 +1480,11 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 
 		mockQuery.On("Filter", "AssignedTo", "=", mock.Anything).Return(mockQuery).Times(3)
 
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		// GetPendingModerationCount's branches now iterate via bounded page
+		// walks (wave #1469): each of the 3 moderators × 3 branches issues a
+		// clamped Limit(500) AllPaginated read (not a bare All).
+		mockQuery.On("Limit", 500).Return(mockQuery).Times(9)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			if dest, ok := args.Get(0).(*[]models.Report); ok {
 				count := 0
 				if currentStatus == string(storage.ReportStatusOpen) {
@@ -1477,7 +1495,7 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 			if dest, ok := args.Get(0).(*[]models.Flag); ok {
 				*dest = []models.Flag{}
 			}
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Times(9)
 
 		return repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop()), mockQuery
 	}
@@ -1628,7 +1646,10 @@ func TestModerationProcessor_AdminMethods_Coverage(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+		// GetDecisionHistory now reads via a bounded page walk (wave #1469):
+		// the page read is AllPaginated, not a bare All.
+		mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 		moderationRepo := repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop())
 		mp := &ModerationProcessor{
@@ -1647,6 +1668,8 @@ func TestModerationProcessor_AdminMethods_Coverage(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+		// GetDecisionHistory walks at Limit(500); the most-recent-decision
+		// point read uses Limit(1) + All.
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 
@@ -1663,6 +1686,20 @@ func TestModerationProcessor_AdminMethods_Coverage(t *testing.T) {
 				},
 			}
 		}).Return(nil).Maybe()
+
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ModerationDecisionResult")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.ModerationDecisionResult)
+			*dest = []models.ModerationDecisionResult{
+				{
+					ID:                "dec-result-1",
+					ContentID:         "obj-1",
+					Action:            "none",
+					Confidence:        1.0,
+					DecidedAt:         time.Now(),
+					EnforcementStatus: "pending",
+				},
+			}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 		moderationRepo := repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop())
 		mp := &ModerationProcessor{

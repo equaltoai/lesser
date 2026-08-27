@@ -76,6 +76,79 @@ type QueryOptions struct {
 	FilterExpr string
 }
 
+// QueryUtils default and hard-max limits for the conditional-limit builders
+// (wave #1469 BOUNDED-QUERY class): a caller that omits the limit (or passes
+// 0) gets the default page size instead of an unbounded partition read, and
+// anything above the hard max is clamped so no caller can request an
+// unbounded read.
+const (
+	defaultQueryUtilsLimit = 50
+	maxQueryUtilsLimit     = 100
+)
+
+// sanitizeQueryLimit normalizes a requested limit for the query-utils
+// conditional-limit builders (wave #1469): <= 0 becomes the default page size
+// and > maxQueryUtilsLimit is clamped, so the builders always issue a bounded
+// read.
+func sanitizeQueryLimit(limit int) int {
+	if limit <= 0 {
+		return defaultQueryUtilsLimit
+	}
+	if limit > maxQueryUtilsLimit {
+		return maxQueryUtilsLimit
+	}
+	return limit
+}
+
+// errBoundedPageCapExceeded is the fail-closed guard for bounded whole-partition
+// iterations (wave #1469 BOUNDED-QUERY class): a keyed partition read that
+// cannot be exhausted within the sanctioned page cap fails closed with this
+// sentinel instead of reading the partition unboundedly.
+var errBoundedPageCapExceeded = fmt.Errorf("bounded page iteration exceeded the page cap")
+
+// walkKeyedPages iterates a keyed TableTheory query in bounded pages with an
+// explicit page cap (wave #1469). Each page carries pageSize items; iteration
+// stops when the query reports no more pages (HasMore false or no cursor),
+// when consume returns stop=true, or when the page cap is exhausted — in which
+// case the read fails closed with errBoundedPageCapExceeded. Page order follows
+// the query's sort order via ExclusiveStartKey cursors, so ordering, window,
+// and filter semantics of the underlying query are preserved.
+func walkKeyedPages[T any](query core.Query, pageSize, maxPages int, consume func(page []T) (stop bool, err error)) error {
+	if pageSize <= 0 {
+		pageSize = 500
+	}
+	if maxPages <= 0 {
+		maxPages = 100
+	}
+	query = query.Limit(pageSize)
+	var cursor string
+	for page := 0; ; page++ {
+		if page >= maxPages {
+			return fmt.Errorf("%w: exhausted %d pages of %d", errBoundedPageCapExceeded, maxPages, pageSize)
+		}
+		paged := query
+		if cursor != "" {
+			paged = paged.Cursor(cursor)
+		}
+		var items []T
+		res, err := paged.AllPaginated(&items)
+		if err != nil {
+			return err
+		}
+		stop, err := consume(items)
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+		if res == nil || !res.HasMore || res.NextCursor == "" {
+			return nil
+		}
+		cursor = res.NextCursor
+	}
+}
+
 // UserRelationshipQuery performs a common pattern for querying user relationships
 func (q *QueryUtils) UserRelationshipQuery(ctx context.Context, username, relationshipType string, opts *QueryOptions) (*QueryResult[map[string]interface{}], error) {
 	if opts == nil {
@@ -85,14 +158,15 @@ func (q *QueryUtils) UserRelationshipQuery(ctx context.Context, username, relati
 	pk := Utils.Keys.UserKey(username)
 	skPrefix := fmt.Sprintf("%s#", relationshipType)
 
+	// Clamp the requested limit (wave #1469): the read is always bounded — a
+	// 0/omitted limit gets the default page size and oversized limits are cut.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
 	var results []map[string]interface{}
 	query := q.db.WithContext(ctx).Model(&results).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", skPrefix)
-
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1) // +1 to check for more results
-	}
+		Where("SK", "BEGINS_WITH", skPrefix).
+		Limit(opts.Limit + 1) // +1 to check for more results
 
 	if opts.IndexName != "" {
 		query = query.Index(opts.IndexName)
@@ -123,6 +197,9 @@ func (q *QueryUtils) TimeRangeQuery(ctx context.Context, pk string, startTime, e
 	query := q.db.WithContext(ctx).Model(&results).
 		Where("PK", "=", pk)
 
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
 	// Add time range conditions
 	if startTime > 0 {
 		query = query.Where("SK", ">=", fmt.Sprintf("TIME#%d", startTime))
@@ -131,9 +208,7 @@ func (q *QueryUtils) TimeRangeQuery(ctx context.Context, pk string, startTime, e
 		query = query.Where("SK", "<=", fmt.Sprintf("TIME#%d", endTime))
 	}
 
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+	query = query.Limit(opts.Limit + 1) // +1 to check for more results
 
 	if opts.IndexName != "" {
 		query = query.Index(opts.IndexName)
@@ -163,13 +238,13 @@ func (q *QueryUtils) GSIStatusQuery(ctx context.Context, indexName, status strin
 	var results []map[string]interface{}
 	gsiPK := Utils.GSI.StatusIndexKey(status)
 
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
 	query := q.db.WithContext(ctx).Model(&results).
 		Index(indexName).
-		Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK)
-
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+		Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK).
+		Limit(opts.Limit + 1) // +1 to check for more results
 
 	err := query.All(&results)
 	if err != nil {
@@ -353,13 +428,14 @@ func (q *QueryUtils) QueryByGSI(ctx context.Context, indexName, gsiPK, gsiSK str
 		Index(indexName).
 		Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK)
 
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
 	if gsiSK != "" {
 		query = query.Where(fmt.Sprintf("%sSK", strings.ToLower(indexName)), "=", gsiSK)
 	}
 
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+	query = query.Limit(opts.Limit + 1) // +1 to check for more results
 
 	err := query.All(&results)
 	if err != nil {
@@ -387,9 +463,10 @@ func (q *QueryUtils) QueryWithPrefix(ctx context.Context, pk, skPrefix string, o
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix)
 
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
+	query = query.Limit(opts.Limit + 1) // +1 to check for more results
 
 	if opts.IndexName != "" {
 		query = query.Index(opts.IndexName)
@@ -453,9 +530,10 @@ func GenericList[T any](ctx context.Context, q *QueryUtils, pk, skPrefix string,
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix)
 
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
+	query = query.Limit(opts.Limit + 1) // +1 to check for more results
 
 	if opts.IndexName != "" {
 		query = query.Index(opts.IndexName)
@@ -567,6 +645,10 @@ func (qb *QueryBuilder[T]) WithLimit(limit int) *QueryBuilder[T] {
 
 // Execute runs the query and returns paginated results
 func (qb *QueryBuilder[T]) Execute() (*QueryResult[T], error) {
+	// Clamp the requested limit (wave #1469): the read is always bounded —
+	// WithLimit(0) (or an omitted limit) gets the default page size.
+	limit := sanitizeQueryLimit(qb.limit)
+
 	var results []T
 	query := qb.q.db.WithContext(qb.ctx).Model(&results)
 
@@ -584,9 +666,7 @@ func (qb *QueryBuilder[T]) Execute() (*QueryResult[T], error) {
 		query = query.Where("SK", "BEGINS_WITH", qb.skPrefix)
 	}
 
-	if qb.limit > 0 {
-		query = query.Limit(qb.limit + 1)
-	}
+	query = query.Limit(limit + 1) // +1 to check for more results
 
 	err := query.All(&results)
 	if err != nil {
@@ -595,7 +675,7 @@ func (qb *QueryBuilder[T]) Execute() (*QueryResult[T], error) {
 
 	// For generic types, we need a type-specific key extractor
 	// This is a simplified version - could be improved with interfaces
-	opts := &QueryOptions{Limit: qb.limit}
+	opts := &QueryOptions{Limit: limit}
 	items, nextCursor, hasMore := paginateResults(results, opts, nil)
 
 	return &QueryResult[T]{
@@ -725,10 +805,19 @@ func QueryWithPKAndSKPrefix[M any, S any](
 			Filter("SK", "BEGINS_WITH", skPrefix).
 			Scan(&models)
 	} else {
-		err = q.db.WithContext(ctx).Model(modelFactory()).
-			Where("PK", "=", pkValue).
-			Where("SK", "BEGINS_WITH", skPrefix).
-			All(&models)
+		// The contract returns the full partition, so the read is a bounded page
+		// walk with an explicit page cap (wave #1469): 500 items/page, 100 pages
+		// max, fail-closed on exhaustion.
+		err = walkKeyedPages(
+			q.db.WithContext(ctx).Model(modelFactory()).
+				Where("PK", "=", pkValue).
+				Where("SK", "BEGINS_WITH", skPrefix),
+			500, 100,
+			func(page []M) (bool, error) {
+				models = append(models, page...)
+				return false, nil
+			},
+		)
 	}
 
 	if err != nil {

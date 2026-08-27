@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"crypto/rand"
+	stderrors "errors"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -148,6 +149,11 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 	if filter != nil && filter.Limit > 0 {
 		limit = filter.Limit
 	}
+	// Hard max (wave #1469): a caller cannot request an unbounded queue read —
+	// the GSI2 partition is keyed but the read is clamped to a bounded page.
+	if limit > 100 {
+		limit = 100
+	}
 
 	var models []models.ModerationEvent
 
@@ -181,32 +187,8 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 		}
 
 		// Apply filters
-		if filter != nil {
-			// Apply score filters
-			if filter.MinScore > 0 && event.ConfidenceScore < filter.MinScore {
-				continue
-			}
-			if filter.MaxScore > 0 && event.ConfidenceScore > filter.MaxScore {
-				continue
-			}
-
-			// Apply content type filter
-			if filter.ContentType != "" && event.ObjectType != filter.ContentType {
-				continue
-			}
-
-			// Apply action filter
-			if filter.Action != "" && event.EventType != filter.Action {
-				continue
-			}
-
-			// Apply time filters
-			if filter.StartTime != nil && event.Created.Before(*filter.StartTime) {
-				continue
-			}
-			if filter.EndTime != nil && event.Created.After(*filter.EndTime) {
-				continue
-			}
+		if !queueEventMatchesFilter(event, filter) {
+			continue
 		}
 
 		// Get review count for this event
@@ -221,6 +203,33 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 	}
 
 	return items, nil
+}
+
+// queueEventMatchesFilter reports whether a moderation event passes the
+// caller's queue filters (score, content type, action, and time windows).
+func queueEventMatchesFilter(event *storage.ModerationEvent, filter *storage.ModerationFilter) bool {
+	if filter == nil {
+		return true
+	}
+	if filter.MinScore > 0 && event.ConfidenceScore < filter.MinScore {
+		return false
+	}
+	if filter.MaxScore > 0 && event.ConfidenceScore > filter.MaxScore {
+		return false
+	}
+	if filter.ContentType != "" && event.ObjectType != filter.ContentType {
+		return false
+	}
+	if filter.Action != "" && event.EventType != filter.Action {
+		return false
+	}
+	if filter.StartTime != nil && event.Created.Before(*filter.StartTime) {
+		return false
+	}
+	if filter.EndTime != nil && event.Created.After(*filter.EndTime) {
+		return false
+	}
+	return true
 }
 
 // GetModerationQueuePaginated retrieves pending moderation events with pagination
@@ -465,34 +474,39 @@ func (r *ModerationRepository) AddModerationReview(ctx context.Context, review *
 
 // GetModerationReviews retrieves all reviews for a moderation event
 func (r *ModerationRepository) GetModerationReviews(ctx context.Context, eventID string) ([]*storage.ModerationReview, error) {
-	var models []models.ModerationReview
+	// The consensus contract requires the full review set for the event, so the
+	// partition read is a bounded page walk with an explicit page cap (wave
+	// #1469): 500 reviews/page, 100 pages max, fail-closed on exhaustion.
+	var reviews []*storage.ModerationReview
 
-	err := r.db.WithContext(ctx).Model(&models).
-		Where("PK", "=", fmt.Sprintf("REVIEW#%s", eventID)).
-		All(&models)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ModerationReview{}).
+			Where("PK", "=", fmt.Sprintf("REVIEW#%s", eventID)),
+		500, 100,
+		func(page []models.ModerationReview) (bool, error) {
+			for _, model := range page {
+				if model.Type == "REVIEW" {
+					reviews = append(reviews, &storage.ModerationReview{
+						ID:          model.ID,
+						EventID:     model.EventID,
+						ReviewerID:  model.ReviewerID,
+						ReviewerRep: model.ReviewerRep,
+						Action:      model.Action,
+						Severity:    model.Severity,
+						Note:        model.Note,
+						Tags:        model.Tags,
+						Metadata:    model.Metadata,
+						Confidence:  model.Confidence,
+						Created:     model.Created,
+					})
+				}
+			}
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "moderation review", "query")
-	}
-
-	reviews := make([]*storage.ModerationReview, 0, len(models))
-	for _, model := range models {
-		if model.Type == "REVIEW" {
-			review := &storage.ModerationReview{
-				ID:          model.ID,
-				EventID:     model.EventID,
-				ReviewerID:  model.ReviewerID,
-				ReviewerRep: model.ReviewerRep,
-				Action:      model.Action,
-				Severity:    model.Severity,
-				Note:        model.Note,
-				Tags:        model.Tags,
-				Metadata:    model.Metadata,
-				Confidence:  model.Confidence,
-				Created:     model.Created,
-			}
-			reviews = append(reviews, review)
-		}
 	}
 
 	return reviews, nil
@@ -626,40 +640,49 @@ func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, con
 func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active bool, severity string, limit int) ([]*storage.ModerationPattern, error) {
 	var patternModels []models.ModerationPattern
 
+	var query core.Query
 	if active && severity != "" {
 		// Query by active status and severity using GSI2
-		err := r.db.WithContext(ctx).Model(&patternModels).
+		query = r.db.WithContext(ctx).Model(&models.ModerationPattern{}).
 			Index("gsi2").
-			Where("gsi2PK", "=", fmt.Sprintf("MODERATION_PATTERNS#%s", severity)).
-			Limit(limit).
-			All(&patternModels)
-		if err != nil {
-			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "query")
-		}
+			Where("gsi2PK", "=", fmt.Sprintf("MODERATION_PATTERNS#%s", severity))
 	} else if active {
 		// Query by active status only using GSI1
-		err := r.db.WithContext(ctx).Model(&patternModels).
+		query = r.db.WithContext(ctx).Model(&models.ModerationPattern{}).
 			Index("gsi1").
-			Where("gsi1PK", "=", "MODERATION_PATTERNS#ACTIVE").
-			Limit(limit).
-			All(&patternModels)
-		if err != nil {
-			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "query")
-		}
+			Where("gsi1PK", "=", "MODERATION_PATTERNS#ACTIVE")
 	} else {
 		// All patterns (regardless of active status or severity) through GSI3.
 		// The previous implementation scanned for SK = "PATTERN" and returned
 		// nothing (the model writes SK = METADATA); the keyed query makes this
 		// branch functional.
-		err := r.db.WithContext(ctx).Model(&models.ModerationPattern{}).
+		query = r.db.WithContext(ctx).Model(&models.ModerationPattern{}).
 			Index("gsi3").
 			Where("gsi3PK", "=", "MODERATION_PATTERNS#ALL").
-			OrderBy("gsi3SK", "ASC").
-			Limit(limit).
-			All(&patternModels)
-		if err != nil {
-			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "query")
-		}
+			OrderBy("gsi3SK", "ASC")
+	}
+
+	// The contract returns up to `limit` patterns, and the moderation engine
+	// asks for the full active set (1000). The partition read is a bounded page
+	// walk (wave #1469): pages carry min(limit,500) patterns each, iteration
+	// stops once `limit` patterns are gathered (or the partition is exhausted),
+	// and the explicit 100-page cap fails closed instead of an unbounded read.
+	pageSize := 500
+	if limit > 0 && limit < pageSize {
+		pageSize = limit
+	}
+	err := walkKeyedPages(
+		query, pageSize, 100,
+		func(page []models.ModerationPattern) (bool, error) {
+			patternModels = append(patternModels, page...)
+			return limit > 0 && len(patternModels) >= limit, nil
+		},
+	)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "query")
+	}
+	if limit > 0 && len(patternModels) > limit {
+		patternModels = patternModels[:limit]
 	}
 
 	// Convert to storage patterns
@@ -856,11 +879,20 @@ func (r *ModerationRepository) GetModerationHistory(ctx context.Context, objectI
 		}
 	}
 
-	// Get all decisions for the object
+	// Get all decisions for the object. The history contract requires the full
+	// decision set, so the partition read is a bounded page walk with an
+	// explicit page cap (wave #1469): 500 decisions/page, 100 pages max,
+	// fail-closed on exhaustion.
 	var decisionModels []models.ModerationDecision
-	err = r.db.WithContext(ctx).Model(&decisionModels).
-		Where("PK", "=", fmt.Sprintf("DECISION#%s", objectID)).
-		All(&decisionModels)
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ModerationDecision{}).
+			Where("PK", "=", fmt.Sprintf("DECISION#%s", objectID)),
+		500, 100,
+		func(page []models.ModerationDecision) (bool, error) {
+			decisionModels = append(decisionModels, page...)
+			return false, nil
+		},
+	)
 
 	if err == nil {
 		for _, model := range decisionModels {
@@ -1275,12 +1307,21 @@ func (r *ModerationRepository) GetReviewerStats(ctx context.Context, reviewerID 
 	}
 
 	// Count all reviews by this reviewer through GSI1 instead of scanning the
-	// whole table and filtering in Go.
+	// whole table and filtering in Go. The stats contract requires the full
+	// reviewer partition, so the read is a bounded page walk with an explicit
+	// page cap (wave #1469): 500 reviews/page, 100 pages max, fail-closed on
+	// exhaustion.
 	var reviews []models.ModerationReview
-	err = r.db.WithContext(ctx).Model(&models.ModerationReview{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("REVIEWER#%s", reviewerID)).
-		All(&reviews)
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ModerationReview{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("REVIEWER#%s", reviewerID)),
+		500, 100,
+		func(page []models.ModerationReview) (bool, error) {
+			reviews = append(reviews, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "admin review", "scan")
@@ -1436,20 +1477,29 @@ func (r *ModerationRepository) GetFilter(ctx context.Context, filterID string) (
 
 // GetFiltersForUser retrieves all filters for a user
 func (r *ModerationRepository) GetFiltersForUser(ctx context.Context, username string) ([]*storage.Filter, error) {
-	var models []models.Filter
+	// The contract returns the user's full filter list, so the partition read
+	// is a bounded page walk with an explicit page cap (wave #1469): 500
+	// filters/page, 100 pages max, fail-closed on exhaustion.
+	var filterModels []models.Filter
 
-	err := r.db.WithContext(ctx).Model(&models).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", ">=", "FILTER#").
-		Where("SK", "<", "FILTER~"). // Use ~ as upper bound since it's after # in ASCII
-		All(&models)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Filter{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", ">=", "FILTER#").
+			Where("SK", "<", "FILTER~"), // Use ~ as upper bound since it's after # in ASCII
+		500, 100,
+		func(page []models.Filter) (bool, error) {
+			filterModels = append(filterModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilter, "query")
 	}
 
-	filters := make([]*storage.Filter, len(models))
-	for i, model := range models {
+	filters := make([]*storage.Filter, len(filterModels))
+	for i, model := range filterModels {
 		filters[i] = &storage.Filter{
 			ID:           model.ID,
 			Username:     model.Username,
@@ -1619,21 +1669,29 @@ func (r *ModerationRepository) AddFilterKeyword(ctx context.Context, filterID st
 
 // GetFilterKeywords retrieves all keywords for a filter
 func (r *ModerationRepository) GetFilterKeywords(ctx context.Context, filterID string) ([]*storage.FilterKeyword, error) {
-	var models []models.FilterKeyword
+	// The contract returns the filter's full keyword list, so the partition
+	// read is a bounded page walk with an explicit page cap (wave #1469): 500
+	// keywords/page, 100 pages max, fail-closed on exhaustion.
+	var keywordModels []models.FilterKeyword
 
-	// Use range query to get all items with SK starting with "KEYWORD#"
-	err := r.db.WithContext(ctx).Model(&models).
-		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Where("SK", ">=", "KEYWORD#").
-		Where("SK", "<", "KEYWORD~"). // Use ~ as upper bound since it's after # in ASCII
-		All(&models)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
+			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+			Where("SK", ">=", "KEYWORD#").
+			Where("SK", "<", "KEYWORD~"), // Use ~ as upper bound since it's after # in ASCII
+		500, 100,
+		func(page []models.FilterKeyword) (bool, error) {
+			keywordModels = append(keywordModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilterKeyword, "query")
 	}
 
-	keywords := make([]*storage.FilterKeyword, len(models))
-	for i, model := range models {
+	keywords := make([]*storage.FilterKeyword, len(keywordModels))
+	for i, model := range keywordModels {
 		keywords[i] = &storage.FilterKeyword{
 			ID:        model.ID,
 			FilterID:  model.FilterID,
@@ -1734,21 +1792,29 @@ func (r *ModerationRepository) AddFilterStatus(ctx context.Context, filterID str
 
 // GetFilterStatuses retrieves all statuses for a filter
 func (r *ModerationRepository) GetFilterStatuses(ctx context.Context, filterID string) ([]*storage.FilterStatus, error) {
-	var models []models.FilterStatus
+	// The contract returns the filter's full status list, so the partition
+	// read is a bounded page walk with an explicit page cap (wave #1469): 500
+	// statuses/page, 100 pages max, fail-closed on exhaustion.
+	var statusModels []models.FilterStatus
 
-	// Use range query to get all items with SK starting with "STATUS#"
-	err := r.db.WithContext(ctx).Model(&models).
-		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Where("SK", ">=", "STATUS#").
-		Where("SK", "<", "STATUS~"). // Use ~ as upper bound since it's after # in ASCII
-		All(&models)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FilterStatus{}).
+			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+			Where("SK", ">=", "STATUS#").
+			Where("SK", "<", "STATUS~"), // Use ~ as upper bound since it's after # in ASCII
+		500, 100,
+		func(page []models.FilterStatus) (bool, error) {
+			statusModels = append(statusModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilterStatus, "query")
 	}
 
-	statuses := make([]*storage.FilterStatus, len(models))
-	for i, model := range models {
+	statuses := make([]*storage.FilterStatus, len(statusModels))
+	for i, model := range statusModels {
 		statuses[i] = &storage.FilterStatus{
 			ID:        model.ID,
 			FilterID:  model.FilterID,
@@ -2937,14 +3003,27 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 	// refresh the keys).
 	var reportCount int
 
-	// Get open reports
+	// Get open reports. Each branch counts its keyed GSI partition via a
+	// bounded page walk with an explicit page cap (wave #1469): 500 rows/page,
+	// 100 pages max. A partition that exceeds the cap fails closed (the count
+	// is never silently truncated); other read errors keep the historical
+	// warn-and-continue contract below.
 	openReportModels := []models.Report{}
-	err := r.db.WithContext(ctx).Model(&models.Report{}).
-		Index("gsi4").
-		Where("gsi4PK", "=", fmt.Sprintf("ASSIGNED#%s", moderatorID)).
-		Where("gsi4SK", "begins_with", string(storage.ReportStatusOpen)+"#REPORT#").
-		All(&openReportModels)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Report{}).
+			Index("gsi4").
+			Where("gsi4PK", "=", fmt.Sprintf("ASSIGNED#%s", moderatorID)).
+			Where("gsi4SK", "begins_with", string(storage.ReportStatusOpen)+"#REPORT#"),
+		500, 100,
+		func(page []models.Report) (bool, error) {
+			openReportModels = append(openReportModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil && !errors.IsNotFound(err) {
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return 0, err
+		}
 		r.logger.Warn("failed to query open assigned reports",
 			zap.String("moderator_id", moderatorID),
 			zap.Error(err))
@@ -2952,12 +3031,21 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 
 	// Get in-progress reports
 	inProgressReportModels := []models.Report{}
-	err = r.db.WithContext(ctx).Model(&models.Report{}).
-		Index("gsi4").
-		Where("gsi4PK", "=", fmt.Sprintf("ASSIGNED#%s", moderatorID)).
-		Where("gsi4SK", "begins_with", string(storage.ReportStatusInProgress)+"#REPORT#").
-		All(&inProgressReportModels)
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Report{}).
+			Index("gsi4").
+			Where("gsi4PK", "=", fmt.Sprintf("ASSIGNED#%s", moderatorID)).
+			Where("gsi4SK", "begins_with", string(storage.ReportStatusInProgress)+"#REPORT#"),
+		500, 100,
+		func(page []models.Report) (bool, error) {
+			inProgressReportModels = append(inProgressReportModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil && !errors.IsNotFound(err) {
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return 0, err
+		}
 		r.logger.Warn("failed to query in-progress assigned reports",
 			zap.String("moderator_id", moderatorID),
 			zap.Error(err))
@@ -2970,14 +3058,24 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 	// assignee filter has never matched and this count is zero; the read is
 	// keyed on the existing GSI2 (FLAG_STATUS#pending) with the assignee
 	// filter preserved so behavior is unchanged but the query no longer scans.
+	// The partition read is a bounded page walk (wave #1469).
 	var flagCount int
 	flagModels := []models.Flag{}
-	err = r.db.WithContext(ctx).Model(&models.Flag{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", "FLAG_STATUS#pending").
-		Filter("AssignedTo", "=", moderatorID).
-		All(&flagModels)
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Flag{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "FLAG_STATUS#pending").
+			Filter("AssignedTo", "=", moderatorID),
+		500, 100,
+		func(page []models.Flag) (bool, error) {
+			flagModels = append(flagModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil && !errors.IsNotFound(err) {
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return 0, err
+		}
 		r.logger.Warn("failed to query assigned flags",
 			zap.String("moderator_id", moderatorID),
 			zap.Error(err))
@@ -3188,6 +3286,10 @@ func (r *ModerationRepository) GetReviewQueue(ctx context.Context, filters map[s
 	if filterLimit, ok := filters["limit"].(int); ok && filterLimit > 0 {
 		limit = filterLimit
 	}
+	// Hard max (wave #1469): a caller cannot request an unbounded queue read.
+	if limit > 100 {
+		limit = 100
+	}
 
 	r.logger.Debug("Getting review queue",
 		zap.String("status", status),
@@ -3225,10 +3327,22 @@ func (r *ModerationRepository) GetDecisionHistory(ctx context.Context, contentID
 
 	var decisions []*models.ModerationDecisionResult
 
-	err := r.db.WithContext(ctx).Model(&models.ModerationDecisionResult{}).
-		Where("PK", "=", fmt.Sprintf("DECISION_RESULT#%s", contentID)).
-		Where("SK", "prefix", "TIME#").
-		All(&decisions)
+	// The history contract returns the full decision set for the content, so
+	// the partition read is a bounded page walk with an explicit page cap
+	// (wave #1469): 500 decisions/page, 100 pages max, fail-closed on
+	// exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ModerationDecisionResult{}).
+			Where("PK", "=", fmt.Sprintf("DECISION_RESULT#%s", contentID)).
+			Where("SK", "prefix", "TIME#"),
+		500, 100,
+		func(page []models.ModerationDecisionResult) (bool, error) {
+			for i := range page {
+				decisions = append(decisions, &page[i])
+			}
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -3353,16 +3467,17 @@ func (r *ModerationRepository) GetModerationDecisionsByModerator(ctx context.Con
 	// (REVIEWER#<reviewerID> / TIME#<created>#REVIEW#<eventID>) maintained by
 	// ModerationReview.UpdateKeys (batch A shape, umbrella #1469). The previous
 	// SK=REVIEWER#… chain compiled to a full table scan; this binds gsi1PK.
+	// The requested limit is clamped (wave #1469): 0 (or negative) becomes the
+	// 100 default and oversized limits are cut to 500, so the read is always
+	// bounded.
+	limit, _, _ = clampLimit(limit, 100, 500)
 
 	var reviews []*models.ModerationReview
 
 	query := r.db.WithContext(ctx).Model(&models.ModerationReview{}).
 		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("REVIEWER#%s", moderatorUsername))
-
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
+		Where("gsi1PK", "=", fmt.Sprintf("REVIEWER#%s", moderatorUsername)).
+		Limit(limit)
 
 	if err := query.All(&reviews); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "moderation review", moderatorUsername)

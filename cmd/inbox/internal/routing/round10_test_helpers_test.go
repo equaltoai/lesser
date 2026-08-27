@@ -300,6 +300,15 @@ func newInboxTestEnv(t *testing.T) *inboxTestEnv {
 		Return(nil).
 		Maybe()
 
+	// Wave #1469 page-capped walks (e.g. StatusRepository.GetStatusByURL in
+	// resolveKnownInteractionStatus) iterate with AllPaginated; leave the
+	// destination empty (matching the historical All behavior above) and report
+	// no more pages.
+	mockQuery.
+		On("AllPaginated", mock.Anything).
+		Return(&dynamormCore.PaginatedResult{HasMore: false}, nil).
+		Maybe()
+
 	mockQuery.On("Scan", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
 	mockQuery.On("CreateOrUpdate").Return(nil).Maybe()

@@ -2765,6 +2765,9 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 
 	if state.allErrorOnce != nil {
 		mockQuery.On("All", mock.Anything).Return(state.allErrorOnce).Once()
+		// Wave #1469 page-capped walks read via AllPaginated; the injected
+		// error must fail those walks identically.
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, state.allErrorOnce).Once()
 	}
 
 	for typeName, err := range state.allErrorByType {
@@ -2773,10 +2776,12 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		mockQuery.On("All", mock.MatchedBy(func(arg any) bool {
 			return reflect.TypeOf(arg).String() == typeName
 		})).Return(err).Once()
+		mockQuery.On("AllPaginated", mock.MatchedBy(func(arg any) bool {
+			return reflect.TypeOf(arg).String() == typeName
+		})).Return(nil, err).Once()
 	}
 
-	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-		dest := args.Get(0)
+	populateRound10Slice := func(dest any) {
 		switch d := dest.(type) {
 		case *[]*storagemodels.Activity:
 			// New access pattern: ActivityRepository.GetActivity queries GSI2 by activity ID.
@@ -3615,6 +3620,15 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				rv.Elem().Set(reflect.MakeSlice(rv.Elem().Type(), 0, 0))
 			}
 		}
+	}
+
+	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		populateRound10Slice(args.Get(0))
+	}).Maybe()
+	// Wave #1469 page-capped walks iterate with AllPaginated instead of a bare
+	// All; populate the destination and report no more pages by default.
+	mockQuery.On("AllPaginated", mock.Anything).Return(&dynamormcore.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+		populateRound10Slice(args.Get(0))
 	}).Maybe()
 
 	if state.scanErrorOnce != nil {
