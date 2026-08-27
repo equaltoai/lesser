@@ -24,6 +24,19 @@ goInsecureSkipVerify:
 
 # Exact occurrences of TableTheory `Query.Scan(...)` in non-test Go code (tracked by count per file).
 # This gate exists to prevent adding new DynamoDB scans to production code paths.
+#
+# Wave part 2 (batch A, umbrella #1469, 2026-08-27) eliminated 36 request-adjacent
+# `.Scan` sites: account_repository_auth.go (ClearLoginAttempts/GetLoginAttemptCount →
+# keyed All), auth_repository.go (GetWalletByAddress fallback scan removed),
+# import_export_simple_helpers.go (non-key Username filter → GSI1 query),
+# list_repository.go (6 keyed scans → All), media_popularity_repository.go,
+# media_repository.go (11 keyed scans → All + default-limit clamp),
+# social_repository.go (2 pin scans → All), status_repository.go (GetStatusByURL → All),
+# thread_repository.go (2 → All), trust_repository.go (GetAllTrustRelationships →
+# GSI3 global listing), user_repository.go (6 → All / category-enumerated queries),
+# account_repository.go (GetAccountPreferences → All). One request-path site remains
+# baselined: status_repository.go SearchStatuses (Content CONTAINS full-text search —
+# dispositioned blocker, needs a search backend; see the inventory doc).
 goDynamoDBQueryScan:
   cmd/lesser/migrate_direct_message_state.go: 2
   cmd/lesser/migrate_conversation_metadata.go: 1
@@ -37,37 +50,31 @@ goDynamoDBQueryScan:
   pkg/cost/dynamorm_tracker.go: 1
   pkg/federation/relationship_tracker.go: 4
   pkg/moderation/advanced/reputation.go: 1
-  pkg/storage/repositories/account_repository.go: 5
-  pkg/storage/repositories/account_repository_auth.go: 2
+  pkg/storage/repositories/account_repository.go: 4
   pkg/storage/repositories/account_repository_oauth.go: 1
   pkg/storage/repositories/ai_cost_repository.go: 3
   pkg/storage/repositories/analytics_repository.go: 2
-  pkg/storage/repositories/auth_repository.go: 1
   pkg/storage/repositories/federation_repository.go: 22
   pkg/storage/repositories/hashtag_repository.go: 1
   pkg/storage/repositories/hashtag_trending_calculator.go: 1
-  pkg/storage/repositories/import_export_simple_helpers.go: 2
-  pkg/storage/repositories/list_repository.go: 6
   pkg/storage/repositories/media_analytics_repository.go: 5
   pkg/storage/repositories/media_metadata_repository.go: 2
-  pkg/storage/repositories/media_popularity_repository.go: 1
-  pkg/storage/repositories/media_repository.go: 11
   pkg/storage/repositories/moderation_ml_repository.go: 4
   pkg/storage/repositories/moderation_ml_repository_ext.go: 2
   pkg/storage/repositories/moderation_repository.go: 2
   pkg/storage/repositories/object_repository.go: 1
   pkg/storage/repositories/query_utils.go: 1
   pkg/storage/repositories/severance_repository.go: 2
-  pkg/storage/repositories/social_repository.go: 3
-  pkg/storage/repositories/status_repository.go: 2
-  pkg/storage/repositories/thread_repository.go: 2
-  pkg/storage/repositories/trust_repository.go: 1
-  pkg/storage/repositories/user_repository.go: 6
+  pkg/storage/repositories/social_repository.go: 1
+  pkg/storage/repositories/status_repository.go: 1
 
 # Exact occurrences of partition-key prefix/range predicates in `.Where(...)` (tracked by count per file).
 # Partition keys must be queried by equality; prefix/range predicates force scans.
+# Wave part 2 (batch A, #1469): the last baselined site — analytics_repository.go
+# queryQualityChangeEvents (`Where("PK","begins_with","QUALITY_CHANGE#")`) — was
+# eliminated (GSI3 media-keyed query), so this gate is back to zero.
 goDynamoDBBadPKWhere:
-  pkg/storage/repositories/analytics_repository.go: 1
+  {}
 
 # Key-less TableTheory `All(...)` on freshly-built query chains (a Model(...)/
 # WithContext(...) chain with no partition-key equality condition), which
@@ -99,30 +106,36 @@ goDynamoDBBadPKWhere:
 #   (TOTAL_USERS, TOTAL_DOMAINS, active_month) were REMOVED in PR #1476 — no
 #   scan may run on any request path, marker-gated or not (operator doctrine
 #   2026-08-26).
-# - The other 40 calls are pre-existing unkeyed scans baselined for tracking,
+# - Wave part 2 (batch A, umbrella #1469, 2026-08-27) eliminated 13 request-
+#   adjacent key-less All sites: graph/query_resolvers_cms.go (2 fallback scans
+#   deleted), activity_repository.go (dead GetWeeklyActivity deleted),
+#   analytics_repository.go (queryQualityChangeEvents → GSI3),
+#   announcement_repository.go (dismissal cleanup → GSI1),
+#   enhanced_pattern_repository.go (GetPatternStatistics → GSI4),
+#   moderation_repository.go (5: GetReviewerStats → GSI1, filter keyword/entity
+#   CRUD → filterID point ops, GetModerationPatterns → GSI3),
+#   rate_limit_repository.go (ClearAPIRateLimitsForUser → GSI1),
+#   scheduled_status_repository.go (GetScheduledStatus → GSI2).
+# - The other 27 calls are pre-existing unkeyed scans baselined for tracking,
 #   scheduled for elimination under the same umbrella issue (disposition:
 #   "elimination pending — wave #1469", NOT sanctioned).
 goDynamoDBAllNoKey:
-  graph/query_resolvers_cms.go: 2
   pkg/federation/cost/repository_adapter.go: 1
   pkg/storage/repositories/account_repository_auth.go: 1
   pkg/storage/repositories/account_repository_refresh_tokens.go: 1
-  pkg/storage/repositories/activity_repository.go: 2
-  pkg/storage/repositories/analytics_repository.go: 6
-  pkg/storage/repositories/announcement_repository.go: 1
+  pkg/storage/repositories/activity_repository.go: 1
+  pkg/storage/repositories/analytics_repository.go: 5
   pkg/storage/repositories/dlq_repository.go: 1
-  pkg/storage/repositories/enhanced_pattern_repository.go: 2
+  pkg/storage/repositories/enhanced_pattern_repository.go: 1
   pkg/storage/repositories/federation_activity_repository.go: 1
   pkg/storage/repositories/filter_repository.go: 1
   pkg/storage/repositories/hashtag_trending_engine.go: 1
   pkg/storage/repositories/instance_counts.go: 5
   pkg/storage/repositories/instance_health_repository.go: 1
   pkg/storage/repositories/media_repository.go: 1
-  pkg/storage/repositories/moderation_repository.go: 9
+  pkg/storage/repositories/moderation_repository.go: 4
   pkg/storage/repositories/notification_repository.go: 1
   pkg/storage/repositories/object_repository.go: 1
-  pkg/storage/repositories/rate_limit_repository.go: 1
-  pkg/storage/repositories/scheduled_status_repository.go: 1
   pkg/storage/repositories/search_cost_repository.go: 2
   pkg/storage/repositories/search_repository.go: 2
   pkg/storage/repositories/threat_intel_repository.go: 1
