@@ -342,10 +342,14 @@ func TestModerationProcessor_SendModeratorNotification_AndFallbackAdmins(t *test
 			currentRole = strings.TrimPrefix(value, "ROLE#")
 		}).Return(mockQuery).Maybe()
 
-		mockQuery.On("All", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
+		// ListUsersByRole reads the whole ROLE#<role> partition as a bounded
+		// page walk (wave #1469): Limit(500)/page via AllPaginated, single page.
+		mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.User)
 			*dest = append([]models.User(nil), roleUsers[currentRole]...)
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+		mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 		return repositories.NewUserRepository(mockDB, "test-table", zap.NewNop())
 	}
@@ -598,7 +602,10 @@ func TestModerationProcessor_HandleNewEvent_AndContentRemoval(t *testing.T) {
 			currentRole = strings.TrimPrefix(value, "ROLE#")
 		}).Return(userRepoQuery).Maybe()
 
-		userRepoQuery.On("All", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
+		// ListUsersByRole reads the whole ROLE#<role> partition as a bounded
+		// page walk (wave #1469): Limit(500)/page via AllPaginated, single page.
+		userRepoQuery.On("Limit", 500).Return(userRepoQuery).Maybe()
+		userRepoQuery.On("AllPaginated", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.User)
 			if currentRole != "moderator" {
 				*dest = []models.User{}
@@ -608,7 +615,8 @@ func TestModerationProcessor_HandleNewEvent_AndContentRemoval(t *testing.T) {
 				{Username: "mod-1", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-200 * 24 * time.Hour)},
 				{Username: "mod-2", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-100 * 24 * time.Hour)},
 			}
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+		userRepoQuery.On("Cursor", mock.Anything).Return(userRepoQuery).Maybe()
 
 		mp := &ModerationProcessor{
 			logger:           zap.NewNop(),
@@ -1435,10 +1443,14 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 			currentRole = strings.TrimPrefix(value, "ROLE#")
 		}).Return(mockQuery).Maybe()
 
-		mockQuery.On("All", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
+		// ListUsersByRole reads the whole ROLE#<role> partition as a bounded
+		// page walk (wave #1469): Limit(500)/page via AllPaginated, single page.
+		mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.User)
 			*dest = append([]models.User(nil), roleUsers[currentRole]...)
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+		mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 		return repositories.NewUserRepository(mockDB, "test-table", zap.NewNop())
 	}
