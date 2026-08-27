@@ -125,7 +125,7 @@ func TestAICostRepository_Queries_Summary_Trends_Aggregations(t *testing.T) {
 		mockQuery.On("Index", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.AICost")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.AICost)
 			*dest = []models.AICost{{OperationID: "op-1"}, {OperationID: "op-2"}}
 		}).Return(nil).Once()
@@ -145,7 +145,7 @@ func TestAICostRepository_Queries_Summary_Trends_Aggregations(t *testing.T) {
 		mockQuery.On("Index", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.AICost")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.AICost)
 			*dest = []models.AICost{
 				{OperationID: "cheap", Timestamp: start.Add(10 * time.Minute), TotalCostMicroCents: 100},
@@ -247,7 +247,7 @@ func TestAICostRepository_Queries_Summary_Trends_Aggregations(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.AIAggregatedCost")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.AIAggregatedCost)
 			*dest = []models.AIAggregatedCost{{Period: "day"}, {Period: "day"}}
 		}).Return(nil).Once()

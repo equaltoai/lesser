@@ -262,14 +262,6 @@ func TestDLQRepository_Round08_SendRetryAndRetryableMessages(t *testing.T) {
 	// GetDLQMessagesForReprocessing: query.All returns error twice (new + reprocessing).
 	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Twice()
 
-	// Similar messages query result.
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.DLQMessage)
-		*dest = []*models.DLQMessage{
-			{ID: "1", SimilarityHash: "hash"},
-		}
-	}).Return(nil).Once()
-
 	// GetDLQMessagesByServiceDateRange skip errors branch.
 	mockQuery.On("All", mock.Anything).Return(errors.New("fail")).Once()
 
@@ -288,10 +280,6 @@ func TestDLQRepository_Round08_SendRetryAndRetryableMessages(t *testing.T) {
 	msgs, err := repo.GetRetryableMessages(ctx, "svc", 10)
 	require.NoError(t, err)
 	require.Empty(t, msgs)
-
-	similar, err := repo.GetSimilarMessages(ctx, "hash", 10)
-	require.NoError(t, err)
-	require.Len(t, similar, 1)
 
 	out, err := repo.GetDLQMessagesByServiceDateRange(ctx, "svc", time.Date(2025, 12, 27, 0, 0, 0, 0, time.UTC), time.Date(2025, 12, 27, 0, 0, 0, 0, time.UTC), 1)
 	require.NoError(t, err)

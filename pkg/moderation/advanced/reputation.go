@@ -275,33 +275,6 @@ func (rs *ReputationScorer) GetReputationHistory(ctx context.Context, actorID st
 	return history, nil
 }
 
-// GetActorsByReputation retrieves actors within a reputation range.
-func (rs *ReputationScorer) GetActorsByReputation(ctx context.Context, minScore, maxScore float64, limit int) ([]*ReputationScore, error) {
-	if rs == nil || rs.db == nil {
-		return nil, fmt.Errorf("reputation scorer is not initialized")
-	}
-	if limit <= 0 {
-		limit = 100
-	}
-
-	var records []reputationScoreRecord
-	if err := rs.db.WithContext(ctx).
-		Model(&reputationScoreRecord{}).
-		Filter("SK", "=", skReputation).
-		Filter("Score", "BETWEEN", []any{minScore, maxScore}).
-		Limit(limit).
-		Scan(&records); err != nil {
-		return nil, fmt.Errorf("scan actors: %w", err)
-	}
-
-	scores := make([]*ReputationScore, 0, len(records))
-	for i := range records {
-		scores = append(scores, rs.scoreFromRecord(&records[i]))
-	}
-
-	return scores, nil
-}
-
 // CalculateReputationImpact calculates the reputation impact of a moderation decision.
 func (rs *ReputationScorer) CalculateReputationImpact(decision *ModerationDecision) float64 {
 	impact := 0.0

@@ -199,7 +199,7 @@ func TestAccountRepository_GetAccountsCount_Error(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.Anything).Return(fmt.Errorf("boom")).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Once()
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, now)
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))

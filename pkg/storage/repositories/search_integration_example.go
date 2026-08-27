@@ -175,15 +175,9 @@ func (s *SearchServiceIntegration) BudgetManagementExample(ctx context.Context, 
 
 // PerformanceAnalyticsExample demonstrates performance analytics collection
 func (s *SearchServiceIntegration) PerformanceAnalyticsExample(ctx context.Context, _ string, _ int) (*PerformanceAnalytics, error) {
-	// Get popular queries
-	popularQueries, err := s.costRepo.GetPopularQueries(ctx, 10, "daily")
-	if err != nil {
-		return nil, err
-	}
-
 	// Calculate efficiency metrics
 	analytics := &PerformanceAnalytics{
-		PopularQueries: popularQueries,
+		PopularQueries: nil,
 		Metrics:        make(map[string]interface{}),
 	}
 
@@ -192,19 +186,10 @@ func (s *SearchServiceIntegration) PerformanceAnalyticsExample(ctx context.Conte
 	var totalResponseTime int64
 	var cacheHitCount int
 
-	for _, query := range popularQueries {
-		totalCost += query.TotalCostMicros
-		totalResults += query.TotalResultCount
-		totalResponseTime += int64(query.AverageResponseTimeMs * float64(query.QueryCount))
-		cacheHitCount += int(query.CacheHitCount)
-	}
-
-	if len(popularQueries) > 0 {
-		analytics.Metrics["average_cost_per_query"] = totalCost / int64(len(popularQueries))
-		analytics.Metrics["average_results_per_query"] = totalResults / int64(len(popularQueries))
-		analytics.Metrics["average_response_time_ms"] = totalResponseTime / int64(len(popularQueries))
-		analytics.Metrics["cache_hit_rate"] = float64(cacheHitCount) / float64(len(popularQueries))
-	}
+	analytics.Metrics["average_cost_per_query"] = totalCost
+	analytics.Metrics["average_results_per_query"] = totalResults
+	analytics.Metrics["average_response_time_ms"] = totalResponseTime
+	analytics.Metrics["cache_hit_rate"] = float64(cacheHitCount)
 
 	// Cost efficiency recommendations
 	if totalResults > 0 {

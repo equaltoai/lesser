@@ -5,8 +5,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -26,57 +24,6 @@ func (r *HashtagRepository) GetHashtagTrendingHistory(_ context.Context, _ strin
 	// For now, return empty history as the full implementation requires HashtagTrending model
 	// which doesn't exist yet
 	return []*TrendingScore{}, nil
-}
-
-// GetTrendingAnalytics provides aggregated analytics for trending hashtags
-func (r *HashtagRepository) GetTrendingAnalytics(ctx context.Context, since time.Time) (*TrendingAnalytics, error) {
-	analytics := &TrendingAnalytics{
-		Period:             time.Now(),
-		TotalHashtags:      0,
-		TotalUsage:         0,
-		UniqueUsers:        0,
-		TrendingCandidates: 0,
-		AverageUsagePerTag: 0,
-		AverageUsersPerTag: 0,
-		TrendingThreshold:  0,
-		MinimumUsage:       0,
-		MinimumUsers:       0,
-		CalculationWindows: 0,
-		GeneratedAt:        time.Now(),
-	}
-
-	// Get all hashtags active in the period
-	var activeHashtags []*models.Hashtag
-	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Where("SK", "=", "METADATA").
-		Filter("LastUsed", ">=", since.Format(time.RFC3339)).
-		Scan(&activeHashtags)
-
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, ErrorHandler.HandleQueryError(err, EntityHashtag, "active hashtags")
-	}
-
-	analytics.TotalHashtags = int64(len(activeHashtags))
-
-	// Count trending hashtags
-	trending, err := r.GetTrendingHashtags(ctx, since, 100)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityHashtag, "trending hashtags")
-	}
-	analytics.TrendingCandidates = int64(len(trending))
-
-	// Calculate aggregate metrics
-	var totalUsage int64
-	for _, hashtag := range activeHashtags {
-		totalUsage += int64(hashtag.UsageCount)
-	}
-	analytics.TotalUsage = totalUsage
-
-	if analytics.TotalHashtags > 0 {
-		analytics.AverageUsagePerTag = float64(totalUsage) / float64(analytics.TotalHashtags)
-	}
-
-	return analytics, nil
 }
 
 // ReconfigureTrendingCalculator updates the trending calculator configuration

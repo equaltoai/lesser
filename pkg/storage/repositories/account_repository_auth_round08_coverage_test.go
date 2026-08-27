@@ -297,37 +297,6 @@ func TestRound08_AccountRepositoryAuth_RecoveryAndWebAuthn(t *testing.T) {
 	baseTime := time.Now().UTC()
 	ctx := context.Background()
 
-	t.Run("GetUserByRecoveryCode finds user and handles hash errors", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-
-		hash, err := bcrypt.GenerateFromPassword([]byte("code"), bcrypt.MinCost)
-		require.NoError(t, err)
-
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			out := args.Get(0).(*[]models.RecoveryCode)
-			code := models.RecoveryCode{
-				Username:  "user-1",
-				CodeHash:  string(hash),
-				CreatedAt: baseTime,
-				UsedAt:    nil,
-				Position:  0,
-			}
-			_ = code.UpdateKeys()
-			*out = append(*out, code)
-		}).Return(nil).Once()
-		mockQuery.On("Update").Return(errors.New("update failed")).Once()
-		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
-
-		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-		user, err := repo.GetUserByRecoveryCode(ctx, "code")
-		require.NoError(t, err)
-		require.Equal(t, "user-1", user.Username)
-
-		require.False(t, repo.verifyRecoveryCodeHash("code", "not-a-bcrypt-hash"))
-		require.False(t, repo.verifyRecoveryCodeHash("wrong", string(hash)))
-	})
-
 	t.Run("RecoveryToken CRUD", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)

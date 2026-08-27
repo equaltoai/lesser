@@ -28,6 +28,11 @@ func setupPermissiveAccountRepositoryMocks(mockDB *mocks.MockDB, mockQuery *mock
 		populateAccountRepositorySliceForCoverage(args.Get(0), baseTime)
 	}).Return(nil).Maybe()
 
+	// AllPaginated (page-capped reads, wave #1469): returning a nil result
+	// ends the page loop immediately; permissive tests only exercise the
+	// bounded iteration path, not pagination depth.
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, nil).Maybe()
+
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateAccountRepositorySliceForCoverage(args.Get(0), baseTime)
 	}).Return(nil).Maybe()

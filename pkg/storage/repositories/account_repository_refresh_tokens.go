@@ -337,48 +337,6 @@ func (r *AccountRepository) UpdateAdvancedTokenLastUsed(ctx context.Context, tok
 	return nil
 }
 
-// CleanupExpiredAdvancedTokens removes expired tokens (maintenance task)
-func (r *AccountRepository) CleanupExpiredAdvancedTokens(ctx context.Context) (int, error) {
-	// Note: In production, this would use a more efficient scan or be handled by DynamoDB TTL
-	// For now, we'll implement a basic cleanup
-
-	var allTokens []models.AuthRefreshToken
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Where("SK", "=", "TOKEN").
-		All(&allTokens)
-
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "cleanup scan")
-	}
-
-	now := time.Now().Unix()
-	var deletedCount int
-
-	for _, token := range allTokens {
-		if token.ExpiresAt < now {
-			deleteErr := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-				Where("PK", "=", token.Token).
-				Where("SK", "=", "TOKEN").
-				Delete()
-
-			if deleteErr != nil {
-				r.logger.Error("failed to delete expired token during cleanup",
-					zap.String("token", token.Token[:8]+"..."),
-					zap.Error(deleteErr))
-			} else {
-				deletedCount++
-			}
-		}
-	}
-
-	if deletedCount > 0 {
-		r.logger.Info("cleaned up expired refresh tokens",
-			zap.Int("deletedCount", deletedCount))
-	}
-
-	return deletedCount, nil
-}
-
 // GetAdvancedTokenStats returns statistics about tokens for monitoring
 func (r *AccountRepository) GetAdvancedTokenStats(ctx context.Context, userID string) (*TokenStats, error) {
 	tokens, err := r.GetAdvancedTokensByUser(ctx, userID)

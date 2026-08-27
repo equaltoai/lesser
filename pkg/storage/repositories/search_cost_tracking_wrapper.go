@@ -475,19 +475,9 @@ func (w *SearchCostTrackingWrapper) IncrementSuggestionUse(ctx context.Context, 
 	return w.searchRepo.IncrementSuggestionUse(ctx, suggestionType, term)
 }
 
-// PruneOldSuggestions forwards old suggestion cleanup to the underlying repository
-func (w *SearchCostTrackingWrapper) PruneOldSuggestions(ctx context.Context, olderThan time.Time) error {
-	return w.searchRepo.PruneOldSuggestions(ctx, olderThan)
-}
-
 // IndexStatus forwards status indexing operations to the underlying repository
 func (w *SearchCostTrackingWrapper) IndexStatus(ctx context.Context, status *models.Object) error {
 	return w.searchRepo.IndexStatus(ctx, status)
-}
-
-// UnindexStatus forwards status unindexing operations to the underlying repository
-func (w *SearchCostTrackingWrapper) UnindexStatus(ctx context.Context, statusID string) error {
-	return w.searchRepo.UnindexStatus(ctx, statusID)
 }
 
 // SearchStatusesByHashtag forwards hashtag-based status searches to the underlying repository

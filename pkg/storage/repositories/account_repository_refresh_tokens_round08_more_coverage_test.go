@@ -97,17 +97,6 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens_MoreBranches(t *testing
 		require.Error(t, repo.UpdateAdvancedTokenLastUsed(ctx, "token-0001", "127.0.0.1"))
 	})
 
-	t.Run("CleanupExpiredAdvancedTokens scan error", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Return(errors.New("all failed")).Once()
-		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
-
-		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-		_, err := repo.CleanupExpiredAdvancedTokens(ctx)
-		require.Error(t, err)
-	})
-
 	t.Run("UpdateAdvancedTokenLastUsed non-notfound get error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)

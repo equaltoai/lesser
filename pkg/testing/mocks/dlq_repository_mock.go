@@ -112,15 +112,6 @@ func (m *MockDLQRepository) SearchDLQMessages(ctx context.Context, filter *inter
 	return args.Get(0).([]*models.DLQMessage), args.String(1), args.Error(2)
 }
 
-// GetSimilarMessages mocks the GetSimilarMessages method
-func (m *MockDLQRepository) GetSimilarMessages(ctx context.Context, similarityHash string, limit int) ([]*models.DLQMessage, error) {
-	args := m.Called(ctx, similarityHash, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*models.DLQMessage), args.Error(1)
-}
-
 // ===== Analytics Operations =====
 
 // GetDLQAnalytics mocks the GetDLQAnalytics method

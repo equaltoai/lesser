@@ -43,7 +43,7 @@ func TestActivityRepository_Round09_MoreBranches(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockQuery.
-			On("All", mock.Anything).
+			On("AllPaginated", mock.Anything).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.Activity)
 				*out = append(*out,
@@ -51,7 +51,7 @@ func TestActivityRepository_Round09_MoreBranches(t *testing.T) {
 					&models.Activity{CreatedAt: baseTime, Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "x", Type: "Create"}, Object: map[string]interface{}{"content": "no match"}}},
 				)
 			}).
-			Return(nil).
+			Return(nil, nil).
 			Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -61,7 +61,7 @@ func TestActivityRepository_Round09_MoreBranches(t *testing.T) {
 
 		mockDBErr := new(mocks.MockDB)
 		mockQueryErr := new(mocks.MockQuery)
-		mockQueryErr.On("All", mock.Anything).Return(ErrTestMockError).Once()
+		mockQueryErr.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDBErr, mockQueryErr, nil, baseTime)
 		repoErr := NewActivityRepository(mockDBErr, "test-table", zap.NewNop(), nil)
 		_, err = repoErr.GetHashtagActivity(ctx, "go", baseTime.Add(-time.Hour))
