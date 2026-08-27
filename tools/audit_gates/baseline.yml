@@ -62,8 +62,10 @@ goInsecureSkipVerify:
 # enumerates the two ROLE gsi3 partitions since IN cannot be a key condition;
 # GetAccountsCount page-caps the keyed GSI1 iteration), account_repository_oauth.go
 # DeleteRefreshTokensByUsernameAndClientID (deleted — unkeyed non-key scan, zero
-# callers), ai_cost_repository.go GetAICostsByOperationType/GetTopCostlyOperations/
-# GetAggregatedCosts (keyed-but-.Scan → keyed .All + clamped Limit),
+# callers), ai_cost_repository.go GetAICostsByOperationType/GetTopCostlyOperations
+# (keyed-but-.Scan → keyed .All + clamped Limit); GetAggregatedCosts (keyed GSI → .All +
+# clamp but a no-op: AIAggregatedCost.GSI1PK derives gsI1PK — no attr tag — while the
+# query binds gsi1PK, so it can never match; frozen this wave, zero callers, post-wave model fix),
 # hashtag_trending_calculator.go GetTrendingAnalytics (deleted — zero callers),
 # pkg/moderation/advanced/reputation.go GetActorsByReputation (deleted — zero callers).
 goDynamoDBQueryScan:
