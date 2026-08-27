@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -237,6 +238,92 @@ func TestBatchL_GetHashtagActivity_PageCapped(t *testing.T) {
 	mockQuery.On("Where", "CreatedAt", ">=", mock.Anything).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.Anything).Return(nil, nil).Once()
+
+	repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
+	_, err := repo.GetHashtagActivity(ctx, "go", time.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+// ===== Page-loop continuation coverage (multi-page cursor handoff) =====
+
+func TestBatchL_GetAccountsCount_PageLoopContinues(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "USERS").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	// Page 1 fills a full page and reports HasMore with a cursor; page 2 is
+	// short/terminal. Exercises the cursor handoff and the continuation branch.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.User)
+		users := make([]models.User, 500)
+		for i := range users {
+			users[i] = models.User{Username: fmt.Sprintf("user-%d", i)}
+		}
+		*dest = users
+	}).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c1"}, nil).Once()
+	mockQuery.On("Cursor", "c1").Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	count, err := repo.GetAccountsCount(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 500, count)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchL_GetTotalStorageUsage_PageLoopContinues(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.Media)
+		media := make([]*models.Media, 500)
+		for i := range media {
+			media[i] = &models.Media{MediaID: fmt.Sprintf("m-%d", i)}
+		}
+		*dest = media
+	}).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c1"}, nil).Once()
+	mockQuery.On("Cursor", "c1").Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewMediaRepository(mockDB, "test-table", zap.NewNop(), nil)
+	_, err := repo.GetTotalStorageUsage(ctx)
+	require.NoError(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchL_GetHashtagActivity_PageLoopContinues(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Where", "CreatedAt", ">=", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.Activity)
+		acts := make([]*models.Activity, 500)
+		for i := range acts {
+			acts[i] = &models.Activity{CreatedAt: time.Now()}
+		}
+		*dest = acts
+	}).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c1"}, nil).Once()
+	mockQuery.On("Cursor", "c1").Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
 	_, err := repo.GetHashtagActivity(ctx, "go", time.Now().Add(-time.Hour))
