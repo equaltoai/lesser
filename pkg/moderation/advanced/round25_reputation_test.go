@@ -294,3 +294,38 @@ func TestReputationScorer_GetReputationScore_PropagatesUnexpectedErrors(t *testi
 	db.AssertExpectations(t)
 	query.AssertExpectations(t)
 }
+
+func TestReputationScorer_applyDecay_DecaysTowardNeutral(t *testing.T) {
+	cfg := DefaultModerationConfig()
+	cfg.ReputationDecayRate = 0.1
+	cfg.TrustedActorThreshold = 80
+	cfg.BadActorThreshold = 20
+	rs := &ReputationScorer{config: cfg}
+
+	// 48h old score of 90: decay factor (1-0.1)^(48/24) = 0.81, so the score
+	// moves toward neutral 50: 50 + (90-50)*0.81 = 82.4.
+	score := &ReputationScore{
+		ActorID:   "actor-1",
+		Score:     90,
+		Level:     reputationLevelTrusted,
+		UpdatedAt: time.Now().Add(-48 * time.Hour),
+	}
+
+	out := rs.applyDecay(score)
+	require.NotNil(t, out)
+	assert.InDelta(t, 82.4, out.Score, 0.01)
+	assert.Equal(t, reputationLevelTrusted, out.Level)
+	assert.WithinDuration(t, time.Now(), out.UpdatedAt, 2*time.Second)
+
+	// A score below neutral decays upward toward 50.
+	low := &ReputationScore{
+		ActorID:   "actor-2",
+		Score:     10,
+		Level:     reputationLevelBadActor,
+		UpdatedAt: time.Now().Add(-24 * time.Hour),
+	}
+	out = rs.applyDecay(low)
+	require.NotNil(t, out)
+	assert.InDelta(t, 50+(10-50)*0.9, out.Score, 0.01)
+	assert.Equal(t, reputationLevelBadActor, out.Level)
+}
