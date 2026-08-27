@@ -971,32 +971,19 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 
 	// Query GSI7 for URL-indexed statuses. The partition holds every status
 	// whose primary URL matches (Status.setupGSIKeys indexes URLs[0]), so the
-	// read is a bounded page walk that stops at the first exact match (wave
-	// #1469): 500 statuses/page, 100 pages max, fail-closed on exhaustion. The
-	// two match loops preserve the original selection semantics exactly.
-	var found *models.Status
+	// read is a bounded page walk (wave #1469): 500 statuses/page, 100 pages
+	// max (50k rows), fail-closed on exhaustion. All collected rows are then
+	// scanned partition-wide, preserving the original selection semantics
+	// within that bound: loop 1 (Note.ID == url) across every row, then loop 2
+	// (url ∈ URLs) — not per-page priority.
+	var collected []models.Status
 	err := walkKeyedPages(
 		r.db.WithContext(ctx).Model(&models.Status{}).
 			Index("gsi7").
 			Where("gsi7PK", "=", "URL#"+normalizedURL),
 		500, 100,
 		func(page []models.Status) (bool, error) {
-			// Find exact match by checking the Note.ID field
-			for i := range page {
-				if page[i].Note != nil && page[i].Note.ID == url {
-					found = &page[i]
-					return true, nil
-				}
-			}
-			// If no exact match found, also check the URLs array in case it's a link in content
-			for i := range page {
-				for _, statusURL := range page[i].URLs {
-					if statusURL == url {
-						found = &page[i]
-						return true, nil
-					}
-				}
-			}
+			collected = append(collected, page...)
 			return false, nil
 		},
 	)
@@ -1005,8 +992,20 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "query by URL")
 	}
 
-	if found != nil {
-		return found, nil
+	// Loop 1: exact match by Note.ID across the whole collected partition.
+	for i := range collected {
+		if collected[i].Note != nil && collected[i].Note.ID == url {
+			return &collected[i], nil
+		}
+	}
+
+	// Loop 2: fall back to URLs array membership (link in content).
+	for i := range collected {
+		for _, statusURL := range collected[i].URLs {
+			if statusURL == url {
+				return &collected[i], nil
+			}
+		}
 	}
 
 	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityStatus, url)

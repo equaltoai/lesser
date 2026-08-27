@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -473,6 +474,40 @@ func TestBatchN1_GetStatusByURL_PageCappedWalk(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	require.Equal(t, "hit", found.StatusID)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN1_GetStatusByURL_CrossPagePriority(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Index", "gsi7").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi7PK", "=", "URL#https://example.com/status/1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	// Page 1 holds only a loop-2 (URLs membership) match; page 2 holds the
+	// loop-1 (Note.ID == url) canonical match. Selection priority is
+	// partition-wide, so the walk must collect both pages and return the
+	// page-2 loop-1 match — per-page priority (loop 1 then loop 2 within each
+	// page, stopping at the first hit) would return the page-1 quoter.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Status)
+		*dest = []models.Status{{StatusID: "quoter", URLs: []string{"https://example.com/status/1"}}}
+	}).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c1"}, nil).Once()
+	mockQuery.On("Cursor", "c1").Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Status)
+		*dest = []models.Status{{StatusID: "canonical", Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "https://example.com/status/1"}}}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
+	found, err := repo.GetStatusByURL(ctx, "https://example.com/status/1")
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	require.Equal(t, "canonical", found.StatusID)
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
