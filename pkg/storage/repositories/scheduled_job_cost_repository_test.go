@@ -406,3 +406,28 @@ func TestScheduledJobCostRepository_saveAggregation_CreatePath(t *testing.T) {
 	aggregation := repo.initializeAggregation("cleanup-expired-data", "day", baseTime, baseTime.Add(24*time.Hour))
 	require.NoError(t, repo.saveAggregation(ctx, aggregation, "day", "cleanup-expired-data", baseTime))
 }
+
+func TestScheduledJobCostRepository_GetScheduledJobsSummary_FullProcessingPath(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	setupScheduledJobRepoMocks(mockDB, mockQuery, baseTime)
+	repo := NewScheduledJobCostRepository(mockDB, "test-table", zap.NewNop(), nil)
+
+	// Full path through the wrapper: ListByDateRange accumulates a full 10000
+	// record page (4 mocked records/day x 2500 days, the wrapper's hardcoded
+	// limit), so the summary processes records instead of short-circuiting on
+	// zero executions.
+	summary, err := repo.GetScheduledJobsSummary(ctx, baseTime.AddDate(0, 0, -2500), baseTime)
+	require.NoError(t, err)
+	require.NotNil(t, summary)
+	require.Greater(t, summary.TotalExecutions, 0)
+	require.NotEmpty(t, summary.JobBreakdown)
+	require.NotEmpty(t, summary.CategoryBreakdown)
+	require.NotEmpty(t, summary.ScheduleBreakdown)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
