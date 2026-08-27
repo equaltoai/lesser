@@ -62,7 +62,7 @@ func TestMediaAnalyticsRepository_Round08_TimeRangeQuery_ScanErrorPaths(t *testi
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
 
 	repo := NewMediaAnalyticsRepository(mockDB, "test-table", zap.NewNop(), nil)
 	repo.SetValidationService(nil)
@@ -76,11 +76,11 @@ func TestMediaAnalyticsRepository_Round08_TimeRangeQuery_ScanErrorPaths(t *testi
 	_, err := repo.GetMediaAnalyticsByTimeRange(ctx, "m1", start, end, 10)
 	require.Error(t, err)
 
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
 	_, err = repo.GetAllMediaAnalyticsByTimeRange(ctx, start, end, 10)
 	require.Error(t, err)
 
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
 	_, err = repo.GetBandwidthByTimeRange(ctx, start, end, 10)
 	require.Error(t, err)
 }
@@ -91,7 +91,7 @@ func TestMediaAnalyticsRepository_Round08_GetMediaMetricsForDate_VariantPaths(t 
 	mockQuery := new(mocks.MockQuery)
 
 	date := time.Date(2025, 12, 27, 0, 0, 0, 0, time.UTC).Format(common.DateFormat)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.MediaAnalytics)
 		*dest = []*models.MediaAnalytics{
 			{

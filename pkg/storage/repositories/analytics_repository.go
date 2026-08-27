@@ -108,14 +108,13 @@ func (r *TrendingRepository) RecordHashtagUsage(ctx context.Context, hashtag str
 // RecordStatusEngagement records engagement on a status (like, boost, reply)
 func (r *TrendingRepository) RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error {
 	engagement := &models.StatusEngagement{
-		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("%s#%s#%s", engagementType, time.Now().Format("20060102150405"), userID),
 		StatusID:       statusID,
 		EngagementType: engagementType,
 		UserID:         userID,
 		EngagedAt:      time.Now(),
 		TTL:            time.Now().Add(7 * 24 * time.Hour).Unix(),
 	}
+	_ = engagement.UpdateKeys() // sets PK/SK + GSI1 global listing (wave batch E)
 
 	err := r.db.WithContext(ctx).Model(engagement).Create()
 	if err != nil {
@@ -133,14 +132,13 @@ func (r *TrendingRepository) RecordStatusEngagement(ctx context.Context, statusI
 // RecordLinkShare records when a link is shared in a status
 func (r *TrendingRepository) RecordLinkShare(ctx context.Context, linkURL string, statusID string, authorID string) error {
 	share := &models.LinkShare{
-		PK:       fmt.Sprintf("LINK_SHARE#%s", linkURL),
-		SK:       fmt.Sprintf("STATUS#%s", statusID),
 		URL:      linkURL,
 		StatusID: statusID,
 		AuthorID: authorID,
 		SharedAt: time.Now(),
 		TTL:      time.Now().Add(7 * 24 * time.Hour).Unix(),
 	}
+	_ = share.UpdateKeys() // sets PK/SK + GSI1 global listing (wave batch E)
 
 	err := r.db.WithContext(ctx).Model(share).Create()
 	if err != nil {
@@ -627,8 +625,14 @@ func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.T
 		limit = 20
 	}
 
-	// Since DynamoDB doesn't allow direct queries on non-key attributes like UsedAt,
-	// we'll use the existing hashtag metadata approach which tracks LastUsed
+	// Hashtag metadata rows (HASHTAG#<name> / METADATA) are only written by
+	// HashtagRepository.IndexHashtag, which has zero production callers — no
+	// live writer maintains them, so no rows exist to key. A GSI listing key
+	// added to the model would never be populated and keying this read on it
+	// would silently return nothing, so this stays on the baselined
+	// SK = METADATA scan (disposition "elimination pending — wave #1469" with
+	// a no-live-writer note; see docs/architecture/dynamodb-scan-inventory.md).
+	// The wave part 2 batch E GSI1 conversion was reverted for that reason.
 	var hashtagModels []*models.Hashtag
 	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
 		Where("SK", "=", "METADATA").
@@ -664,11 +668,18 @@ func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.T
 
 // GetRecentStatusesWithEngagement returns recent statuses with engagement since the given time
 func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
-	// Query recent status engagements
+	// Recent status engagements resolve through the GSI1 global listing
+	// (ENGAGEMENTS#ALL / <EngagedAt RFC3339>#<statusID>#<userID>) maintained
+	// by StatusEngagement.UpdateKeys (wave part 2 batch E, #1469); the since
+	// window is a keyed sort-key range. Legacy engagement rows written before
+	// the GSI1 shape carry no index keys and are not returned until next
+	// written (engagements are TTL-transient, 7d).
 	var engagements []models.StatusEngagement
 	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("EngagedAt", ">=", since).
-		OrderBy("EngagedAt", "DESC").
+		Index("gsi1").
+		Where("gsi1PK", "=", "ENGAGEMENTS#ALL").
+		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit * 10). // Get more to aggregate by status
 		All(&engagements)
 
@@ -730,11 +741,18 @@ func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context
 
 // GetRecentLinks returns recent links since the given time (no trending calculation)
 func (r *TrendingRepository) GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
-	// Query recent link shares
+	// Recent link shares resolve through the GSI1 global listing
+	// (LINK_SHARES#ALL / <SharedAt RFC3339>#<url>#<statusID>) maintained by
+	// LinkShare.UpdateKeys (wave part 2 batch E, #1469); the since window is a
+	// keyed sort-key range. Legacy share rows written before the GSI1 shape
+	// carry no index keys and are not returned until next written (shares are
+	// TTL-transient, 7d).
 	var shares []models.LinkShare
 	err := r.db.WithContext(ctx).Model(&models.LinkShare{}).
-		Where("SharedAt", ">=", since).
-		OrderBy("SharedAt", "DESC").
+		Index("gsi1").
+		Where("gsi1PK", "=", "LINK_SHARES#ALL").
+		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit * 5). // Get more to aggregate by URL
 		All(&shares)
 
@@ -961,6 +979,20 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 }
 
 // GetPopularSearchQueries retrieves the most popular search queries
+//
+// NOTE (wave part 2 batch E rework, #1469): this stays on the baselined
+// full-table scan over raw SearchQuery rows and is NOT delegated to the GSI8
+// PopularQueryCounter path. GetTopQueries answers a different question than
+// the caller's window: the counter's GSI8 partition key re-points on every
+// increment (PopularQueryCounter.UpdateKeys sets GSI8PK = POPULAR#<bucket>#<date>
+// from the Date of the last write, moving the item between partitions), so
+// only today's partition is ever populated and a 7-day read would silently
+// return just today's counters — no per-day partitions exist to aggregate
+// across the window. The only source that answers the caller-visible 7-day
+// window (scorePopularQueries, the sole caller) is the raw-row aggregation
+// below, so the delegation was reverted; the site is dispositioned
+// "elimination pending — wave #1469" with this semantic note (see
+// docs/architecture/dynamodb-scan-inventory.md).
 func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
 	// Calculate time cutoff
 	cutoff := time.Now().Add(-timeWindow)

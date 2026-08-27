@@ -33,6 +33,13 @@ type Notification struct {
 	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"gsi4_pk"` // Format: "NOTIF_ID#{notificationID}"
 	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"gsi4_sk"` // Format: "USER#{userID}"
 
+	// GSI5 - Object-scoped lookup for the delete cascade (wave part 2 batch E,
+	// #1469). Partition: "NOTIF_OBJECT#{targetID}"; sort key
+	// "{created_at RFC3339}#{userID}#{id}". Empty when the notification has no
+	// target object (omitted via omitempty).
+	GSI5PK string `theorydb:"index:gsi5,pk,attr:gsi5PK,omitempty" json:"gsi5_pk"` // Format: "NOTIF_OBJECT#{targetID}"
+	GSI5SK string `theorydb:"index:gsi5,sk,attr:gsi5SK,omitempty" json:"gsi5_sk"` // Format: "{created_at}#{userID}#{id}"
+
 	// Core notification data
 	ID     string `theorydb:"attr:id" json:"id"`
 	UserID string `theorydb:"attr:userID" json:"user_id"` // User receiving the notification
@@ -168,6 +175,17 @@ func (n *Notification) setupGSIKeys() {
 	// same-item secondary access path, not a duplicated canonical row.
 	n.GSI4PK = "NOTIF_ID#" + n.ID
 	n.GSI4SK = "USER#" + n.UserID
+
+	// GSI5 - Object-scoped delete cascade (DeleteNotificationsByObject keys on
+	// TargetID, the model's object reference). Maintained on every create via
+	// CreateNotification/CreateNotifications → BeforeCreate.
+	if n.TargetID != "" {
+		n.GSI5PK = "NOTIF_OBJECT#" + n.TargetID
+		n.GSI5SK = fmt.Sprintf("%s#%s#%s", createdAtStr, n.UserID, n.ID)
+	} else {
+		n.GSI5PK = ""
+		n.GSI5SK = ""
+	}
 }
 
 // Validate performs validation on the Notification

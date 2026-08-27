@@ -775,6 +775,10 @@ func TestTrendingRepository_GetPopularSearchQueries_NotFound(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
 
+	// GetPopularSearchQueries aggregates raw SearchQuery rows over the
+	// time-window (baselined scan; the GSI8 counter delegation was reverted in
+	// wave part 2 batch E rework #1469 — the counter's Date partition re-points
+	// per increment, so it cannot answer the caller's 7-day window).
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.SearchQuery")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)

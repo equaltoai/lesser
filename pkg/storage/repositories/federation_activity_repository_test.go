@@ -370,9 +370,10 @@ func TestFederationActivityRepository_GetRecentActivities(t *testing.T) {
 
 		mockDB.On("WithContext", ctx).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.FederationActivity")).Return(mockQuery)
-		mockQuery.On("Index", "gsi1").Return(mockQuery)
-		mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-		mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
+		mockQuery.On("Index", "gsi3").Return(mockQuery)
+		mockQuery.On("Where", "gsi3PK", "=", "FED_ACTIVITY#ALL").Return(mockQuery)
+		mockQuery.On("Where", "gsi3SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
+		mockQuery.On("OrderBy", "gsi3SK", "DESC").Return(mockQuery)
 		mockQuery.On("Limit", 10).Return(mockQuery)
 		mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationActivity")).Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]*models.FederationActivity)
@@ -392,9 +393,10 @@ func TestFederationActivityRepository_GetRecentActivities(t *testing.T) {
 
 		mockDB.On("WithContext", ctx).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.FederationActivity")).Return(mockQuery)
-		mockQuery.On("Index", "gsi1").Return(mockQuery)
-		mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-		mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
+		mockQuery.On("Index", "gsi3").Return(mockQuery)
+		mockQuery.On("Where", "gsi3PK", "=", "FED_ACTIVITY#ALL").Return(mockQuery)
+		mockQuery.On("Where", "gsi3SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
+		mockQuery.On("OrderBy", "gsi3SK", "DESC").Return(mockQuery)
 		mockQuery.On("Limit", 10).Return(mockQuery)
 		mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationActivity")).Return(errors.New("query failed"))
 

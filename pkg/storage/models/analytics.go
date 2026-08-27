@@ -11,6 +11,8 @@ type StatusEngagement struct {
 
 	PK             string    `theorydb:"pk,attr:PK"`                                 // STATUS_ENGAGEMENT#statusID
 	SK             string    `theorydb:"sk,attr:SK"`                                 // engagementType#timestamp#userID
+	GSI1PK         string    `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`        // ENGAGEMENTS#ALL (trend aggregator; wave part 2 batch E, #1469)
+	GSI1SK         string    `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`        // {engagedAt RFC3339}#{statusID}#{userID}
 	StatusID       string    `theorydb:"attr:statusID" json:"status_id"`             // Status being engaged with
 	EngagementType string    `theorydb:"attr:engagementType" json:"engagement_type"` // like, boost, reply
 	UserID         string    `theorydb:"attr:userID" json:"user_id"`                 // User performing engagement
@@ -23,12 +25,18 @@ func (StatusEngagement) TableName() string {
 	return MainTableName
 }
 
-// UpdateKeys updates GSI keys for StatusEngagement - no GSIs needed for this model
+// UpdateKeys updates GSI keys for StatusEngagement. Both production writers
+// (TrendingRepository.RecordStatusEngagement and
+// StatusRepository.createEngagementAndIncrement) call UpdateKeys so the GSI1
+// global listing is maintained on every engagement write.
 func (s *StatusEngagement) UpdateKeys() error {
 	// Set primary keys (required for DynamoDB operations)
 	s.PK = fmt.Sprintf("STATUS_ENGAGEMENT#%s", s.StatusID)
 	s.SK = fmt.Sprintf("%s#%s#%s", s.EngagementType, s.EngagedAt.Format(time.RFC3339), s.UserID)
-	// No GSIs for this model
+
+	// GSI1 - global engagement listing by time (trend aggregator reads)
+	s.GSI1PK = "ENGAGEMENTS#ALL"
+	s.GSI1SK = fmt.Sprintf("%s#%s#%s", s.EngagedAt.Format(time.RFC3339), s.StatusID, s.UserID)
 	return nil
 }
 
@@ -46,21 +54,28 @@ func (s *StatusEngagement) GetSK() string {
 type LinkShare struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK       string    `theorydb:"pk,attr:PK"`                        // LINK_SHARE#url
-	SK       string    `theorydb:"sk,attr:SK"`                        // STATUS#statusID
-	URL      string    `theorydb:"attr:url" json:"url"`               // The shared URL
-	StatusID string    `theorydb:"attr:statusID" json:"status_id"`    // Status containing the link
-	AuthorID string    `theorydb:"attr:authorID" json:"author_id"`    // User who shared the link
-	SharedAt time.Time `theorydb:"attr:sharedAt" json:"shared_at"`    // When the link was shared
-	TTL      int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // 7 day TTL
+	PK       string    `theorydb:"pk,attr:PK"`                          // LINK_SHARE#url
+	SK       string    `theorydb:"sk,attr:SK"`                          // STATUS#statusID
+	GSI1PK   string    `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"` // LINK_SHARES#ALL (trend aggregator; wave part 2 batch E, #1469)
+	GSI1SK   string    `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"` // {sharedAt RFC3339}#{url}#{statusID}
+	URL      string    `theorydb:"attr:url" json:"url"`                 // The shared URL
+	StatusID string    `theorydb:"attr:statusID" json:"status_id"`      // Status containing the link
+	AuthorID string    `theorydb:"attr:authorID" json:"author_id"`      // User who shared the link
+	SharedAt time.Time `theorydb:"attr:sharedAt" json:"shared_at"`      // When the link was shared
+	TTL      int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`   // 7 day TTL
 }
 
-// UpdateKeys updates GSI keys for LinkShare - no GSIs needed for this model
+// UpdateKeys updates GSI keys for LinkShare. The single production writer
+// (TrendingRepository.RecordLinkShare) calls UpdateKeys so the GSI1 global
+// listing is maintained on every link share write.
 func (l *LinkShare) UpdateKeys() error {
 	// Set primary keys (required for DynamoDB operations)
 	l.PK = fmt.Sprintf("LINK_SHARE#%s", l.URL)
 	l.SK = fmt.Sprintf("STATUS#%s", l.StatusID)
-	// No GSIs for this model
+
+	// GSI1 - global link-share listing by time (trend aggregator reads)
+	l.GSI1PK = "LINK_SHARES#ALL"
+	l.GSI1SK = fmt.Sprintf("%s#%s#%s", l.SharedAt.Format(time.RFC3339), l.URL, l.StatusID)
 	return nil
 }
 

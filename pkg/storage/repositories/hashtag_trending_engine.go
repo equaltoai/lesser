@@ -347,7 +347,14 @@ type EnhancedTrendingScore struct {
 func (te *TrendingEngine) getCandidateHashtags(ctx context.Context, since time.Time) ([]*models.Hashtag, error) {
 	var candidates []*models.Hashtag
 
-	// Query recent hashtags directly using DynamORM
+	// Hashtag metadata rows (HASHTAG#<name> / METADATA) are only written by
+	// HashtagRepository.IndexHashtag, which has zero production callers — no
+	// live writer maintains them, so no rows exist to key. A GSI listing key
+	// added to the model would never be populated and keying this read on it
+	// would silently return no candidates, so this stays on the baselined
+	// SK = METADATA scan (disposition "elimination pending — wave #1469" with
+	// a no-live-writer note; see docs/architecture/dynamodb-scan-inventory.md).
+	// The wave part 2 batch E GSI1 conversion was reverted for that reason.
 	err := te.db.WithContext(ctx).Model(&models.Hashtag{}).
 		Where("SK", "=", "METADATA").
 		Filter("LastUsed", ">=", since.Format(time.RFC3339)).

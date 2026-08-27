@@ -1179,6 +1179,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		state.sets[args.String(0)] = nil
 	}).Maybe()
 	mockUpdate.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ConditionExists", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionNotExists", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
 	// O(1) instance-count maintenance uses ExecuteWithResult for the domain

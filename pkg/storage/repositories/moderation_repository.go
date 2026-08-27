@@ -1926,7 +1926,21 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 	}
 	model.UpdateKeys() // Internal model operation
 
-	err = r.db.WithContext(ctx).Model(model).Update()
+	// UnassignReport writes through an explicit UpdateBuilder so the GSI4
+	// assignee keys are REMOVED from storage: tabletheory v3.0.6's implicit
+	// Update() skips empty omitempty attributes, so the stale ASSIGNED#<mod>
+	// partition entry would otherwise survive and overcount
+	// GetPendingModerationCount (wave part 2 batch E rework, #1469).
+	builder := r.db.WithContext(ctx).Model(model).
+		Where("PK", "=", model.PK).
+		Where("SK", "=", model.SK).
+		UpdateBuilder()
+	builder.Set("AssignedTo", model.AssignedTo) // "" — cleared
+	builder.Set("UpdatedAt", model.UpdatedAt)
+	builder.Remove("GSI4PK")
+	builder.Remove("GSI4SK")
+	builder.ConditionExists("PK")
+	err = builder.Execute()
 
 	if err != nil {
 		r.logger.Error("Failed to unassign report",
@@ -2528,7 +2542,36 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 	}
 	model.UpdateKeys() // Internal model operation
 
-	err = r.db.WithContext(ctx).Model(model).Update()
+	// UpdateReportStatus writes through an explicit UpdateBuilder so the GSI
+	// keys derived by UpdateKeys are maintained even when cleared: the status
+	// change moves the item between GSI3 status partitions, and an unassigned
+	// report must have its GSI4 assignee keys REMOVED (tabletheory v3.0.6's
+	// implicit Update() skips empty omitempty attributes, so the stale
+	// ASSIGNED#<mod> entry would otherwise survive and overcount
+	// GetPendingModerationCount — wave part 2 batch E rework, #1469).
+	builder := r.db.WithContext(ctx).Model(model).
+		Where("PK", "=", model.PK).
+		Where("SK", "=", model.SK).
+		UpdateBuilder()
+	builder.Set("Status", model.Status)
+	builder.Set("ActionTaken", model.ActionTaken)
+	builder.Set("ModeratorID", model.ModeratorID)
+	builder.Set("UpdatedAt", model.UpdatedAt)
+	builder.Set("AssignedTo", model.AssignedTo)
+	if model.ActionTakenAt != nil {
+		builder.Set("ActionTakenAt", model.ActionTakenAt)
+	}
+	builder.Set("GSI3PK", model.GSI3PK)
+	builder.Set("GSI3SK", model.GSI3SK)
+	if model.AssignedTo != "" {
+		builder.Set("GSI4PK", model.GSI4PK)
+		builder.Set("GSI4SK", model.GSI4SK)
+	} else {
+		builder.Remove("GSI4PK")
+		builder.Remove("GSI4SK")
+	}
+	builder.ConditionExists("PK")
+	err = builder.Execute()
 
 	if err != nil {
 		r.logger.Error("Failed to update report status",
@@ -2883,14 +2926,21 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 	r.logger.Debug("Getting pending moderation count for moderator",
 		zap.String("moderator_id", moderatorID))
 
-	// Count assigned reports that are still pending (open or in progress)
+	// Count assigned reports that are still pending (open or in progress).
+	// Reports resolve through the GSI4 assignee index (ASSIGNED#<assignee> /
+	// <status>#REPORT#<createdAtUnix>) maintained by Report.UpdateKeys (wave
+	// part 2 batch E, #1469); per-status counts are keyed sort-key ranges.
+	// Legacy assigned reports written before the GSI4 shape carry no index
+	// keys and are not counted until next written (assign/status updates
+	// refresh the keys).
 	var reportCount int
 
 	// Get open reports
 	openReportModels := []models.Report{}
 	err := r.db.WithContext(ctx).Model(&models.Report{}).
-		Where("AssignedTo", "=", moderatorID).
-		Where("Status", "=", string(storage.ReportStatusOpen)).
+		Index("gsi4").
+		Where("gsi4PK", "=", fmt.Sprintf("ASSIGNED#%s", moderatorID)).
+		Where("gsi4SK", "begins_with", string(storage.ReportStatusOpen)+"#REPORT#").
 		All(&openReportModels)
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Warn("failed to query open assigned reports",
@@ -2901,8 +2951,9 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 	// Get in-progress reports
 	inProgressReportModels := []models.Report{}
 	err = r.db.WithContext(ctx).Model(&models.Report{}).
-		Where("AssignedTo", "=", moderatorID).
-		Where("Status", "=", string(storage.ReportStatusInProgress)).
+		Index("gsi4").
+		Where("gsi4PK", "=", fmt.Sprintf("ASSIGNED#%s", moderatorID)).
+		Where("gsi4SK", "begins_with", string(storage.ReportStatusInProgress)+"#REPORT#").
 		All(&inProgressReportModels)
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Warn("failed to query in-progress assigned reports",
@@ -2912,12 +2963,17 @@ func (r *ModerationRepository) GetPendingModerationCount(ctx context.Context, mo
 
 	reportCount = len(openReportModels) + len(inProgressReportModels)
 
-	// Count assigned flags that are still pending
+	// Count assigned flags that are still pending. The Flag model has no
+	// AssignedTo attribute (verified in wave part 2 batch E, #1469), so the
+	// assignee filter has never matched and this count is zero; the read is
+	// keyed on the existing GSI2 (FLAG_STATUS#pending) with the assignee
+	// filter preserved so behavior is unchanged but the query no longer scans.
 	var flagCount int
 	flagModels := []models.Flag{}
 	err = r.db.WithContext(ctx).Model(&models.Flag{}).
-		Where("AssignedTo", "=", moderatorID).
-		Where("Status", "=", string(storage.FlagStatusPending)).
+		Index("gsi2").
+		Where("gsi2PK", "=", "FLAG_STATUS#pending").
+		Filter("AssignedTo", "=", moderatorID).
 		All(&flagModels)
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Warn("failed to query assigned flags",
@@ -3291,14 +3347,16 @@ func (r *ModerationRepository) addToReviewQueue(ctx context.Context, decision *m
 
 // GetModerationDecisionsByModerator retrieves moderation decisions made by a specific moderator
 func (r *ModerationRepository) GetModerationDecisionsByModerator(ctx context.Context, moderatorUsername string, limit int) ([]*models.ModerationReview, error) {
-	// Query moderation reviews by reviewer ID using the existing key structure
-	// ModerationReview has SK=REVIEWER#{reviewer_id}, so we can scan for reviews by this moderator
+	// Query moderation reviews by reviewer via the GSI1 reviewer index
+	// (REVIEWER#<reviewerID> / TIME#<created>#REVIEW#<eventID>) maintained by
+	// ModerationReview.UpdateKeys (batch A shape, umbrella #1469). The previous
+	// SK=REVIEWER#… chain compiled to a full table scan; this binds gsi1PK.
 
 	var reviews []*models.ModerationReview
 
-	// Query reviews where SK starts with "REVIEWER#{moderatorUsername}"
 	query := r.db.WithContext(ctx).Model(&models.ModerationReview{}).
-		Where("SK", "=", fmt.Sprintf("REVIEWER#%s", moderatorUsername))
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("REVIEWER#%s", moderatorUsername))
 
 	if limit > 0 {
 		query = query.Limit(limit)

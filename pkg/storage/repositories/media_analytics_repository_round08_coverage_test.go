@@ -33,7 +33,7 @@ func TestMediaAnalyticsRepository_Round08_RecordAndFetchAndSummaries(t *testing.
 	}).Return(nil).Once()
 
 	// Custom Scan: return deterministic analytics for any Scan call in this test.
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
 		case *[]*models.MediaAnalytics:
 			eventTime := time.Date(2025, 12, 27, 10, 0, 0, 0, time.UTC)
@@ -107,7 +107,7 @@ func TestMediaAnalyticsRepository_Round08_ReportsRecommendationsCleanupAndRanges
 	mockQuery := new(mocks.MockQuery)
 
 	// Custom Scan for old record cleanup and time range queries.
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
 		case *[]*models.MediaAnalytics:
 			eventTime := time.Date(2025, 12, 27, 10, 0, 0, 0, time.UTC)
@@ -193,7 +193,7 @@ func TestMediaAnalyticsRepository_Round08_GetByDateAndVariant_QueryErrors(t *tes
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(queryErr).Twice()
+	mockQuery.On("All", mock.Anything).Return(queryErr).Twice()
 
 	repo := NewMediaAnalyticsRepository(mockDB, "test-table", zap.NewNop(), nil)
 	repo.SetValidationService(nil)

@@ -513,11 +513,18 @@ func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, th
 		threshold = 80.0 // Default threshold for unhealthy instances
 	}
 
-	// Query recent summaries and check health scores
+	// Query recent summaries and check health scores. Hourly summaries resolve
+	// through the GSI1 summary-window listing (HEALTH_SUMMARY#1h /
+	// INSTANCE#<domain>) maintained by InstanceHealthSummary.UpdateKeys on
+	// every summary write (wave part 2 batch E, #1469). The previous
+	// SK=SUMMARY#1h chain compiled to a full table scan; this binds gsi1PK.
+	// Legacy summaries written before the GSI1 shape carry no index keys and
+	// are not evaluated until next written (summaries are TTL-transient, 30d).
 	var summaries []*models.InstanceHealthSummary
 
 	err := r.GetDB().WithContext(ctx).Model(&models.InstanceHealthSummary{}).
-		Where("SK", "=", "SUMMARY#1h"). // Check hourly summaries
+		Index("gsi1").
+		Where("gsi1PK", "=", "HEALTH_SUMMARY#1h"). // Check hourly summaries
 		All(&summaries)
 
 	if err != nil && !dynamoerrors.IsNotFound(err) {

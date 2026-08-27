@@ -31,10 +31,21 @@ type Hashtag struct {
 }
 
 // UpdateKeys updates the GSI keys when the hashtag data changes
+//
+// NOTE (wave part 2 batch E rework, #1469): there is deliberately no global
+// "HASHTAGS#ALL" GSI listing key here. The only writer of hashtag metadata
+// rows (HASHTAG#<name> / METADATA) is HashtagRepository.IndexHashtag, which
+// has zero production callers — no live path maintains these rows, so an
+// index key would never be populated and reads keyed on it would silently
+// return nothing. The trend reads (GetRecentHashtags, getCandidateHashtags)
+// therefore stay on their baselined SK = METADATA scans with a documented
+// "no live metadata writer — no rows exist" disposition (see
+// docs/architecture/dynamodb-scan-inventory.md).
 func (h *Hashtag) UpdateKeys() error {
 	tagLower := strings.ToLower(strings.TrimPrefix(h.Name, "#"))
 	h.PK = fmt.Sprintf(KeyPatternHashtag, tagLower)
 	h.SK = SKMetadata
+
 	h.GSI3PK = fmt.Sprintf(KeyPatternHashtagSearch, getHashtagPrefix(tagLower))
 	h.GSI3SK = tagLower
 	return nil

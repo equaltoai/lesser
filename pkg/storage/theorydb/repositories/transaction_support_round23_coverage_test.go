@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
@@ -173,6 +174,47 @@ func TestTransactionalRepository_FollowUserTransactional_Succeeds_Round23(t *tes
 	q.On("Update", mock.Anything).Return(nil).Maybe()
 
 	db := &transactionRunnerDB{query: q}
+	repo := NewTransactionalRepository(db, "main", zap.NewNop(), cost.New())
+
+	require.NoError(t, repo.FollowUserTransactional(context.Background(), "alice", "bob"))
+}
+
+// TestTransactionalRepository_FollowUserTransactional_MaintainsNotificationGSI5
+// fences the follow-notification write: the notification is created through
+// BeforeCreate (canonical USER#<userID> / notif#<timestamp>#<id> row + GSI5
+// NOTIF_OBJECT#<targetID> listing keys), so if the object-scoped cascade
+// (DeleteNotificationsByObject, wave part 2 batch E #1469) is ever wired to
+// this path it sees the follow notifications. Before the fence (2026-08-27)
+// the keys were hand-built (NOTIF#<userID> / <RFC3339>#<id>) with no
+// BeforeCreate, so the row carried no GSI5 keys.
+func TestTransactionalRepository_FollowUserTransactional_MaintainsNotificationGSI5(t *testing.T) {
+	t.Parallel()
+
+	q := new(dynamormMocks.MockQuery)
+	q.On("Create").Return(nil).Maybe()
+	q.On("Update", mock.Anything).Return(nil).Maybe()
+
+	db := &transactionRunnerDB{query: q, transactionFn: func(_ context.Context, fn func(core.TransactionBuilder) error) error {
+		builder := new(dynamormMocks.MockTransactionBuilder)
+		var notifications []*models.Notification
+		builder.On("Create", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			if n, ok := args.Get(0).(*models.Notification); ok {
+				notifications = append(notifications, n)
+			}
+		}).Return(builder).Maybe()
+		builder.On("Update", mock.Anything, mock.Anything, mock.Anything).Return(builder).Maybe()
+		builder.On("Put", mock.Anything, mock.Anything).Return(builder).Maybe()
+		if err := fn(builder); err != nil {
+			return err
+		}
+		require.Len(t, notifications, 1, "exactly one follow notification is written")
+		n := notifications[0]
+		require.Equal(t, "USER#bob", n.PK, "canonical recipient partition key")
+		require.Contains(t, n.SK, "notif#", "canonical notification sort key")
+		require.Equal(t, "NOTIF_OBJECT#alice", n.GSI5PK, "object-scoped GSI5 partition key maintained")
+		require.Contains(t, n.GSI5SK, "#bob#", "object-scoped GSI5 sort key maintained")
+		return nil
+	}}
 	repo := NewTransactionalRepository(db, "main", zap.NewNop(), cost.New())
 
 	require.NoError(t, repo.FollowUserTransactional(context.Background(), "alice", "bob"))

@@ -434,15 +434,35 @@ func TestModeratorSelector_SelectByWorkload_SortsByPendingCount(t *testing.T) {
 		},
 	}
 
+	// GetPendingModerationCount now reads keyed GSI4 (reports by assignee) and
+	// GSI2 (flags by status) chains (wave part 2 batch E, #1469); capture the
+	// moderator from gsi4PK and the status from the gsi4SK prefix so the
+	// per-moderator workload map drives the populated slices. The Index/Filter
+	// expectations added with that conversion are exact-count enforced via
+	// mockQuery.AssertExpectations(t) below (selectByWorkload calls
+	// GetPendingModerationCount once per moderator: 3 × 2 GSI4 reads + 3 × 1
+	// GSI2 read + 3 × 1 assignee filter).
+	mockQuery.On("Index", "gsi4").Run(func(args mock.Arguments) {
+		currentStatus = ""
+	}).Return(mockQuery).Times(6)
+
+	mockQuery.On("Index", "gsi2").Run(func(args mock.Arguments) {
+		currentStatus = string(storage.FlagStatusPending)
+	}).Return(mockQuery).Times(3)
+
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		field, _ := args.Get(0).(string)
 		switch field {
-		case "AssignedTo":
-			currentModerator, _ = args.Get(2).(string)
-		case "Status":
-			currentStatus, _ = args.Get(2).(string)
+		case "gsi4PK":
+			val, _ := args.Get(2).(string)
+			currentModerator = strings.TrimPrefix(val, "ASSIGNED#")
+		case "gsi4SK":
+			val, _ := args.Get(2).(string)
+			currentStatus = strings.TrimSuffix(val, "#REPORT#")
 		}
 	}).Return(mockQuery).Maybe()
+
+	mockQuery.On("Filter", "AssignedTo", "=", mock.Anything).Return(mockQuery).Times(3)
 
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		if dest, ok := args.Get(0).(*[]models.Report); ok {
@@ -469,6 +489,7 @@ func TestModeratorSelector_SelectByWorkload_SortsByPendingCount(t *testing.T) {
 	require.Len(t, selected, 2)
 	require.Equal(t, "mod-2", selected[0].Username)
 	require.Equal(t, "mod-3", selected[1].Username)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestModerationProcessor_TriggerAutomaticActions_HighSeverityBranches(t *testing.T) {
@@ -669,6 +690,7 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
@@ -1028,6 +1050,7 @@ func TestInitAdvancedModerationEngine_CoversBasicModeWithoutAWS(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
@@ -1063,6 +1086,7 @@ func TestInitAdvancedModerationEngine_CoversAWSModeBranches(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
@@ -1307,6 +1331,7 @@ func TestModeratorSelector_hasHandledCategory_CoversAdminAndHistoryPaths(t *test
 
 		mockModerationDB.On("WithContext", mock.Anything).Return(mockModerationDB).Maybe()
 		mockModerationDB.On("Model", mock.Anything).Return(mockModerationQuery).Maybe()
+		mockModerationQuery.On("Index", mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("Limit", mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("All", mock.AnythingOfType("*[]*models.ModerationReview")).Run(func(args mock.Arguments) {
@@ -1404,7 +1429,7 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 		return repositories.NewUserRepository(mockDB, "test-table", zap.NewNop())
 	}
 
-	createModerationRepo := func(counts map[string]int) *repositories.ModerationRepository {
+	createModerationRepo := func(counts map[string]int) (*repositories.ModerationRepository, *mocks.MockQuery) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
@@ -1412,44 +1437,75 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 
 		currentModerator := ""
+		currentStatus := ""
+		// Exact-count Index/Filter expectations (wave part 2 batch E, #1469):
+		// StrategyWorkloadBased is the only strategy touching the moderation
+		// repo — one GetPendingModerationCount per moderator (m1/m2/m3): 2 GSI4
+		// reads, 1 GSI2 read, 1 assignee filter each. The moderation repo is
+		// never used by the empty-list subtest, so its mock is not asserted
+		// there; the main flow asserts below.
+		mockQuery.On("Index", "gsi4").Run(func(args mock.Arguments) {
+			currentStatus = ""
+		}).Return(mockQuery).Times(6)
+
+		mockQuery.On("Index", "gsi2").Run(func(args mock.Arguments) {
+			currentStatus = string(storage.FlagStatusPending)
+		}).Return(mockQuery).Times(3)
+
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			field, _ := args.Get(0).(string)
-			if field == "AssignedTo" {
-				currentModerator, _ = args.Get(2).(string)
+			switch field {
+			case "gsi4PK":
+				val, _ := args.Get(2).(string)
+				currentModerator = strings.TrimPrefix(val, "ASSIGNED#")
+			case "gsi4SK":
+				val, _ := args.Get(2).(string)
+				currentStatus = strings.TrimSuffix(val, "#REPORT#")
 			}
 		}).Return(mockQuery).Maybe()
 
+		mockQuery.On("Filter", "AssignedTo", "=", mock.Anything).Return(mockQuery).Times(3)
+
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			if dest, ok := args.Get(0).(*[]models.Report); ok {
-				*dest = make([]models.Report, counts[currentModerator])
+				count := 0
+				if currentStatus == string(storage.ReportStatusOpen) {
+					count = counts[currentModerator]
+				}
+				*dest = make([]models.Report, count)
 			}
 			if dest, ok := args.Get(0).(*[]models.Flag); ok {
 				*dest = []models.Flag{}
 			}
 		}).Return(nil).Maybe()
 
-		return repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop())
+		return repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop()), mockQuery
 	}
 
 	t.Run("empty moderator list returns empty selection", func(t *testing.T) {
 		ms := NewModeratorSelector(createUserRepo(map[string][]models.User{
 			"moderator": {},
 			"admin":     {},
-		}), createModerationRepo(nil), zap.NewNop())
+		}), func() *repositories.ModerationRepository {
+			repo, _ := createModerationRepo(nil)
+			return repo
+		}(), zap.NewNop())
 
 		selected, err := ms.SelectModerators(ctx, &moderation.ModerationEvent{ID: "evt"}, StrategyRoundRobin)
 		require.NoError(t, err)
 		require.Empty(t, selected)
 	})
 
-	ms := NewModeratorSelector(createUserRepo(map[string][]models.User{
+	userRepo := createUserRepo(map[string][]models.User{
 		"moderator": {
 			{Username: "m1", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-400 * 24 * time.Hour)},
 			{Username: "m2", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-200 * 24 * time.Hour)},
 			{Username: "m3", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-100 * 24 * time.Hour)},
 		},
 		"admin": {},
-	}), createModerationRepo(map[string]int{"m1": 3, "m2": 0, "m3": 1}), zap.NewNop())
+	})
+	moderationRepo, moderationQuery := createModerationRepo(map[string]int{"m1": 3, "m2": 0, "m3": 1})
+	ms := NewModeratorSelector(userRepo, moderationRepo, zap.NewNop())
 
 	event := &moderation.ModerationEvent{ID: "evt", Severity: 7, Category: moderation.CategoryNSFW}
 
@@ -1472,6 +1528,11 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 	selected, err = ms.SelectModerators(ctx, event, ModeratorSelectionStrategy("unknown"))
 	require.NoError(t, err)
 	require.Len(t, selected, 2)
+
+	// Assert the exact GSI4/GSI2/assignee-filter call counts added by the
+	// batch E conversion (wave part 2, #1469); pre-existing Maybe() plumbing
+	// (Where/All/WithContext/Model) is not retrofitted.
+	moderationQuery.AssertExpectations(t)
 }
 
 func TestModerationProcessor_Enforcement_SuccessPaths(t *testing.T) {
@@ -1531,6 +1592,7 @@ func TestModeratorSelector_getModerationHistory_ErrorBranch(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Maybe()
