@@ -3148,6 +3148,49 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 					UpdatedAt: time.Now().Add(-30 * time.Minute),
 				},
 			}
+		case *[]*storagemodels.Vouch:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			if strings.HasPrefix(pk, "VOUCH#") && sk == storagemodels.SKMetadata {
+				vouchID := strings.TrimPrefix(pk, "VOUCH#")
+				if vouch, ok := state.vouchModelsByID[vouchID]; ok && vouch != nil {
+					*d = []*storagemodels.Vouch{vouch}
+					return
+				}
+				for _, model := range state.vouchModels {
+					if model != nil && model.PK == pk {
+						*d = []*storagemodels.Vouch{model}
+						return
+					}
+				}
+				*d = []*storagemodels.Vouch{}
+				return
+			}
+			if gsi1pk, ok := state.whereString("gsi1PK"); ok && gsi1pk != "" {
+				items := make([]*storagemodels.Vouch, 0)
+				for _, model := range state.vouchModels {
+					if model != nil && model.GSI1PK == gsi1pk {
+						items = append(items, model)
+					}
+				}
+				*d = items
+				return
+			}
+			if gsi2pk, ok := state.whereString("gsi2PK"); ok && gsi2pk != "" {
+				items := make([]*storagemodels.Vouch, 0)
+				for _, model := range state.vouchModels {
+					if model != nil && model.GSI2PK == gsi2pk {
+						items = append(items, model)
+					}
+				}
+				*d = items
+				return
+			}
+			if state.vouchModels != nil {
+				*d = state.vouchModels
+				return
+			}
+			*d = []*storagemodels.Vouch{}
 		case *[]*storagemodels.PushSubscription:
 			username, _ := state.whereString("PK")
 			username = strings.TrimPrefix(username, "PUSH#")

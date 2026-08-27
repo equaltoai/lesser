@@ -262,14 +262,14 @@ func (m *MockModerationRepository) GetFilterKeywords(ctx context.Context, filter
 }
 
 // UpdateFilterKeyword mocks the UpdateFilterKeyword method
-func (m *MockModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordID string, updates map[string]any) error {
-	args := m.Called(ctx, keywordID, updates)
+func (m *MockModerationRepository) UpdateFilterKeyword(ctx context.Context, filterID string, keywordID string, updates map[string]any) error {
+	args := m.Called(ctx, filterID, keywordID, updates)
 	return args.Error(0)
 }
 
 // DeleteFilterKeyword mocks the DeleteFilterKeyword method
-func (m *MockModerationRepository) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
-	args := m.Called(ctx, keywordID)
+func (m *MockModerationRepository) DeleteFilterKeyword(ctx context.Context, filterID string, keywordID string) error {
+	args := m.Called(ctx, filterID, keywordID)
 	return args.Error(0)
 }
 
@@ -289,8 +289,8 @@ func (m *MockModerationRepository) GetFilterStatuses(ctx context.Context, filter
 }
 
 // DeleteFilterStatus mocks the DeleteFilterStatus method
-func (m *MockModerationRepository) DeleteFilterStatus(ctx context.Context, statusID string) error {
-	args := m.Called(ctx, statusID)
+func (m *MockModerationRepository) DeleteFilterStatus(ctx context.Context, filterID string, statusID string) error {
+	args := m.Called(ctx, filterID, statusID)
 	return args.Error(0)
 }
 

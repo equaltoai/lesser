@@ -726,7 +726,6 @@ type UserRepository interface {
 	DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error
 	GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
 	GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error)
-	GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error)
 
 	// Trust score operations
 	GetTrustScore(ctx context.Context, actorID, category string) (*storage.TrustScore, error)

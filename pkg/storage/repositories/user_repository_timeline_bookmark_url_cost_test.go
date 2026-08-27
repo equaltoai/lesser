@@ -104,7 +104,7 @@ func TestUserRepository_GetVouchesForActor_NoActiveFilter(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(nil)
+	mockQuery.On("All", mock.Anything).Return(nil)
 
 	_, err := repo.GetVouchesForActor(context.Background(), "bob", false)
 	assert.NoError(t, err)

@@ -1722,7 +1722,7 @@ func TestService_Round13_RepositoryErrorBranches(t *testing.T) {
 	t.Run("GetPreferences returns ErrGetPreferences on repo error", func(t *testing.T) {
 		svc, _ := newPermissiveAccountsService(t, permissiveDBOptions{
 			domain:         "example.com",
-			firstScanError: errors.New("scan failed"),
+			firstAllError: errors.New("preferences query failed"),
 		})
 
 		_, err := svc.GetPreferences(ctx, &GetPreferencesQuery{Username: "alice"})

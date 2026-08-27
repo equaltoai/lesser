@@ -74,8 +74,8 @@ func TestRelationshipRepository_GetMove_and_endorsements_paginated_error(t *test
 	_, err = repo.GetMove(ctx, "alice")
 	assert.Error(t, err)
 
-	// GetEndorsements: social repo scan error propagates and is wrapped
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	// GetEndorsements: social repo query error propagates and is wrapped
+	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
 	_, _, err = repo.GetEndorsements(ctx, "https://example.com/users/alice", 2, "")
 	assert.Error(t, err)
 }

@@ -85,32 +85,10 @@ func TestMediaRepository_Sweep_ExportedMethods(t *testing.T) {
 		}
 	}).Return(nil).Maybe()
 
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
 		case *[]*models.MediaJob:
 			*dest = []*models.MediaJob{{JobID: "job-1"}}
-		case *[]*models.Media:
-			*dest = []*models.Media{{MediaID: "m1", UserID: userID, ContentType: "image/png", Status: models.StatusPending}}
-		case *[]*models.MediaSpending:
-			*dest = []*models.MediaSpending{{UserID: userID, Period: "2025-12", PeriodType: models.PeriodMonthly}}
-		case *[]*models.MediaSpendingTransaction:
-			*dest = []*models.MediaSpendingTransaction{{UserID: userID, Category: models.ResourceProcessing}}
-		case *[]*models.TranscodingJob:
-			*dest = []*models.TranscodingJob{{
-				JobID:           "tj-1",
-				UserID:          userID,
-				MediaID:         "m1",
-				JobType:         "video",
-				Status:          "completed",
-				StartedAt:       time.Now().Add(-time.Hour),
-				TotalCostMicros: 10,
-				CostBreakdown:   map[string]int64{"svc": 10},
-			}}
-		}
-	}).Return(nil).Maybe()
-
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		switch dest := args.Get(0).(type) {
 		case *[]*models.Media:
 			olderThan := time.Now().Add(-time.Hour)
 			usedAt := olderThan.Add(-time.Minute)
@@ -118,6 +96,10 @@ func TestMediaRepository_Sweep_ExportedMethods(t *testing.T) {
 				{MediaID: "m-unused", UserID: userID, ContentType: "image/png", UsageCount: 0},
 				{MediaID: "m-old", UserID: userID, ContentType: "image/png", UsageCount: 1, LastUsedAt: &usedAt},
 			}
+		case *[]*models.MediaSpending:
+			*dest = []*models.MediaSpending{{UserID: userID, Period: "2025-12", PeriodType: models.PeriodMonthly}}
+		case *[]*models.MediaSpendingTransaction:
+			*dest = []*models.MediaSpendingTransaction{{UserID: userID, Category: models.ResourceProcessing}}
 		case *[]*models.TranscodingJob:
 			*dest = []*models.TranscodingJob{
 				{JobID: "tj-1", UserID: userID, MediaID: "m1", JobType: "video", Status: "completed", StartedAt: time.Now().Add(-time.Hour), TotalCostMicros: 10, CostBreakdown: map[string]int64{"svc": 10}},
@@ -336,7 +318,7 @@ func TestMediaRepository_MoreBranches(t *testing.T) {
 		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]*models.Media")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]*models.Media")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.Media)
 			*dest = []*models.Media{
 				{MediaID: "m1", GSI2SK: "c1"},
@@ -354,7 +336,7 @@ func TestMediaRepository_MoreBranches(t *testing.T) {
 		require.True(t, page.HasMore)
 		require.Equal(t, "c2", page.NextCursor)
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]*models.Media")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]*models.Media")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.Media)
 			*dest = []*models.Media{
 				{MediaID: "m1", GSI1SK: "u1"},
@@ -572,7 +554,7 @@ func TestMediaRepository_ErrorBranches(t *testing.T) {
 		mockDB.On("Model", mock.AnythingOfType("*models.MediaJob")).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaJob")).Return(ErrTestMockError).Once()
+		mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaJob")).Return(ErrTestMockError).Once()
 
 		_, err = repo.GetJobsByStatus(ctx, "pending", 10)
 		require.Error(t, err)
@@ -592,7 +574,7 @@ func TestMediaRepository_ErrorBranches(t *testing.T) {
 		mockDB.On("Model", mock.AnythingOfType("*models.Media")).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.AnythingOfType("*[]*models.Media")).Return(ErrTestMockError).Once()
+		mockQuery.On("All", mock.AnythingOfType("*[]*models.Media")).Return(ErrTestMockError).Once()
 
 		_, err := repo.GetUserMediaLegacy(ctx, "alice")
 		require.Error(t, err)
@@ -608,7 +590,7 @@ func TestMediaRepository_ErrorBranches(t *testing.T) {
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]*models.Media")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]*models.Media")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.Media)
 			*dest = []*models.Media{
 				{MediaID: "m1", UserID: "alice1234", ContentType: "image/png", FileSize: 1, Status: models.StatusPending},
@@ -680,7 +662,8 @@ func TestMediaRepository_ErrorBranches(t *testing.T) {
 		mockDB.On("WithContext", ctx).Return(mockDB).Once()
 		mockDB.On("Model", mock.AnythingOfType("*models.Media")).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.AnythingOfType("*[]*models.Media")).Return(ErrTestMockError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
+		mockQuery.On("All", mock.AnythingOfType("*[]*models.Media")).Return(ErrTestMockError).Once()
 
 		_, err := repo.GetMediaStorageUsage(ctx, "alice1234")
 		require.Error(t, err)

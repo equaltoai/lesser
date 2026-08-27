@@ -35,9 +35,6 @@ type ActivityRepository interface {
 
 	// ===== Analytics and Metrics Operations =====
 
-	// GetWeeklyActivity retrieves weekly activity statistics
-	GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error)
-
 	// RecordActivity records general activity metrics
 	RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error
 

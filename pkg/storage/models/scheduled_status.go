@@ -17,6 +17,10 @@ type ScheduledStatus struct {
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"` // SCHEDULED#DUE
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"` // TIME#{scheduled_at_RFC3339Nano}#ID#{id}
 
+	// GSI2 keys for ID lookups without knowing the owning user
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"` // SCHEDULED_ID#{id}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"` // USER#{username}#SCHEDULED
+
 	// Business fields - embedded from storage.ScheduledStatus
 	ID            string         `theorydb:"attr:id" json:"id"`
 	Username      string         `theorydb:"attr:username" json:"username"` // Who scheduled the status
@@ -42,6 +46,8 @@ func (s *ScheduledStatus) UpdateKeys() error {
 	s.SK = fmt.Sprintf("ID#%s", s.ID)
 	s.GSI1PK = "SCHEDULED#DUE"
 	s.GSI1SK = fmt.Sprintf("TIME#%s#ID#%s", s.ScheduledAt.Format(time.RFC3339Nano), s.ID)
+	s.GSI2PK = fmt.Sprintf("SCHEDULED_ID#%s", s.ID)
+	s.GSI2SK = fmt.Sprintf("USER#%s#SCHEDULED", s.Username)
 	return nil
 }
 

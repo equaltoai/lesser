@@ -341,7 +341,7 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 	t.Run("get vouches scan failure returns 500", func(t *testing.T) {
 		failState := &round10QueryState{
-			scanErrorOnce: errors.New("scan failed"),
+			allErrorByType: map[string]error{"*[]*models.Vouch": errors.New("scan failed")},
 		}
 		failHandler, _, _ := round11NewHandler(t, cfg, failState)
 

@@ -140,12 +140,14 @@ func (r *ScheduledStatusRepository) CreateScheduledStatus(ctx context.Context, s
 
 // GetScheduledStatus retrieves a scheduled status by ID
 func (r *ScheduledStatusRepository) GetScheduledStatus(ctx context.Context, id string) (*storage.ScheduledStatus, error) {
-	// Since we don't know the username, we need to do a scan with a filter
-	// This is less efficient than the legacy implementation but follows DynamORM patterns
+	// The primary keys are username-scoped, so resolve by ID through GSI2 instead
+	// of scanning the whole table for SK = ID#{id}.
 	var scheduledModels []*models.ScheduledStatus
 
 	err := r.db.WithContext(ctx).Model(&models.ScheduledStatus{}).
-		Where("SK", "=", fmt.Sprintf("ID#%s", id)).
+		Index("gsi2").
+		Where("gsi2PK", "=", fmt.Sprintf("SCHEDULED_ID#%s", id)).
+		Limit(1).
 		All(&scheduledModels)
 	if err != nil {
 		return nil, ErrorHandler.HandleGetError(err, EntityScheduledStatus, id)

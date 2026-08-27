@@ -396,7 +396,7 @@ func TestStatusRepository_url_queries(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 
 		url := "https://example.com/status/1"
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
 				{
@@ -1060,7 +1060,7 @@ func TestStatusRepository_more_error_branches_and_helpers(t *testing.T) {
 
 		url := "https://example.com/status/1"
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
 				{StatusID: "url-match", URLs: []string{url}},
@@ -1076,7 +1076,7 @@ func TestStatusRepository_more_error_branches_and_helpers(t *testing.T) {
 
 		mockDB2 := new(mocks.MockDB)
 		mockQuery2 := new(mocks.MockQuery)
-		mockQuery2.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		mockQuery2.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
 				{StatusID: "nope", URLs: []string{"https://example.com/other"}},

@@ -476,62 +476,6 @@ func (r *ActivityRepository) createEmptyCollectionPage(username, collectionType 
 	return page
 }
 
-// GetWeeklyActivity retrieves weekly activity statistics
-func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
-	// For now, we'll create a simple implementation that counts activities in that week
-	// In a production system, this would likely use a separate analytics table
-
-	// Calculate week start and end
-	weekStart := time.Unix(weekTimestamp, 0)
-	weekEnd := weekStart.Add(7 * 24 * time.Hour)
-
-	// Query activities for the week
-	// This is a simplified implementation - in production you'd likely use a separate analytics table
-	// Using direct DynamORM since this is a time-range scan which BaseRepository doesn't optimize for
-	var activities []*models.Activity
-	err := r.db.WithContext(ctx).Model(&models.Activity{}).
-		Where("CreatedAt", ">=", weekStart).
-		Where("CreatedAt", "<", weekEnd).
-		All(&activities)
-
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "activity", "weekly activities")
-	}
-
-	// Track cost manually since we're using direct DynamORM scan
-	if r.costService != nil {
-		itemCount := int64(len(activities))
-		estimatedRU := itemCount
-		if estimatedRU == 0 {
-			estimatedRU = 1
-		}
-		if err := r.TrackRead(ctx, "Scan", estimatedRU); err != nil {
-			r.logger.Warn("failed to track read operation", zap.Error(err))
-		}
-	}
-
-	// Count different types of activities
-	statuses := int64(0)
-	logins := int64(0)        // Would need separate tracking
-	registrations := int64(0) // Would need separate tracking
-
-	for _, activity := range activities {
-		if activity.Activity != nil {
-			switch activity.Activity.Type {
-			case "Create":
-				statuses++
-			}
-		}
-	}
-
-	return &storage.WeeklyActivity{
-		Week:          fmt.Sprintf("%d", weekTimestamp),
-		Statuses:      int(statuses),
-		Logins:        int(logins),
-		Registrations: int(registrations),
-	}, nil
-}
-
 // RecordActivity records general activity metrics
 func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
 	// Create a simple activity record

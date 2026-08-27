@@ -23,7 +23,7 @@ func TestRound08_AccountRepositoryAuth_LastMileCoverage(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(0).(*[]models.LoginAttempt)
 			*out = append(*out, models.LoginAttempt{PK: "RATELIMIT#k", SK: "sk"})
 		}).Return(nil).Once()

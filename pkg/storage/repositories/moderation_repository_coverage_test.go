@@ -436,7 +436,7 @@ func TestModerationRepository_Coverage_Smoke(t *testing.T) {
 	_, err = repo.GetFilterKeywords(ctx, "filter-1")
 	require.NoError(t, err)
 
-	require.NoError(t, repo.UpdateFilterKeyword(ctx, "keyword-1", map[string]any{
+	require.NoError(t, repo.UpdateFilterKeyword(ctx, "filter-1", "keyword-1", map[string]any{
 		"keyword":    "ham",
 		"whole_word": false,
 	}))

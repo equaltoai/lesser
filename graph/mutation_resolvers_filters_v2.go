@@ -320,7 +320,7 @@ func (r *mutationResolver) DeleteFilterKeyword(ctx context.Context, filterID str
 		return false, common.ErrNotFound("filter")
 	}
 
-	if err := moderationRepo.DeleteFilterKeyword(ctx, keywordID); err != nil {
+	if err := moderationRepo.DeleteFilterKeyword(ctx, filterID, keywordID); err != nil {
 		return false, errors.Join(errors.New("failed to delete filter keyword"), err)
 	}
 
@@ -409,7 +409,7 @@ func (r *mutationResolver) DeleteFilterStatus(ctx context.Context, filterID stri
 		return false, common.ErrNotFound("filter status")
 	}
 
-	if err := moderationRepo.DeleteFilterStatus(ctx, targetStatusID); err != nil {
+	if err := moderationRepo.DeleteFilterStatus(ctx, filterID, targetStatusID); err != nil {
 		return false, errors.Join(errors.New("failed to delete filter status"), err)
 	}
 

@@ -470,6 +470,7 @@ func TestEnhancedPatternRepository_Maintenance(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*models.EnhancedModerationPattern)
@@ -631,6 +632,7 @@ func TestEnhancedPatternRepository_ErrorPaths(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
 

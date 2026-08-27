@@ -435,7 +435,7 @@ func (h *Handler) deleteFilterKeyword(ctx *apptheory.Context, filterID string, k
 	if err := h.ensureFilterKeywordBelongsToFilter(ctx, filterID, keywordID); err != nil {
 		return err
 	}
-	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context(), keywordID); err != nil {
+	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context(), filterID, keywordID); err != nil {
 		h.logger.Error("failed to delete filter keyword", zap.String("keyword_id", keywordID), zap.Error(err))
 		return err
 	}
@@ -454,7 +454,7 @@ func (h *Handler) updateFilterKeyword(ctx *apptheory.Context, filterID string, k
 	if wholeWord, ok := kwMap["whole_word"].(bool); ok {
 		kwUpdates["whole_word"] = wholeWord
 	}
-	if err := h.repos.Moderation().UpdateFilterKeyword(ctx.Context(), keywordID, kwUpdates); err != nil {
+	if err := h.repos.Moderation().UpdateFilterKeyword(ctx.Context(), filterID, keywordID, kwUpdates); err != nil {
 		h.logger.Error("failed to update filter keyword", zap.String("keyword_id", keywordID), zap.Error(err))
 		return err
 	}
@@ -740,7 +740,7 @@ func (h *Handler) HandleDeleteFilterKeywordLift(ctx *apptheory.Context) (*appthe
 		h.logger.Error("failed to verify filter keyword ownership", zap.String("filter_id", filterID), zap.String("keyword_id", keywordID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
-	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context(), keywordID); err != nil {
+	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context(), filterID, keywordID); err != nil {
 		h.logger.Error("failed to delete filter keyword", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
@@ -839,7 +839,7 @@ func (h *Handler) HandleDeleteFilterStatusLift(ctx *apptheory.Context) (*apptheo
 	}
 
 	// Delete the filter status
-	if err := h.repos.Moderation().DeleteFilterStatus(ctx.Context(), statusID); err != nil {
+	if err := h.repos.Moderation().DeleteFilterStatus(ctx.Context(), filterID, statusID); err != nil {
 		h.logger.Error("failed to delete filter status", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}

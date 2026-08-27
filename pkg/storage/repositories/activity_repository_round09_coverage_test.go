@@ -226,7 +226,7 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 		require.Equal(t, activityMaxLimit, clampActivityLimit(activityMaxLimit+1))
 	})
 
-	t.Run("Weekly and hashtag activity", func(t *testing.T) {
+	t.Run("Hashtag activity", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
@@ -246,10 +246,6 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 		repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
 		repo.costService = newRound09CostService()
 		defer func() { _ = repo.costService.Close(ctx) }()
-		weekly, err := repo.GetWeeklyActivity(ctx, baseTime.Unix())
-		require.NoError(t, err)
-		require.NotNil(t, weekly)
-		require.Equal(t, 1, weekly.Statuses)
 
 		acts, err := repo.GetHashtagActivity(ctx, "go", baseTime.Add(-time.Hour))
 		require.NoError(t, err)

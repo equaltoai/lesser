@@ -179,6 +179,10 @@ type ModerationReview struct {
 	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "REVIEW#{event_id}"
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "REVIEWER#{reviewer_id}"
 
+	// GSI1 - reviews by reviewer
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk,omitempty"` // Format: "REVIEWER#{reviewer_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk,omitempty"` // Format: "TIME#{created}#REVIEW#{event_id}"
+
 	// Type marker
 	Type string `theorydb:"attr:type" json:"type"` // "REVIEW"
 
@@ -211,6 +215,10 @@ func (r *ModerationReview) UpdateKeys() {
 	r.SK = fmt.Sprintf("REVIEWER#%s", r.ReviewerID)
 	r.Type = "REVIEW"
 	r.CreatedAt = r.Created
+
+	// GSI1 - reviews by reviewer, ordered by review time
+	r.GSI1PK = fmt.Sprintf("REVIEWER#%s", r.ReviewerID)
+	r.GSI1SK = fmt.Sprintf("TIME#%s#REVIEW#%s", r.Created.Format(time.RFC3339), r.EventID)
 
 	// Set TTL (30 days)
 	if r.TTL == 0 {
@@ -287,6 +295,10 @@ type ModerationPattern struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk,omitempty"` // "MODERATION_PATTERNS#{severity}"
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk,omitempty"` // "{updated_at}#{pattern_id}"
 
+	// GSI3 - Global pattern listing (all patterns regardless of active/severity)
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk,omitempty"` // "MODERATION_PATTERNS#ALL"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk,omitempty"` // "{updated_at}#{pattern_id}"
+
 	// Pattern data
 	PatternID   string    `theorydb:"attr:patternID" json:"pattern_id"`
 	Name        string    `theorydb:"attr:name" json:"name"`
@@ -338,6 +350,10 @@ func (p *ModerationPattern) UpdateKeys() error {
 	// GSI2 - Severity queries
 	p.GSI2PK = fmt.Sprintf("MODERATION_PATTERNS#%.2f", p.Severity)
 	p.GSI2SK = fmt.Sprintf("%s#%s", p.UpdatedAt.Format(time.RFC3339), p.PatternID)
+
+	// GSI3 - Global pattern listing
+	p.GSI3PK = "MODERATION_PATTERNS#ALL"
+	p.GSI3SK = fmt.Sprintf("%s#%s", p.UpdatedAt.Format(time.RFC3339), p.PatternID)
 
 	// Set TTL (90 days)
 	if p.TTL == 0 {

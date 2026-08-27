@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
@@ -34,26 +33,15 @@ func TestRound08_AuthRepository_FinalBumps(t *testing.T) {
 		require.Equal(t, 5, clampWalletCredentialLimit(5))
 	})
 
-	t.Run("fallback GetWalletByAddress scan success", func(t *testing.T) {
+	t.Run("empty reverse index returns not found (legacy fallback removed)", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Once() // empty index => fallback scan
-		mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-			out := args.Get(0).(*[]models.WalletCredential)
-			*out = append(*out, models.WalletCredential{
-				Username: "user-1",
-				Address:  "0xabc",
-				ChainID:  1,
-				Type:     "ethereum",
-				LinkedAt: baseTime,
-				LastUsed: baseTime,
-			})
-		}).Return(nil).Once()
+		mockQuery.On("All", mock.Anything).Return(nil).Once() // empty index => not found by doctrine
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
 		cred, err := repo.GetWalletByAddress(ctx, "ethereum", "0xAbC")
 		require.NoError(t, err)
-		require.NotNil(t, cred)
+		require.Nil(t, cred)
 	})
 }

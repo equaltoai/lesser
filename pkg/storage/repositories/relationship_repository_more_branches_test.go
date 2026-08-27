@@ -180,7 +180,7 @@ func TestRelationshipRepository_moves_and_endorsements_error_paths(t *testing.T)
 		model.SK = "FOLLOWING#bob"
 		model.State = models.RelationshipAccepted
 	}).Once()
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
 	assert.Error(t, repo.CreateEndorsement(ctx, &storage.AccountPin{Username: "alice", PinnedActorID: "bob"}))
 
 	// CreateEndorsement: pin limit reached
@@ -190,7 +190,7 @@ func TestRelationshipRepository_moves_and_endorsements_error_paths(t *testing.T)
 		model.SK = "FOLLOWING#bob"
 		model.State = models.RelationshipAccepted
 	}).Once()
-	mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.AccountPin)
 		*out = []models.AccountPin{{}, {}, {}, {}}
 	}).Once()

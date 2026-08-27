@@ -168,7 +168,7 @@ func TestRelationshipRepository_endorsements_and_delegating_wrappers(t *testing.
 		model := args.Get(0).(*models.RelationshipRecord)
 		model.State = models.RelationshipAccepted
 	}).Once()
-	mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.AccountPin)
 		*out = []models.AccountPin{{}, {}, {}, {}}
 	}).Once()
@@ -179,7 +179,7 @@ func TestRelationshipRepository_endorsements_and_delegating_wrappers(t *testing.
 		model := args.Get(0).(*models.RelationshipRecord)
 		model.State = models.RelationshipAccepted
 	}).Once()
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("pins query failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("pins query failed")).Once()
 	assert.Error(t, repo.CreateEndorsement(ctx, pin))
 
 	// DeleteEndorsement delegates to SocialRepository
@@ -187,7 +187,7 @@ func TestRelationshipRepository_endorsements_and_delegating_wrappers(t *testing.
 	assert.NoError(t, repo.DeleteEndorsement(ctx, "https://example.com/users/alice", "https://example.com/users/bob"))
 
 	// GetEndorsements delegates to SocialRepository
-	mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.AccountPin)
 		*out = []models.AccountPin{{Username: "alice", PinnedActorID: "bob", PinnedUsername: "bob"}}
 	}).Once()

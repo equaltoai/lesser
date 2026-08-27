@@ -26,7 +26,7 @@ func TestThreadRepository_ext_sweep(t *testing.T) {
 
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
 		case *[]*models.ThreadNode:
 			root := models.NewThreadNode("root", "root", "", 0, "a1")
@@ -69,8 +69,8 @@ func TestThreadRepository_ext_sweep(t *testing.T) {
 	assert.NoError(t, repo.MarkMissingReplies(ctx, "root", "p1", []string{"r1", "r2"}))
 	_, _ = repo.GetMissingReplies(ctx, "root")
 
-	// Context: still returns even if missing replies scan errors.
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("scan failed")).Once()
+	// Context: still returns even if missing replies query errors.
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("query failed")).Once()
 	res, err := repo.GetThreadContext(ctx, "n1")
 	assert.NoError(t, err)
 	assert.NotNil(t, res)

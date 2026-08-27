@@ -151,7 +151,7 @@ func (r *MediaPopularityRepository) GetPopularMediaByPeriod(ctx context.Context,
 		query = query.Cursor(*cursor)
 	}
 
-	err := query.Scan(&popularityRecords)
+	err := query.All(&popularityRecords)
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
 			return []*models.MediaPopularity{}, nil
