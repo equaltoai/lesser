@@ -14,6 +14,12 @@ type Hashtag struct {
 	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "HASHTAG#{hashtag_name}"
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "METADATA"
 
+	// GSI1 - Global hashtag listing by last use (trend aggregator reads; wave
+	// part 2 batch E, umbrella #1469). Partition: "HASHTAGS#ALL"; sort key
+	// "<LastUsed RFC3339>#<name>" so recent-first ordering is a keyed range.
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "HASHTAGS#ALL"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{lastUsed}#{name}"
+
 	// GSI3 - Hashtag search by prefix
 	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
 	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"` // Format: "{hashtag_name}"
@@ -35,6 +41,12 @@ func (h *Hashtag) UpdateKeys() error {
 	tagLower := strings.ToLower(strings.TrimPrefix(h.Name, "#"))
 	h.PK = fmt.Sprintf(KeyPatternHashtag, tagLower)
 	h.SK = SKMetadata
+
+	// GSI1 - global hashtag listing maintained on every hashtag write
+	// (UpdateKeys runs on every create/update via BaseRepository).
+	h.GSI1PK = "HASHTAGS#ALL"
+	h.GSI1SK = fmt.Sprintf("%s#%s", h.LastUsed.Format(time.RFC3339), tagLower)
+
 	h.GSI3PK = fmt.Sprintf(KeyPatternHashtagSearch, getHashtagPrefix(tagLower))
 	h.GSI3SK = tagLower
 	return nil

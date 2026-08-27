@@ -25,6 +25,12 @@ type FederationActivity struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "FED_ACTOR#{actorID}"
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
+	// GSI3 - Global recent-activity listing for GetRecentActivities (wave part 2
+	// batch E, #1469). Partition: "FED_ACTIVITY#ALL"; sort key
+	// "{RFC3339 timestamp}#{domain}#{id}" so recent-first is a keyed range.
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"` // Format: "FED_ACTIVITY#ALL"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"` // Format: "{timestamp}#{domain}#{id}"
+
 	// Core activity data
 	ID           string    `theorydb:"attr:id" json:"id"`
 	Domain       string    `theorydb:"attr:domain" json:"domain"`              // Remote instance domain
@@ -137,6 +143,12 @@ func (fa *FederationActivity) setupGSIKeys() {
 		fa.GSI2PK = ""
 		fa.GSI2SK = ""
 	}
+
+	// GSI3 - global recent-activity listing (federation aggregator reads;
+	// wave part 2 batch E, #1469). Maintained on every write through
+	// BeforeCreate/BeforeUpdate/UpdateKeys.
+	fa.GSI3PK = "FED_ACTIVITY#ALL"
+	fa.GSI3SK = fmt.Sprintf("%s#%s#%s", timestampStr, fa.Domain, fa.ID)
 }
 
 // Validate performs validation on the FederationActivity

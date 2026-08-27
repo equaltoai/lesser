@@ -23,6 +23,13 @@ type Report struct {
 	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"-"` // STATUS#status
 	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"-"` // REPORT#timestamp
 
+	// GSI4 - assignee index for GetPendingModerationCount (wave part 2 batch E,
+	// #1469). Partition: "ASSIGNED#<assignedTo>"; sort key
+	// "<status>#REPORT#<createdAtUnix>" so per-status counts are keyed ranges.
+	// Empty when the report is unassigned (omitted via omitempty).
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"-"` // ASSIGNED#assignedTo
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"-"` // {status}#REPORT#{createdAtUnix}
+
 	// Report fields
 	ID                string     `theorydb:"attr:id" json:"id"`
 	ReporterID        string     `theorydb:"attr:reporterID" json:"reporter_id"`
@@ -62,6 +69,18 @@ func (r *Report) UpdateKeys() {
 	// GSI3: Query by status
 	r.GSI3PK = fmt.Sprintf(KeyPatternStatus, r.Status)
 	r.GSI3SK = fmt.Sprintf("REPORT#%d", r.CreatedAt.Unix())
+
+	// GSI4: assignee index (maintained by every Report writer — CreateReport,
+	// AssignReport, UnassignReport, UpdateReportStatus all call UpdateKeys).
+	// Unassigned reports carry no GSI4 keys so they drop out of the assignee
+	// partitions.
+	if r.AssignedTo != "" {
+		r.GSI4PK = fmt.Sprintf("ASSIGNED#%s", r.AssignedTo)
+		r.GSI4SK = fmt.Sprintf("%s#REPORT#%d", r.Status, r.CreatedAt.Unix())
+	} else {
+		r.GSI4PK = ""
+		r.GSI4SK = ""
+	}
 
 	// Set TTL to 90 days from creation
 	if r.TTL == 0 {
