@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -259,13 +260,14 @@ func TestUserRepository_GetMutedConversations_FiltersExpired(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.ConversationMute)
 		*out = []models.ConversationMute{
 			{ConversationID: "active", ExpiresAt: time.Now().Add(time.Hour)},
 			{ConversationID: "expired", ExpiresAt: time.Now().Add(-time.Hour)},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	ids, err := repo.GetMutedConversations(context.Background(), "alice")
 	assert.NoError(t, err)

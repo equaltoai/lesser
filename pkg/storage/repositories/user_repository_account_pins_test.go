@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -282,7 +283,8 @@ func TestUserRepository_GetAccountPins_Success(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.AccountPin")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.Anything).Return(mockQuery)
 	mockQuery.On("Filter", "SK", "BEGINS_WITH", "PIN#").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.AccountPin)
 		*out = []models.AccountPin{
 			{
@@ -298,7 +300,7 @@ func TestUserRepository_GetAccountPins_Success(t *testing.T) {
 				CreatedAt:      time.Now(),
 			},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	pins, err := repo.GetAccountPins(ctx, "alice")
 
@@ -320,7 +322,8 @@ func TestUserRepository_GetAccountPins_Empty(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.AccountPin")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.Anything).Return(mockQuery)
 	mockQuery.On("Filter", "SK", "BEGINS_WITH", "PIN#").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(nil) // Empty result
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once() // Empty result
 
 	pins, err := repo.GetAccountPins(ctx, "alice")
 
@@ -340,7 +343,8 @@ func TestUserRepository_GetAccountPins_QueryError(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.AccountPin")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.Anything).Return(mockQuery)
 	mockQuery.On("Filter", "SK", "BEGINS_WITH", "PIN#").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, ErrTestMockError).Once()
 
 	pins, err := repo.GetAccountPins(ctx, "alice")
 

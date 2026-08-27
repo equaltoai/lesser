@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -1056,7 +1057,8 @@ func TestObjectRepository_ErrorPathCoveragePush(t *testing.T) {
 	t.Run("CountObjectReplies returns error when query fails", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.Object")).Return(dynamormErrors.ErrInvalidModel).Once()
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Object")).Return(&core.PaginatedResult{HasMore: false}, dynamormErrors.ErrInvalidModel).Once()
 		setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())

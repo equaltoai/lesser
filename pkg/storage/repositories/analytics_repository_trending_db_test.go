@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -37,13 +38,14 @@ func TestRecordHashtagUsage_Success(t *testing.T) {
 	// Then updateHashtagTrendScore is called
 	mockDB.On("Model", mock.AnythingOfType("*models.HashtagUsage")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.HashtagUsage")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.HashtagUsage")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.HashtagUsage)
 		*records = []models.HashtagUsage{
 			{AuthorID: "author-1", UsedAt: time.Now()},
 			{AuthorID: "author-2", UsedAt: time.Now()},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.HashtagTrend")).Return(mockQuery)
@@ -93,12 +95,13 @@ func TestRecordStatusEngagement_Success(t *testing.T) {
 	// updateStatusTrendScore
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.StatusEngagement")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.StatusEngagement")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.StatusEngagement)
 		*records = []models.StatusEngagement{
 			{UserID: "user-1", EngagementType: "like"},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusTrend")).Return(mockQuery)
@@ -148,12 +151,13 @@ func TestRecordLinkShare_Success(t *testing.T) {
 	// updateLinkTrendScore
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkShare")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.LinkShare")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.LinkShare")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.LinkShare)
 		*records = []models.LinkShare{
 			{AuthorID: "author-1", SharedAt: time.Now()},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkTrend")).Return(mockQuery)
