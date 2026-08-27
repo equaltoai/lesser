@@ -199,7 +199,9 @@ func TestModerationRepository_GetDecisionHistory_NotFoundAndError(t *testing.T) 
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.Anything).Return(errors.ErrItemNotFound).Once()
+		// GetDecisionHistory now iterates via a bounded page walk (wave #1469):
+		// the page read is AllPaginated, not a bare All.
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.ErrItemNotFound).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
@@ -213,7 +215,7 @@ func TestModerationRepository_GetDecisionHistory_NotFoundAndError(t *testing.T) 
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())

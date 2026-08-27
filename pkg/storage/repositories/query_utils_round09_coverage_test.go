@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -326,10 +327,13 @@ func TestQueryUtils_collection_and_convert_helpers(t *testing.T) {
 
 		mockQuery.On("Where", "PK", "=", "pk").Return(mockQuery)
 		mockQuery.On("Where", "SK", "BEGINS_WITH", "p").Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		// useFilter=false now iterates via a bounded page walk (wave #1469):
+		// a clamped Limit(500) page read via AllPaginated, not a bare All.
+		mockQuery.On("Limit", 500).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]m)
 			*dest = []m{{PK: "pk", SK: "p1"}}
-		}).Return(nil)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil)
 
 		out, err := QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk", "p", false, convert, "op", "param")
 		require.NoError(t, err)
@@ -464,9 +468,10 @@ func TestQueryUtils_round09_more_error_and_success_branches(t *testing.T) {
 	mockQuery.On("Create").Return(nil).Once()
 	require.NoError(t, q.AddToCollectionHelper(ctx, "col", &storage.CollectionItem{ItemID: "1", ItemType: "t", AddedBy: "u"}, mockDB))
 
-	// QueryWithPKAndSKPrefix error branches (All / Scan)
+	// QueryWithPKAndSKPrefix error branches (AllPaginated walk / Scan)
 	type m struct{ PK, SK string }
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Once()
 	_, err = QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk", "p", false, func(in m) string { return in.PK }, "op", "param")
 	assert.Error(t, err)
 
