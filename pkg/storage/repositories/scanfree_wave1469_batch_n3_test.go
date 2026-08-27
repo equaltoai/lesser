@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
@@ -1371,6 +1372,149 @@ func TestBatchN3_GetMetricsInRange_NoEndZeroLimitFloored(t *testing.T) {
 	results, err := repo.GetMetricsInRange(ctx, "r1", start, time.Time{}, 0)
 	require.NoError(t, err)
 	require.Empty(t, results)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetModerationQueueCount_TransientErrorReturnsZero(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.ModerationEvent")).Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2PK", "=", "TYPE#flagged#pending").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	// A transient (non-cap) error keeps the legacy 0-on-error contract.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ModerationEvent")).Return(nil, errors.New("transient")).Once()
+
+	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
+	count, err := repo.GetModerationQueueCount(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetOpenReportsCount_TransientErrorReturnsZero(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Report")).Return(mockQuery)
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3PK", "=", "STATUS#open").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Report")).Return(nil, errors.New("transient")).Once()
+
+	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
+	count, err := repo.GetOpenReportsCount(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_WalkKeyedPages_DefaultFallbacksFailClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	// Direct helper test: pageSize=0/maxPages=0 fall back to 500/100 (the
+	// shared helper's defensive defaults, wave #1469); a cap exhaustion still
+	// fails closed.
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Notification")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "USER#u1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Notification)
+		*dest = make([]models.Notification, 500)
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Notification")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	var notifications []models.Notification
+	err := walkKeyedPages(
+		mockDB.WithContext(ctx).Model(&models.Notification{}).Where("PK", "=", "USER#u1"),
+		0, 0,
+		func(page []models.Notification) (bool, error) {
+			notifications = append(notifications, page...)
+			return false, nil
+		},
+	)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetFederationCosts_TwoMonthBucketLoop(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	start := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.FederationCostTracking")).Return(mockQuery)
+	// Two month buckets: July and August (the month loop, wave #1469 floor
+	// Limit(500) applied per bucket).
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Times(2)
+	mockQuery.On("Where", "gsi1PK", "=", "FED_COSTS#DOMAIN#example.com#2026-07").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Times(2)
+	// Per-bucket remaining-limit semantics: first bucket Limit(10) (limit), then
+	// Limit(9) once one cost was gathered. The floor guarantees > 0.
+	mockQuery.On("Limit", 10).Return(mockQuery).Once()
+	mockQuery.On("Limit", 9).Return(mockQuery).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationCostTracking")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.FederationCostTracking)
+		*dest = []*models.FederationCostTracking{{Domain: "example.com"}}
+	}).Return(nil).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "FED_COSTS#DOMAIN#example.com#2026-08").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationCostTracking")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.FederationCostTracking)
+		*dest = []*models.FederationCostTracking{{Domain: "example.com"}}
+	}).Return(nil).Once()
+
+	baseRepo := NewBaseRepository[*models.FederationCostTracking](mockDB, "test-table", zap.NewNop())
+	budgetRepo := NewBaseRepository[*models.FederationBudget](mockDB, "test-table", zap.NewNop())
+	repo := NewFederationCostRepositoryFromBase(baseRepo, budgetRepo, nil)
+	costs, err := repo.GetFederationCosts(ctx, "example.com", start, end, 10)
+	require.NoError(t, err)
+	require.Len(t, costs, 2)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetMediaAnalyticsByDate_TracksCost(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	costService := cost.NewTrackingService(nil, zap.NewNop(), cost.DefaultTrackingServiceConfig())
+	t.Cleanup(func() { _ = costService.Close(ctx) })
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "DATE#2026-08-27").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.MediaAnalytics")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.MediaAnalytics)
+		*dest = []*models.MediaAnalytics{{MediaID: "m1"}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewMediaAnalyticsRepository(mockDB, "test-table", zap.NewNop(), costService)
+	list, err := repo.GetMediaAnalyticsByDate(ctx, "2026-08-27")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
