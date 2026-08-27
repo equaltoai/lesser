@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
@@ -1590,6 +1591,100 @@ func TestBatchN3_GetDailySpending_QueryError(t *testing.T) {
 	repo := NewNotificationCostRepository(mockDB, "test-table", zap.NewNop(), nil)
 	_, err := repo.GetDailySpending(ctx, "alice")
 	require.Error(t, err)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_GetModerationQueue_CountReviewsCapFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	// GetModerationQueue reads the queue events, then countReviews per event;
+	// cap exhaustion in the count must fail the whole queue read closed (the
+	// pre-existing `reviewCount, _ :=` discard would have made it silent).
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*[]models.ModerationEvent")).Return(mockQuery).Once()
+	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2PK", "=", "TYPE#flagged#pending").Return(mockQuery).Once()
+	mockQuery.On("Limit", 100).Return(mockQuery).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.ModerationEvent")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.ModerationEvent)
+		*out = []models.ModerationEvent{{ID: "e1", EventType: storage.EventTypeFlagged, ObjectType: "status", ConfidenceScore: 0.5, Created: time.Now()}}
+	}).Return(nil).Once()
+
+	// countReviews walk caps out.
+	mockDB.On("Model", mock.AnythingOfType("*models.ModerationReview")).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "REVIEW#e1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.ModerationReview)
+		*out = make([]models.ModerationReview, 500)
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ModerationReview")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
+	_, err := repo.GetModerationQueue(ctx, &storage.ModerationFilter{Limit: 100})
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_ModerationMetrics_TypesBranch_TransientErrorSkipsType(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	start := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.ModerationMetricsEntry")).Return(mockQuery)
+	// Type 1 walk errors transiently (skip-type); type 2 returns data.
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Times(2)
+	mockQuery.On("Where", "gsi1PK", "=", "METRIC_TYPE#spam").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", ">=", "DATE#2026-08-26").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "<=", "DATE#2026-08-26#Z").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Times(2)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationMetricsEntry")).Return(nil, errors.New("transient")).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "METRIC_TYPE#abuse").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", ">=", "DATE#2026-08-26").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "<=", "DATE#2026-08-26#Z").Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationMetricsEntry")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]*models.ModerationMetricsEntry)
+		*out = []*models.ModerationMetricsEntry{{MetricType: "abuse"}}
+	}).Return(&core.PaginatedResult{}, nil).Once()
+
+	repo := NewModerationMetricsRepository(mockDB, zap.NewNop())
+	entries, err := repo.GetMetricsEntries(ctx, models.ModerationMetricsTimeRange{Start: start, End: start}, []string{"spam", "abuse"})
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN3_CountQuotes_PageCapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.QuoteRelationship")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "QUOTED#note-1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.QuoteRelationship)
+		*dest = make([]models.QuoteRelationship, 500)
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.QuoteRelationship")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	_, err := repo.CountQuotes(ctx, "note-1")
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
