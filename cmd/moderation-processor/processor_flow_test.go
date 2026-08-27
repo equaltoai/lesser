@@ -434,15 +434,33 @@ func TestModeratorSelector_SelectByWorkload_SortsByPendingCount(t *testing.T) {
 		},
 	}
 
+	// GetPendingModerationCount now reads keyed GSI4 (reports by assignee) and
+	// GSI2 (flags by status) chains (wave part 2 batch E, #1469); capture the
+	// moderator from gsi4PK and the status from the gsi4SK prefix so the
+	// per-moderator workload map drives the populated slices.
+	mockQuery.On("Index", mock.Anything).Run(func(args mock.Arguments) {
+		idxName, _ := args.Get(0).(string)
+		switch idxName {
+		case "gsi4":
+			currentStatus = ""
+		case "gsi2":
+			currentStatus = string(storage.FlagStatusPending)
+		}
+	}).Return(mockQuery).Maybe()
+
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		field, _ := args.Get(0).(string)
 		switch field {
-		case "AssignedTo":
-			currentModerator, _ = args.Get(2).(string)
-		case "Status":
-			currentStatus, _ = args.Get(2).(string)
+		case "gsi4PK":
+			val, _ := args.Get(2).(string)
+			currentModerator = strings.TrimPrefix(val, "ASSIGNED#")
+		case "gsi4SK":
+			val, _ := args.Get(2).(string)
+			currentStatus = strings.TrimSuffix(val, "#REPORT#")
 		}
 	}).Return(mockQuery).Maybe()
+
+	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		if dest, ok := args.Get(0).(*[]models.Report); ok {
@@ -669,6 +687,7 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
@@ -1028,6 +1047,7 @@ func TestInitAdvancedModerationEngine_CoversBasicModeWithoutAWS(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
@@ -1063,6 +1083,7 @@ func TestInitAdvancedModerationEngine_CoversAWSModeBranches(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
@@ -1307,6 +1328,7 @@ func TestModeratorSelector_hasHandledCategory_CoversAdminAndHistoryPaths(t *test
 
 		mockModerationDB.On("WithContext", mock.Anything).Return(mockModerationDB).Maybe()
 		mockModerationDB.On("Model", mock.Anything).Return(mockModerationQuery).Maybe()
+		mockModerationQuery.On("Index", mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("Limit", mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("All", mock.AnythingOfType("*[]*models.ModerationReview")).Run(func(args mock.Arguments) {
@@ -1412,16 +1434,38 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 
 		currentModerator := ""
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-			field, _ := args.Get(0).(string)
-			if field == "AssignedTo" {
-				currentModerator, _ = args.Get(2).(string)
+		currentStatus := ""
+		mockQuery.On("Index", mock.Anything).Run(func(args mock.Arguments) {
+			idxName, _ := args.Get(0).(string)
+			switch idxName {
+			case "gsi4":
+				currentStatus = ""
+			case "gsi2":
+				currentStatus = string(storage.FlagStatusPending)
 			}
 		}).Return(mockQuery).Maybe()
 
+		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			field, _ := args.Get(0).(string)
+			switch field {
+			case "gsi4PK":
+				val, _ := args.Get(2).(string)
+				currentModerator = strings.TrimPrefix(val, "ASSIGNED#")
+			case "gsi4SK":
+				val, _ := args.Get(2).(string)
+				currentStatus = strings.TrimSuffix(val, "#REPORT#")
+			}
+		}).Return(mockQuery).Maybe()
+
+		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			if dest, ok := args.Get(0).(*[]models.Report); ok {
-				*dest = make([]models.Report, counts[currentModerator])
+				count := 0
+				if currentStatus == string(storage.ReportStatusOpen) {
+					count = counts[currentModerator]
+				}
+				*dest = make([]models.Report, count)
 			}
 			if dest, ok := args.Get(0).(*[]models.Flag); ok {
 				*dest = []models.Flag{}
@@ -1531,6 +1575,7 @@ func TestModeratorSelector_getModerationHistory_ErrorBranch(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Maybe()

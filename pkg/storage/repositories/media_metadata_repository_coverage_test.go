@@ -250,7 +250,7 @@ func TestGetMediaMetadataByStatus_Success(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#processing").Return(mockQuery)
 	mockQuery.On("Limit", limit).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{
 			{MediaID: "media-1", Status: status},
@@ -279,7 +279,7 @@ func TestGetMediaMetadataByStatus_NoLimit(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#pending").Return(mockQuery)
 	// No Limit call when limit <= 0
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{}
 	}).Return(nil)
@@ -303,7 +303,7 @@ func TestGetMediaMetadataByStatus_QueryError(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#failed").Return(mockQuery)
 	mockQuery.On("Limit", 5).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Return(ErrTestMockError)
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Return(ErrTestMockError)
 
 	result, err := repo.GetMediaMetadataByStatus(ctx, "failed", 5)
 	require.Error(t, err)
@@ -631,7 +631,7 @@ func TestCleanupExpiredMetadata_QueryError(t *testing.T) {
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#failed").Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", "<", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Limit", 100).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Return(ErrTestMockError)
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Return(ErrTestMockError)
 
 	err := repo.CleanupExpiredMetadata(ctx)
 	require.Error(t, err)
@@ -654,7 +654,7 @@ func TestCleanupExpiredMetadata_DeleteLoopContinuesOnError(t *testing.T) {
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#failed").Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", "<", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Limit", 100).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{
 			{MediaID: "expired-1", Status: "failed"},
@@ -693,7 +693,7 @@ func TestCleanupExpiredMetadata_Success_NoExpiredRecords(t *testing.T) {
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#failed").Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", "<", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Limit", 100).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{} // No expired records
 	}).Return(nil)
@@ -720,7 +720,7 @@ func TestGetPendingMediaMetadata_DelegatesToGetByStatus(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#pending").Return(mockQuery)
 	mockQuery.On("Limit", 25).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{
 			{MediaID: "pending-1", Status: "pending"},
@@ -746,7 +746,7 @@ func TestGetProcessingMediaMetadata_DelegatesToGetByStatus(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#processing").Return(mockQuery)
 	mockQuery.On("Limit", 50).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{
 			{MediaID: "processing-1", Status: "processing"},

@@ -428,6 +428,9 @@ func TestRound07_NotificationRepository_CreateNotifications_DeleteByType_Object_
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	// DeleteNotificationsByObject now pages the GSI5 object partition (wave
+	// part 2 batch E, #1469); both invocations below issue one keyed query.
+	mockQuery.On("Index", "gsi5").Return(mockQuery).Times(2)
 
 	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
 

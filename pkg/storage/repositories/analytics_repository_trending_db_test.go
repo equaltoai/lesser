@@ -553,9 +553,10 @@ func TestGetRecentHashtags_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
-	mockQuery.On("Where", "LastUsed", ">=", since.Format(time.RFC3339)).Return(mockQuery)
-	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 20).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.Hashtag)
@@ -582,9 +583,10 @@ func TestGetRecentHashtags_NotFound(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
-	mockQuery.On("Where", "LastUsed", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 10).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Return(errors.ErrItemNotFound)
 
@@ -606,9 +608,10 @@ func TestGetRecentHashtags_InvalidLimit(t *testing.T) {
 	// When limit > 100, it should be clamped to default (20)
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
-	mockQuery.On("Where", "LastUsed", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "HASHTAGS#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 20).Return(mockQuery) // Clamped to default
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Return(nil)
 
@@ -633,8 +636,10 @@ func TestGetRecentStatusesWithEngagement_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
-	mockQuery.On("Where", "EngagedAt", ">=", since).Return(mockQuery)
-	mockQuery.On("OrderBy", "EngagedAt", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "ENGAGEMENTS#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 30).Return(mockQuery) // 3 * 10 = 30
 	mockQuery.On("All", mock.AnythingOfType("*[]models.StatusEngagement")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.StatusEngagement)
@@ -663,8 +668,10 @@ func TestGetRecentStatusesWithEngagement_NotFound(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
-	mockQuery.On("Where", "EngagedAt", ">=", since).Return(mockQuery)
-	mockQuery.On("OrderBy", "EngagedAt", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "ENGAGEMENTS#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", mock.AnythingOfType("int")).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.StatusEngagement")).Return(errors.ErrItemNotFound)
 
@@ -690,8 +697,10 @@ func TestGetRecentLinks_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkShare")).Return(mockQuery)
-	mockQuery.On("Where", "SharedAt", ">=", since).Return(mockQuery)
-	mockQuery.On("OrderBy", "SharedAt", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "LINK_SHARES#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 10).Return(mockQuery) // 2 * 5 = 10
 	mockQuery.On("All", mock.AnythingOfType("*[]models.LinkShare")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.LinkShare)
@@ -719,8 +728,10 @@ func TestGetRecentLinks_NotFound(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkShare")).Return(mockQuery)
-	mockQuery.On("Where", "SharedAt", ">=", since).Return(mockQuery)
-	mockQuery.On("OrderBy", "SharedAt", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "LINK_SHARES#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", mock.AnythingOfType("int")).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.LinkShare")).Return(errors.ErrItemNotFound)
 

@@ -775,12 +775,15 @@ func TestTrendingRepository_GetPopularSearchQueries_NotFound(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
 
+	// GetPopularSearchQueries delegates to the keyed GSI8 counter path
+	// GetTopQueries (wave part 2 batch E, #1469), so the mock covers the
+	// PopularQueryCounter chain.
 	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.SearchQuery")).Return(mockQuery)
+	mockDB.On("Model", mock.AnythingOfType("*models.PopularQueryCounter")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+	mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
 
 	results, err := repo.GetPopularSearchQueries(ctx, 10, 24*time.Hour)
 	require.NoError(t, err)
@@ -1234,6 +1237,7 @@ func TestTrendingRepository_scoreHashtagSuggestions_Branches(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
@@ -1253,6 +1257,7 @@ func TestTrendingRepository_scoreHashtagSuggestions_Branches(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 		mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery).Maybe()
+		mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()

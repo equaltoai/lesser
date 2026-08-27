@@ -68,7 +68,8 @@ func TestPatternRepositoryAdapter_GetPatterns_AppliesFiltersAndLimit(t *testing.
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "=", models.SKMetadata).Return(mockQuery).Once()
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3PK", "=", "MODERATION_PATTERNS#ALL").Return(mockQuery).Once()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.ModerationPattern)
