@@ -1363,18 +1363,47 @@ func (r *StatusRepository) GetConversationThreadReverse(ctx context.Context, con
 	return r.queryStatusesByGSI(ctx, "gsi3", "gsi3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "gsi3SK", "DESC", opts, "failed to get conversation thread")
 }
 
-// SearchStatuses searches statuses by query string
+// SearchStatuses searches statuses by query string.
+//
+// Bounded recency-window walk (umbrella #1469 closer, issue #1494): the
+// candidate set is the time-ordered GSI2 PUBLIC_TIMELINE partition (GSI2SK
+// "{published_timestamp}#{status_id}"), walked newest-first in bounded pages
+// (Limit(500)/page via AllPaginated, 100-page cap, fail-closed
+// errBoundedPageCapExceeded on exhaustion) with the per-page Content CONTAINS
+// and Deleted filters on the chain. The walk stops as soon as limit matches are
+// collected and the final page's overshoot is trimmed, so the result keeps the
+// pre-existing one-page contract — at most limit matches (the sanitized
+// opts.Limit) with NextCursor "" hardcoded and HasMore = len(result) == limit —
+// bounding the walk is not a contract regression (callers could never page
+// beyond one page today).
 func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	// This is a basic implementation using scan with filter
-	// In production, you'd want to use a search service like OpenSearch
+	limit := sanitizeStatusPageLimit(opts.Limit)
+
 	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Filter("Content", "CONTAINS", query).
-		Filter("Deleted", "=", false).
-		Limit(opts.Limit).
-		Scan(&statuses)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Status{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "PUBLIC_TIMELINE").
+			OrderBy("gsi2SK", "DESC").
+			Filter("Content", "CONTAINS", query).
+			Filter("Deleted", "=", false),
+		500, 100,
+		func(page []models.Status) (bool, error) {
+			statuses = append(statuses, page...)
+			return len(statuses) >= limit, nil
+		},
+	)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "search by content")
+	}
+
+	// Trim the final page's overshoot to the caller's limit: the walk stops as
+	// soon as limit matches are collected, but one page can hold more matches
+	// than the limit. The legacy .Scan path auto-paginated and trimmed to
+	// exactly limit, so the trim restores HasMore = len(result) == limit (true
+	// exactly when the walk collected >= limit matches, i.e. more may exist).
+	if len(statuses) > limit {
+		statuses = statuses[:limit]
 	}
 
 	// Convert to pointer slice
@@ -1385,8 +1414,8 @@ func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opt
 
 	return &interfaces.PaginatedResult[*models.Status]{
 		Items:      result,
-		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
+		NextCursor: "", // One-page contract: callers cannot page beyond one page.
+		HasMore:    len(result) == limit,
 		Total:      -1,
 	}, nil
 }

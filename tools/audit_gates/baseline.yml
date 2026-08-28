@@ -34,9 +34,19 @@ goInsecureSkipVerify:
 # social_repository.go (2 pin scans → All), status_repository.go (GetStatusByURL → All),
 # thread_repository.go (2 → All), trust_repository.go (GetAllTrustRelationships →
 # GSI3 global listing), user_repository.go (6 → All / category-enumerated queries),
-# account_repository.go (GetAccountPreferences → All). One request-path site remains
-# baselined: status_repository.go SearchStatuses (Content CONTAINS full-text search —
-# dispositioned blocker, needs a search backend; see the inventory doc).
+# account_repository.go (GetAccountPreferences → All).
+# Wave part 2 (batch closer, umbrella #1469, issue #1494, 2026-08-28) eliminated
+# the last request-path baselined site: status_repository.go SearchStatuses is
+# now a bounded recency-window walk over the GSI2 PUBLIC_TIMELINE partition
+# (newest-first, per-page Content CONTAINS + Deleted filters, Limit(500)/page,
+# 100-page cap, fail-closed errBoundedPageCapExceeded on exhaustion; one-page
+# contract preserved). GSI7 reachability finding recorded in the inventory doc:
+# GSI7 IS populated with materialized remote Notes' object IDs (URLs = [note.ID]
+# from BuildCanonicalRemoteStatus, persisted via CreateStatus/UpdateStatus on the
+# inbound Create/Update paths), never with content links extracted from status
+# text — an exact keyed GSI7 lookup still cannot answer the LinkTimeline
+# content-link case, so the parity resolver stays on the recency walk
+# (disposition UNCHANGED). No request-path .Scan sites remain baselined.
 # Wave part 2 (batch F, umbrella #1469, 2026-08-27) eliminated all 22
 # federation_repository.go sites: 21 keyed partition/GSI queries converted
 # `.Scan` → `.All` (instances, costs, health, nodes, clusters, connections,
@@ -88,7 +98,6 @@ goDynamoDBQueryScan:
   pkg/storage/repositories/query_utils.go: 1
   pkg/storage/repositories/severance_repository.go: 2
   pkg/storage/repositories/social_repository.go: 1
-  pkg/storage/repositories/status_repository.go: 1
 
 # Exact occurrences of partition-key prefix/range predicates in `.Where(...)` (tracked by count per file).
 # Partition keys must be queried by equality; prefix/range predicates force scans.
