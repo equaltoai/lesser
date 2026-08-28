@@ -66,15 +66,6 @@ func (m *MockTrendingRepository) GetTrendingLinks(ctx context.Context, since tim
 	return args.Get(0).([]*storage.TrendingLink), args.Error(1)
 }
 
-// GetRecentHashtags mocks the GetRecentHashtags method
-func (m *MockTrendingRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	args := m.Called(ctx, since, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.TrendingHashtag), args.Error(1)
-}
-
 // GetRecentStatusesWithEngagement mocks the GetRecentStatusesWithEngagement method
 func (m *MockTrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
 	args := m.Called(ctx, since, limit)

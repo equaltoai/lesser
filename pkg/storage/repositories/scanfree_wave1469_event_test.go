@@ -19,11 +19,11 @@ import (
 // gsi1–gsi8 slots). Any regression that reintroduces a DynamoDB Scan fails
 // the test through newWave1469ScanForbiddingTestDB (the fake overrides the
 // DynamoDB client Scan method itself). Batch E rerouted 10 key-less All sites
-// and converted 3 literal-.Scan files (11 keyed sites); two batch E
-// conversions (Hashtag GSI1 HASHTAGS#ALL, GetPopularSearchQueries → GSI8)
-// were reverted — no live writer populates the hashtag index, and the query
-// counter cannot answer the caller's 7-day window (see
-// docs/architecture/dynamodb-scan-inventory.md). Per-site key shapes and
+// and converted 3 literal-.Scan files (11 keyed sites); one batch E
+// conversion (Hashtag GSI1 HASHTAGS#ALL) was reverted — no live writer
+// populates the hashtag index — and GetPopularSearchQueries was DELETED in
+// batch S3 (issue #1501) with its zero-caller GenerateSearchSuggestions chain
+// (see docs/architecture/dynamodb-scan-inventory.md). Per-site key shapes and
 // legacy-row consequences are documented there.
 
 // ---------------------------------------------------------------------------
@@ -161,12 +161,18 @@ func TestScanFreeWave_Event_GetModerationDecisionsByModerator(t *testing.T) {
 // ANALYTICS / TRENDS
 // ---------------------------------------------------------------------------
 
-// NOTE (wave part 2 batch E rework, #1469): there is no scan-free test for
-// GetRecentHashtags / getCandidateHashtags. Hashtag metadata rows
+// NOTE (wave part 2 batch E rework + batch S3 closeout, #1469 / #1501): there
+// is no scan-free test for the hashtag metadata reads. Hashtag metadata rows
 // (HASHTAG#<name> / METADATA) are only written by HashtagRepository.IndexHashtag,
-// which has zero production callers, so no live writer maintains them and a
-// GSI listing key would never be populated — the reads stay on their baselined
-// SK = METADATA scans (see docs/architecture/dynamodb-scan-inventory.md).
+// which has zero production callers, so no live writer maintains them and a GSI
+// listing key would never be populated. Batch S3 (issue #1501, 2026-08-28)
+// closed the family by deletion: getCandidateHashtags (whole dead enhanced
+// TrendingEngine), the hashtag_repository.go queryHashtagMetadataByDateRange
+// read family (GetSuggestedHashtags / HashtagRepository.GetRecentHashtags /
+// GetHashtagsByTimeRange), and — now that the orchestrator ruled on the
+// stop-and-report — the scheduled trend-aggregator Lambda's dead
+// aggregateHashtagTrends step together with TrendingRepository.GetRecentHashtags
+// (analytics_repository.go); see docs/architecture/dynamodb-scan-inventory.md.
 
 // 4a) GetRecentStatusesWithEngagement — keyed gsi1 (ENGAGEMENTS#ALL).
 func TestScanFreeWave_Event_GetRecentStatusesWithEngagement(t *testing.T) {
@@ -220,12 +226,16 @@ func TestScanFreeWave_Event_GetRecentLinks(t *testing.T) {
 	require.Zero(t, s.scanCalls, "GetRecentLinks must not scan")
 }
 
-// NOTE (wave part 2 batch E rework, #1469): there is no scan-free test for
-// GetPopularSearchQueries. The raw SearchQuery rows it aggregates are the only
-// source that answers the caller's 7-day window (scorePopularQueries); the
+// NOTE (wave part 2 batch E rework + batch S3 closeout, #1469 / #1501): there
+// is no scan-free test for GetPopularSearchQueries. The raw SearchQuery rows it
+// would aggregate are the only source that answers a caller's 7-day window; the
 // GSI8 PopularQueryCounter path answers a different question (its Date
-// partition re-points per increment, so only today's partition is populated)
-// and was reverted back to the baselined scan — see
+// partition re-points per increment, so only today's partition is populated).
+// Batch S3 (issue #1501) DELETED the read together with its zero-production-
+// caller chain (GetPopularSearchQueries ← scorePopularQueries ←
+// GenerateSearchSuggestions, and GetUserSearchHistory ← scoreUserHistory); the
+// SEARCH_LOG per-day walk remains the documented design if a live caller ever
+// needs popular-queries aggregation — see
 // docs/architecture/dynamodb-scan-inventory.md.
 
 // 6) Media analytics reads — keyed gsi1 (DATE#<date>) / gsi2 (VARIANT#<key>).

@@ -325,18 +325,6 @@ func TestTrendingRepository_AnalyticsAdditionalCoverage(t *testing.T) {
 	t.Run("search analytics", func(t *testing.T) {
 		require.NoError(t, repo.TrackSearchQuery(ctx, "user-1", "Golang", 10))
 		require.NoError(t, repo.IndexByEngagement(ctx, "status-1", "high"))
-
-		popular, err := repo.GetPopularSearchQueries(ctx, 1, 24*time.Hour)
-		require.NoError(t, err)
-		require.NotEmpty(t, popular)
-
-		history, err := repo.GetUserSearchHistory(ctx, "user-1", 5)
-		require.NoError(t, err)
-		require.NotEmpty(t, history)
-
-		suggestions, err := repo.GenerateSearchSuggestions(ctx, "user-1", "go", 5)
-		require.NoError(t, err)
-		require.NotEmpty(t, suggestions)
 	})
 
 	t.Run("statuses by link", func(t *testing.T) {
@@ -758,49 +746,6 @@ func TestTrendingRepository_TrackSearchQuery_ValidationAndCreateErrors(t *testin
 	})
 }
 
-func TestTrendingRepository_GetPopularSearchQueries_NotFound(t *testing.T) {
-	ctx := context.Background()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-	// GetPopularSearchQueries aggregates raw SearchQuery rows over the
-	// time-window (baselined scan; the GSI8 counter delegation was reverted in
-	// wave part 2 batch E rework #1469 — the counter's Date partition re-points
-	// per increment, so it cannot answer the caller's 7-day window).
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.SearchQuery")).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
-
-	results, err := repo.GetPopularSearchQueries(ctx, 10, 24*time.Hour)
-	require.NoError(t, err)
-	require.Empty(t, results)
-}
-
-func TestTrendingRepository_GetUserSearchHistory_NotFound(t *testing.T) {
-	ctx := context.Background()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.SearchQuery")).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
-
-	results, err := repo.GetUserSearchHistory(ctx, "user-1", 10)
-	require.NoError(t, err)
-	require.Empty(t, results)
-}
-
 func TestTrendingRepository_RecordEngagement_CreateError(t *testing.T) {
 	ctx := context.Background()
 
@@ -1192,54 +1137,6 @@ func TestTrendingRepository_GetQueryCount_QueryError(t *testing.T) {
 
 	_, err := repo.GetQueryCount(ctx, "golang")
 	require.Error(t, err)
-}
-
-func TestTrendingRepository_scoreHashtagSuggestions_Branches(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("query too short returns early", func(t *testing.T) {
-		repo := &TrendingRepository{}
-		suggestions := map[string]float64{"keep": 1}
-		repo.scoreHashtagSuggestions(ctx, "a", suggestions)
-		require.Equal(t, float64(1), suggestions["keep"])
-	})
-
-	t.Run("no matching hashtags continues", func(t *testing.T) {
-		baseTime := time.Now().Add(-1 * time.Hour)
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			populateAnalyticsSliceForCoverage(args.Get(0), baseTime)
-		}).Return(nil).Maybe()
-
-		suggestions := make(map[string]float64)
-		repo.scoreHashtagSuggestions(ctx, "zz", suggestions)
-		require.Empty(t, suggestions)
-	})
-
-	t.Run("query error returns early", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-		mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery).Maybe()
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
-
-		suggestions := make(map[string]float64)
-		repo.scoreHashtagSuggestions(ctx, "go", suggestions)
-		require.Empty(t, suggestions)
-	})
 }
 
 func TestTrendingRepository_queryBufferingEvents_ErrorIgnored(t *testing.T) {

@@ -22,12 +22,6 @@ func NewMockHashtagRepository() *MockHashtagRepository {
 	return &MockHashtagRepository{}
 }
 
-// IndexHashtag mocks the IndexHashtag method
-func (m *MockHashtagRepository) IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error {
-	args := m.Called(ctx, hashtag, statusID, authorID, visibility)
-	return args.Error(0)
-}
-
 // IndexStatusHashtags mocks the IndexStatusHashtags method
 func (m *MockHashtagRepository) IndexStatusHashtags(ctx context.Context, statusID string, authorID string, authorHandle string, statusURL string, content string, hashtags []string, published time.Time, visibility string) error {
 	args := m.Called(ctx, statusID, authorID, authorHandle, statusURL, content, hashtags, published, visibility)
@@ -89,15 +83,6 @@ func (m *MockHashtagRepository) GetMultiHashtagTimeline(ctx context.Context, has
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
-}
-
-// GetSuggestedHashtags mocks the GetSuggestedHashtags method
-func (m *MockHashtagRepository) GetSuggestedHashtags(ctx context.Context, userID string, limit int) ([]*storage.HashtagSearchResult, error) {
-	args := m.Called(ctx, userID, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.HashtagSearchResult), args.Error(1)
 }
 
 // FollowHashtag mocks the FollowHashtag method

@@ -722,20 +722,6 @@ func (r *ObjectRepository) CountQuotes(_ context.Context, noteID string) (int, e
 	return count, nil
 }
 
-// CountWithdrawnQuotes counts the number of withdrawn quotes for a specific note
-func (r *ObjectRepository) CountWithdrawnQuotes(_ context.Context, noteID string) (int, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	count := 0
-	for _, quoteID := range r.quotesByTarget[noteID] {
-		if quote, exists := r.quotes[quoteID]; exists && quote.Withdrawn {
-			count++
-		}
-	}
-	return count, nil
-}
-
 // CreateQuoteRelationship creates a new quote relationship between notes
 func (r *ObjectRepository) CreateQuoteRelationship(_ context.Context, quote *storage.QuoteRelationship) error {
 	r.mu.Lock()

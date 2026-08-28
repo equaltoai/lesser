@@ -43,20 +43,6 @@ func NewHashtagRepository() *HashtagRepository {
 	}
 }
 
-// IndexHashtag indexes a hashtag when used in a public status.
-func (r *HashtagRepository) IndexHashtag(_ context.Context, hashtag string, statusID string, _ string, visibility string) error {
-	if visibility != models.VisibilityPublic {
-		return nil
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	normalized := strings.ToLower(hashtag)
-	r.statusIndex[normalized] = append(r.statusIndex[normalized], statusID)
-	return nil
-}
-
 // IndexStatusHashtags indexes a public status with its hashtags for efficient search.
 func (r *HashtagRepository) IndexStatusHashtags(_ context.Context, statusID string, _ string, _ string, _ string, _ string, hashtags []string, _ time.Time, visibility string) error {
 	if visibility != models.VisibilityPublic {
@@ -158,14 +144,6 @@ func (r *HashtagRepository) GetMultiHashtagTimeline(_ context.Context, _ []strin
 	defer r.mu.RUnlock()
 
 	return []*storage.StatusSearchResult{}, nil
-}
-
-// GetSuggestedHashtags gets suggested hashtags for a user
-func (r *HashtagRepository) GetSuggestedHashtags(_ context.Context, _ string, _ int) ([]*storage.HashtagSearchResult, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	return []*storage.HashtagSearchResult{}, nil
 }
 
 // FollowHashtag creates a hashtag follow relationship

@@ -767,15 +767,6 @@ func (m *MockStorage) TrackSearchQuery(ctx context.Context, userID, query string
 	return args.Error(0)
 }
 
-// GetPopularSearchQueries mocks the GetPopularSearchQueries method
-func (m *MockStorage) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
-	args := m.Called(ctx, limit, timeWindow)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]storage.SearchQueryStats), args.Error(1)
-}
-
 // GetPublicTimeline mocks the GetPublicTimeline method
 func (m *MockStorage) GetPublicTimeline(ctx context.Context, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
 	args := m.Called(ctx, local, limit, cursor)
@@ -783,15 +774,6 @@ func (m *MockStorage) GetPublicTimeline(ctx context.Context, local bool, limit i
 		return nil, args.String(1), args.Error(2)
 	}
 	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
-}
-
-// GetRecentHashtags mocks the GetRecentHashtags method
-func (m *MockStorage) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	args := m.Called(ctx, since, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.TrendingHashtag), args.Error(1)
 }
 
 // GetRecentLinks mocks the GetRecentLinks method
@@ -899,15 +881,6 @@ func (m *MockStorage) GetStrongestConnectionsByType(ctx context.Context, connect
 	return args.Get(0).([]*storage.FederationEdge), args.Error(1)
 }
 
-// GetSuggestedHashtags mocks the GetSuggestedHashtags method
-func (m *MockStorage) GetSuggestedHashtags(ctx context.Context, userID string, limit int) ([]*storage.HashtagSearchResult, error) {
-	args := m.Called(ctx, userID, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.HashtagSearchResult), args.Error(1)
-}
-
 // GetTagSuggestions mocks the GetTagSuggestions method
 func (m *MockStorage) GetTagSuggestions(ctx context.Context, userID string, limit int) ([]string, error) {
 	args := m.Called(ctx, userID, limit)
@@ -992,15 +965,6 @@ func (m *MockStorage) UpdateMediaAttachment(ctx context.Context, mediaID string,
 	return args.Error(0)
 }
 
-// GetUserSearchHistory mocks the GetUserSearchHistory method
-func (m *MockStorage) GetUserSearchHistory(ctx context.Context, userID string, limit int) ([]storage.SearchHistoryEntry, error) {
-	args := m.Called(ctx, userID, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]storage.SearchHistoryEntry), args.Error(1)
-}
-
 // GetUserStatusCount mocks the GetUserStatusCount method
 func (m *MockStorage) GetUserStatusCount(ctx context.Context, userID string) (int, error) {
 	args := m.Called(ctx, userID)
@@ -1040,12 +1004,6 @@ func (m *MockStorage) HasUserVoted(ctx context.Context, pollID string, userID st
 // IncrementReblogCount mocks the IncrementReblogCount method
 func (m *MockStorage) IncrementReblogCount(ctx context.Context, objectID string) error {
 	args := m.Called(ctx, objectID)
-	return args.Error(0)
-}
-
-// IndexHashtag mocks the IndexHashtag method
-func (m *MockStorage) IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error {
-	args := m.Called(ctx, hashtag, statusID, authorID, visibility)
 	return args.Error(0)
 }
 
@@ -3554,15 +3512,6 @@ func (m *MockStorage) GetFollowedHashtags(ctx context.Context, userID string, li
 		return nil, args.String(1), args.Error(2)
 	}
 	return args.Get(0).([]*storage.HashtagFollow), args.String(1), args.Error(2)
-}
-
-// GenerateSearchSuggestions mocks the GenerateSearchSuggestions method
-func (m *MockStorage) GenerateSearchSuggestions(ctx context.Context, userID, partialQuery string, limit int) ([]string, error) {
-	args := m.Called(ctx, userID, partialQuery, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]string), args.Error(1)
 }
 
 // GetAccountSuggestions mocks the GetAccountSuggestions method

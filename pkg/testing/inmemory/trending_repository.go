@@ -178,11 +178,6 @@ func (r *TrendingRepository) GetTrendingLinks(_ context.Context, since time.Time
 	}), nil
 }
 
-// GetRecentHashtags returns recent hashtags since the given time
-func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	return r.GetTrendingHashtags(ctx, since, limit)
-}
-
 // GetRecentStatusesWithEngagement returns recent statuses with engagement since the given time
 func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
 	return r.GetTrendingStatuses(ctx, since, limit)

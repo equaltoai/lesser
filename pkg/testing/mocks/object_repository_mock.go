@@ -245,12 +245,6 @@ func (m *MockObjectRepository) CountQuotes(ctx context.Context, noteID string) (
 	return args.Int(0), args.Error(1)
 }
 
-// CountWithdrawnQuotes mocks the CountWithdrawnQuotes method
-func (m *MockObjectRepository) CountWithdrawnQuotes(ctx context.Context, noteID string) (int, error) {
-	args := m.Called(ctx, noteID)
-	return args.Int(0), args.Error(1)
-}
-
 // CreateQuoteRelationship mocks the CreateQuoteRelationship method
 func (m *MockObjectRepository) CreateQuoteRelationship(ctx context.Context, quote *storage.QuoteRelationship) error {
 	args := m.Called(ctx, quote)

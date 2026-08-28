@@ -35,9 +35,6 @@ type TrendingRepository interface {
 
 	// Recent retrieval operations (no trending calculation)
 
-	// GetRecentHashtags returns recent hashtags since the given time
-	GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error)
-
 	// GetRecentStatusesWithEngagement returns recent statuses with engagement since the given time
 	GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error)
 
