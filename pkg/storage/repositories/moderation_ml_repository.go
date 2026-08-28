@@ -99,7 +99,12 @@ func (r *ModerationMLRepository) ListSamplesByLabel(ctx context.Context, label s
 		Where("gsi2PK", "=", fmt.Sprintf("LABEL#%s", label)).
 		Limit(limit)
 
-	err := query.Scan(&results)
+	// Keyed GSI read (wave #1469, batch S2): the chain carries the gsi2
+	// partition-key equality, so the old `.Scan` compiled to a GSI Scan with
+	// that predicate as a post-read filter; `.All` compiles to a DynamoDB
+	// Query on the same index, selecting the identical row set. The limit is
+	// floored above (<= 0 → 100), so Limit(n>0) is always issued.
+	err := query.All(&results)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +130,10 @@ func (r *ModerationMLRepository) ListSamplesByReviewer(ctx context.Context, revi
 		Where("gsi1PK", "=", fmt.Sprintf("REVIEWER#%s", reviewerID)).
 		Limit(limit)
 
-	err := query.Scan(&results)
+	// Keyed GSI read (wave #1469, batch S2): see ListSamplesByLabel — the old
+	// `.Scan` compiled to a GSI Scan; `.All` compiles to a DynamoDB Query on
+	// the same gsi1 partition. The limit is floored above (<= 0 → 100).
+	err := query.All(&results)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +292,12 @@ func (r *ModerationMLRepository) ListEffectivenessMetricsByPattern(ctx context.C
 		Where("PK", "=", fmt.Sprintf("MLMETRICS#%s", patternID)).
 		Limit(limit)
 
-	err := query.Scan(&results)
+	// Keyed read (wave #1469, batch S2): the chain carries the MLMETRICS#
+	// partition-key equality, so the old `.Scan` compiled to a table Scan with
+	// that predicate as a post-read filter; `.All` compiles to a DynamoDB
+	// Query on the same partition, selecting the identical row set. The limit
+	// is floored above (<= 0 → 50), so Limit(n>0) is always issued.
+	err := query.All(&results)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +323,11 @@ func (r *ModerationMLRepository) ListEffectivenessMetricsByPeriod(ctx context.Co
 		Where("gsi1PK", "=", fmt.Sprintf("METRICS#%s", period)).
 		Limit(limit)
 
-	err := query.Scan(&results)
+	// Keyed GSI read (wave #1469, batch S2): the chain carries the gsi1
+	// partition-key equality, so the old `.Scan` compiled to a GSI Scan;
+	// `.All` compiles to a DynamoDB Query on the same METRICS# partition,
+	// selecting the identical row set. The limit is floored above (<= 0 → 50).
+	err := query.All(&results)
 	if err != nil {
 		return nil, err
 	}

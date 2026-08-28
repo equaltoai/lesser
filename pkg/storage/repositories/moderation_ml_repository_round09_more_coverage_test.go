@@ -47,7 +47,8 @@ func TestModerationMLRepository_Round09_MoreCoverage(t *testing.T) {
 	t.Run("List scans error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("Scan", mock.Anything).Return(ErrTestMockError).Once()
+		// ListSamplesByLabel is a keyed gsi2 .All read (wave #1469 batch S2).
+		mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewModerationMLRepository(mockDB, "test-table", zap.NewNop())
 		_, err := repo.ListSamplesByLabel(ctx, "spam", 1)
@@ -106,7 +107,9 @@ func TestModerationMLRepository_Round09_MoreCoverage(t *testing.T) {
 
 		mockDB7 := new(mocks.MockDB)
 		mockQuery7 := new(mocks.MockQuery)
-		mockQuery7.On("Scan", mock.Anything).Return(ErrTestMockError).Once()
+		// ListEffectivenessMetricsByPeriod is a keyed gsi1 .All read (wave
+		// #1469 batch S2).
+		mockQuery7.On("All", mock.Anything).Return(ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB7, mockQuery7, nil, baseTime)
 		repo7 := NewModerationMLRepository(mockDB7, "test-table", zap.NewNop())
 		_, err = repo7.ListEffectivenessMetricsByPeriod(ctx, "daily", 1)
