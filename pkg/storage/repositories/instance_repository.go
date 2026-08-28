@@ -798,8 +798,9 @@ func (r *InstanceRepository) getMetricHistory(ctx context.Context, days int, met
 		r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
 			Index("gsi1").
 			Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
-			Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
-			Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)),
+			// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+			// range conditions on one sort key are rejected by DynamoDB (#1500).
+			Where("gsi1SK", "BETWEEN", []any{fmt.Sprintf("DATE#%s", startDate), fmt.Sprintf("DATE#%s", endDate)}),
 		500, 100,
 		func(page []models.InstanceHistory) (bool, error) {
 			histories = append(histories, page...)
@@ -1002,8 +1003,10 @@ func (r *InstanceRepository) GetMetricsSummary(ctx context.Context, timeRange st
 			r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
 				Index("gsi1").
 				Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
-				Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
-				Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)),
+				// One BETWEEN key condition on gsi1SK (inclusive both bounds):
+				// two range conditions on one sort key are rejected by DynamoDB
+				// (issue #1500).
+				Where("gsi1SK", "BETWEEN", []any{fmt.Sprintf("DATE#%s", startDate), fmt.Sprintf("DATE#%s", endDate)}),
 			500, 100,
 			func(page []models.InstanceHistory) (bool, error) {
 				histories = append(histories, page...)

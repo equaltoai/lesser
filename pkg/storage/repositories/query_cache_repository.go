@@ -143,14 +143,18 @@ func (r *QueryCacheRepository) invalidateCachePrefix(ctx context.Context, prefix
 
 	for {
 		var entries []models.QueryCacheEntry
+		// One SK key condition (issue #1500): begins_with on the first page;
+		// with a cursor key the exclusive `>` bound and demote begins_with to
+		// a post-read FilterExpression.
 		query := r.GetDB().WithContext(ctx).Model(&models.QueryCacheEntry{}).
 			Where("PK", "=", pk).
-			Where("SK", "begins_with", skPrefix).
 			OrderBy("SK", "ASC").
 			Limit(pageLimit + 1)
 
 		if cursor != "" {
-			query = query.Where("SK", ">", cursor)
+			query = query.Where("SK", ">", cursor).Filter("SK", "begins_with", skPrefix)
+		} else {
+			query = query.Where("SK", "begins_with", skPrefix)
 		}
 
 		err := query.All(&entries)

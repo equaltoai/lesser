@@ -1344,16 +1344,20 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 	// Query the hashtag search index with cursor-aware pagination
 	var hashtags []models.Hashtag
 
-	// Build query with proper cursor handling
+	// Build query with proper cursor handling. One gsi3SK key condition
+	// (issue #1500): BEGINS_WITH on the first page; with a cursor key the
+	// exclusive `>` bound and demote BEGINS_WITH to a post-read
+	// FilterExpression.
 	hashtagQuery := r.db.WithContext(ctx).Model(&models.Hashtag{}).
 		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("HASHTAG_SEARCH#%s", normalizedQuery[:2])).
-		Where("gsi3SK", "BEGINS_WITH", normalizedQuery).
 		OrderBy("gsi3SK", "ASC")
 
 	// Resume from the last returned GSI value when a cursor is provided
 	if cursorData.LastID != "" {
-		hashtagQuery = hashtagQuery.Where("gsi3SK", ">", cursorData.LastID)
+		hashtagQuery = hashtagQuery.Where("gsi3SK", ">", cursorData.LastID).Filter("gsi3SK", "BEGINS_WITH", normalizedQuery)
+	} else {
+		hashtagQuery = hashtagQuery.Where("gsi3SK", "BEGINS_WITH", normalizedQuery)
 	}
 
 	// Execute query with limit + 1 to check for more results

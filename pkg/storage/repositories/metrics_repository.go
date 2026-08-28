@@ -124,8 +124,9 @@ func (r *MetricsRepository) ListByType(ctx context.Context, metricType string, s
 
 	query := r.db.WithContext(ctx).Model(&models.Metrics{}).
 		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
+		// One BETWEEN key condition on SK (inclusive both bounds): two range
+		// conditions on one sort key are rejected by DynamoDB (issue #1500).
+		Where("SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("SK", "DESC").
 		Limit(limit)
 
@@ -154,8 +155,9 @@ func (r *MetricsRepository) ListByService(ctx context.Context, service string, s
 	query := r.db.WithContext(ctx).Model(&models.Metrics{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("METRICS_SVC#%s", service)).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
+		// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+		// range conditions on one sort key are rejected by DynamoDB (#1500).
+		Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("gsi1SK", "DESC").
 		Limit(limit)
 

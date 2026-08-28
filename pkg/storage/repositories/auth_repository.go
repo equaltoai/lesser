@@ -793,14 +793,18 @@ func (r *AuthRepository) queryWalletCredentials(ctx context.Context, pk, skPrefi
 	var modelList []models.WalletCredential
 	safeLimit := clampWalletCredentialLimit(limit)
 
+	// One SK key condition (issue #1500): BEGINS_WITH on the first page; with
+	// a cursor key the exclusive `>` bound and demote BEGINS_WITH to a
+	// post-read FilterExpression.
 	query := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", skPrefix).
 		OrderBy("SK", "ASC").
 		Limit(safeLimit + 1)
 
 	if cursor != "" {
-		query = query.Where("SK", ">", cursor)
+		query = query.Where("SK", ">", cursor).Filter("SK", "BEGINS_WITH", skPrefix)
+	} else {
+		query = query.Where("SK", "BEGINS_WITH", skPrefix)
 	}
 
 	err := query.All(&modelList)

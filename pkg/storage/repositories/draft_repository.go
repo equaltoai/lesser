@@ -280,22 +280,35 @@ func (r *DraftRepository) ListScheduledDraftsDuePaginated(ctx context.Context, d
 	pk := "DRAFT#STATUS#scheduled"
 	cutoff := fmt.Sprintf("TIME#%s~", dueBefore.UTC().Format(time.RFC3339Nano))
 
-	query := r.db.WithContext(ctx).Model(&models.Draft{}).
-		Index("gsi4").
-		Where("gsi4PK", "=", pk).
-		Where("gsi4SK", "<=", cutoff).
-		OrderBy("gsi4SK", "ASC")
-
+	// The gsi4SK window is EXACTLY ONE key condition (issue #1500): `<= cutoff`
+	// alone on the first page; with a cursor (ASC order) the window becomes
+	// BETWEEN [cursor, cutoff] — inclusive, so the cursor row is re-included
+	// and dropped post-read (one extra item is over-fetched so the has-more
+	// detection stays exact).
 	cursor = strings.TrimSpace(cursor)
-	if cursor != "" {
-		query = query.Where("gsi4SK", ">", cursor)
-	}
-
-	query = query.Limit(limit + 1)
-
+	fetchLimit := limit + 1
 	var draftModels []models.Draft
-	if err := query.All(&draftModels); err != nil {
-		return nil, "", err
+	if cursor == "" {
+		query := r.db.WithContext(ctx).Model(&models.Draft{}).
+			Index("gsi4").
+			Where("gsi4PK", "=", pk).
+			Where("gsi4SK", "<=", cutoff).
+			OrderBy("gsi4SK", "ASC").
+			Limit(fetchLimit)
+		if err := query.All(&draftModels); err != nil {
+			return nil, "", err
+		}
+	} else {
+		query := r.db.WithContext(ctx).Model(&models.Draft{}).
+			Index("gsi4").
+			Where("gsi4PK", "=", pk).
+			Where("gsi4SK", "BETWEEN", []any{cursor, cutoff}).
+			OrderBy("gsi4SK", "ASC").
+			Limit(fetchLimit + 1)
+		if err := query.All(&draftModels); err != nil {
+			return nil, "", err
+		}
+		draftModels = dropSortKeyCursorDuplicate(draftModels, cursor, func(d models.Draft) string { return d.GSI4SK })
 	}
 
 	nextCursor := ""

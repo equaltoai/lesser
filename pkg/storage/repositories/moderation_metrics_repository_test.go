@@ -207,8 +207,7 @@ func TestModerationMetricsRepository_GetFalsePositives_Success(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "FALSE_POSITIVES").Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery)
 	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
 	mockQuery.On("Limit", 500).Return(mockQuery)
 	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
@@ -308,8 +307,7 @@ func TestModerationMetricsRepository_GetDecisionSamples_WithDecision(t *testing.
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "DECISION#approve").Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery)
 	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
 	mockQuery.On("Limit", 500).Return(mockQuery)
 	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
@@ -604,8 +602,7 @@ func TestModerationMetricsRepository_GetMetricsEntries_WithMetricTypes(t *testin
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery)
 	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
 	mockQuery.On("Limit", 500).Return(mockQuery)
 	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
@@ -695,8 +692,7 @@ func TestModerationMetricsRepository_GetAggregatedStats_Success(t *testing.T) {
 	// Mock for GetFalsePositives
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "FALSE_POSITIVES").Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery)
 	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
 	mockQuery.On("Limit", 500).Return(mockQuery)
 	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {

@@ -106,6 +106,45 @@ func sanitizeQueryLimit(limit int) int {
 // sentinel instead of reading the partition unboundedly.
 var errBoundedPageCapExceeded = fmt.Errorf("bounded page iteration exceeded the page cap")
 
+// dropSortKeyCursorDuplicate removes the single item whose sort key equals the
+// cursor from an inclusive BETWEEN page. When a cursor-scoped sort-key window
+// is expressed as a single inclusive BETWEEN key condition (issue #1500), the
+// cursor row itself is re-included; the caller over-fetches one extra item so
+// dropping it does not hide the has-more sentinel. The cursor row is always
+// present unless it was deleted between pages, in which case nothing is
+// dropped and the over-fetched item simply surfaces as the next page head.
+func dropSortKeyCursorDuplicate[T any](items []T, cursor string, sortKey func(T) string) []T {
+	if cursor == "" || len(items) == 0 {
+		return items
+	}
+	filtered := items[:0]
+	for _, item := range items {
+		if sortKey(item) != cursor {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// gsi1BetweenCursorScope builds a keyed gsi1 query whose sort-key window is
+// EXACTLY ONE BETWEEN key condition (issue #1500): [startSK, endSK] on the
+// first page; with a cursor (DESC order) the upper bound is clamped to the
+// cursor — BETWEEN is inclusive, so the cursor row is re-included and dropped
+// post-read by the caller (one extra item is over-fetched so the has-more
+// detection stays exact). Returns the query and the effective fetch limit.
+func gsi1BetweenCursorScope(ctx context.Context, db core.DB, model any, gsi1pk, startSK, endSK, cursor string, fetchLimit int) (core.Query, int) {
+	if cursor == "" {
+		return db.WithContext(ctx).Model(model).
+			Index("gsi1").
+			Where("gsi1PK", "=", gsi1pk).
+			Where("gsi1SK", "BETWEEN", []any{startSK, endSK}), fetchLimit
+	}
+	return db.WithContext(ctx).Model(model).
+		Index("gsi1").
+		Where("gsi1PK", "=", gsi1pk).
+		Where("gsi1SK", "BETWEEN", []any{startSK, cursor}), fetchLimit + 1
+}
+
 // walkKeyedPages iterates a keyed TableTheory query in bounded pages with an
 // explicit page cap (wave #1469). Each page carries pageSize items; iteration
 // stops when the query reports no more pages (HasMore false or no cursor),
@@ -200,11 +239,16 @@ func (q *QueryUtils) TimeRangeQuery(ctx context.Context, pk string, startTime, e
 	// Clamp the requested limit (wave #1469): the read is always bounded.
 	opts.Limit = sanitizeQueryLimit(opts.Limit)
 
-	// Add time range conditions
-	if startTime > 0 {
+	// Add time range conditions. The SK window is AT MOST ONE key condition:
+	// BETWEEN when both bounds are given (the old `>=` + `<=` pair compiled to
+	// two conditions on one sort key and was rejected by DynamoDB, issue #1500),
+	// otherwise the single bound alone.
+	switch {
+	case startTime > 0 && endTime > 0:
+		query = query.Where("SK", "BETWEEN", []any{fmt.Sprintf("TIME#%d", startTime), fmt.Sprintf("TIME#%d", endTime)})
+	case startTime > 0:
 		query = query.Where("SK", ">=", fmt.Sprintf("TIME#%d", startTime))
-	}
-	if endTime > 0 {
+	case endTime > 0:
 		query = query.Where("SK", "<=", fmt.Sprintf("TIME#%d", endTime))
 	}
 

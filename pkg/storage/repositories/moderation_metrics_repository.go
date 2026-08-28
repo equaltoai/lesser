@@ -151,8 +151,10 @@ func (r *moderationMetricsRepository) GetFalsePositives(ctx context.Context, tim
 		r.falsePositiveRepo.GetDB().WithContext(ctx).Model(&models.ModerationFalsePositive{}).
 			Index("gsi1").
 			Where("gsi1PK", "=", "FALSE_POSITIVES").
-			Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-			Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))),
+			// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+			// range conditions on one sort key are rejected by DynamoDB
+			// (issue #1500).
+			Where("gsi1SK", "BETWEEN", []any{fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat)), fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))}),
 		500, 100,
 		func(page []*models.ModerationFalsePositive) (bool, error) {
 			results = append(results, page...)
@@ -186,8 +188,10 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 			r.decisionSampleRepo.GetDB().WithContext(ctx).Model(&models.ModerationDecisionSample{}).
 				Index("gsi1").
 				Where("gsi1PK", "=", fmt.Sprintf("DECISION#%s", decision)).
-				Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-				Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))),
+				// One BETWEEN key condition on gsi1SK (inclusive both bounds;
+				// see GetFalsePositives). Two range conditions on one sort key
+				// are rejected by DynamoDB (issue #1500).
+				Where("gsi1SK", "BETWEEN", []any{fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat)), fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))}),
 			500, 100,
 			func(page []*models.ModerationDecisionSample) (bool, error) {
 				results = append(results, page...)
@@ -318,8 +322,10 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 				r.GetDB().WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
 					Index("gsi1").
 					Where("gsi1PK", "=", fmt.Sprintf("METRIC_TYPE#%s", metricType)).
-					Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-					Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))),
+					// One BETWEEN key condition on gsi1SK (inclusive both
+					// bounds; see GetFalsePositives). Two range conditions on
+					// one sort key are rejected by DynamoDB (issue #1500).
+					Where("gsi1SK", "BETWEEN", []any{fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat)), fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))}),
 				500, 100,
 				func(page []*models.ModerationMetricsEntry) (bool, error) {
 					results = append(results, page...)

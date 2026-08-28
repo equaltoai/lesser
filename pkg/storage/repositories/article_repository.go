@@ -182,14 +182,18 @@ func (r *ArticleRepository) listArticlesByCMSIndexPaginated(ctx context.Context,
 		limit = 25
 	}
 
+	// One SK key condition (issue #1500): BEGINS_WITH on the first page; with
+	// a cursor (DESC order) key the exclusive `<` bound and demote BEGINS_WITH
+	// to a post-read FilterExpression.
 	query := r.db.WithContext(ctx).Model(&models.CMSArticleIndex{}).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", models.CMSArticleIndexSKPrefix).
 		OrderBy("SK", "DESC")
 
 	cursor = strings.TrimSpace(cursor)
 	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
+		query = query.Where("SK", "<", cursor).Filter("SK", "BEGINS_WITH", models.CMSArticleIndexSKPrefix)
+	} else {
+		query = query.Where("SK", "BEGINS_WITH", models.CMSArticleIndexSKPrefix)
 	}
 
 	query = query.Limit(limit + 1)

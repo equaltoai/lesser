@@ -158,16 +158,20 @@ func TestListByPKSKPrefixPaginated_CursorTrimming(t *testing.T) {
 			skPrefix := "ITEM#"
 			limit := 10
 
-			// Set up base mock expectations
+			// Set up base mock expectations. One SK key condition (issue #1500):
+			// BEGINS_WITH on the first page; cursor pages key the exclusive `>`
+			// bound and demote BEGINS_WITH to a post-read FilterExpression.
 			mockDB.On("WithContext", ctx).Return(mockDB)
 			mockDB.On("Model", mock.Anything).Return(mockQuery)
 			mockQuery.On("Where", "PK", "=", pk).Return(mockQuery)
-			mockQuery.On("Where", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
 			mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery)
 
-			// Only expect cursor filter if cursor is non-empty after trimming
+			// Only expect the cursor-scoped shape if cursor is non-empty after trimming
 			if tt.expectCursor {
 				mockQuery.On("Where", "SK", ">", tt.expectedCursor).Return(mockQuery)
+				mockQuery.On("Filter", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
+			} else {
+				mockQuery.On("Where", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
 			}
 
 			mockQuery.On("Limit", limit+1).Return(mockQuery)
@@ -204,11 +208,13 @@ func TestListByPKSKPrefixPaginated_QueryShape(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 
-	// Verify exact query chain
+	// Verify exact query chain: a cursor page keys the exclusive `>` bound and
+	// demotes BEGINS_WITH to a post-read FilterExpression (one SK key
+	// condition, issue #1500).
 	mockQuery.On("Where", "PK", "=", pk).Return(mockQuery)
-	mockQuery.On("Where", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery)
 	mockQuery.On("Where", "SK", ">", cursor).Return(mockQuery)
+	mockQuery.On("Filter", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
 	mockQuery.On("Limit", limit+1).Return(mockQuery) // limit + 1 for pagination detection
 	mockQuery.On("All", mock.AnythingOfType("*[]repositories.testPaginatedItem")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]testPaginatedItem)

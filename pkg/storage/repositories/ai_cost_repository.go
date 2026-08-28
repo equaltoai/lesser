@@ -120,8 +120,11 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 		query := r.db.WithContext(ctx).Model(&models.AICost{}).
 			Index("gsi1").
 			Where("gsi1PK", "=", bucketPK).
-			Where("gsi1SK", ">=", startSK).
-			Where("gsi1SK", "<=", endSK).
+			// One BETWEEN key condition on gsi1SK (inclusive both bounds; the
+			// `TS#...~` sentinel upper bound keeps the exact-millisecond window
+			// identical to the old `>=` + `<=` pair). Two range conditions on
+			// one sort key are rejected by DynamoDB (issue #1500).
+			Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 			OrderBy("gsi1SK", "ASC")
 
 		// Each month bucket is a keyed gsi1 partition read with no enforced
@@ -766,16 +769,26 @@ func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("AI_AGG_TIME#%s", period))
 
-	// Add time range filter
-	if !startTime.IsZero() {
+	// Add time range filter. The gsi1SK window is expressed as AT MOST ONE key
+	// condition: BETWEEN when both bounds are given (the old `>=` + `<=` pair
+	// compiled to two conditions on one sort key and was rejected by DynamoDB,
+	// issue #1500), otherwise the single bound alone.
+	switch {
+	case !startTime.IsZero() && !endTime.IsZero():
+		startStr := startTime.Format(common.CompactDateFormat)
+		endStr := endTime.Format(common.CompactDateFormat)
+		if period == models.PeriodTimeHour {
+			startStr = startTime.Format(common.CompactTimeFormat)[:13]
+			endStr = endTime.Format(common.CompactTimeFormat)[:13]
+		}
+		query = query.Where("gsi1SK", "BETWEEN", []any{startStr, endStr})
+	case !startTime.IsZero():
 		startStr := startTime.Format(common.CompactDateFormat)
 		if period == models.PeriodTimeHour {
 			startStr = startTime.Format(common.CompactTimeFormat)[:13]
 		}
 		query = query.Where("gsi1SK", ">=", startStr)
-	}
-
-	if !endTime.IsZero() {
+	case !endTime.IsZero():
 		endStr := endTime.Format(common.CompactDateFormat)
 		if period == models.PeriodTimeHour {
 			endStr = endTime.Format(common.CompactTimeFormat)[:13]

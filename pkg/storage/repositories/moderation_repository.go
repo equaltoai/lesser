@@ -1522,8 +1522,11 @@ func (r *ModerationRepository) GetFiltersForUser(ctx context.Context, username s
 	err := walkKeyedPages(
 		r.db.WithContext(ctx).Model(&models.Filter{}).
 			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-			Where("SK", ">=", "FILTER#").
-			Where("SK", "<", "FILTER~"), // Use ~ as upper bound since it's after # in ASCII
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= FILTER# AND < FILTER~` (inclusive `~` sentinel bound). Two
+			// range conditions on one sort key are rejected by DynamoDB
+			// (issue #1500).
+			Where("SK", "BETWEEN", []any{"FILTER#", "FILTER~"}),
 		500, 100,
 		func(page []models.Filter) (bool, error) {
 			filterModels = append(filterModels, page...)
@@ -1714,8 +1717,11 @@ func (r *ModerationRepository) GetFilterKeywords(ctx context.Context, filterID s
 	err := walkKeyedPages(
 		r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
 			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-			Where("SK", ">=", "KEYWORD#").
-			Where("SK", "<", "KEYWORD~"), // Use ~ as upper bound since it's after # in ASCII
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= KEYWORD# AND < KEYWORD~` (inclusive `~` sentinel bound; see
+			// GetFiltersForUser). Two range conditions on one sort key are
+			// rejected by DynamoDB (issue #1500).
+			Where("SK", "BETWEEN", []any{"KEYWORD#", "KEYWORD~"}),
 		500, 100,
 		func(page []models.FilterKeyword) (bool, error) {
 			keywordModels = append(keywordModels, page...)
@@ -1837,8 +1843,11 @@ func (r *ModerationRepository) GetFilterStatuses(ctx context.Context, filterID s
 	err := walkKeyedPages(
 		r.db.WithContext(ctx).Model(&models.FilterStatus{}).
 			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-			Where("SK", ">=", "STATUS#").
-			Where("SK", "<", "STATUS~"), // Use ~ as upper bound since it's after # in ASCII
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= STATUS# AND < STATUS~` (inclusive `~` sentinel bound; see
+			// GetFiltersForUser). Two range conditions on one sort key are
+			// rejected by DynamoDB (issue #1500).
+			Where("SK", "BETWEEN", []any{"STATUS#", "STATUS~"}),
 		500, 100,
 		func(page []models.FilterStatus) (bool, error) {
 			statusModels = append(statusModels, page...)

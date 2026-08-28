@@ -67,9 +67,11 @@ func (r *RevisionRepository) ListRevisionsPaginated(ctx context.Context, objectI
 	}
 
 	pk := fmt.Sprintf("OBJECT#%s#REVISION", objectID)
+	// One SK key condition (issue #1500): BEGINS_WITH on the first page; with
+	// a cursor (DESC order) key the exclusive `<` bound and demote BEGINS_WITH
+	// to a post-read FilterExpression.
 	query := r.db.WithContext(ctx).Model(&models.Revision{}).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", "VERSION#").
 		OrderBy("SK", "DESC")
 
 	cursor = strings.TrimSpace(cursor)
@@ -77,7 +79,9 @@ func (r *RevisionRepository) ListRevisionsPaginated(ctx context.Context, objectI
 		if !strings.HasPrefix(cursor, "VERSION#") {
 			cursor = fmt.Sprintf("VERSION#%s", cursor)
 		}
-		query = query.Where("SK", "<", cursor)
+		query = query.Where("SK", "<", cursor).Filter("SK", "BEGINS_WITH", "VERSION#")
+	} else {
+		query = query.Where("SK", "BEGINS_WITH", "VERSION#")
 	}
 
 	query = query.Limit(limit + 1)

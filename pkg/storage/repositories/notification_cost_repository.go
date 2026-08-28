@@ -197,8 +197,9 @@ func (r *NotificationCostRepository) ListAggregationsByPeriod(ctx context.Contex
 
 	query := r.GetDB().WithContext(ctx).Model(&models.NotificationCostAggregation{}).
 		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
+		// One BETWEEN key condition on SK (inclusive both bounds): two range
+		// conditions on one sort key are rejected by DynamoDB (issue #1500).
+		Where("SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("SK", "DESC").
 		Limit(limit)
 
@@ -928,8 +929,13 @@ func (r *NotificationCostRepository) GetDailySpending(ctx context.Context, usern
 	err := walkKeyedPages(
 		r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
 			Where("gsi1PK", "=", gsi1PK).
-			Where("gsi1SK", ">=", startSK).
-			Where("gsi1SK", "<", endSK),
+			// One BETWEEN key condition on gsi1SK — the `>= startSK AND < endSK`
+			// window becomes BETWEEN [startSK, endSK] (inclusive `endSK`
+			// bound; a record with SK exactly endSK = the first millisecond of
+			// tomorrow would previously be excluded, an edge no writer emits).
+			// Two range conditions on one sort key are rejected by DynamoDB
+			// (issue #1500).
+			Where("gsi1SK", "BETWEEN", []any{startSK, endSK}),
 		500, 100,
 		func(page []models.NotificationCostTracking) (bool, error) {
 			costs = append(costs, page...)

@@ -205,15 +205,18 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 
 	safeLimit := clampFollowLimit(limit)
 
-	// Build query using primary key
+	// Build query using primary key. One SK key condition (issue #1500):
+	// BEGINS_WITH on the first page; with a cursor key the exclusive `>` bound
+	// and demote BEGINS_WITH to a post-read FilterExpression.
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Where("PK", "=", Utils.Keys.FollowKey(username)).
-		Where("SK", "BEGINS_WITH", "following#").
 		OrderBy("SK", "ASC").
 		Limit(safeLimit + 1)
 
 	if cursor != "" {
-		query = query.Where("SK", ">", cursor)
+		query = query.Where("SK", ">", cursor).Filter("SK", "BEGINS_WITH", "following#")
+	} else {
+		query = query.Where("SK", "BEGINS_WITH", "following#")
 	}
 
 	err := query.All(&follows)

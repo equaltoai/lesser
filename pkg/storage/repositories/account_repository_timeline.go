@@ -39,19 +39,26 @@ func (r *AccountRepository) GetHomeTimeline(ctx context.Context, username string
 
 	safeLimit := clampTimelineLimit(limit)
 
-	// Build query
+	// Build query. The SK window is EXACTLY ONE key condition (issue #1500):
+	// the paging bound (`< maxID`, the natural DESC read) is keyed; BEGINS_WITH
+	// and the `> sinceID` bound become post-read FilterExpressions. When no
+	// paging bound is given the first page keys BEGINS_WITH directly.
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "BEGINS_WITH", "HOME#").
 		OrderBy("SK", "DESC").
 		Limit(safeLimit + 1)
 
-	// Apply pagination filters
-	if maxID != "" {
-		query = query.Where("SK", "<", fmt.Sprintf("HOME#%s", maxID))
-	}
-	if sinceID != "" {
-		query = query.Where("SK", ">", fmt.Sprintf("HOME#%s", sinceID))
+	switch {
+	case maxID != "" && sinceID != "":
+		query = query.Where("SK", "<", fmt.Sprintf("HOME#%s", maxID)).
+			Filter("SK", "BEGINS_WITH", "HOME#").
+			Filter("SK", ">", fmt.Sprintf("HOME#%s", sinceID))
+	case maxID != "":
+		query = query.Where("SK", "<", fmt.Sprintf("HOME#%s", maxID)).Filter("SK", "BEGINS_WITH", "HOME#")
+	case sinceID != "":
+		query = query.Where("SK", ">", fmt.Sprintf("HOME#%s", sinceID)).Filter("SK", "BEGINS_WITH", "HOME#")
+	default:
+		query = query.Where("SK", "BEGINS_WITH", "HOME#")
 	}
 
 	// Execute query
@@ -82,18 +89,21 @@ func (r *AccountRepository) GetLocalTimeline(ctx context.Context, limit int, max
 
 	safeLimit := clampTimelineLimit(limit)
 
-	// Build query using GSI for local timeline
+	// Build query using GSI for local timeline. One gsi1SK key condition
+	// (issue #1500): the `< maxID` paging bound is keyed; the `> sinceID`
+	// bound becomes a post-read FilterExpression.
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", "LOCAL_TIMELINE").
 		OrderBy("gsi1SK", "DESC").
 		Limit(safeLimit + 1)
 
-	// Apply pagination filters
-	if maxID != "" {
+	switch {
+	case maxID != "" && sinceID != "":
+		query = query.Where("gsi1SK", "<", maxID).Filter("gsi1SK", ">", sinceID)
+	case maxID != "":
 		query = query.Where("gsi1SK", "<", maxID)
-	}
-	if sinceID != "" {
+	case sinceID != "":
 		query = query.Where("gsi1SK", ">", sinceID)
 	}
 
@@ -129,18 +139,21 @@ func (r *AccountRepository) GetPublicTimeline(ctx context.Context, limit int, ma
 		gsiPK = "MEDIA_TIMELINE"
 	}
 
-	// Build query
+	// Build query. One gsi2SK key condition (issue #1500): the `< maxID`
+	// paging bound is keyed; the `> sinceID` bound becomes a post-read
+	// FilterExpression.
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("gsi2").
 		Where("gsi2PK", "=", gsiPK).
 		OrderBy("gsi2SK", "DESC").
 		Limit(safeLimit + 1)
 
-	// Apply pagination filters
-	if maxID != "" {
+	switch {
+	case maxID != "" && sinceID != "":
+		query = query.Where("gsi2SK", "<", maxID).Filter("gsi2SK", ">", sinceID)
+	case maxID != "":
 		query = query.Where("gsi2SK", "<", maxID)
-	}
-	if sinceID != "" {
+	case sinceID != "":
 		query = query.Where("gsi2SK", ">", sinceID)
 	}
 
@@ -173,18 +186,21 @@ func (r *AccountRepository) GetHashtagTimeline(ctx context.Context, hashtag stri
 	hashtag = strings.TrimSpace(hashtag)
 	safeLimit := clampTimelineLimit(limit)
 
-	// Build query using hashtag index
+	// Build query using hashtag index. One gsi3SK key condition (issue #1500):
+	// the `< maxID` paging bound is keyed; the `> sinceID` bound becomes a
+	// post-read FilterExpression.
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
 		OrderBy("gsi3SK", "DESC").
 		Limit(safeLimit + 1)
 
-	// Apply pagination filters
-	if maxID != "" {
+	switch {
+	case maxID != "" && sinceID != "":
+		query = query.Where("gsi3SK", "<", maxID).Filter("gsi3SK", ">", sinceID)
+	case maxID != "":
 		query = query.Where("gsi3SK", "<", maxID)
-	}
-	if sinceID != "" {
+	case sinceID != "":
 		query = query.Where("gsi3SK", ">", sinceID)
 	}
 
@@ -225,18 +241,21 @@ func (r *AccountRepository) GetListTimeline(ctx context.Context, username, listI
 
 	safeLimit := clampTimelineLimit(limit)
 
-	// Build query using list timeline index
+	// Build query using list timeline index. One gsi4SK key condition
+	// (issue #1500): the `< maxID` paging bound is keyed; the `> sinceID`
+	// bound becomes a post-read FilterExpression.
 	query := r.db.WithContext(ctx).Model(&models.TimelineEntry{}).
 		Index("gsi4").
 		Where("gsi4PK", "=", fmt.Sprintf("LIST#%s", listID)).
 		OrderBy("gsi4SK", "DESC").
 		Limit(safeLimit + 1)
 
-	// Apply pagination filters
-	if maxID != "" {
+	switch {
+	case maxID != "" && sinceID != "":
+		query = query.Where("gsi4SK", "<", maxID).Filter("gsi4SK", ">", sinceID)
+	case maxID != "":
 		query = query.Where("gsi4SK", "<", maxID)
-	}
-	if sinceID != "" {
+	case sinceID != "":
 		query = query.Where("gsi4SK", ">", sinceID)
 	}
 
@@ -331,19 +350,26 @@ func (r *AccountRepository) GetConversations(ctx context.Context, username strin
 
 	safeLimit := clampTimelineLimit(limit)
 
-	// Build query
+	// Build query. The SK window is EXACTLY ONE key condition (issue #1500):
+	// the paging bound (`< maxID`, the natural DESC read) is keyed; BEGINS_WITH
+	// and the `> sinceID` bound become post-read FilterExpressions. When no
+	// paging bound is given the first page keys BEGINS_WITH directly.
 	query := r.db.WithContext(ctx).Model(&models.Conversation{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "BEGINS_WITH", "CONVERSATION#").
 		OrderBy("SK", "DESC").
 		Limit(safeLimit + 1)
 
-	// Apply pagination filters
-	if maxID != "" {
-		query = query.Where("SK", "<", fmt.Sprintf("CONVERSATION#%s", maxID))
-	}
-	if sinceID != "" {
-		query = query.Where("SK", ">", fmt.Sprintf("CONVERSATION#%s", sinceID))
+	switch {
+	case maxID != "" && sinceID != "":
+		query = query.Where("SK", "<", fmt.Sprintf("CONVERSATION#%s", maxID)).
+			Filter("SK", "BEGINS_WITH", "CONVERSATION#").
+			Filter("SK", ">", fmt.Sprintf("CONVERSATION#%s", sinceID))
+	case maxID != "":
+		query = query.Where("SK", "<", fmt.Sprintf("CONVERSATION#%s", maxID)).Filter("SK", "BEGINS_WITH", "CONVERSATION#")
+	case sinceID != "":
+		query = query.Where("SK", ">", fmt.Sprintf("CONVERSATION#%s", sinceID)).Filter("SK", "BEGINS_WITH", "CONVERSATION#")
+	default:
+		query = query.Where("SK", "BEGINS_WITH", "CONVERSATION#")
 	}
 
 	// Execute query

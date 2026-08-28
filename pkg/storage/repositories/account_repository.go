@@ -2403,10 +2403,14 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	prefixKey := fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)
 
 	var users []models.User
+	// The gsi5SK window is EXACTLY ONE key condition (issue #1500). The first
+	// page keys BEGINS_WITH; a cursor page keys the exclusive `>` bound and
+	// demotes BEGINS_WITH to a post-read FilterExpression (prefix rows form a
+	// contiguous SK block, so the Limit-before-Filter interaction only ever
+	// shortens the final page — has-more detection stays exact).
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("gsi5").
 		Where("gsi5PK", "=", prefixKey).
-		Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
 		OrderBy("gsi5SK", "ASC").
 		Limit(searchLimit + 1)
 
@@ -2422,7 +2426,7 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 					zap.String("expected_prefix", prefixKey),
 					zap.String("cursor_prefix", pkCursor))
 			} else {
-				queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
+				queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor).Filter("gsi5SK", "BEGINS_WITH", normalizedQuery)
 			}
 		}
 	}
@@ -2500,15 +2504,17 @@ func (r *AccountRepository) decodeShortHandleSearchCursor(prefixKeys []string, c
 
 func (r *AccountRepository) queryShortHandlePrefixPartition(ctx context.Context, prefixKey, normalizedQuery string, searchLimit int, skCursor string) ([]models.User, error) {
 	var users []models.User
+	// One gsi5SK key condition (issue #1500): BEGINS_WITH on the first page;
+	// with a cursor, key the exclusive `>` bound and demote BEGINS_WITH to a
+	// post-read FilterExpression (see the search cursor chain above).
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("gsi5").
 		Where("gsi5PK", "=", prefixKey).
-		Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
 		OrderBy("gsi5SK", "ASC").
 		Limit(searchLimit + 1)
 
 	if skCursor != "" {
-		queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
+		queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor).Filter("gsi5SK", "BEGINS_WITH", normalizedQuery)
 	}
 
 	if err := queryBuilder.All(&users); err != nil {
@@ -3031,9 +3037,12 @@ func (r *AccountRepository) RecordLogin(ctx context.Context, attempt *storage.Lo
 // GetLoginHistory retrieves login history for a user
 func (r *AccountRepository) GetLoginHistory(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.LoginAttempt], error) {
 	var logins []models.UserLogin
+	// One SK key condition (issue #1500): begins_with on the first page; with
+	// a cursor (DESC order) key the exclusive `<` bound and demote begins_with
+	// to a post-read FilterExpression.
 	queryBuilder := r.db.WithContext(ctx).Model(&models.UserLogin{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "begins_with", "LOGIN#")
+		OrderBy("SK", "DESC")
 
 	limit := opts.Limit
 	if limit <= 0 || limit > 100 {
@@ -3044,14 +3053,17 @@ func (r *AccountRepository) GetLoginHistory(ctx context.Context, username string
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
 		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("SK", "<", sk) // Reverse order for recent first
+			queryBuilder = queryBuilder.Where("SK", "<", sk).Filter("SK", "begins_with", "LOGIN#") // Reverse order for recent first
 		}
+	} else {
+		queryBuilder = queryBuilder.Where("SK", "begins_with", "LOGIN#")
 	}
 
 	// Sort by SK descending to get most recent first
 	queryBuilder = queryBuilder.OrderBy("SK", "DESC")
 
-	// Keyed PK query (USER#username, SK BEGINS_WITH LOGIN#, Limit clamped above)
+	// Keyed PK query (USER#username, SK BEGINS_WITH LOGIN# on the first page /
+	// SK < cursor + begins_with filter on cursor pages, Limit clamped above)
 	// — .All compiles to a DynamoDB Query instead of the previous .Scan.
 	err := queryBuilder.All(&logins)
 	if err != nil {
