@@ -91,7 +91,18 @@ func (r *OAuthSessionRepository) GetOAuthSessionByState(ctx context.Context, sta
 		},
 	)
 
-	if err != nil || len(sessions) == 0 {
+	if err != nil {
+		// Cap exhaustion must propagate distinguishably — not be masked as
+		// "OAuth session not found for state" (the pre-existing demote
+		// replaces the walk error with a synthesized not-found) — only other
+		// errors keep the demote.
+		if errors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
+		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session not found for state"), EntityOAuthState, state)
+	}
+
+	if len(sessions) == 0 {
 		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session not found for state"), EntityOAuthState, state)
 	}
 
@@ -140,22 +151,35 @@ func (r *OAuthSessionRepository) DeleteOAuthSession(ctx context.Context, session
 
 // GetUserOAuthSessions retrieves all OAuth sessions for a user
 func (r *OAuthSessionRepository) GetUserOAuthSessions(ctx context.Context, username string, limit int) ([]*models.OAuthAuthSession, error) {
-	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
-	// entirely — an unbounded keyed gsi1 read.
-	if limit <= 0 {
-		limit = 500
-	}
-
 	var sessions []models.OAuthAuthSession
 
 	query := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
 		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER_OAUTH#%s", username)).
-		Limit(limit)
+		Where("gsi1PK", "=", fmt.Sprintf("USER_OAUTH#%s", username))
 
-	err := query.All(&sessions)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntitySession, "user sessions")
+	if limit <= 0 {
+		// limit <= 0 means "all sessions for the user": the whole keyed gsi1
+		// partition must be read, so the read is a bounded page walk (wave
+		// #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+		// The caller-observable contract is the full partition — capping at a
+		// single 500-row page would silently under-report CountUserOAuthSessions
+		// above 500.
+		err := walkKeyedPages(
+			query,
+			500, 100,
+			func(page []models.OAuthAuthSession) (bool, error) {
+				sessions = append(sessions, page...)
+				return false, nil
+			},
+		)
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, EntitySession, "user sessions")
+		}
+	} else {
+		err := query.Limit(limit).All(&sessions)
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, EntitySession, "user sessions")
+		}
 	}
 
 	// Filter out expired sessions

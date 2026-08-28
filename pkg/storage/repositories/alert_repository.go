@@ -299,6 +299,12 @@ func (r *AlertRepository) GetAlertStats(ctx context.Context, since time.Time) (*
 	for _, status := range statuses {
 		count, err := r.countAlertsByStatus(ctx, status, since)
 		if err != nil {
+			// Cap exhaustion fails the whole stats call closed instead of
+			// silently returning zeroed counters for this family — only other
+			// errors keep the skip-family continue.
+			if errors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("failed to count alerts by status",
 				zap.String("status", status),
 				zap.Error(err))
@@ -323,6 +329,12 @@ func (r *AlertRepository) GetAlertStats(ctx context.Context, since time.Time) (*
 	for _, severity := range severities {
 		count, err := r.countAlertsBySeverity(ctx, severity, since)
 		if err != nil {
+			// Cap exhaustion fails the whole stats call closed instead of
+			// silently returning zeroed counters for this family — only other
+			// errors keep the skip-family continue.
+			if errors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("failed to count alerts by severity",
 				zap.String("severity", severity),
 				zap.Error(err))
@@ -337,6 +349,12 @@ func (r *AlertRepository) GetAlertStats(ctx context.Context, since time.Time) (*
 	for _, alertType := range types {
 		count, err := r.countAlertsByType(ctx, alertType, since)
 		if err != nil {
+			// Cap exhaustion fails the whole stats call closed instead of
+			// silently returning zeroed counters for this family — only other
+			// errors keep the skip-family continue.
+			if errors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("failed to count alerts by type",
 				zap.String("type", alertType),
 				zap.Error(err))
