@@ -572,14 +572,11 @@ func TestModerationRepository_GetFilter_And_GetFlag_NotFoundBranches(t *testing.
 		require.Error(t, err)
 	})
 
-	t.Run("GetFlag returns not found when no matching ID in scan", func(t *testing.T) {
+	t.Run("GetFlag returns not found when the keyed gsi3 lookup misses", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.AnythingOfType("*[]models.Flag")).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]models.Flag)
-			*target = []models.Flag{{ID: "other"}}
-		}).Return(nil).Once()
+		mockQuery.On("First", mock.AnythingOfType("*models.Flag")).Return(errors.ErrItemNotFound).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
@@ -683,18 +680,16 @@ func TestModerationRepository_DeleteFlag_DeleteError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("All", mock.AnythingOfType("*[]models.Flag")).Run(func(args mock.Arguments) {
-		target := args.Get(0).(*[]models.Flag)
-		*target = []models.Flag{
-			{
-				ID:        "flag-1",
-				Actor:     "actor-1",
-				Object:    []string{"obj-1"},
-				Content:   "reason",
-				Published: time.Now(),
-				Status:    string(storage.FlagStatusPending),
-				CreatedAt: time.Now(),
-			},
+	mockQuery.On("First", mock.AnythingOfType("*models.Flag")).Run(func(args mock.Arguments) {
+		target := args.Get(0).(*models.Flag)
+		*target = models.Flag{
+			ID:        "flag-1",
+			Actor:     "actor-1",
+			Object:    []string{"obj-1"},
+			Content:   "reason",
+			Published: time.Now(),
+			Status:    string(storage.FlagStatusPending),
+			CreatedAt: time.Now(),
 		}
 	}).Return(nil).Once()
 

@@ -271,7 +271,7 @@ func TestModerationMLRepository_GetPredictionsByModelVersion_Success(t *testing.
 	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Limit", 10).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.MLPrediction)
 		*out = []*models.MLPrediction{
 			{PredictionID: "pred-1", ModelVersion: "v1.0"},
@@ -299,7 +299,7 @@ func TestModerationMLRepository_GetPredictionsByModelVersion_Error(t *testing.T)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(dbError)
+	mockQuery.On("All", mock.Anything).Return(dbError)
 
 	results, err := repo.GetPredictionsByModelVersion(ctx, "v1.0", time.Now(), time.Now(), 10)
 
@@ -329,7 +329,7 @@ func TestModerationMLRepository_GetPredictionsByReviewStatus_Reviewed(t *testing
 	mockQuery.On("Where", "gsi2SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Limit", 5).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.MLPrediction)
 		*out = []*models.MLPrediction{
 			{PredictionID: "pred-1", Reviewed: true},
@@ -359,7 +359,7 @@ func TestModerationMLRepository_GetPredictionsByReviewStatus_Unreviewed(t *testi
 	mockQuery.On("Where", "gsi2SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Limit", 5).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.MLPrediction)
 		*out = []*models.MLPrediction{
 			{PredictionID: "pred-2", Reviewed: false},
@@ -387,7 +387,7 @@ func TestModerationMLRepository_GetPredictionsByReviewStatus_Error(t *testing.T)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(dbError)
+	mockQuery.On("All", mock.Anything).Return(dbError)
 
 	results, err := repo.GetPredictionsByReviewStatus(ctx, true, time.Now(), time.Now(), 5)
 

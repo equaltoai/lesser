@@ -2165,40 +2165,42 @@ func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Fla
 	return nil
 }
 
-// GetFlag retrieves a flag by ID
+// GetFlag retrieves a flag by ID.
+// The read is keyed on the additive gsi3 listing key (FLAGS#ALL / ID#<flag id>),
+// maintained by Flag.UpdateKeys on every write (wave #1469, batch S2): the
+// exact gsi3PK + gsi3SK equality is a DynamoDB Query returning 0..1 row — never
+// a scan. `First` is bounded (tabletheory forces limit 1). Legacy flag rows
+// written before this key shape existed are not findable until next written
+// (documented fail-closed change; see docs/architecture/dynamodb-scan-inventory.md).
 func (r *ModerationRepository) GetFlag(ctx context.Context, id string) (*storage.Flag, error) {
-	// We need to scan for the flag since we don't know which object it's under
-	// (no existing index serves a flag-ID lookup without the object key). The
-	// read is deliberately bounded: Limit 10 caps the scan.
-	var models []models.Flag
-	err := r.db.WithContext(ctx).Model(&models).
-		Where("SK", "LIKE", fmt.Sprintf("%%#%s", id)). // SK ends with the flag ID
-		Limit(10).                                     // Reasonable limit
-		All(&models)
+	var model models.Flag
+	err := r.db.WithContext(ctx).Model(&model).
+		Index("gsi3").
+		Where("gsi3PK", "=", "FLAGS#ALL").
+		Where("gsi3SK", "=", fmt.Sprintf("ID#%s", id)).
+		First(&model)
 
 	if err != nil {
+		if errors.IsNotFound(err) {
+			// Preserve the legacy not-found contract (HandleGetError maps the
+			// sentinel to ItemNotFoundWithID for callers like DeleteFlag).
+			return nil, ErrorHandler.HandleGetError(err, EntityFlag, id)
+		}
 		return nil, ErrorHandler.HandleQueryError(err, EntityFlag, "query")
 	}
 
-	// Find the matching flag
-	for _, model := range models {
-		if model.ID == id {
-			return &storage.Flag{
-				ID:         model.ID,
-				Actor:      model.Actor,
-				Object:     model.Object,
-				Content:    model.Content,
-				Published:  model.Published,
-				Status:     model.Status,
-				ReviewedBy: model.ReviewedBy,
-				ReviewedAt: model.ReviewedAt,
-				ReviewNote: model.ReviewNote,
-				CreatedAt:  model.CreatedAt,
-			}, nil
-		}
-	}
-
-	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFlag, id)
+	return &storage.Flag{
+		ID:         model.ID,
+		Actor:      model.Actor,
+		Object:     model.Object,
+		Content:    model.Content,
+		Published:  model.Published,
+		Status:     model.Status,
+		ReviewedBy: model.ReviewedBy,
+		ReviewedAt: model.ReviewedAt,
+		ReviewNote: model.ReviewNote,
+		CreatedAt:  model.CreatedAt,
+	}, nil
 }
 
 // GetFlagsByObject retrieves all flags for a specific object
@@ -2950,6 +2952,11 @@ func (r *ModerationRepository) CreateAuditLog(ctx context.Context, auditLog *sto
 
 // GetAuditLogs retrieves audit log entries with pagination
 func (r *ModerationRepository) GetAuditLogs(ctx context.Context, limit int, cursor string) ([]*storage.AuditLog, string, error) {
+	// Clamp the page size (wave #1469, batch S2): a zero/negative limit
+	// previously compiled to no Limit on the Scan — an unbounded read; the
+	// query-utils clamp (default 50 / hard max 100) always issues Limit(n>0).
+	limit = sanitizeQueryLimit(limit)
+
 	query := r.db.WithContext(ctx).Model(&models.AuditLog{}).
 		Where("PK", "=", "AUDIT_LOG").
 		Limit(limit)
@@ -2959,7 +2966,12 @@ func (r *ModerationRepository) GetAuditLogs(ctx context.Context, limit int, curs
 	}
 
 	var models []*models.AuditLog
-	if err := query.Scan(&models); err != nil {
+	// The chain carries the AUDIT_LOG partition-key equality (plus an optional
+	// sort-key range), so the terminal is a keyed Query (wave #1469, batch S2):
+	// the old `.Scan` compiled to a table Scan with those predicates as
+	// post-read filters; `.All` compiles to a DynamoDB Query on the same keys,
+	// selecting the identical row set and giving the SK cursor a real order.
+	if err := query.All(&models); err != nil {
 		r.logger.Error("Failed to get audit logs",
 			zap.Error(err),
 			zap.Int("limit", limit))
@@ -3002,6 +3014,11 @@ func (r *ModerationRepository) GetAuditLogs(ctx context.Context, limit int, curs
 
 // getAuditLogsByGSI is a helper function to retrieve audit logs using a specific GSI
 func (r *ModerationRepository) getAuditLogsByGSI(ctx context.Context, gsiIndex, pkField, skField, idPrefix, id string, limit int, cursor string, logContext string) ([]*storage.AuditLog, string, error) {
+	// Clamp the page size (wave #1469, batch S2): a zero/negative limit
+	// previously compiled to no Limit on the Scan — an unbounded read; the
+	// query-utils clamp (default 50 / hard max 100) always issues Limit(n>0).
+	limit = sanitizeQueryLimit(limit)
+
 	query := r.db.WithContext(ctx).Model(&models.AuditLog{}).
 		Where(pkField, "=", fmt.Sprintf("%s#%s", idPrefix, id)).
 		Index(gsiIndex).
@@ -3012,7 +3029,13 @@ func (r *ModerationRepository) getAuditLogsByGSI(ctx context.Context, gsiIndex, 
 	}
 
 	var models []*models.AuditLog
-	if err := query.Scan(&models); err != nil {
+	// Keyed GSI read (wave #1469, batch S2): the chain carries the GSI
+	// partition-key equality (plus an optional sort-key range), so the old
+	// `.Scan` compiled to a GSI Scan with those predicates as post-read
+	// filters; `.All` compiles to a DynamoDB Query on the same index,
+	// selecting the identical row set and giving the sort-key cursor a real
+	// order.
+	if err := query.All(&models); err != nil {
 		r.logger.Error(fmt.Sprintf("Failed to get audit logs by %s", logContext),
 			zap.Error(err),
 			zap.String(fmt.Sprintf("%s_id", logContext), id),

@@ -20,6 +20,14 @@ type Flag struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"` // FLAG_STATUS#status
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"` // TIME#timestamp
 
+	// GSI3 — additive global flag-by-ID listing key (wave #1469, batch S2),
+	// maintained on every write via UpdateKeys (single write entry: the Flag
+	// model's BeforeCreate/BeforeSave hooks). Pre-existing gsi3 slot; no index
+	// addition. Legacy flag rows written before this key shape existed are not
+	// findable by GetFlag until the flag is next written.
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty"` // FLAGS#ALL
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty"` // ID#<flag id>
+
 	// Flag fields
 	ID         string     `theorydb:"attr:id" json:"id"`                  // The flag activity ID
 	Actor      string     `theorydb:"attr:actor" json:"actor"`            // Who flagged
@@ -57,6 +65,13 @@ func (f *Flag) UpdateKeys() {
 	// GSI2 - Query flags by status (for pending/reviewed lists)
 	f.GSI2PK = fmt.Sprintf("FLAG_STATUS#%s", f.Status)
 	f.GSI2SK = fmt.Sprintf("TIME#%s", f.Published.Format(time.RFC3339Nano))
+
+	// GSI3 - Global flag-by-ID listing key (wave #1469, batch S2): additive
+	// partition on the pre-existing gsi3 slot, maintained on every write via
+	// UpdateKeys. GetFlag reads this key pair exactly; legacy flag rows written
+	// before this key shape existed are not findable until next written.
+	f.GSI3PK = "FLAGS#ALL"
+	f.GSI3SK = fmt.Sprintf("ID#%s", f.ID)
 }
 
 // BeforeCreate hook to set timestamps and update keys
