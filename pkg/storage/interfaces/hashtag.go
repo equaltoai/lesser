@@ -39,9 +39,6 @@ type HashtagRepository interface {
 	// GetMultiHashtagTimeline retrieves timeline for multiple hashtags
 	GetMultiHashtagTimeline(ctx context.Context, hashtags []string, maxID *string, limit int, userID string) ([]*storage.StatusSearchResult, error)
 
-	// GetSuggestedHashtags gets suggested hashtags for a user
-	GetSuggestedHashtags(ctx context.Context, userID string, limit int) ([]*storage.HashtagSearchResult, error)
-
 	// FollowHashtag creates a hashtag follow relationship
 	FollowHashtag(ctx context.Context, userID, hashtag string) error
 

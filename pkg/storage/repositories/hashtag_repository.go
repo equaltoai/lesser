@@ -700,43 +700,6 @@ func (r *HashtagRepository) GetMultiHashtagTimeline(ctx context.Context, hashtag
 	return allResults, nil
 }
 
-// GetSuggestedHashtags gets suggested hashtags for a user
-func (r *HashtagRepository) GetSuggestedHashtags(ctx context.Context, userID string, limit int) ([]*storage.HashtagSearchResult, error) {
-	if limit <= 0 || limit > 20 {
-		limit = 10
-	}
-
-	// Get recent popular hashtags using the consolidated helper
-	since := time.Now().AddDate(0, 0, -7) // Last 7 days
-	hashtagModels, err := r.queryHashtagMetadataByDateRange(ctx, &since, nil, limit)
-	if err != nil {
-		r.logger.Error("failed to get suggested hashtags",
-			zap.String("user_id", userID),
-			zap.Error(err))
-		return []*storage.HashtagSearchResult{}, nil // Return empty slice, not error
-	}
-
-	// Convert to hashtag search results
-	results := make([]*storage.HashtagSearchResult, len(hashtagModels))
-	for i, hashtag := range hashtagModels {
-		results[i] = &storage.HashtagSearchResult{
-			Name: hashtag.Name,
-			URL:  hashtag.URL,
-			History: []storage.HashtagHistoryEntry{
-				{
-					Day:        time.Now().Format(common.DateFormat),
-					Date:       time.Now().Format(common.DateFormat),
-					Uses:       fmt.Sprintf("%d", hashtag.UsageCount),
-					UsageCount: fmt.Sprintf("%d", hashtag.UsageCount),
-					Accounts:   "1",
-				},
-			},
-		}
-	}
-
-	return results, nil
-}
-
 // FollowHashtag creates a hashtag follow relationship
 func (r *HashtagRepository) FollowHashtag(ctx context.Context, userID, hashtag string) error {
 	tagLower := normalizeHashtagName(hashtag)
@@ -1273,62 +1236,6 @@ func (r *HashtagRepository) DeleteOldHashtagTrends(ctx context.Context, before t
 	return nil
 }
 
-// queryHashtagMetadataByDateRange is a helper to query hashtag metadata within date ranges
-func (r *HashtagRepository) queryHashtagMetadataByDateRange(ctx context.Context, startTime *time.Time, endTime *time.Time, limit int) ([]*models.Hashtag, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-
-	query := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Filter("SK", "=", models.SKMetadata)
-
-	if startTime != nil {
-		query = query.Filter("LastUsed", ">=", startTime.Format(time.RFC3339))
-	}
-	if endTime != nil {
-		query = query.Filter("LastUsed", "<=", endTime.Format(time.RFC3339))
-	}
-
-	var hashtagModels []*models.Hashtag
-	err := query.OrderBy("LastUsed", "DESC").
-		Limit(limit).
-		Scan(&hashtagModels)
-
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, ErrorHandler.HandleQueryError(err, "hashtag metadata", "date range")
-	}
-
-	return hashtagModels, nil
-}
-
-// convertHashtagsToTrendingHashtags converts Hashtag models to storage.TrendingHashtag
-func (r *HashtagRepository) convertHashtagsToTrendingHashtags(hashtagModels []*models.Hashtag) []*storage.TrendingHashtag {
-	result := make([]*storage.TrendingHashtag, len(hashtagModels))
-	for i, h := range hashtagModels {
-		result[i] = &storage.TrendingHashtag{
-			Name:        h.Name,
-			URL:         fmt.Sprintf("https://%s/tags/%s", r.domain, h.Name),
-			UsageCount:  h.UsageCount,
-			UniqueUsers: 0, // Not tracked in basic model
-			LastUsed:    h.LastUsed,
-			FirstSeen:   h.FirstSeen,
-			UserID:      "", // Not applicable for hashtag metadata
-			CreatedAt:   h.LastUsed,
-		}
-	}
-	return result
-}
-
-// GetRecentHashtags returns hashtags that have been recently used
-func (r *HashtagRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	hashtagModels, err := r.queryHashtagMetadataByDateRange(ctx, &since, nil, limit)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "hashtag", "recent")
-	}
-
-	return r.convertHashtagsToTrendingHashtags(hashtagModels), nil
-}
-
 // StoreHashtagTrend stores trending data for a hashtag
 func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) error {
 	// Store trending data by converting to HashtagTrend model and saving
@@ -1422,24 +1329,6 @@ func (r *HashtagRepository) deleteOldHashtagRecordsBatch(ctx context.Context, be
 	}
 
 	return deleteOldRecordsBatch(ctx, r.db, r.logger, before, config)
-}
-
-// GetHashtagsByTimeRange retrieves hashtags within a specific time range
-func (r *HashtagRepository) GetHashtagsByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	hashtagModels, err := r.queryHashtagMetadataByDateRange(ctx, &startTime, &endTime, limit)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "hashtag", "time range")
-	}
-
-	result := r.convertHashtagsToTrendingHashtags(hashtagModels)
-
-	r.logger.Debug("retrieved hashtags by time range",
-		zap.Time("start_time", startTime),
-		zap.Time("end_time", endTime),
-		zap.Int("count", len(result)),
-		zap.Int("limit", limit))
-
-	return result, nil
 }
 
 // GetHashtagTrendsByScore retrieves trending hashtags ordered by trend score

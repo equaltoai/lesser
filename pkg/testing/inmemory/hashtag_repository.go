@@ -160,14 +160,6 @@ func (r *HashtagRepository) GetMultiHashtagTimeline(_ context.Context, _ []strin
 	return []*storage.StatusSearchResult{}, nil
 }
 
-// GetSuggestedHashtags gets suggested hashtags for a user
-func (r *HashtagRepository) GetSuggestedHashtags(_ context.Context, _ string, _ int) ([]*storage.HashtagSearchResult, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	return []*storage.HashtagSearchResult{}, nil
-}
-
 // FollowHashtag creates a hashtag follow relationship
 func (r *HashtagRepository) FollowHashtag(_ context.Context, userID, hashtag string) error {
 	r.mu.Lock()

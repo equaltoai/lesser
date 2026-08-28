@@ -196,16 +196,6 @@ func TestHashtagRepository_Sweep_IndexTimelineStatsAndCleanup(t *testing.T) {
 		}
 	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
-	q.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		switch dest := args.Get(0).(type) {
-		case *[]*models.Hashtag:
-			*dest = []*models.Hashtag{
-				{Name: "golang", URL: "https://example.com/tags/golang", UsageCount: 10, FirstSeen: time.Now().Add(-2 * time.Hour), LastUsed: time.Now()},
-			}
-		default:
-		}
-	}).Return(nil).Maybe()
-
 	// Basic helpers.
 	assert.Equal(t, "short", repo.truncateContent("short", 200))
 	assert.Contains(t, repo.truncateContent("word1 word2 word3", 10), "...")
@@ -243,19 +233,6 @@ func TestHashtagRepository_Sweep_IndexTimelineStatsAndCleanup(t *testing.T) {
 	merged, err := repo.GetMultiHashtagTimeline(ctx, []string{"#GoLang"}, nil, 1, privateVis)
 	require.NoError(t, err)
 	require.Empty(t, merged)
-
-	// Suggestions and metadata range queries.
-	suggestions, err := repo.GetSuggestedHashtags(ctx, "alice", 1)
-	require.NoError(t, err)
-	require.Len(t, suggestions, 1)
-
-	recent, err := repo.GetRecentHashtags(ctx, time.Now().Add(-24*time.Hour), 1)
-	require.NoError(t, err)
-	require.Len(t, recent, 1)
-
-	timeRange, err := repo.GetHashtagsByTimeRange(ctx, time.Now().Add(-24*time.Hour), time.Now(), 1)
-	require.NoError(t, err)
-	require.Len(t, timeRange, 1)
 
 	// Trend storage + batch.
 	require.NoError(t, repo.StoreHashtagTrend(ctx, &storage.TrendingHashtag{Name: "golang", URL: "https://example.com/tags/golang"}))
@@ -389,19 +366,7 @@ func TestHashtagRepository_CoverageSweep_Exports(t *testing.T) {
 		}
 	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
-	q.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		switch dest := args.Get(0).(type) {
-		case *[]*models.Hashtag:
-			*dest = []*models.Hashtag{
-				{Name: "golang", URL: "https://example.com/tags/golang", UsageCount: 10, FirstSeen: time.Now().Add(-2 * time.Hour), LastUsed: time.Now()},
-			}
-		default:
-		}
-	}).Return(nil).Maybe()
-
 	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
-
-	since := time.Now().Add(-1 * time.Hour)
 
 	require.NoError(t, repo.IndexHashtag(ctx, "#GoLang", "s1", "alice", models.VisibilityPublic))
 	require.NoError(t, repo.IndexStatusHashtags(ctx, "s1", "alice", "alice", "https://example.com/s/1", "hello", []string{"#GoLang"}, time.Now(), models.VisibilityPublic))
@@ -417,7 +382,6 @@ func TestHashtagRepository_CoverageSweep_Exports(t *testing.T) {
 	_, _ = repo.GetHashtagTimelineAdvanced(ctx, "#GoLang", &maxID, 2, "private")
 
 	_, _ = repo.GetMultiHashtagTimeline(ctx, []string{"#GoLang", "#Rust"}, nil, 1, "private")
-	_, _ = repo.GetSuggestedHashtags(ctx, "alice", 2)
 
 	_ = repo.FollowHashtag(ctx, "alice", "#GoLang")
 	_ = repo.UnfollowHashtag(ctx, "alice", "#GoLang")
@@ -438,10 +402,8 @@ func TestHashtagRepository_CoverageSweep_Exports(t *testing.T) {
 	})
 
 	_ = repo.DeleteOldHashtagTrends(ctx, time.Now().Add(-24*time.Hour))
-	_, _ = repo.GetRecentHashtags(ctx, since, 2)
 	_ = repo.StoreHashtagTrend(ctx, &storage.TrendingHashtag{Name: "golang", URL: "https://example.com/tags/golang", CreatedAt: time.Now()})
 
-	_, _ = repo.GetHashtagsByTimeRange(ctx, time.Now().Add(-24*time.Hour), time.Now(), 1)
 	_, _ = repo.GetHashtagTrendsByScore(ctx, time.Now(), 1, false)
 	_ = repo.BatchCreateHashtagTrends(ctx, []*storage.TrendingHashtag{{Name: "golang", URL: "https://example.com/tags/golang", CreatedAt: time.Now()}})
 }
@@ -632,24 +594,6 @@ func TestHashtagRepository_UpdateHashtagNotificationSettings_UpdateFailureAfterD
 
 	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
 	assert.Error(t, repo.UpdateHashtagNotificationSettings(ctx, "alice", "#GoLang", &storage.HashtagNotificationSettings{Level: "none"}))
-}
-
-func TestHashtagRepository_GetSuggestedHashtags_SwallowsQueryError(t *testing.T) {
-	ctx := context.Background()
-	db := new(dynamormmocks.MockDB)
-	q := new(dynamormmocks.MockQuery)
-
-	db.On("WithContext", mock.Anything).Return(db).Maybe()
-	db.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(q).Maybe()
-	q.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
-	q.On("OrderBy", mock.Anything, mock.Anything).Return(q).Maybe()
-	q.On("Limit", mock.Anything).Return(q).Maybe()
-	q.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
-
-	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
-	results, err := repo.GetSuggestedHashtags(ctx, "alice", 10)
-	require.NoError(t, err)
-	assert.Empty(t, results)
 }
 
 func TestHashtagRepository_TimelineQueries_ErrorBranches(t *testing.T) {
@@ -863,23 +807,14 @@ func TestHashtagRepository_TimelineVisibility_NotFoundReturnsEmpty(t *testing.T)
 	assert.Empty(t, results)
 }
 
-func TestHashtagRepository_GetRecentHashtags_PropagatesQueryError(t *testing.T) {
+func TestHashtagRepository_GetHashtagFollowAndMute_ValidationErrors(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
-	q := new(dynamormmocks.MockQuery)
 
 	db.On("WithContext", mock.Anything).Return(db).Maybe()
-	db.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(q).Maybe()
-	q.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
-	q.On("OrderBy", mock.Anything, mock.Anything).Return(q).Maybe()
-	q.On("Limit", mock.Anything).Return(q).Maybe()
-	q.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
 
 	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
-	_, err := repo.GetRecentHashtags(ctx, time.Now().Add(-time.Hour), 10)
-	assert.Error(t, err)
-
-	_, err = repo.GetHashtagFollow(ctx, "alice", "")
+	_, err := repo.GetHashtagFollow(ctx, "alice", "")
 	assert.Error(t, err)
 	assert.Error(t, repo.MuteHashtag(ctx, "alice", "", nil))
 }

@@ -899,15 +899,6 @@ func (m *MockStorage) GetStrongestConnectionsByType(ctx context.Context, connect
 	return args.Get(0).([]*storage.FederationEdge), args.Error(1)
 }
 
-// GetSuggestedHashtags mocks the GetSuggestedHashtags method
-func (m *MockStorage) GetSuggestedHashtags(ctx context.Context, userID string, limit int) ([]*storage.HashtagSearchResult, error) {
-	args := m.Called(ctx, userID, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.HashtagSearchResult), args.Error(1)
-}
-
 // GetTagSuggestions mocks the GetTagSuggestions method
 func (m *MockStorage) GetTagSuggestions(ctx context.Context, userID string, limit int) ([]string, error) {
 	args := m.Called(ctx, userID, limit)

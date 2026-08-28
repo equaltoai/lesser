@@ -91,15 +91,6 @@ func (m *MockHashtagRepository) GetMultiHashtagTimeline(ctx context.Context, has
 	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
 }
 
-// GetSuggestedHashtags mocks the GetSuggestedHashtags method
-func (m *MockHashtagRepository) GetSuggestedHashtags(ctx context.Context, userID string, limit int) ([]*storage.HashtagSearchResult, error) {
-	args := m.Called(ctx, userID, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.HashtagSearchResult), args.Error(1)
-}
-
 // FollowHashtag mocks the FollowHashtag method
 func (m *MockHashtagRepository) FollowHashtag(ctx context.Context, userID, hashtag string) error {
 	args := m.Called(ctx, userID, hashtag)
