@@ -60,6 +60,14 @@ func (r *AccountRepository) searchAllActors(ctx context.Context, query string, l
 	// Then search by partial match using GSI
 	var actorModels []models.Actor
 
+	// Clamp the caller-supplied page size in the wave's search-repo style
+	// (default 20 / hard max 100): a zero/negative limit previously compiled to
+	// NO limit (tabletheory issues Limit only when limit > 0), so a 0/0 call
+	// read the whole gsi3 DOMAIN partition unboundedly. The limit+offset paging
+	// contract is preserved — the read window is clamp(limit)+offset rows, and
+	// the in-memory offset/limit selection below runs over them unchanged.
+	limit = clampSearchLimit(limit)
+
 	// Search local actors
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("gsi3").

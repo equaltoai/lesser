@@ -46,7 +46,28 @@ goInsecureSkipVerify:
 # inbound Create/Update paths), never with content links extracted from status
 # text — an exact keyed GSI7 lookup still cannot answer the LinkTimeline
 # content-link case, so the parity resolver stays on the recency walk
-# (disposition UNCHANGED). No request-path .Scan sites remain baselined.
+# (disposition UNCHANGED). No unkeyed full-text-search .Scan sites remain
+# baselined — scoped to that class only: the keyed-filter .Scan leftovers stay
+# baselined until their batches land (S1: query_utils.go QueryWithPKAndSKPrefix,
+# severance_repository.go GetSeveredRelationship/GetReconnectionAttempts,
+# social_repository.go CascadeDeleteAnnounces, object_repository.go
+# getTombstonesByGSI; S2: moderation_repository.go/moderation_ml_repository*;
+# S3: analytics_repository.go/hashtag_repository.go).
+# Wave part 2 (batch S1, umbrella #1469, issue #1496, 2026-08-28) eliminated
+# the keyed-filter .Scan class (the 5 entries this comment sits above are gone):
+# query_utils.go QueryWithPKAndSKPrefix — the useFilter branch now walks the
+# Where SK key condition (Limit(500)/page via AllPaginated, 100-page cap,
+# fail-closed errBoundedPageCapExceeded; the flag is retained for API
+# compatibility only); severance_repository.go GetSeveredRelationship (keyed
+# walk, stops at the first ID match, cap exhaustion fails closed instead of
+# degrading to NotFound) + GetReconnectionAttempts (keyed walk, OrderBy("SK",
+# "DESC") preserved via cursors, sentinel split before the IsNotFound→empty
+# swallow); social_repository.go CascadeDeleteAnnounces (keyed walk, cap
+# exhaustion fails the cascade closed — never a silent partial delete);
+# object_repository.go getTombstonesByGSI (.Scan → keyed .All on the GSI with
+# the sort-key cursor range kept as a key condition, zero-limit floored to the
+# query-utils default 50 so Limit(n>0) is always issued). The S2 (moderation/ML)
+# and S3 (analytics/search) keyed .Scan leftovers remain baselined below.
 # Wave part 2 (batch F, umbrella #1469, 2026-08-27) eliminated all 22
 # federation_repository.go sites: 21 keyed partition/GSI queries converted
 # `.Scan` → `.All` (instances, costs, health, nodes, clusters, connections,
@@ -94,10 +115,6 @@ goDynamoDBQueryScan:
   pkg/storage/repositories/moderation_ml_repository.go: 4
   pkg/storage/repositories/moderation_ml_repository_ext.go: 2
   pkg/storage/repositories/moderation_repository.go: 2
-  pkg/storage/repositories/object_repository.go: 1
-  pkg/storage/repositories/query_utils.go: 1
-  pkg/storage/repositories/severance_repository.go: 2
-  pkg/storage/repositories/social_repository.go: 1
 
 # Exact occurrences of partition-key prefix/range predicates in `.Where(...)` (tracked by count per file).
 # Partition keys must be queried by equality; prefix/range predicates force scans.
