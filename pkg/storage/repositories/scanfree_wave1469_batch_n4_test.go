@@ -559,6 +559,41 @@ func TestBatchN4_GetAlertStats_CapExhaustionFailsClosed(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+// MAJOR-1 rework: the existing GetAlertStats cap test drives the STATUS loop,
+// which errors first — leaving the TYPE loop's sentinel split unpinned. Here the
+// status (4 gsi3 walks) and severity (4 × getAllAlertsSince's 6 gsi1 All reads)
+// count loops succeed with empty partitions and the FIRST type walk then caps
+// out: the types loop's sentinel split must fail the whole call closed. A
+// mutation that removes the split lets the log-and-continue swallow return a
+// valid stats object with zeroed ByType (and then hit the un-mocked second type
+// walk) — this test dies.
+func TestBatchN4_GetAlertStats_TypeLoopCapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.Alert")).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+
+	// 4 status counts (gsi3 STATUS# walks) succeed with empty partitions, then 4
+	// severity counts (getAllAlertsSince: 6 gsi1 ALERT_TYPE# reads each via
+	// Limit(1000/6)) succeed with empty results — the cap-exhaustion error can
+	// only come from the type walk that follows.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Alert")).Return(&core.PaginatedResult{HasMore: false}, nil).Times(4)
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.Alert")).Return(nil).Times(24)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Alert")).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewAlertRepository(mockDB, "test-table", zap.NewNop(), nil)
+	stats, err := repo.GetAlertStats(ctx, time.Now().Add(-time.Hour))
+	require.Nil(t, stats)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
 // MAJOR-1 rework: GetOAuthSessionByState replaced the walk error with a
 // synthesized "OAuth session not found for state". The sentinel must propagate
 // distinguishably.
