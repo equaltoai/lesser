@@ -161,12 +161,19 @@ func TestScanFreeWave_Event_GetModerationDecisionsByModerator(t *testing.T) {
 // ANALYTICS / TRENDS
 // ---------------------------------------------------------------------------
 
-// NOTE (wave part 2 batch E rework, #1469): there is no scan-free test for
-// GetRecentHashtags / getCandidateHashtags. Hashtag metadata rows
+// NOTE (wave part 2 batch E rework + batch S3 closeout, #1469 / #1501): there
+// is no scan-free test for the hashtag metadata reads. Hashtag metadata rows
 // (HASHTAG#<name> / METADATA) are only written by HashtagRepository.IndexHashtag,
-// which has zero production callers, so no live writer maintains them and a
-// GSI listing key would never be populated — the reads stay on their baselined
-// SK = METADATA scans (see docs/architecture/dynamodb-scan-inventory.md).
+// which has zero production callers, so no live writer maintains them and a GSI
+// listing key would never be populated. Batch S3 (issue #1501, 2026-08-28)
+// closed the zero-caller members of the family by deletion: getCandidateHashtags
+// (whole dead enhanced TrendingEngine) and the hashtag_repository.go
+// queryHashtagMetadataByDateRange read family (GetSuggestedHashtags /
+// HashtagRepository.GetRecentHashtags / GetHashtagsByTimeRange). The remaining
+// member — TrendingRepository.GetRecentHashtags (analytics_repository.go) — is
+// STOP-AND-REPORTED (live caller: the scheduled trend-aggregator Lambda) and
+// stays baselined on its SK = METADATA scan; see
+// docs/architecture/dynamodb-scan-inventory.md.
 
 // 4a) GetRecentStatusesWithEngagement — keyed gsi1 (ENGAGEMENTS#ALL).
 func TestScanFreeWave_Event_GetRecentStatusesWithEngagement(t *testing.T) {
@@ -220,12 +227,16 @@ func TestScanFreeWave_Event_GetRecentLinks(t *testing.T) {
 	require.Zero(t, s.scanCalls, "GetRecentLinks must not scan")
 }
 
-// NOTE (wave part 2 batch E rework, #1469): there is no scan-free test for
-// GetPopularSearchQueries. The raw SearchQuery rows it aggregates are the only
-// source that answers the caller's 7-day window (scorePopularQueries); the
-// GSI8 PopularQueryCounter path answers a different question (its Date
-// partition re-points per increment, so only today's partition is populated)
-// and was reverted back to the baselined scan — see
+// NOTE (wave part 2 batch E rework + batch S3 stop-and-report, #1469 / #1501):
+// there is no scan-free test for GetPopularSearchQueries. The raw SearchQuery
+// rows it aggregates are the only source that answers the caller's 7-day window
+// (scorePopularQueries); the GSI8 PopularQueryCounter path answers a different
+// question (its Date partition re-points per increment, so only today's
+// partition is populated) and was reverted back to the baselined scan. Batch S3
+// (issue #1501) STOP-AND-REPORTED the read: the sole caller chain
+// (GenerateSearchSuggestions) has zero production callers, contradicting the
+// assumed SEARCH_LOG-walk conversion design; the read stays baselined pending
+// the orchestrator's decision — see
 // docs/architecture/dynamodb-scan-inventory.md.
 
 // 6) Media analytics reads — keyed gsi1 (DATE#<date>) / gsi2 (VARIANT#<key>).
