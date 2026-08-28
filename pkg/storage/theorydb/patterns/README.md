@@ -154,23 +154,6 @@ if err != nil {
 fmt.Printf("Found %d items ready for cleanup\n", len(oldItems))
 ```
 
-### Statistics
-
-Get soft delete statistics:
-
-```go
-stats, err := repo.GetSoftDeleteStats(ctx)
-if err != nil {
-    log.Fatal(err)
-}
-
-fmt.Printf("Total: %d, Active: %d, Deleted: %d (%.1f%%)\n",
-    stats.TotalItems,
-    stats.ActiveItems, 
-    stats.DeletedItems,
-    stats.GetDeletionPercentage())
-```
-
 ### Convenience Functions
 
 ```go
@@ -229,7 +212,6 @@ Comprehensive tests cover:
 - Repository operations (query, scan, get)
 - Filtering behavior
 - Cleanup operations
-- Statistics calculation
 - Error handling
 
 Run tests:
