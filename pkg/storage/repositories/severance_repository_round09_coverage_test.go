@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -21,9 +22,10 @@ func TestSeveranceRepository_Round09_Coverage(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		// GetSeveredRelationship uses Scan(&severances).
+		// GetSeveredRelationship walks the keyed partition (wave #1469): a
+		// Limit(500) AllPaginated page read, stopping at the ID match.
 		mockQuery.
-			On("Scan", mockMatchedByType[*[]*models.SeveredRelationship]()).
+			On("AllPaginated", mockMatchedByType[*[]*models.SeveredRelationship]()).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.SeveredRelationship)
 				s := models.NewSeveredRelationship("local", "remote", models.SeveranceReasonOther)
@@ -32,7 +34,7 @@ func TestSeveranceRepository_Round09_Coverage(t *testing.T) {
 				_ = s.UpdateKeys()
 				*out = append(*out, s)
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{HasMore: false}, nil).
 			Maybe()
 
 		mockQuery.
@@ -127,12 +129,12 @@ func TestSeveranceRepository_Round09_Coverage(t *testing.T) {
 			Maybe()
 
 		mockQuery.
-			On("Scan", mockMatchedByType[*[]*models.SeveranceReconnectionAttempt]()).
+			On("AllPaginated", mockMatchedByType[*[]*models.SeveranceReconnectionAttempt]()).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.SeveranceReconnectionAttempt)
 				*out = append(*out, models.NewSeveranceReconnectionAttempt("sev", "admin"))
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{HasMore: false}, nil).
 			Maybe()
 
 		mockQuery.

@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 )
@@ -31,10 +32,10 @@ func TestSeveranceRepository_Round09_MoreCoverage(t *testing.T) {
 		require.Error(t, repo.CreateSeveredRelationship(ctx, models.NewSeveredRelationship("local", "remote", models.SeveranceReasonOther)))
 	})
 
-	t.Run("GetSeveredRelationship scan error and not found", func(t *testing.T) {
+	t.Run("GetSeveredRelationship walk error and not found", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("Scan", mock.Anything).Return(ErrTestMockError).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewSeveranceRepository(mockDB, "test-table", nil)
 		_, err := repo.GetSeveredRelationship(ctx, "local_remote_1")
@@ -42,7 +43,7 @@ func TestSeveranceRepository_Round09_MoreCoverage(t *testing.T) {
 
 		mockDB2 := new(mocks.MockDB)
 		mockQuery2 := new(mocks.MockQuery)
-		mockQuery2.On("Scan", mock.Anything).Return(nil).Once()
+		mockQuery2.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		setupPermissiveRound08Mocks(mockDB2, mockQuery2, nil, baseTime)
 		repo2 := NewSeveranceRepository(mockDB2, "test-table", nil)
 		_, err = repo2.GetSeveredRelationship(ctx, "local_remote_1")
@@ -64,7 +65,7 @@ func TestSeveranceRepository_Round09_MoreCoverage(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.
-			On("Scan", mock.Anything).
+			On("AllPaginated", mock.Anything).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.SeveredRelationship)
 				s := models.NewSeveredRelationship("local", "remote", models.SeveranceReasonOther)
@@ -73,7 +74,7 @@ func TestSeveranceRepository_Round09_MoreCoverage(t *testing.T) {
 				_ = s.UpdateKeys()
 				*out = append(*out, s)
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{HasMore: false}, nil).
 			Once()
 
 		mockQuery.On("CreateOrUpdate").Return(ErrTestMockError).Once()
@@ -105,7 +106,7 @@ func TestSeveranceRepository_Round09_MoreCoverage(t *testing.T) {
 	t.Run("Reconnection attempts not found and error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("Scan", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewSeveranceRepository(mockDB, "test-table", nil)
 		attempts, err := repo.GetReconnectionAttempts(ctx, "sev")
@@ -114,7 +115,7 @@ func TestSeveranceRepository_Round09_MoreCoverage(t *testing.T) {
 
 		mockDB2 := new(mocks.MockDB)
 		mockQuery2 := new(mocks.MockQuery)
-		mockQuery2.On("Scan", mock.Anything).Return(ErrTestMockError).Once()
+		mockQuery2.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB2, mockQuery2, nil, baseTime)
 		repo2 := NewSeveranceRepository(mockDB2, "test-table", nil)
 		_, err = repo2.GetReconnectionAttempts(ctx, "sev")

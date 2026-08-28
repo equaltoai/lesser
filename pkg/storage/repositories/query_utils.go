@@ -799,40 +799,37 @@ func QueryAndConvert[M any, S any](
 }
 
 // QueryWithPKAndSKPrefix eliminates the PK/SK prefix query duplication pattern
-// This consolidates the common "Where PK = X, Where/Filter SK BEGINS_WITH Y" pattern
+// This consolidates the common "Where PK = X, Where SK BEGINS_WITH Y" pattern.
+// The `useFilter` flag is retained for API compatibility only (batch S1, wave
+// #1469): it previously switched the SK prefix between a post-read
+// Filter("SK","BEGINS_WITH") on a DynamoDB Scan and a Where key condition; the
+// Scan branch is eliminated, so the prefix is always applied as a key condition
+// now. Both shapes select the identical row set (PK partition + SK prefix).
 func QueryWithPKAndSKPrefix[M any, S any](
 	ctx context.Context,
 	q *QueryUtils,
 	modelFactory func() *M,
 	pkValue, skPrefix string,
-	useFilter bool, // true for Filter("SK", "BEGINS_WITH"), false for Where("SK", "BEGINS_WITH")
+	_ bool, // useFilter — retained for API compatibility (see above)
 	convertFunc func(M) S,
 	operationName string,
 	operationParam string,
 ) ([]S, error) {
 	var models []M
-	var err error
 
-	if useFilter {
-		err = q.db.WithContext(ctx).Model(modelFactory()).
+	// The contract returns the full SK-prefix subset of the partition, so the
+	// read is a bounded page walk with an explicit page cap (wave #1469): 500
+	// items/page, 100 pages max, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		q.db.WithContext(ctx).Model(modelFactory()).
 			Where("PK", "=", pkValue).
-			Filter("SK", "BEGINS_WITH", skPrefix).
-			Scan(&models)
-	} else {
-		// The contract returns the full partition, so the read is a bounded page
-		// walk with an explicit page cap (wave #1469): 500 items/page, 100 pages
-		// max, fail-closed on exhaustion.
-		err = walkKeyedPages(
-			q.db.WithContext(ctx).Model(modelFactory()).
-				Where("PK", "=", pkValue).
-				Where("SK", "BEGINS_WITH", skPrefix),
-			500, 100,
-			func(page []M) (bool, error) {
-				models = append(models, page...)
-				return false, nil
-			},
-		)
-	}
+			Where("SK", "BEGINS_WITH", skPrefix),
+		500, 100,
+		func(page []M) (bool, error) {
+			models = append(models, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		q.logger.Error(fmt.Sprintf("Failed to %s", operationName),

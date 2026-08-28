@@ -667,11 +667,22 @@ func (r *SocialRepository) CountObjectAnnounces(ctx context.Context, objectID st
 
 // CascadeDeleteAnnounces deletes all announces for an object
 func (r *SocialRepository) CascadeDeleteAnnounces(ctx context.Context, objectID string) error {
-	// Query all announces for the object
+	// The keyed OBJECT#<id>#ANNOUNCES partition read is a bounded page walk
+	// (wave #1469, batch S1): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion. Cap exhaustion MUST fail the cascade closed (the sentinel
+	// survives ErrorHandler.HandleQueryError's wrap) — never a silent partial
+	// delete; the per-item delete error swallow below stays for delete-time
+	// failures only.
 	var announces []models.Announce
-	err := r.db.WithContext(ctx).Model(&models.Announce{}).
-		Where("PK", "=", fmt.Sprintf("OBJECT#%s#ANNOUNCES", objectID)).
-		Scan(&announces)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Announce{}).
+			Where("PK", "=", fmt.Sprintf("OBJECT#%s#ANNOUNCES", objectID)),
+		500, 100,
+		func(page []models.Announce) (bool, error) {
+			announces = append(announces, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, EntityAnnounce, "deletion query")

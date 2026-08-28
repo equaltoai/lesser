@@ -2561,6 +2561,12 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 
 	gsiIndex = strings.ToLower(gsiIndex)
 
+	// Clamp the caller-supplied page size (wave #1469, batch S1): a zero/negative
+	// limit previously skipped the Limit entirely, compiling to an unbounded read;
+	// the clamp (default 50 / hard max 100, shared query-utils clamp) always
+	// issues Limit(n>0).
+	limit = sanitizeQueryLimit(limit)
+
 	query := r.db.WithContext(ctx).Model(&models.Tombstone{}).
 		Where(pkField, "=", pkValue)
 
@@ -2568,11 +2574,14 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 		query = query.Where(skField, ">", cursor)
 	}
 
-	if limit > 0 {
-		query = query.Limit(limit + 1) // Get one extra to determine next cursor
-	}
+	query = query.Limit(limit + 1) // Get one extra to determine next cursor
 
-	err := query.Index(gsiIndex).Scan(&tombstones)
+	// The chain carries a GSI partition-key equality (plus an optional sort-key
+	// range), so the terminal is a keyed Query (wave #1469, batch S1): the old
+	// `.Scan` compiled to a GSI Scan with those predicates as post-read filters;
+	// `.All` compiles to a DynamoDB Query on the same index, selecting the
+	// identical row set (and giving the sort-key cursor a real order).
+	err := query.Index(gsiIndex).All(&tombstones)
 	if err != nil {
 		r.logger.Error("failed to get tombstones",
 			zap.String(logField, logValue),

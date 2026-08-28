@@ -333,24 +333,25 @@ func TestQueryUtils_collection_and_convert_helpers(t *testing.T) {
 
 		mockQuery.On("Where", "PK", "=", "pk").Return(mockQuery)
 		mockQuery.On("Where", "SK", "BEGINS_WITH", "p").Return(mockQuery)
-		// useFilter=false now iterates via a bounded page walk (wave #1469):
-		// a clamped Limit(500) page read via AllPaginated, not a bare All.
+		// Both flags now iterate via a bounded page walk (wave #1469): a clamped
+		// Limit(500) page read via AllPaginated, not a bare All or Scan.
 		mockQuery.On("Limit", 500).Return(mockQuery)
 		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]m)
 			*dest = []m{{PK: "pk", SK: "p1"}}
-		}).Return(&core.PaginatedResult{HasMore: false}, nil)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		out, err := QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk", "p", false, convert, "op", "param")
 		require.NoError(t, err)
 		assert.Equal(t, []string{"pk#p1"}, out)
 
 		mockQuery.On("Where", "PK", "=", "pk2").Return(mockQuery)
-		mockQuery.On("Filter", "SK", "BEGINS_WITH", "p").Return(mockQuery)
-		mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("Where", "SK", "BEGINS_WITH", "p").Return(mockQuery)
+		mockQuery.On("Limit", 500).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]m)
 			*dest = []m{{PK: "pk2", SK: "p2"}}
-		}).Return(nil)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		out, err = QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk2", "p", true, convert, "op", "param")
 		require.NoError(t, err)
@@ -474,15 +475,15 @@ func TestQueryUtils_round09_more_error_and_success_branches(t *testing.T) {
 	mockQuery.On("Create").Return(nil).Once()
 	require.NoError(t, q.AddToCollectionHelper(ctx, "col", &storage.CollectionItem{ItemID: "1", ItemType: "t", AddedBy: "u"}, mockDB))
 
-	// QueryWithPKAndSKPrefix error branches (AllPaginated walk / Scan)
+	// QueryWithPKAndSKPrefix error branches (AllPaginated walk; both flags walk)
 	type m struct{ PK, SK string }
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Once()
 	_, err = QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk", "p", false, func(in m) string { return in.PK }, "op", "param")
 	assert.Error(t, err)
 
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-	mockQuery.On("Scan", mock.Anything).Return(fmt.Errorf("boom")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Once()
 	_, err = QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk", "p", true, func(in m) string { return in.PK }, "op", "param")
 	assert.Error(t, err)
 }

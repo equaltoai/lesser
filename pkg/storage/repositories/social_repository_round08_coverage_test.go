@@ -618,15 +618,16 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 		mockQuery.AssertExpectations(t)
 	})
 
-	t.Run("CascadeDeleteAnnounces maps scan errors and tolerates delete errors", func(t *testing.T) {
-		t.Run("scan error", func(t *testing.T) {
+	t.Run("CascadeDeleteAnnounces maps walk errors and tolerates delete errors", func(t *testing.T) {
+		t.Run("walk error", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
 
 			mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 			mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-			mockQuery.On("Scan", mock.Anything).Return(assert.AnError).Once()
+			mockQuery.On("Limit", 500).Return(mockQuery).Once()
+			mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Announce")).Return(nil, assert.AnError).Once()
 
 			repo := NewSocialRepository(mockDB, "table", zap.NewNop(), nil)
 			disableSocialEnhancedServices(repo)
@@ -647,7 +648,8 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 
 			mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScan).Once()
-			mockQueryScan.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			mockQueryScan.On("Limit", 500).Return(mockQueryScan).Once()
+			mockQueryScan.On("AllPaginated", mock.AnythingOfType("*[]models.Announce")).Return(&core.PaginatedResult{HasMore: false}, nil).Once().Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*[]models.Announce)
 				*dest = []models.Announce{
 					{PK: "OBJECT#s1#ANNOUNCES", SK: "ACTOR#alice", Actor: "alice", Object: "s1"},
