@@ -19,11 +19,11 @@ import (
 // gsi1–gsi8 slots). Any regression that reintroduces a DynamoDB Scan fails
 // the test through newWave1469ScanForbiddingTestDB (the fake overrides the
 // DynamoDB client Scan method itself). Batch E rerouted 10 key-less All sites
-// and converted 3 literal-.Scan files (11 keyed sites); two batch E
-// conversions (Hashtag GSI1 HASHTAGS#ALL, GetPopularSearchQueries → GSI8)
-// were reverted — no live writer populates the hashtag index, and the query
-// counter cannot answer the caller's 7-day window (see
-// docs/architecture/dynamodb-scan-inventory.md). Per-site key shapes and
+// and converted 3 literal-.Scan files (11 keyed sites); one batch E
+// conversion (Hashtag GSI1 HASHTAGS#ALL) was reverted — no live writer
+// populates the hashtag index — and GetPopularSearchQueries was DELETED in
+// batch S3 (issue #1501) with its zero-caller GenerateSearchSuggestions chain
+// (see docs/architecture/dynamodb-scan-inventory.md). Per-site key shapes and
 // legacy-row consequences are documented there.
 
 // ---------------------------------------------------------------------------
@@ -227,16 +227,16 @@ func TestScanFreeWave_Event_GetRecentLinks(t *testing.T) {
 	require.Zero(t, s.scanCalls, "GetRecentLinks must not scan")
 }
 
-// NOTE (wave part 2 batch E rework + batch S3 stop-and-report, #1469 / #1501):
-// there is no scan-free test for GetPopularSearchQueries. The raw SearchQuery
-// rows it aggregates are the only source that answers the caller's 7-day window
-// (scorePopularQueries); the GSI8 PopularQueryCounter path answers a different
-// question (its Date partition re-points per increment, so only today's
-// partition is populated) and was reverted back to the baselined scan. Batch S3
-// (issue #1501) STOP-AND-REPORTED the read: the sole caller chain
-// (GenerateSearchSuggestions) has zero production callers, contradicting the
-// assumed SEARCH_LOG-walk conversion design; the read stays baselined pending
-// the orchestrator's decision — see
+// NOTE (wave part 2 batch E rework + batch S3 closeout, #1469 / #1501): there
+// is no scan-free test for GetPopularSearchQueries. The raw SearchQuery rows it
+// would aggregate are the only source that answers a caller's 7-day window; the
+// GSI8 PopularQueryCounter path answers a different question (its Date
+// partition re-points per increment, so only today's partition is populated).
+// Batch S3 (issue #1501) DELETED the read together with its zero-production-
+// caller chain (GetPopularSearchQueries ← scorePopularQueries ←
+// GenerateSearchSuggestions, and GetUserSearchHistory ← scoreUserHistory); the
+// SEARCH_LOG per-day walk remains the documented design if a live caller ever
+// needs popular-queries aggregation — see
 // docs/architecture/dynamodb-scan-inventory.md.
 
 // 6) Media analytics reads — keyed gsi1 (DATE#<date>) / gsi2 (VARIANT#<key>).

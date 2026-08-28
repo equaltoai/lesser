@@ -767,15 +767,6 @@ func (m *MockStorage) TrackSearchQuery(ctx context.Context, userID, query string
 	return args.Error(0)
 }
 
-// GetPopularSearchQueries mocks the GetPopularSearchQueries method
-func (m *MockStorage) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
-	args := m.Called(ctx, limit, timeWindow)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]storage.SearchQueryStats), args.Error(1)
-}
-
 // GetPublicTimeline mocks the GetPublicTimeline method
 func (m *MockStorage) GetPublicTimeline(ctx context.Context, local bool, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
 	args := m.Called(ctx, local, limit, cursor)
@@ -981,15 +972,6 @@ func (m *MockStorage) GetUserMedia(ctx context.Context, username string) ([]any,
 func (m *MockStorage) UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error {
 	args := m.Called(ctx, mediaID, updates)
 	return args.Error(0)
-}
-
-// GetUserSearchHistory mocks the GetUserSearchHistory method
-func (m *MockStorage) GetUserSearchHistory(ctx context.Context, userID string, limit int) ([]storage.SearchHistoryEntry, error) {
-	args := m.Called(ctx, userID, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]storage.SearchHistoryEntry), args.Error(1)
 }
 
 // GetUserStatusCount mocks the GetUserStatusCount method
@@ -3545,15 +3527,6 @@ func (m *MockStorage) GetFollowedHashtags(ctx context.Context, userID string, li
 		return nil, args.String(1), args.Error(2)
 	}
 	return args.Get(0).([]*storage.HashtagFollow), args.String(1), args.Error(2)
-}
-
-// GenerateSearchSuggestions mocks the GenerateSearchSuggestions method
-func (m *MockStorage) GenerateSearchSuggestions(ctx context.Context, userID, partialQuery string, limit int) ([]string, error) {
-	args := m.Called(ctx, userID, partialQuery, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]string), args.Error(1)
 }
 
 // GetAccountSuggestions mocks the GetAccountSuggestions method
