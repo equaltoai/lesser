@@ -651,54 +651,6 @@ func extractDomainFromURL(rawURL string) string {
 	return domain
 }
 
-// GetRecentHashtags returns recent hashtags since the given time (no trending calculation)
-func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	// Validate limit using centralized validation
-	if err := common.ValidateQueryLimit(limit, 100, "analytics"); err != nil {
-		limit = 20
-	}
-
-	// Hashtag metadata rows (HASHTAG#<name> / METADATA) are only written by
-	// HashtagRepository.IndexHashtag, which has zero production callers — no
-	// live writer maintains them, so no rows exist to key. A GSI listing key
-	// added to the model would never be populated and keying this read on it
-	// would silently return nothing, so this stays on the baselined
-	// SK = METADATA scan (disposition "elimination pending — wave #1469" with
-	// a no-live-writer note; see docs/architecture/dynamodb-scan-inventory.md).
-	// The wave part 2 batch E GSI1 conversion was reverted for that reason.
-	var hashtagModels []*models.Hashtag
-	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Where("SK", "=", "METADATA").
-		Where("LastUsed", ">=", since.Format(time.RFC3339)).
-		OrderBy("LastUsed", "DESC"). // Recent first
-		Limit(limit).
-		All(&hashtagModels)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("no recent hashtags found", zap.Time("since", since))
-			return []*storage.TrendingHashtag{}, nil
-		}
-		r.logger.Error("failed to query recent hashtags", zap.Error(err))
-		return nil, err
-	}
-
-	// Convert to storage TrendingHashtag format
-	hashtags := make([]*storage.TrendingHashtag, len(hashtagModels))
-	for i, hashtag := range hashtagModels {
-		hashtags[i] = &storage.TrendingHashtag{
-			Name:        hashtag.Name,
-			URL:         hashtag.URL,
-			UsageCount:  hashtag.UsageCount,
-			UniqueUsers: 0, // Not calculated in this query for performance
-			LastUsed:    hashtag.LastUsed,
-			FirstSeen:   hashtag.FirstSeen,
-		}
-	}
-
-	return hashtags, nil
-}
-
 // GetRecentStatusesWithEngagement returns recent statuses with engagement since the given time
 func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
 	// Clamp the limit (wave #1469): a non-positive limit previously compiled to

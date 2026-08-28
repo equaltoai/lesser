@@ -166,14 +166,13 @@ func TestScanFreeWave_Event_GetModerationDecisionsByModerator(t *testing.T) {
 // (HASHTAG#<name> / METADATA) are only written by HashtagRepository.IndexHashtag,
 // which has zero production callers, so no live writer maintains them and a GSI
 // listing key would never be populated. Batch S3 (issue #1501, 2026-08-28)
-// closed the zero-caller members of the family by deletion: getCandidateHashtags
-// (whole dead enhanced TrendingEngine) and the hashtag_repository.go
-// queryHashtagMetadataByDateRange read family (GetSuggestedHashtags /
-// HashtagRepository.GetRecentHashtags / GetHashtagsByTimeRange). The remaining
-// member — TrendingRepository.GetRecentHashtags (analytics_repository.go) — is
-// STOP-AND-REPORTED (live caller: the scheduled trend-aggregator Lambda) and
-// stays baselined on its SK = METADATA scan; see
-// docs/architecture/dynamodb-scan-inventory.md.
+// closed the family by deletion: getCandidateHashtags (whole dead enhanced
+// TrendingEngine), the hashtag_repository.go queryHashtagMetadataByDateRange
+// read family (GetSuggestedHashtags / HashtagRepository.GetRecentHashtags /
+// GetHashtagsByTimeRange), and — now that the orchestrator ruled on the
+// stop-and-report — the scheduled trend-aggregator Lambda's dead
+// aggregateHashtagTrends step together with TrendingRepository.GetRecentHashtags
+// (analytics_repository.go); see docs/architecture/dynamodb-scan-inventory.md.
 
 // 4a) GetRecentStatusesWithEngagement — keyed gsi1 (ENGAGEMENTS#ALL).
 func TestScanFreeWave_Event_GetRecentStatusesWithEngagement(t *testing.T) {

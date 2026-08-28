@@ -776,15 +776,6 @@ func (m *MockStorage) GetPublicTimeline(ctx context.Context, local bool, limit i
 	return args.Get(0).([]*storage.TimelineEntry), args.String(1), args.Error(2)
 }
 
-// GetRecentHashtags mocks the GetRecentHashtags method
-func (m *MockStorage) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	args := m.Called(ctx, since, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*storage.TrendingHashtag), args.Error(1)
-}
-
 // GetRecentLinks mocks the GetRecentLinks method
 func (m *MockStorage) GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
 	args := m.Called(ctx, since, limit)

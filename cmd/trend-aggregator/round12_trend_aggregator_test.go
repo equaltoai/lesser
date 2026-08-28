@@ -19,32 +19,20 @@ import (
 )
 
 type fakeTrendingRepo struct {
-	hashtags []*storage.TrendingHashtag
 	statuses []*storage.TrendingStatus
 	links    []*storage.TrendingLink
 
-	getHashtagsErr error
 	getStatusesErr error
 	getLinksErr    error
 
-	storeHashtagErr error
-	storeStatusErr  error
-	storeLinkErr    error
+	storeStatusErr error
+	storeLinkErr   error
 
-	deleteHashtagErr error
-	deleteStatusErr  error
-	deleteLinkErr    error
+	deleteStatusErr error
+	deleteLinkErr   error
 
-	storedHashtags int
 	storedStatuses int
 	storedLinks    int
-}
-
-func (f *fakeTrendingRepo) GetRecentHashtags(context.Context, time.Time, int) ([]*storage.TrendingHashtag, error) {
-	if f.getHashtagsErr != nil {
-		return nil, f.getHashtagsErr
-	}
-	return f.hashtags, nil
 }
 
 func (f *fakeTrendingRepo) GetRecentStatusesWithEngagement(context.Context, time.Time, int) ([]*storage.TrendingStatus, error) {
@@ -61,11 +49,6 @@ func (f *fakeTrendingRepo) GetRecentLinks(context.Context, time.Time, int) ([]*s
 	return f.links, nil
 }
 
-func (f *fakeTrendingRepo) StoreHashtagTrend(context.Context, any) error {
-	f.storedHashtags++
-	return f.storeHashtagErr
-}
-
 func (f *fakeTrendingRepo) StoreStatusTrend(context.Context, any) error {
 	f.storedStatuses++
 	return f.storeStatusErr
@@ -74,10 +57,6 @@ func (f *fakeTrendingRepo) StoreStatusTrend(context.Context, any) error {
 func (f *fakeTrendingRepo) StoreLinkTrend(context.Context, any) error {
 	f.storedLinks++
 	return f.storeLinkErr
-}
-
-func (f *fakeTrendingRepo) DeleteOldHashtagTrends(context.Context, time.Time) error {
-	return f.deleteHashtagErr
 }
 
 func (f *fakeTrendingRepo) DeleteOldStatusTrends(context.Context, time.Time) error {
@@ -118,16 +97,6 @@ func TestInitializeTrendAggregator_Round12(t *testing.T) {
 
 func TestTrendAggregator_AggregationAndCleanup_Round12(t *testing.T) {
 	now := time.Now().UTC()
-	hashtags := []*storage.TrendingHashtag{
-		{Name: "golang", UserID: "u1", FirstSeen: now, LastUsed: now},
-		{Name: "golang", UserID: "u2", FirstSeen: now, LastUsed: now},
-		{Name: "golang", UserID: "u1", FirstSeen: now, LastUsed: now},
-		{Name: "golang", UserID: "u3", FirstSeen: now, LastUsed: now},
-		{Name: "skipme", UserID: "", FirstSeen: now, LastUsed: now},
-		{Name: "tiny", UserID: "u1", FirstSeen: now, LastUsed: now},
-		{Name: "tiny", UserID: "u2", FirstSeen: now, LastUsed: now},
-	}
-
 	statuses := []*storage.TrendingStatus{
 		{ID: "s1", AuthorID: "a1", Content: "hi", Likes: 10, Boosts: 1, Replies: 0, CreatedAt: now.Add(2 * time.Hour)},
 		{ID: "s2", AuthorID: "a2", Content: "low", Likes: 1, Boosts: 0, Replies: 0, CreatedAt: now.Add(-2 * time.Hour)},
@@ -141,11 +110,9 @@ func TestTrendAggregator_AggregationAndCleanup_Round12(t *testing.T) {
 	}
 
 	repo := &fakeTrendingRepo{
-		hashtags:         hashtags,
-		statuses:         statuses,
-		links:            links,
-		deleteHashtagErr: errors.New("boom"),
-		deleteLinkErr:    errors.New("boom"),
+		statuses:      statuses,
+		links:         links,
+		deleteLinkErr: errors.New("boom"),
 	}
 
 	h := &TrendAggregatorHandler{
@@ -155,10 +122,7 @@ func TestTrendAggregator_AggregationAndCleanup_Round12(t *testing.T) {
 	}
 
 	// Exercise: aggregation helpers.
-	_, err := h.aggregateHashtagTrends(context.Background(), now.Add(-1*time.Hour))
-	require.NoError(t, err)
-
-	_, err = h.aggregateStatusTrends(context.Background(), now.Add(-1*time.Hour))
+	_, err := h.aggregateStatusTrends(context.Background(), now.Add(-1*time.Hour))
 	require.NoError(t, err)
 
 	_, err = h.aggregateLinkTrends(context.Background(), now.Add(-1*time.Hour))
@@ -168,20 +132,8 @@ func TestTrendAggregator_AggregationAndCleanup_Round12(t *testing.T) {
 	_, err = h.HandleScheduledEvent(&apptheory.EventContext{}, events.EventBridgeEvent{})
 	require.NoError(t, err)
 
-	require.GreaterOrEqual(t, repo.storedHashtags, 1)
 	require.GreaterOrEqual(t, repo.storedStatuses, 1)
 	require.GreaterOrEqual(t, repo.storedLinks, 1)
-}
-
-func TestTrendAggregator_Errors_Round12(t *testing.T) {
-	h := &TrendAggregatorHandler{
-		db:           new(dynamormmocks.MockDB),
-		trendingRepo: &fakeTrendingRepo{getHashtagsErr: errors.New("db down")},
-		logger:       zap.NewNop(),
-	}
-
-	_, err := h.aggregateHashtagTrends(context.Background(), time.Now())
-	require.Error(t, err)
 }
 
 func TestRunTrendAggregator_Round12(t *testing.T) {

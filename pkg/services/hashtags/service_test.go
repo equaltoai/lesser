@@ -62,10 +62,6 @@ func (m *mockHashtagRepository) GetTrendingHashtags(context.Context, time.Time, 
 	return nil, nil
 }
 
-func (m *mockHashtagRepository) GetRecentHashtags(context.Context, time.Time, int) ([]*storage.TrendingHashtag, error) {
-	return nil, nil
-}
-
 func (m *mockHashtagRepository) UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, settings *storage.HashtagNotificationSettings) error {
 	args := m.Called(ctx, userID, hashtag, settings)
 	return args.Error(0)
