@@ -117,6 +117,22 @@ goInsecureSkipVerify:
 # query binds gsi1PK, so it can never match; frozen this wave, zero callers, post-wave model fix),
 # hashtag_trending_calculator.go GetTrendingAnalytics (deleted — zero callers),
 # pkg/moderation/advanced/reputation.go GetActorsByReputation (deleted — zero callers).
+# Wave part 2 (batch S3, umbrella #1469, issue #1501, 2026-08-28) eliminated
+# the hashtag_repository.go keyed .Scan leftover: queryHashtagMetadataByDateRange
+# DELETED with its whole dead read family (GetSuggestedHashtags,
+# HashtagRepository.GetRecentHashtags, GetHashtagsByTimeRange) — the only writer
+# of Hashtag METADATA rows is IndexHashtag (zero production callers), so the
+# reads were permanently empty and no keyed read can ever answer them (batch-L
+# zero-caller precedent; see docs/architecture/dynamodb-scan-inventory.md).
+# analytics_repository.go:2 REMAINS — GetUserSearchHistory + GetPopularSearchQueries
+# were STOP-AND-REPORTED in issue #1501: the sole caller chain
+# (GenerateSearchSuggestions -> scoreUserHistory/scorePopularQueries) has zero
+# production callers, so both reads are dead code and the assumed conversion
+# designs (keyed .All clamp; 7-day SEARCH_LOG walk with the window test surviving
+# unchanged) presuppose a live read. Grounded findings and the two honest
+# dispositions (delete dead chain vs convert for a future wiring) are documented
+# in docs/architecture/dynamodb-scan-inventory.md; pending the orchestrator's
+# decision the entries stay baselined.
 goDynamoDBQueryScan:
   cmd/lesser/migrate_conversation_metadata.go: 1
   cmd/lesser/migrate_conversation_participant_snapshots.go: 1
@@ -129,7 +145,6 @@ goDynamoDBQueryScan:
   cmd/lesser/migrate_user_keys.go: 1
   pkg/cost/dynamorm_tracker.go: 1
   pkg/storage/repositories/analytics_repository.go: 2
-  pkg/storage/repositories/hashtag_repository.go: 1
 
 # Exact occurrences of partition-key prefix/range predicates in `.Where(...)` (tracked by count per file).
 # Partition keys must be queried by equality; prefix/range predicates force scans.
@@ -229,12 +244,26 @@ goDynamoDBBadPKWhere:
 # - The other 8 calls are pre-existing unkeyed scans baselined for tracking,
 #   scheduled for elimination under the same umbrella issue (disposition:
 #   "elimination pending — wave #1469", NOT sanctioned).
+# - Wave part 2 (batch S3, umbrella #1469, issue #1501, 2026-08-28) resolved
+#   three more key-less All sites by DELETING the zero-production-caller read
+#   paths (batch-L precedent; mechanism per site in
+#   docs/architecture/dynamodb-scan-inventory.md): filter_repository.go
+#   removeFilterItem + RemoveFilterKeyword + RemoveFilterStatus + DeleteFilter
+#   (the live filter deletes go through ModerationRepository filterID point
+#   reads — batch-A precedent), hashtag_trending_engine.go getCandidateHashtags
+#   + the entire dead enhanced TrendingEngine + HashtagRepository
+#   GetTrendingHashtags + GetTrendingHashtagsAdvanced (zero production callers),
+#   object_repository.go CountWithdrawnQuotes (zero production callers; grounded
+#   note: withdrawn quotes retain gsi1 keys in practice, so a keyed walk-count
+#   would have been possible — deletion preferred over converting dead code).
+#   analytics_repository.go GetRecentHashtags REMAINS baselined
+#   (STOP-AND-REPORT in issue #1501: live production caller cmd/trend-aggregator
+#   scheduled Lambda reads metadata rows no live writer maintains — a keyed read
+#   on the never-populated index would silently return nothing; the honest
+#   resolution requires a caller decision, see the inventory doc).
 goDynamoDBAllNoKey:
   pkg/storage/repositories/analytics_repository.go: 1
-  pkg/storage/repositories/filter_repository.go: 1
-  pkg/storage/repositories/hashtag_trending_engine.go: 1
   pkg/storage/repositories/instance_counts.go: 5
-  pkg/storage/repositories/object_repository.go: 1
 
 # Key-less TableTheory `Count(...)` on freshly-built query chains, which
 # compiles to a DynamoDB Scan with Select=COUNT — a counted full-table/index
