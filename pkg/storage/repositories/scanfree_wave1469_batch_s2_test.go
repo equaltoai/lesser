@@ -10,8 +10,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	ttquery "github.com/theory-cloud/tabletheory/v3/pkg/query"
 	"go.uber.org/zap"
 )
 
@@ -36,7 +38,12 @@ import (
 // the Limit values (floored/clamped/pass-through), the All/First terminals
 // (a mutation restoring `.Scan` dies on the strict mock — no Scan expectation
 // is ever registered), and error propagation through the HandleGetError /
-// HandleQueryError wraps (require.ErrorIs). Batch S2 contains no whole-partition
+// HandleQueryError wraps (require.ErrorIs). The two prediction-range reads pin
+// the sort-key window as a single `.Where("gsi*SK", "BETWEEN", []any{lo, hi})`
+// key condition (tabletheory v3.0.6 compiles BETWEEN into the KeyConditionExpression;
+// two `>=`/`<=` conditions on one key are rejected by DynamoDB), and a
+// compile-level test below asserts the compiled KeyConditionExpression carries
+// exactly one sort-key condition. Batch S2 contains no whole-partition
 // walks, so there are no `walkKeyedPages`/errBoundedPageCapExceeded paths to
 // pin; the wrap-path ErrorIs pins below are the batch's analog.
 
@@ -252,10 +259,12 @@ func TestBatchS2_ListEffectivenessMetricsByPeriod_KeyedAllWithFloor(t *testing.T
 	mockQuery.AssertExpectations(t)
 }
 
-// GetPredictionsByModelVersion: the gsi1 MODEL# + gsi1SK range chain must
-// terminate in a keyed `.All`. The internal caller passes 1000 (full
-// reviewed-prediction set for the period) and that limit MUST pass through
-// unclamped — a mutation adding the query-utils 100 max narrows the
+// GetPredictionsByModelVersion: the gsi1 MODEL# + gsi1SK window chain must
+// terminate in a keyed `.All` with the sort-key window pinned as a single
+// BETWEEN key condition (a mutation restoring the two `>=`/`<=` range
+// conditions, or `.Scan`, dies on the strict mock). The internal caller passes
+// 1000 (full reviewed-prediction set for the period) and that limit MUST pass
+// through unclamped — a mutation adding the query-utils 100 max narrows the
 // aggregation and dies on the Limit(1000) literal.
 func TestBatchS2_GetPredictionsByModelVersion_KeyedAllLimitPassThrough(t *testing.T) {
 	ctx := context.Background()
@@ -267,8 +276,7 @@ func TestBatchS2_GetPredictionsByModelVersion_KeyedAllLimitPassThrough(t *testin
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.MLPrediction")).Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "MODEL#v1.0").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", "TIME#2024-01-01T00:00:00Z").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", "TIME#2024-01-31T00:00:00Z").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", []any{"TIME#2024-01-01T00:00:00Z", "TIME#2024-01-31T00:00:00Z"}).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Limit", 1000).Return(mockQuery).Once()
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.MLPrediction")).Run(func(args mock.Arguments) {
@@ -296,8 +304,7 @@ func TestBatchS2_GetPredictionsByModelVersion_ZeroLimitFloored(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.MLPrediction")).Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "MODEL#v1.0").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", []any{"TIME#2024-01-01T00:00:00Z", "TIME#2024-01-31T00:00:00Z"}).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Limit", 100).Return(mockQuery).Once()
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.MLPrediction")).Return(nil).Once()
@@ -310,8 +317,9 @@ func TestBatchS2_GetPredictionsByModelVersion_ZeroLimitFloored(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
-// GetPredictionsByReviewStatus: the gsi2 REVIEW# + gsi2SK range chain must
-// terminate in a keyed `.All`; positive limits pass through unchanged.
+// GetPredictionsByReviewStatus: the gsi2 REVIEW# + gsi2SK window chain must
+// terminate in a keyed `.All` with the sort-key window pinned as a single
+// BETWEEN key condition; positive limits pass through unchanged.
 func TestBatchS2_GetPredictionsByReviewStatus_KeyedAll(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
@@ -322,8 +330,7 @@ func TestBatchS2_GetPredictionsByReviewStatus_KeyedAll(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.MLPrediction")).Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi2PK", "=", "REVIEW#true").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi2SK", ">=", "TIME#2024-01-01T00:00:00Z").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi2SK", "<=", "TIME#2024-01-31T00:00:00Z").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2SK", "BETWEEN", []any{"TIME#2024-01-01T00:00:00Z", "TIME#2024-01-31T00:00:00Z"}).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
 	mockQuery.On("Limit", 5).Return(mockQuery).Once()
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.MLPrediction")).Run(func(args mock.Arguments) {
@@ -412,4 +419,98 @@ func TestBatchS2_Flag_UpdateKeys_PopulatesGSI3ListingKey(t *testing.T) {
 	// The pre-existing GSI1/GSI2 key shapes are unchanged.
 	require.Equal(t, "ACTOR#actor-1", f.GSI1PK)
 	require.Equal(t, "FLAG_STATUS#pending", f.GSI2PK)
+}
+
+// mlPredictionCompileMetadata mirrors the MLPrediction theorydb shape
+// (pkg/storage/models/moderation_ml.go:404) enough for query compilation:
+// gsi1 MODEL# and gsi2 REVIEW# partitions with TIME# sort keys.
+type mlPredictionCompileMetadata struct{}
+
+func (mlPredictionCompileMetadata) TableName() string {
+	return models.MainTableName
+}
+
+func (mlPredictionCompileMetadata) PrimaryKey() core.KeySchema {
+	return core.KeySchema{PartitionKey: "PK", SortKey: "SK"}
+}
+
+func (mlPredictionCompileMetadata) Indexes() []core.IndexSchema {
+	return []core.IndexSchema{
+		{Name: "gsi1", Type: "GSI", PartitionKey: "gsi1PK", SortKey: "gsi1SK"},
+		{Name: "gsi2", Type: "GSI", PartitionKey: "gsi2PK", SortKey: "gsi2SK"},
+	}
+}
+
+func (mlPredictionCompileMetadata) AttributeMetadata(field string) *core.AttributeMetadata {
+	switch field {
+	case "PK", "SK", "gsi1PK", "gsi1SK", "gsi2PK", "gsi2SK":
+		return &core.AttributeMetadata{Name: field, DynamoDBName: field, Type: "string"}
+	default:
+		return nil
+	}
+}
+
+func (mlPredictionCompileMetadata) VersionFieldName() string {
+	return "version"
+}
+
+// compilePredictionWindowScope reproduces the exact GetPredictionsByModelVersion /
+// GetPredictionsByReviewStatus chains (BETWEEN on the index sort key) and
+// compiles them against tabletheory v3.0.6 so the KeyConditionExpression can be
+// pinned at the DynamoDB-contract level, not just the mock chain level.
+func compilePredictionWindowScope(t *testing.T, index, pkValue, skLo, skHi string) *core.CompiledQuery {
+	t.Helper()
+
+	chain := ttquery.New(&models.MLPrediction{}, mlPredictionCompileMetadata{}, nil).
+		Where(index+"PK", "=", pkValue).
+		Where(index+"SK", "BETWEEN", []any{skLo, skHi}).
+		Index(index).
+		Limit(1000)
+
+	compiled, err := chain.(*ttquery.Query).Compile()
+	require.NoError(t, err)
+	return compiled
+}
+
+// The prediction window must compile to a DynamoDB Query on the index whose
+// KeyConditionExpression carries EXACTLY ONE sort-key condition — the single
+// BETWEEN (inclusive both ends). The pre-rework two-range chain (`>=` + `<=`
+// on the same SK) compiled to two conditions on one key and was rejected by
+// DynamoDB with "KeyConditionExpressions must only contain one condition per
+// key"; a mutation restoring it dies on the " >= " / " <= " and the duplicated
+// gsi1SK/gsi2SK name count. A mutation restoring `.Scan` flips the operation to
+// a Scan and dies on the Query/IndexName pins.
+func TestBatchS2_GetPredictions_CompiledSingleBetweenKeyCondition(t *testing.T) {
+	skLo := "TIME#2024-01-01T00:00:00Z"
+	skHi := "TIME#2024-01-31T00:00:00Z"
+
+	t.Run("gsi1 model version window", func(t *testing.T) {
+		compiled := compilePredictionWindowScope(t, "gsi1", "MODEL#v1.0", skLo, skHi)
+
+		require.Equal(t, "Query", compiled.Operation)
+		require.Equal(t, "gsi1", compiled.IndexName)
+		require.Contains(t, compiled.KeyConditionExpression, " BETWEEN ")
+		require.NotContains(t, compiled.KeyConditionExpression, " >= ")
+		require.NotContains(t, compiled.KeyConditionExpression, " <= ")
+		require.Equal(t, 1, countCompiledNameValues(compiled, "gsi1PK"))
+		require.Equal(t, 1, countCompiledNameValues(compiled, "gsi1SK"))
+		require.Empty(t, compiled.FilterExpression)
+		require.Contains(t, compiledStringValues(compiled), skLo)
+		require.Contains(t, compiledStringValues(compiled), skHi)
+	})
+
+	t.Run("gsi2 review status window", func(t *testing.T) {
+		compiled := compilePredictionWindowScope(t, "gsi2", "REVIEW#true", skLo, skHi)
+
+		require.Equal(t, "Query", compiled.Operation)
+		require.Equal(t, "gsi2", compiled.IndexName)
+		require.Contains(t, compiled.KeyConditionExpression, " BETWEEN ")
+		require.NotContains(t, compiled.KeyConditionExpression, " >= ")
+		require.NotContains(t, compiled.KeyConditionExpression, " <= ")
+		require.Equal(t, 1, countCompiledNameValues(compiled, "gsi2PK"))
+		require.Equal(t, 1, countCompiledNameValues(compiled, "gsi2SK"))
+		require.Empty(t, compiled.FilterExpression)
+		require.Contains(t, compiledStringValues(compiled), skLo)
+		require.Contains(t, compiledStringValues(compiled), skHi)
+	})
 }

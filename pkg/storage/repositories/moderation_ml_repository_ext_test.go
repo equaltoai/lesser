@@ -267,8 +267,7 @@ func TestModerationMLRepository_GetPredictionsByModelVersion_Success(t *testing.
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MLPrediction")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "MODEL#v1.0").Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", []any{"TIME#2024-01-01T00:00:00Z", "TIME#2024-01-31T23:59:59Z"}).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Limit", 10).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
@@ -325,8 +324,7 @@ func TestModerationMLRepository_GetPredictionsByReviewStatus_Reviewed(t *testing
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MLPrediction")).Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "REVIEW#true").Return(mockQuery) // reviewed=true uses "true"
-	mockQuery.On("Where", "gsi2SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("Where", "gsi2SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("Where", "gsi2SK", "BETWEEN", []any{"TIME#2024-01-01T00:00:00Z", "TIME#2024-01-31T23:59:59Z"}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Limit", 5).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
@@ -355,8 +353,7 @@ func TestModerationMLRepository_GetPredictionsByReviewStatus_Unreviewed(t *testi
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MLPrediction")).Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "REVIEW#false").Return(mockQuery) // reviewed=false uses "false"
-	mockQuery.On("Where", "gsi2SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("Where", "gsi2SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
+	mockQuery.On("Where", "gsi2SK", "BETWEEN", []any{"TIME#2024-01-01T00:00:00Z", "TIME#2024-01-31T23:59:59Z"}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Limit", 5).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {

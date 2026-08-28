@@ -112,16 +112,20 @@ func (r *ModerationMLRepository) GetPredictionsByModelVersion(ctx context.Contex
 	query := r.db.WithContext(ctx).
 		Model(&pred).
 		Where("gsi1PK", "=", gsi1pk).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
+		Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 		Index("gsi1").
 		Limit(limit)
 
 	// Keyed GSI read (wave #1469, batch S2): the chain carries the gsi1
-	// partition-key equality plus a gsi1SK range, so the old `.Scan` compiled
-	// to a GSI Scan with those predicates as post-read filters; `.All`
-	// compiles to a DynamoDB Query on the same index, selecting the identical
-	// row set with the sort-key range applied as a key condition.
+	// partition-key equality plus the gsi1SK time window as ONE BETWEEN key
+	// condition (inclusive of both bounds, exactly the old >= / <= filter
+	// bounds). Two range conditions on the same sort key would both be compiled
+	// into the KeyConditionExpression and rejected by DynamoDB ("only one
+	// condition per key"); tabletheory v3.0.6 expresses the pair as a single
+	// `.Where("gsi1SK", "BETWEEN", []any{lo, hi})`. The old `.Scan` compiled to
+	// a GSI Scan with the bounds as post-read filters; `.All` compiles to a
+	// DynamoDB Query on the same index, selecting the identical row set with
+	// the sort-key window applied as a key condition.
 	if err := query.All(&predictions); err != nil {
 		r.logger.Error("failed to get predictions by model version",
 			zap.String("model_version", modelVersion),
@@ -164,15 +168,15 @@ func (r *ModerationMLRepository) GetPredictionsByReviewStatus(ctx context.Contex
 	query := r.db.WithContext(ctx).
 		Model(&pred).
 		Where("gsi2PK", "=", gsi2pk).
-		Where("gsi2SK", ">=", startSK).
-		Where("gsi2SK", "<=", endSK).
+		Where("gsi2SK", "BETWEEN", []any{startSK, endSK}).
 		Index("gsi2").
 		Limit(limit)
 
 	// Keyed GSI read (wave #1469, batch S2): see GetPredictionsByModelVersion —
-	// the old `.Scan` compiled to a GSI Scan; `.All` compiles to a DynamoDB
-	// Query on the same REVIEW# partition with the gsi2SK range as a key
-	// condition, selecting the identical row set.
+	// the gsi2SK time window is a single BETWEEN key condition (inclusive both
+	// ends); the old `.Scan` compiled to a GSI Scan; `.All` compiles to a
+	// DynamoDB Query on the same REVIEW# partition with the sort-key window as
+	// a key condition, selecting the identical row set.
 	if err := query.All(&predictions); err != nil {
 		r.logger.Error("failed to get predictions by review status",
 			zap.Bool("reviewed", reviewed),
