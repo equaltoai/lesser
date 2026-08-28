@@ -24,21 +24,3 @@ func TestRound10_HashtagTrendingCalculator_ConfigAndHistory(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, history)
 }
-
-func TestRound10_HashtagTrendingCalculator_GetTrendingHashtagsAdvanced(t *testing.T) {
-	ctx := context.Background()
-	baseTime := time.Now().UTC()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
-
-	repo := NewHashtagRepository(mockDB, "test-table", zap.NewNop(), "example.com")
-	repo.SetValidationService(nil)
-	repo.SetPermissionService(nil)
-	repo.SetEventService(nil)
-	repo.SetCachingService(nil)
-
-	_, err := repo.GetTrendingHashtagsAdvanced(ctx, TrendingCalculatorConfig{MaximumAge: 10 * time.Minute}, 3)
-	require.NoError(t, err)
-}

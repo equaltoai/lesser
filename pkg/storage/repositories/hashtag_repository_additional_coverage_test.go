@@ -288,28 +288,6 @@ func TestHashtagRepository_GetHashtagTrendsByScore_NotFoundReturnsEmpty(t *testi
 	assert.Empty(t, results)
 }
 
-func TestHashtagRepository_GetTrendingHashtags_UsesTrendingCacheFastPath(t *testing.T) {
-	ctx := context.Background()
-	db, _ := newPermissiveDynamORM(t)
-
-	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
-	since := time.Now().Add(-1 * time.Hour)
-	limit := 2
-
-	cacheKey := repo.trendingEngine.getCacheKey(since, limit)
-	repo.trendingEngine.cache.mu.Lock()
-	repo.trendingEngine.cache.results[cacheKey] = &CachedTrendingResult{
-		Results:     []*storage.TrendingHashtag{{Name: "golang", URL: "https://example.com/tags/golang"}},
-		GeneratedAt: time.Now(),
-	}
-	repo.trendingEngine.cache.mu.Unlock()
-
-	results, err := repo.GetTrendingHashtags(ctx, since, limit)
-	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, "golang", results[0].Name)
-}
-
 func TestHashtagRepository_CoverageSweep_Exports(t *testing.T) {
 	ctx := context.Background()
 	db, q := newPermissiveDynamORM(t)
@@ -423,17 +401,7 @@ func TestHashtagRepository_CoverageSweep_Exports(t *testing.T) {
 
 	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
 
-	// Avoid executing the full trending engine by seeding its cache.
 	since := time.Now().Add(-1 * time.Hour)
-	cacheKey := repo.trendingEngine.getCacheKey(since, 2)
-	repo.trendingEngine.cache.mu.Lock()
-	repo.trendingEngine.cache.results[cacheKey] = &CachedTrendingResult{
-		Results:     []*storage.TrendingHashtag{{Name: "golang", URL: "https://example.com/tags/golang"}},
-		GeneratedAt: time.Now(),
-		Parameters:  map[string]interface{}{"limit": 2},
-		HitCount:    0,
-	}
-	repo.trendingEngine.cache.mu.Unlock()
 
 	require.NoError(t, repo.IndexHashtag(ctx, "#GoLang", "s1", "alice", models.VisibilityPublic))
 	require.NoError(t, repo.IndexStatusHashtags(ctx, "s1", "alice", "alice", "https://example.com/s/1", "hello", []string{"#GoLang"}, time.Now(), models.VisibilityPublic))
@@ -471,7 +439,6 @@ func TestHashtagRepository_CoverageSweep_Exports(t *testing.T) {
 
 	_ = repo.DeleteOldHashtagTrends(ctx, time.Now().Add(-24*time.Hour))
 	_, _ = repo.GetRecentHashtags(ctx, since, 2)
-	_, _ = repo.GetTrendingHashtags(ctx, since, 2)
 	_ = repo.StoreHashtagTrend(ctx, &storage.TrendingHashtag{Name: "golang", URL: "https://example.com/tags/golang", CreatedAt: time.Now()})
 
 	_, _ = repo.GetHashtagsByTimeRange(ctx, time.Now().Add(-24*time.Hour), time.Now(), 1)

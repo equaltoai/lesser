@@ -4,20 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
-
-// GetTrendingHashtagsAdvanced allows custom configuration for trending calculation
-func (r *HashtagRepository) GetTrendingHashtagsAdvanced(ctx context.Context, config TrendingCalculatorConfig, limit int) ([]*storage.TrendingHashtag, error) {
-	// Temporarily override the calculator config
-	originalCalculator := r.trendingCalculator
-	r.trendingCalculator = NewTrendingCalculator(config, r.logger)
-	defer func() { r.trendingCalculator = originalCalculator }()
-
-	// Use the standard trending calculation with custom config
-	return r.GetTrendingHashtags(ctx, time.Now().Add(-config.MaximumAge), limit)
-}
 
 // GetHashtagTrendingHistory returns historical trending data for a hashtag
 func (r *HashtagRepository) GetHashtagTrendingHistory(_ context.Context, _ string, _ int) ([]*TrendingScore, error) {

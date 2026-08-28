@@ -22,7 +22,6 @@ type HashtagRepository struct {
 	*EnhancedBaseRepository[*models.Hashtag]
 	domain             string
 	trendingCalculator *TrendingCalculator
-	trendingEngine     *TrendingEngine
 }
 
 // TrendingCalculatorConfig holds configuration for trending algorithm
@@ -154,7 +153,6 @@ func NewHashtagRepository(db core.DB, tableName string, logger *zap.Logger, doma
 		EnhancedBaseRepository: enhancedRepo,
 		domain:                 domain,
 		trendingCalculator:     NewTrendingCalculator(config, logger),
-		trendingEngine:         NewTrendingEngine(db, logger),
 	}
 }
 
@@ -1329,34 +1327,6 @@ func (r *HashtagRepository) GetRecentHashtags(ctx context.Context, since time.Ti
 	}
 
 	return r.convertHashtagsToTrendingHashtags(hashtagModels), nil
-}
-
-// GetTrendingHashtags returns trending hashtags using sophisticated scoring algorithms
-func (r *HashtagRepository) GetTrendingHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	start := time.Now()
-	defer func() {
-		r.logger.Debug("GetTrendingHashtags completed",
-			zap.Duration("duration", time.Since(start)),
-			zap.Int("limit", limit),
-			zap.Time("since", since))
-	}()
-
-	// Safety check on limit
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-
-	// Use the enhanced trending engine for sophisticated trending analysis
-	result, err := r.trendingEngine.CalculateTrending(ctx, since, limit)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "hashtag", "trending")
-	}
-
-	r.logger.Info("calculated trending hashtags using enhanced engine",
-		zap.Int("trending", len(result)),
-		zap.Duration("calculation_time", time.Since(start)))
-
-	return result, nil
 }
 
 // StoreHashtagTrend stores trending data for a hashtag
