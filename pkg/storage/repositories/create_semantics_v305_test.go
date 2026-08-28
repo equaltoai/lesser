@@ -102,7 +102,7 @@ var upsertAuditSites = []upsertAuditSite{
 	{file: "pkg/storage/repositories/federation_repository.go", function: "RetryDelivery", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/federation_repository.go", function: "StoreDetailedFederationMetrics", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/graphql_stream_subscription_repository.go", function: "Put", method: "CreateOrUpdate", count: 1},
-	{file: "pkg/storage/repositories/hashtag_repository.go", function: "StoreHashtagTrend", method: "CreateOrUpdate", count: 2},
+	{file: "pkg/storage/repositories/hashtag_repository.go", function: "StoreHashtagTrend", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/instance_health_repository.go", function: "SaveHealthSummary", method: "ValidateAndCreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/instance_repository.go", function: "SetInstanceRules", method: "CreateOrUpdate", count: 1},
 	{file: "pkg/storage/repositories/instance_repository.go", function: "SetExtendedDescription", method: "CreateOrUpdate", count: 1},

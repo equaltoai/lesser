@@ -20,126 +20,11 @@ import (
 // HashtagRepository implements hashtag-related database operations using enhanced DynamORM patterns
 type HashtagRepository struct {
 	*EnhancedBaseRepository[*models.Hashtag]
-	domain             string
-	trendingCalculator *TrendingCalculator
-}
-
-// TrendingCalculatorConfig holds configuration for trending algorithm
-type TrendingCalculatorConfig struct {
-	// Time decay parameters
-	DecayHalfLife time.Duration // How quickly scores decay
-	MinimumAge    time.Duration // Minimum age before considering trending
-	MaximumAge    time.Duration // Maximum age for trending consideration
-
-	// Scoring weights
-	UsageWeight      float64 // Weight for usage count
-	EngagementWeight float64 // Weight for engagement metrics
-	DiversityWeight  float64 // Weight for user diversity
-	TrustWeight      float64 // Weight for trust scores
-	MomentumWeight   float64 // Weight for trending momentum
-
-	// Thresholds
-	MinimumUsage      int64   // Minimum usage count to consider
-	MinimumUsers      int64   // Minimum unique users to consider
-	TrendingThreshold float64 // Score threshold for trending
-
-	// Time windows for analysis
-	TimeWindows []TrendingTimeWindow
-}
-
-// TrendingTimeWindow defines a time window for trending analysis
-type TrendingTimeWindow struct {
-	Name     string        // e.g., "1h", "6h", "24h", "7d"
-	Duration time.Duration // Window duration
-	Weight   float64       // Weight in final score calculation
-	MinScore float64       // Minimum score for this window
-}
-
-// TrendingCalculator handles sophisticated hashtag trending computation
-type TrendingCalculator struct {
-	config TrendingCalculatorConfig
-	logger *zap.Logger
-}
-
-// TrendingMetrics holds metrics for trending calculation
-type TrendingMetrics struct {
-	HashtagName     string
-	TotalUsage      int64
-	UniqueUsers     int64
-	Engagements     int64
-	TrustScore      float64
-	FirstSeen       time.Time
-	LastUsed        time.Time
-	TimeWindowData  map[string]*WindowMetrics
-	HistoricalTrend []float64 // 7-day historical scores
-	MomentumScore   float64   // Rate of change
-}
-
-// WindowMetrics holds metrics for a specific time window
-type WindowMetrics struct {
-	UsageCount   int64
-	UniqueUsers  int64
-	Engagements  int64
-	AverageTrust float64
-	GrowthRate   float64
-	Velocity     float64 // Usage per hour
-}
-
-// TrendingScore represents the calculated trending score
-type TrendingScore struct {
-	HashtagName     string
-	OverallScore    float64
-	ComponentScores map[string]float64 // Individual component scores
-	Metrics         *TrendingMetrics
-	Rank            int
-	Timestamp       time.Time
-}
-
-// TrendingAnalytics provides insights into the trending calculation process
-type TrendingAnalytics struct {
-	Period             time.Time `json:"period"`
-	TotalHashtags      int64     `json:"total_hashtags"`
-	TotalUsage         int64     `json:"total_usage"`
-	UniqueUsers        int64     `json:"unique_users"`
-	TrendingCandidates int64     `json:"trending_candidates"`
-	AverageUsagePerTag float64   `json:"average_usage_per_tag"`
-	AverageUsersPerTag float64   `json:"average_users_per_tag"`
-	TrendingThreshold  float64   `json:"trending_threshold"`
-	MinimumUsage       int64     `json:"minimum_usage"`
-	MinimumUsers       int64     `json:"minimum_users"`
-	CalculationWindows int       `json:"calculation_windows"`
-	GeneratedAt        time.Time `json:"generated_at"`
+	domain string
 }
 
 // NewHashtagRepository creates a new hashtag repository
 func NewHashtagRepository(db core.DB, tableName string, logger *zap.Logger, domain string) *HashtagRepository {
-	config := TrendingCalculatorConfig{
-		// Time decay parameters
-		DecayHalfLife: 2 * time.Hour,      // Scores decay by half every 2 hours
-		MinimumAge:    5 * time.Minute,    // Must be at least 5 minutes old
-		MaximumAge:    7 * 24 * time.Hour, // Don't consider older than 7 days
-
-		// Scoring weights (total should be ~1.0)
-		UsageWeight:      0.3,  // 30% weight for usage count
-		EngagementWeight: 0.25, // 25% weight for engagements
-		DiversityWeight:  0.2,  // 20% weight for user diversity
-		TrustWeight:      0.1,  // 10% weight for trust scores
-		MomentumWeight:   0.15, // 15% weight for momentum/velocity
-
-		// Thresholds
-		MinimumUsage:      3,   // At least 3 uses
-		MinimumUsers:      2,   // At least 2 different users
-		TrendingThreshold: 1.0, // Score > 1.0 to be trending
-
-		// Multiple time windows for analysis
-		TimeWindows: []TrendingTimeWindow{
-			{Name: "1h", Duration: time.Hour, Weight: 0.4, MinScore: 0.1},
-			{Name: "6h", Duration: 6 * time.Hour, Weight: 0.3, MinScore: 0.5},
-			{Name: "24h", Duration: 24 * time.Hour, Weight: 0.2, MinScore: 1.0},
-			{Name: "7d", Duration: 7 * 24 * time.Hour, Weight: 0.1, MinScore: 2.0},
-		},
-	}
-
 	// Create enhanced repository optimized for hashtag operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Hashtag](db, tableName, logger, nil, "HashtagRepository", "hashtag")
 
@@ -152,15 +37,6 @@ func NewHashtagRepository(db core.DB, tableName string, logger *zap.Logger, doma
 	return &HashtagRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		domain:                 domain,
-		trendingCalculator:     NewTrendingCalculator(config, logger),
-	}
-}
-
-// NewTrendingCalculator creates a new trending calculator with the given configuration
-func NewTrendingCalculator(config TrendingCalculatorConfig, logger *zap.Logger) *TrendingCalculator {
-	return &TrendingCalculator{
-		config: config,
-		logger: logger,
 	}
 }
 
@@ -296,7 +172,13 @@ func isPublicHashtagVisibility(visibility string) bool {
 	return strings.EqualFold(strings.TrimSpace(visibility), models.VisibilityPublic)
 }
 
-// GetHashtagInfo retrieves information about a specific hashtag
+// GetHashtagInfo retrieves information about a specific hashtag.
+//
+// NOTE (post-wave consolidation, #1505): this is a no-live-writer read — the
+// HASHTAG METADATA rows it keys on have had zero writers since IndexHashtag's
+// deletion (S3), so the keyed read is permanently NotFound in live data. The
+// read is deliberately KEPT (callers through pkg/services/hashtags still route
+// here); a future wave decides its fate.
 func (r *HashtagRepository) GetHashtagInfo(ctx context.Context, hashtag string) (*storage.Hashtag, error) {
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 	pk := fmt.Sprintf("HASHTAG#%s", tagLower)
@@ -1164,32 +1046,6 @@ func (r *HashtagRepository) DeleteOldHashtagTrends(ctx context.Context, before t
 func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) error {
 	// Store trending data by converting to HashtagTrend model and saving
 	switch trend := trendData.(type) {
-	case *TrendingScore:
-		trendModel := &models.HashtagTrend{
-			Name:        trend.HashtagName,
-			URL:         fmt.Sprintf("https://%s/tags/%s", r.domain, trend.HashtagName),
-			UsageCount:  trend.Metrics.TotalUsage,
-			UniqueUsers: trend.Metrics.UniqueUsers,
-			LastUsed:    trend.Metrics.LastUsed,
-			FirstSeen:   trend.Metrics.FirstSeen,
-			TrendScore:  trend.OverallScore,
-			UpdatedAt:   trend.Timestamp,
-		}
-		_ = trendModel.UpdateKeys()
-
-		err := r.db.Model(trendModel).CreateOrUpdate()
-		if err != nil {
-			r.logger.Error("failed to store hashtag trend",
-				zap.String("hashtag", trend.HashtagName),
-				zap.Float64("score", trend.OverallScore),
-				zap.Error(err))
-			return ErrorHandler.HandleCreateError(err, "hashtag trend", trend.HashtagName)
-		}
-
-		r.logger.Debug("stored hashtag trend",
-			zap.String("hashtag", trend.HashtagName),
-			zap.Float64("score", trend.OverallScore))
-
 	case *storage.TrendingHashtag:
 		// Convert storage type to model
 		trendModel := &models.HashtagTrend{

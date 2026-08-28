@@ -27,8 +27,6 @@ type trendingRepository interface {
 	GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error)
 	StoreStatusTrend(ctx context.Context, trend any) error
 	StoreLinkTrend(ctx context.Context, trend any) error
-	DeleteOldStatusTrends(ctx context.Context, before time.Time) error
-	DeleteOldLinkTrends(ctx context.Context, before time.Time) error
 }
 
 // TrendAggregatorHandler runs scheduled trend aggregation.

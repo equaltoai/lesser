@@ -422,32 +422,6 @@ func TestHashtagRepository_BatchCreateHashtagTrends_ReturnsErrorWhenBatchCreateF
 	assert.Error(t, err)
 }
 
-func TestHashtagRepository_StoreHashtagTrend_TrendingScoreType(t *testing.T) {
-	ctx := context.Background()
-	db := new(dynamormmocks.MockDB)
-	q := new(dynamormmocks.MockQuery)
-
-	db.On("Model", mock.Anything).Return(q)
-	q.On("CreateOrUpdate").Return(nil)
-
-	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
-
-	now := time.Now()
-	err := repo.StoreHashtagTrend(ctx, &TrendingScore{
-		HashtagName:  "golang",
-		OverallScore: 1.23,
-		Metrics: &TrendingMetrics{
-			HashtagName: "golang",
-			TotalUsage:  5,
-			UniqueUsers: 3,
-			FirstSeen:   now.Add(-2 * time.Hour),
-			LastUsed:    now,
-		},
-		Timestamp: now,
-	})
-	assert.NoError(t, err)
-}
-
 func TestHashtagRepository_FollowMuteUnmute_Branches(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
