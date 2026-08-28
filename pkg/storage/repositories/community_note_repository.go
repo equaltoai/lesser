@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -365,13 +366,27 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context,
 func (r *CommunityNoteRepository) GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error) {
 	var modelsSlice []models.CommunityNoteVote
 
-	// Query votes for the note - preserve community vote retrieval logic
-	err := r.GetDB().WithContext(ctx).Model(&models.CommunityNoteVote{}).
-		Where("PK", "=", fmt.Sprintf("NOTE#%s", noteID)).
-		Where("SK", "BEGINS_WITH", "VOTE#").
-		All(&modelsSlice)
+	// The whole keyed NOTE#<noteID> partition must be read to return every vote,
+	// so the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.CommunityNoteVote{}).
+			Where("PK", "=", fmt.Sprintf("NOTE#%s", noteID)).
+			Where("SK", "BEGINS_WITH", "VOTE#"),
+		500, 100,
+		func(page []models.CommunityNoteVote) (bool, error) {
+			modelsSlice = append(modelsSlice, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no votes for this note" — only other errors keep the pre-existing
+		// not-found swallow.
+		if stdErrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		if errors.IsNotFound(err) {
 			return []*storage.CommunityNoteVote{}, nil
 		}

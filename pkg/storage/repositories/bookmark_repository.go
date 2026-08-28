@@ -267,9 +267,18 @@ func (r *BookmarkRepository) CountUserBookmarks(ctx context.Context, username st
 	pk := buildBookmarkPK(username)
 
 	var bookmarks []models.Bookmark
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "=", pk).
-		All(&bookmarks)
+	// The whole keyed user-bookmark partition must be read to count every
+	// bookmark, so the read is a bounded page walk (wave #1469): Limit(500)/
+	// page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Bookmark{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.Bookmark) (bool, error) {
+			bookmarks = append(bookmarks, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error("failed to count user bookmarks",
 			zap.String("username", username),

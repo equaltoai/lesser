@@ -230,10 +230,19 @@ func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, add
 	}
 
 	var indexRecords []IndexRecord
-	err := r.db.WithContext(ctx).Model(&IndexRecord{}).
-		Where("PK", "=", reverseIndexPK).
-		Where("SK", "BEGINS_WITH", reverseIndexSK).
-		All(&indexRecords)
+	// The reverse-index partition holds one row per (wallet, user) link; the
+	// whole keyed partition must be read, so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&IndexRecord{}).
+			Where("PK", "=", reverseIndexPK).
+			Where("SK", "BEGINS_WITH", reverseIndexSK),
+		500, 100,
+		func(page []IndexRecord) (bool, error) {
+			indexRecords = append(indexRecords, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil || len(indexRecords) == 0 {
 		// The reverse index is the sanctioned lookup path; legacy rows that

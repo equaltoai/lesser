@@ -225,10 +225,20 @@ func (r *RateLimitRepository) ClearAPIRateLimitsForUser(ctx context.Context, use
 	// Note: legacy rows written before GSI1 existed carry no gsi1 keys; they
 	// are TTL-transient (~24h) and simply expire instead of being cleared here.
 	var rateLimits []models.APIRateLimit
-	if err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER_RATELIMIT#%s", userID)).
-		All(&rateLimits); err != nil {
+	// The whole keyed gsi1 partition must be read to clear every counter, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion (never a silent partial clear).
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("USER_RATELIMIT#%s", userID)),
+		500, 100,
+		func(page []models.APIRateLimit) (bool, error) {
+			rateLimits = append(rateLimits, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		r.logger.Error("failed to query api rate limits for clearing",
 			zap.String("user_id", userID),
 			zap.Error(err))
@@ -321,13 +331,21 @@ func (r *RateLimitRepository) CheckCommunityNoteRateLimit(ctx context.Context, u
 	gsi3PK := fmt.Sprintf("AUTHOR#%s#NOTES", userID)
 	gsi3SKPrefix := yesterday.Format(time.RFC3339)
 
-	// Use BaseRepository GSI query - need to implement this manually since it's a complex GSI query
-	var notes []*models.CommunityNote
-	err := r.db.WithContext(ctx).Model(&models.CommunityNote{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", gsi3PK).
-		Where("gsi3SK", ">", gsi3SKPrefix).
-		All(&notes)
+	// The whole keyed gsi3 partition must be read to count the user's notes,
+	// so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	var notes []models.CommunityNote
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.CommunityNote{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", gsi3PK).
+			Where("gsi3SK", ">", gsi3SKPrefix),
+		500, 100,
+		func(page []models.CommunityNote) (bool, error) {
+			notes = append(notes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to check community note rate limit",

@@ -2819,11 +2819,20 @@ func (r *AccountRepository) UpdateAccountPreferences(ctx context.Context, userna
 
 // GetAccountPreferences retrieves all preferences for an account
 func (r *AccountRepository) GetAccountPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+	// The whole keyed partition must be read to collect every preference, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
 	var preferences []models.UserPreference
-	err := r.db.WithContext(ctx).Model(&models.UserPreference{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "begins_with", "PREFERENCE#").
-		All(&preferences)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.UserPreference{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", "begins_with", "PREFERENCE#"),
+		500, 100,
+		func(page []models.UserPreference) (bool, error) {
+			preferences = append(preferences, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "preferences")

@@ -109,7 +109,17 @@ func getImportExportItemsByStatus[T ImportExportItem](
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username))
 
-	err := query.All(&items)
+	// The whole keyed gsi1 USER#<username> partition must be read to evaluate
+	// every item, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []T) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to query %ss by GSI1", itemType),
 			zap.String("username", username),

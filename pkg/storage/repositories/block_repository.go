@@ -248,10 +248,21 @@ func (r *BlockRepository) CountBlockedUsers(ctx context.Context, blockerActor st
 func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor string) (int, error) {
 	blockedUsername := extractUsernameFromActor(blockedActor)
 
-	count, err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Index("gsi5").
-		Where("gsi5PK", "=", Utils.Keys.BlockedSK(blockedUsername)).
-		Count()
+	// The whole keyed gsi5 partition must be read to count every blocker, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion (a keyed Count() would be uncapped by
+	// construction — tabletheory strips Limit from Count).
+	var blocks []models.Block
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Block{}).
+			Index("gsi5").
+			Where("gsi5PK", "=", Utils.Keys.BlockedSK(blockedUsername)),
+		500, 100,
+		func(page []models.Block) (bool, error) {
+			blocks = append(blocks, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error("failed to count users who blocked actor",
 			zap.String("blocked_actor", blockedActor),
@@ -259,5 +270,5 @@ func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor
 		return 0, ErrorHandler.HandleQueryError(err, EntityBlock, "count blockers")
 	}
 
-	return int(count), nil
+	return len(blocks), nil
 }

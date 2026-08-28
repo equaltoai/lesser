@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -230,15 +231,29 @@ func (r *StreamingConnectionRepository) DeleteSubscription(ctx context.Context, 
 
 // DeleteAllSubscriptions removes all subscriptions for a connection
 func (r *StreamingConnectionRepository) DeleteAllSubscriptions(ctx context.Context, connectionID string) error {
-	// Query all subscriptions for this connection using GSI
+	// Query all subscriptions for this connection using GSI. The whole keyed
+	// gsi1 CONN#<id> partition must be read to delete every subscription, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var subscriptions []models.WebSocketSubscription
-
-	err := r.subscriptionRepo.GetDB().WithContext(ctx).Model(&models.WebSocketSubscription{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
-		All(&subscriptions)
+	err := walkKeyedPages(
+		r.subscriptionRepo.GetDB().WithContext(ctx).Model(&models.WebSocketSubscription{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("CONN#%s", connectionID)),
+		500, 100,
+		func(page []models.WebSocketSubscription) (bool, error) {
+			subscriptions = append(subscriptions, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		// Cap exhaustion fails the whole cleanup closed instead of silently
+		// deleting a partial subset; only IsNotFound/resource-not-found keep
+		// their pre-existing tolerance.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return err
+		}
 		if errors.IsNotFound(err) || isResourceNotFound(err) {
 			return nil // No subscriptions to delete or index/table unavailable yet
 		}
@@ -728,11 +743,28 @@ func (r *StreamingConnectionRepository) GetActiveConnectionsCount(ctx context.Co
 
 // GetConnectionCountByState returns the number of connections currently recorded in the provided state
 func (r *StreamingConnectionRepository) GetConnectionCountByState(ctx context.Context, state models.ConnectionState) (int, error) {
-	count, err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("STATE#%s", state)).
-		Count()
+	// The whole keyed gsi2 STATE#<state> partition must be read to count every
+	// connection, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. A keyed Count() would be unbounded
+	// by construction (tabletheory strips Limit from Count).
+	var connections []models.WebSocketConnection
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("STATE#%s", state)),
+		500, 100,
+		func(page []models.WebSocketConnection) (bool, error) {
+			connections = append(connections, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
+		// Cap exhaustion fails the count closed instead of silently answering
+		// "zero connections"; only IsNotFound/resource-not-found keep their
+		// pre-existing zero swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return 0, err
+		}
 		if errors.IsNotFound(err) {
 			return 0, nil
 		}
@@ -747,16 +779,33 @@ func (r *StreamingConnectionRepository) GetConnectionCountByState(ctx context.Co
 		return 0, ErrorHandler.HandleQueryError(err, "streaming connection", fmt.Sprintf("connection count state %s", state))
 	}
 
-	return int(count), nil
+	return len(connections), nil
 }
 
 // GetUserConnectionCount returns the number of connections associated with the supplied user
 func (r *StreamingConnectionRepository) GetUserConnectionCount(ctx context.Context, userID string) (int, error) {
-	count, err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Count()
+	// The whole keyed gsi1 USER#<userID> partition must be read to count every
+	// connection, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. A keyed Count() would be unbounded
+	// by construction (tabletheory strips Limit from Count).
+	var connections []models.WebSocketConnection
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)),
+		500, 100,
+		func(page []models.WebSocketConnection) (bool, error) {
+			connections = append(connections, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
+		// Cap exhaustion fails the count closed instead of silently answering
+		// "zero connections"; only IsNotFound/resource-not-found keep their
+		// pre-existing zero swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return 0, err
+		}
 		if errors.IsNotFound(err) {
 			return 0, nil
 		}
@@ -771,7 +820,7 @@ func (r *StreamingConnectionRepository) GetUserConnectionCount(ctx context.Conte
 		return 0, ErrorHandler.HandleQueryError(err, "streaming connection", "user connection count")
 	}
 
-	return int(count), nil
+	return len(connections), nil
 }
 
 // GetConnectionsByState gets all connections in a specific state

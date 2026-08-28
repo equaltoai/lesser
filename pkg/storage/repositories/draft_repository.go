@@ -487,11 +487,22 @@ func (r *DraftRepository) ListActiveDraftReviewGrants(ctx context.Context, revie
 
 // ListDraftReviewGrants returns all grant records for one draft.
 func (r *DraftRepository) ListDraftReviewGrants(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewGrant, error) {
+	// The whole keyed USER#<owner>#DRAFT#REVIEW partition must be read to return
+	// every grant, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The OrderBy ASC
+	// is preserved across pages via cursors.
 	var rows []models.DraftReviewGrant
-	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).
-		Where("SK", "begins_with", fmt.Sprintf("GRANT#%s#", draftID)).
-		OrderBy("SK", "ASC").All(&rows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).
+			Where("SK", "begins_with", fmt.Sprintf("GRANT#%s#", draftID)).
+			OrderBy("SK", "ASC"),
+		500, 100,
+		func(page []models.DraftReviewGrant) (bool, error) {
+			rows = append(rows, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -504,17 +515,29 @@ func (r *DraftRepository) ListDraftReviewGrants(ctx context.Context, ownerID, dr
 
 // ListDraftReviewGrantsByOwner returns every review assignment created by one draft owner.
 // Callers apply active-state filtering before pagination so revoked grants cannot shrink pages.
+//
+//nolint:dupl // the draft reviewer queue mirrors the promo reviewer queue (M4 issue #1446); N4 walk shape
 func (r *DraftRepository) ListDraftReviewGrantsByOwner(ctx context.Context, ownerID string) ([]*models.DraftReviewGrant, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if err := common.ValidateRequiredParam("ownerID", ownerID); err != nil {
 		return nil, err
 	}
+	// The whole keyed USER#<owner>#DRAFT#REVIEW partition must be read to return
+	// every review assignment, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The OrderBy ASC
+	// is preserved across pages via cursors.
 	var rows []models.DraftReviewGrant
-	err := r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).
-		Where("SK", "begins_with", "GRANT#").
-		OrderBy("SK", "ASC").
-		All(&rows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.DraftReviewGrant{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).
+			Where("SK", "begins_with", "GRANT#").
+			OrderBy("SK", "ASC"),
+		500, 100,
+		func(page []models.DraftReviewGrant) (bool, error) {
+			rows = append(rows, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -535,8 +558,22 @@ func (r *DraftRepository) CreateDraftReviewVerdict(ctx context.Context, verdict 
 
 // ListDraftReviewVerdicts returns ordered verdict history.
 func (r *DraftRepository) ListDraftReviewVerdicts(ctx context.Context, ownerID, draftID string) ([]*models.DraftReviewVerdict, error) {
+	// The whole keyed USER#<owner>#DRAFT#REVIEW partition must be read to return
+	// the full verdict history, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The OrderBy ASC
+	// is preserved across pages via cursors.
 	var rows []models.DraftReviewVerdict
-	err := r.db.WithContext(ctx).Model(&models.DraftReviewVerdict{}).Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).Where("SK", "begins_with", fmt.Sprintf("VERDICT#%s#", draftID)).OrderBy("SK", "ASC").All(&rows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.DraftReviewVerdict{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s#DRAFT#REVIEW", ownerID)).
+			Where("SK", "begins_with", fmt.Sprintf("VERDICT#%s#", draftID)).
+			OrderBy("SK", "ASC"),
+		500, 100,
+		func(page []models.DraftReviewVerdict) (bool, error) {
+			rows = append(rows, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

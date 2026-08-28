@@ -263,12 +263,21 @@ func (r *AccountRepository) ResetPassword(ctx context.Context, token, newPasswor
 
 // GetUserSessions retrieves all active sessions for a user
 func (r *AccountRepository) GetUserSessions(ctx context.Context, username string) ([]*storage.Session, error) {
+	// The whole keyed partition must be read to return every session, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var sessions []models.Session
 
-	err := r.db.WithContext(ctx).Model(&models.Session{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "BEGINS_WITH", "SESSION#").
-		All(&sessions)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Session{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", "BEGINS_WITH", "SESSION#"),
+		500, 100,
+		func(page []models.Session) (bool, error) {
+			sessions = append(sessions, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get user sessions",
@@ -513,11 +522,21 @@ func (r *AccountRepository) RecordLoginAttempt(ctx context.Context, key string, 
 
 // ClearLoginAttempts clears all login attempts for a key
 func (r *AccountRepository) ClearLoginAttempts(ctx context.Context, key string) error {
-	// Query all attempts for this key
+	// Query all attempts for this key. The keyed partition read is a bounded
+	// page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion — a >50k-attempt partition must not silently clear only the
+	// first page.
 	var attempts []models.LoginAttempt
 	query := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
 		Where("PK", "=", fmt.Sprintf("RATELIMIT#%s", key))
-	err := query.All(&attempts)
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []models.LoginAttempt) (bool, error) {
+			attempts = append(attempts, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, "login attempt", "query")
@@ -554,12 +573,21 @@ func (r *AccountRepository) ClearLoginAttempts(ctx context.Context, key string) 
 
 // GetLoginAttemptCount gets the number of login attempts since a given time
 func (r *AccountRepository) GetLoginAttemptCount(ctx context.Context, key string, since time.Time) (int, error) {
-	// Query attempts since the given time
+	// Query attempts since the given time. The keyed partition read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion.
 	var attempts []models.LoginAttempt
 	query := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
 		Where("PK", "=", fmt.Sprintf("RATELIMIT#%s", key)).
 		Where("SK", ">", since.Format(time.RFC3339Nano))
-	err := query.All(&attempts)
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []models.LoginAttempt) (bool, error) {
+			attempts = append(attempts, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "login attempt", "count")
@@ -908,12 +936,21 @@ func (r *AccountRepository) UpdateDevice(ctx context.Context, device *storage.De
 
 // GetUserDevices gets all devices for a user
 func (r *AccountRepository) GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error) {
+	// The whole keyed partition must be read to return every device, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var devices []models.Device
 
-	err := r.db.WithContext(ctx).Model(&models.Device{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "BEGINS_WITH", "DEVICE#").
-		All(&devices)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Device{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", "BEGINS_WITH", "DEVICE#"),
+		500, 100,
+		func(page []models.Device) (bool, error) {
+			devices = append(devices, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to query user devices",
@@ -1301,13 +1338,22 @@ func (r *AccountRepository) UpdateWalletLastUsed(ctx context.Context, username, 
 
 // GetLinkedProviders gets all linked OAuth providers for a user
 func (r *AccountRepository) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
+	// The whole keyed gsi2 partition must be read (the IsActive filter runs
+	// post-read over the collected rows), so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var providerAccounts []models.ProviderAccount
 
 	// Query GSI2 to get all provider accounts for the user
-	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("USER_PROVIDERS#%s", username)).
-		All(&providerAccounts)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("USER_PROVIDERS#%s", username)),
+		500, 100,
+		func(page []models.ProviderAccount) (bool, error) {
+			providerAccounts = append(providerAccounts, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {

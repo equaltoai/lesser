@@ -77,10 +77,19 @@ func (r *OAuthSessionRepository) GetOAuthSession(ctx context.Context, sessionID 
 func (r *OAuthSessionRepository) GetOAuthSessionByState(ctx context.Context, state string) (*models.OAuthAuthSession, error) {
 	var sessions []models.OAuthAuthSession
 
-	err := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("OAUTH_STATE#%s", state)).
-		All(&sessions)
+	// The whole keyed gsi2 partition must be read to locate the session row, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("OAUTH_STATE#%s", state)),
+		500, 100,
+		func(page []models.OAuthAuthSession) (bool, error) {
+			sessions = append(sessions, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil || len(sessions) == 0 {
 		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session not found for state"), EntityOAuthState, state)
@@ -131,15 +140,18 @@ func (r *OAuthSessionRepository) DeleteOAuthSession(ctx context.Context, session
 
 // GetUserOAuthSessions retrieves all OAuth sessions for a user
 func (r *OAuthSessionRepository) GetUserOAuthSessions(ctx context.Context, username string, limit int) ([]*models.OAuthAuthSession, error) {
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed gsi1 read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	var sessions []models.OAuthAuthSession
 
 	query := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
 		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER_OAUTH#%s", username))
-
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
+		Where("gsi1PK", "=", fmt.Sprintf("USER_OAUTH#%s", username)).
+		Limit(limit)
 
 	err := query.All(&sessions)
 	if err != nil {

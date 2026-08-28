@@ -50,10 +50,14 @@ func AuditLogQueryHelper(
 			Where(fmt.Sprintf("%sSK", attrPrefix), "<=", endTimestamp)
 	}
 
-	// Apply limit
-	if limit > 0 {
-		query = query.Limit(limit)
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed index read.
+	if limit <= 0 {
+		limit = 500
 	}
+
+	// Apply limit
+	query = query.Limit(limit)
 
 	// Execute query
 	if err := query.All(&logs); err != nil {

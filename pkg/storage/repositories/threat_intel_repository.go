@@ -231,10 +231,19 @@ func (r *ThreatIntelRepository) LoadActiveThreats(ctx context.Context) ([]*Threa
 	// Legacy threat rows written before the GSI2 shape (or before UpdateKeys
 	// maintenance) carry no index keys and are not loaded until next written
 	// (threats are TTL-transient).
-	err := r.db.WithContext(ctx).Model(&models.ThreatIntel{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", "THREATS").
-		All(&threatModels)
+	// The whole keyed gsi2 partition must be read to load every threat, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ThreatIntel{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "THREATS"),
+		500, 100,
+		func(page []models.ThreatIntel) (bool, error) {
+			threatModels = append(threatModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityThreatIntel, "active threats")

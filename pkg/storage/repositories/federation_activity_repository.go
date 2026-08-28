@@ -57,14 +57,22 @@ func (r *FederationActivityRepository) RecordFederationActivity(ctx context.Cont
 
 // GetFederationActivity retrieves a federation activity by ID and domain using GSI
 func (r *FederationActivityRepository) GetFederationActivity(ctx context.Context, domain, id string) (*models.FederationActivity, error) {
-	var activities []*models.FederationActivity
-
-	// Query by domain partition and filter by ID
-	err := r.db.WithContext(ctx).Model(&models.FederationActivity{}).
-		Where("PK", "=", fmt.Sprintf("fed_activity#%s", domain)).
-		Where("SK", "begins_with", "activity#").
-		Filter("ID", "=", id).
-		All(&activities)
+	// Query by domain partition and filter by ID. The whole keyed
+	// fed_activity#<domain> partition must be read to find the matching ID, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion. The Filter applies per page.
+	var activities []models.FederationActivity
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FederationActivity{}).
+			Where("PK", "=", fmt.Sprintf("fed_activity#%s", domain)).
+			Where("SK", "begins_with", "activity#").
+			Filter("ID", "=", id),
+		500, 100,
+		func(page []models.FederationActivity) (bool, error) {
+			activities = append(activities, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, MapErrorWithContext(err, "failed to get federation activity")
@@ -74,7 +82,7 @@ func (r *FederationActivityRepository) GetFederationActivity(ctx context.Context
 		return nil, fmt.Errorf("%w: domain=%s, id=%s", ErrFederationActivityNotFound, domain, id)
 	}
 
-	return activities[0], nil
+	return &activities[0], nil
 }
 
 // ListByDomain lists federation activities for a specific domain - federation analytics logic preserved

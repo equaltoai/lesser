@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -136,11 +137,19 @@ func (r *WebSocketSubscriptionManagerRepository) DeleteSubscription(ctx context.
 func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForConnection(ctx context.Context, connectionID string) ([]models.WebSocketEventSubscription, error) {
 	var subscriptions []models.WebSocketEventSubscription
 
-	// Since DynamORM doesn't support BeginsWith, we'll get all and filter
-	// For a more efficient implementation, you'd want to scan/query differently
-	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
-		Where("PK", "=", fmt.Sprintf("CONNECTION#%s", connectionID)).
-		All(&subscriptions)
+	// Since DynamORM doesn't support BeginsWith, we'll get all and filter. The
+	// whole keyed CONNECTION#<id> partition must be read to find every
+	// subscription, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
+			Where("PK", "=", fmt.Sprintf("CONNECTION#%s", connectionID)),
+		500, 100,
+		func(page []models.WebSocketEventSubscription) (bool, error) {
+			subscriptions = append(subscriptions, page...)
+			return false, nil
+		},
+	)
 
 	// Filter results to only include subscriptions (SK starts with SUBSCRIPTION#)
 	var filteredSubscriptions []models.WebSocketEventSubscription
@@ -152,6 +161,11 @@ func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForConnection(c
 	subscriptions = filteredSubscriptions
 
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no subscriptions"; only other errors keep the pre-existing swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		if strings.Contains(err.Error(), "not found") {
 			return []models.WebSocketEventSubscription{}, nil
 		}
@@ -165,11 +179,25 @@ func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForConnection(c
 func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForType(ctx context.Context, subscriptionType string) ([]models.WebSocketEventSubscription, error) {
 	var subscriptions []models.WebSocketEventSubscription
 
-	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
-		Where("gsi1PK", "=", fmt.Sprintf("SUBSCRIPTION#%s", subscriptionType)).
-		All(&subscriptions)
+	// The whole keyed gsi1 SUBSCRIPTION#<type> partition must be read to return
+	// every subscription, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
+			Where("gsi1PK", "=", fmt.Sprintf("SUBSCRIPTION#%s", subscriptionType)),
+		500, 100,
+		func(page []models.WebSocketEventSubscription) (bool, error) {
+			subscriptions = append(subscriptions, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no subscriptions"; only other errors keep the pre-existing swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		if strings.Contains(err.Error(), "not found") {
 			return []models.WebSocketEventSubscription{}, nil
 		}
@@ -206,13 +234,27 @@ func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(ctx context.C
 	var connections []models.WebSocketConnection
 	var eventConnections []models.WebSocketEventConnection
 
-	// Use GSI2 to query all connected connections efficiently
-	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", "STATE#connected").
-		All(&connections)
+	// Use GSI2 to query all connected connections efficiently. The whole keyed
+	// gsi2 STATE#connected partition must be read to return every active
+	// connection, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "STATE#connected"),
+		500, 100,
+		func(page []models.WebSocketConnection) (bool, error) {
+			connections = append(connections, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no connections"; only other errors keep the pre-existing swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		if strings.Contains(err.Error(), "not found") {
 			return []models.WebSocketEventConnection{}, nil
 		}
@@ -245,13 +287,27 @@ func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(ctx context.C
 func (r *WebSocketSubscriptionManagerRepository) GetUserConnections(ctx context.Context, userID string) ([]string, error) {
 	var connections []models.WebSocketEventConnection
 
-	// Query connections by GSI2 (UserID index)
-	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketEventConnection{}).
-		Where("gsi2PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("gsi2SK", "begins_with", "CONNECTION#").
-		All(&connections)
+	// Query connections by GSI2 (UserID index). The whole keyed
+	// gsi2 USER#<userID> partition must be read to return every connection, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.WebSocketEventConnection{}).
+			Where("gsi2PK", "=", fmt.Sprintf("USER#%s", userID)).
+			Where("gsi2SK", "begins_with", "CONNECTION#"),
+		500, 100,
+		func(page []models.WebSocketEventConnection) (bool, error) {
+			connections = append(connections, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no connections"; only other errors keep the pre-existing swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		if strings.Contains(err.Error(), "not found") {
 			return []string{}, nil
 		}

@@ -59,7 +59,10 @@ func (r *FeaturedTagRepository) CreateFeaturedTag(ctx context.Context, tag *stor
 	}
 
 	// Calculate tag statistics
-	statusesCount, lastStatusAt := r.calculateTagStatistics(ctx, tag.Username, tagName)
+	statusesCount, lastStatusAt, err := r.calculateTagStatistics(ctx, tag.Username, tagName)
+	if err != nil {
+		return ErrorHandler.HandleQueryError(err, EntityFeaturedTag, "tag statistics")
+	}
 
 	// Create new featured tag with proper fields
 	id := uuid.New().String()
@@ -249,16 +252,26 @@ func (r *FeaturedTagRepository) GetTagSuggestions(ctx context.Context, username 
 }
 
 // calculateTagStatistics calculates the count and last usage time for a tag
-func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, userID string, tagName string) (int, *time.Time) {
-	// Query user's statuses using GSI3 to find those with the tag
+func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, userID string, tagName string) (int, *time.Time, error) {
+	// Query user's statuses using GSI3 — the whole keyed USER_STATUS#<user> gsi3
+	// partition must be read to tally every matching status, so the read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion. Page order follows the DESC sort via cursors, so the most
+	// recent match is seen first.
 	var statusModels []models.Status
-	err := r.GetDB().WithContext(ctx).Model(&models.Status{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", fmt.Sprintf("USER_STATUS#%s", userID)).
-		OrderBy("gsi3SK", "DESC"). // Most recent first
-		All(&statusModels)
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.Status{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", fmt.Sprintf("USER_STATUS#%s", userID)).
+			OrderBy("gsi3SK", "DESC"), // Most recent first
+		500, 100,
+		func(page []models.Status) (bool, error) {
+			statusModels = append(statusModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
-		return 0, nil
+		return 0, nil, err
 	}
 
 	count := 0
@@ -280,5 +293,5 @@ func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, user
 		}
 	}
 
-	return count, lastStatusAt
+	return count, lastStatusAt, nil
 }

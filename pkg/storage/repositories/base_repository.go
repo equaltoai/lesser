@@ -910,9 +910,21 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 
 // Count returns the number of items for a given partition key
 func (r *BaseRepository[T]) Count(ctx context.Context, pk string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk).
-		Count()
+	// A keyed Count() would be uncapped by construction (tabletheory strips
+	// Limit from Count — query_execution.go:95), so the count is a bounded page
+	// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion. This choke point covers every r.Count(ctx, pk) caller
+	// (block/mute/like/list/hashtag/timeline/feature/enhanced-base counts).
+	var items []T
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []T) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count items",
@@ -921,7 +933,7 @@ func (r *BaseRepository[T]) Count(ctx context.Context, pk string) (int, error) {
 		return 0, ErrorHandler.HandleQueryError(err, "base entity", "count query")
 	}
 
-	return int(count), nil
+	return len(items), nil
 }
 
 // Exists checks if an item exists
@@ -1358,11 +1370,20 @@ type BasePaginatedResult[T BaseModel] struct {
 
 // FindByPK retrieves all items with a specific partition key
 func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error) {
+	// The whole keyed partition must be read to return every item, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var results []T
 
-	err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk).
-		All(&results)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []T) (bool, error) {
+			results = append(results, page...)
+			return false, nil
+		},
+	)
 
 	// Track cost if cost service is available
 	if r.costService != nil {

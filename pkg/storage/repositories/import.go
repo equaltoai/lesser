@@ -208,17 +208,33 @@ func (r *ImportRepository) CreateImportCostTracking(_ context.Context, costTrack
 
 // GetImportCostTracking retrieves import cost tracking records for an import
 func (r *ImportRepository) GetImportCostTracking(_ context.Context, importID string) ([]*models.ImportCostTracking, error) {
-	var costTrackingRecords []*models.ImportCostTracking
+	// The whole keyed IMPORT_COST#<importID> partition must be read to return
+	// every cost record, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var items []models.ImportCostTracking
 
 	query := r.db.Model(&models.ImportCostTracking{}).
 		Where("PK", "=", fmt.Sprintf("IMPORT_COST#%s", importID))
 
-	err := query.All(&costTrackingRecords)
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []models.ImportCostTracking) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error("failed to get import cost tracking",
 			zap.String("import_id", importID),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "import cost tracking", "cost tracking query")
+	}
+
+	// Convert to pointer slice (callers read fields only; pointer addresses differ)
+	costTrackingRecords := make([]*models.ImportCostTracking, len(items))
+	for i := range items {
+		costTrackingRecords[i] = &items[i]
 	}
 
 	return costTrackingRecords, nil

@@ -97,13 +97,22 @@ func (r *AccountRepository) searchAllActors(ctx context.Context, query string, l
 func (r *AccountRepository) searchFollowedActors(ctx context.Context, username, query string, limit int, offset int) []*activitypub.Actor {
 	var actors []*activitypub.Actor
 
-	// Get all following relationships
+	// Get all following relationships. The keyed partition read is a bounded
+	// page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion (the in-memory offset/limit selection runs over the collected
+	// rows, unchanged).
 	var follows []models.Follow
 
-	err := r.db.WithContext(ctx).Model(&models.Follow{}).
-		Where("PK", "=", fmt.Sprintf("FOLLOWER#%s", username)).
-		Where("SK", "BEGINS_WITH", "FOLLOWS#").
-		All(&follows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Follow{}).
+			Where("PK", "=", fmt.Sprintf("FOLLOWER#%s", username)).
+			Where("SK", "BEGINS_WITH", "FOLLOWS#"),
+		500, 100,
+		func(page []models.Follow) (bool, error) {
+			follows = append(follows, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get following for search",
@@ -459,10 +468,18 @@ func (r *AccountRepository) getFollowingUsernames(ctx context.Context, username 
 	var follows []models.Follow
 	usernames := make([]string, 0)
 
-	err := r.db.WithContext(ctx).Model(&models.Follow{}).
-		Where("PK", "=", fmt.Sprintf("FOLLOWER#%s", username)).
-		Where("SK", "BEGINS_WITH", "FOLLOWS#").
-		All(&follows)
+	// The keyed partition read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Follow{}).
+			Where("PK", "=", fmt.Sprintf("FOLLOWER#%s", username)).
+			Where("SK", "BEGINS_WITH", "FOLLOWS#"),
+		500, 100,
+		func(page []models.Follow) (bool, error) {
+			follows = append(follows, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get following usernames",
