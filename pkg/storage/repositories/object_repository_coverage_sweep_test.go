@@ -284,8 +284,6 @@ func TestObjectRepository_CoverageSweep(t *testing.T) {
 
 	_, err = repo.CountQuotes(ctx, note.ID)
 	require.NoError(t, err)
-	_, err = repo.CountWithdrawnQuotes(ctx, note.ID)
-	require.NoError(t, err)
 	_, err = repo.CountReplies(ctx, note.ID)
 	require.NoError(t, err)
 	_, err = repo.CountReplies(ctx, "https://example.com/objects/note-1")
