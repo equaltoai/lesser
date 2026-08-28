@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -296,6 +297,7 @@ func TestBatchN4_GetHashtagStats_CapExhaustionFailsClosed(t *testing.T) {
 	_, err := repo.GetHashtagStats(ctx, "#golang")
 	require.Error(t, err)
 	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestBatchN4_GetHashtagStats_CapExhaustionStillFailsClosed(t *testing.T) {
@@ -327,9 +329,10 @@ func TestBatchN4_GetHashtagStats_CapExhaustionStillFailsClosed(t *testing.T) {
 	_, err := repo.GetHashtagStats(ctx, "#golang")
 	require.Error(t, err)
 	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
 }
 
-func TestBatchN4_GetCommunityNoteVotes_OrdinaryErrorKeepsSwallow(t *testing.T) {
+func TestBatchN4_GetCommunityNoteVotes_CapExhaustionFirstPageFailsClosed(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(dynamormmocks.MockDB)
 	mockQuery := new(dynamormmocks.MockQuery)
@@ -345,6 +348,28 @@ func TestBatchN4_GetCommunityNoteVotes_OrdinaryErrorKeepsSwallow(t *testing.T) {
 	_, err := repo.GetCommunityNoteVotes(ctx, "n1")
 	require.Error(t, err)
 	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN4_GetCommunityNoteVotes_IsNotFoundSwallowsToEmpty(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.CommunityNoteVote")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "NOTE#n1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BEGINS_WITH", "VOTE#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	// An ordinary not-found walk error keeps the pre-existing swallow
+	// (community_note_repository.go:390-391): no votes for this note, success.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CommunityNoteVote")).Return(nil, dynamormErrors.ErrItemNotFound).Once()
+
+	repo := NewCommunityNoteRepository(mockDB, "test-table", zap.NewNop(), nil)
+	votes, err := repo.GetCommunityNoteVotes(ctx, "n1")
+	require.NoError(t, err)
+	require.Empty(t, votes)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestBatchN4_ConversationGetMutedConversations_WalkPreservesExpiryFilter(t *testing.T) {
@@ -372,6 +397,7 @@ func TestBatchN4_ConversationGetMutedConversations_WalkPreservesExpiryFilter(t *
 	ids, err := repo.GetMutedConversations(ctx, "alice")
 	require.NoError(t, err)
 	require.Equal(t, []string{"c2"}, ids)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestBatchN4_GetAccountPreferences_WalkPreservesBooleanParsing(t *testing.T) {
@@ -399,6 +425,7 @@ func TestBatchN4_GetAccountPreferences_WalkPreservesBooleanParsing(t *testing.T)
 	require.Equal(t, true, prefs["a"])
 	require.Equal(t, false, prefs["b"])
 	require.Equal(t, "hello", prefs["c"])
+	mockQuery.AssertExpectations(t)
 }
 
 func TestBatchN4_ListConversationParticipantStates_WalkConversion(t *testing.T) {
@@ -422,6 +449,7 @@ func TestBatchN4_ListConversationParticipantStates_WalkConversion(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, interfaces.UserConversationStateContract{ViewerID: "u1", ConversationID: "conv-1"}, *items[0])
+	mockQuery.AssertExpectations(t)
 }
 
 func TestBatchN4_CreateFeaturedTag_StatisticsErrorPropagates(t *testing.T) {
@@ -449,4 +477,207 @@ func TestBatchN4_CreateFeaturedTag_StatisticsErrorPropagates(t *testing.T) {
 	err := repo.CreateFeaturedTag(ctx, &storage.FeaturedTag{Username: "alice", Name: "golang"})
 	require.Error(t, err)
 	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+// Multi-page accumulation pin: the walk must APPEND every page into the
+// collected slice — a `collected = page` overwrite mutation truncates to the
+// last page and this test dies on require.Len(votes, 1000).
+func TestBatchN4_GetCommunityNoteVotes_MultiPageAccumulationAppends(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.CommunityNoteVote")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "NOTE#n1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BEGINS_WITH", "VOTE#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	fullPage := func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.CommunityNoteVote)
+		*out = make([]models.CommunityNoteVote, 500)
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CommunityNoteVote")).Run(fullPage).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Once()
+	mockQuery.On("Cursor", "c").Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CommunityNoteVote")).Run(fullPage).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewCommunityNoteRepository(mockDB, "test-table", zap.NewNop(), nil)
+	votes, err := repo.GetCommunityNoteVotes(ctx, "n1")
+	require.NoError(t, err)
+	require.Len(t, votes, 1000)
+	mockQuery.AssertExpectations(t)
+}
+
+// MAJOR-1 rework (PR #1493 attack, review 5047884667): GetWalletByAddress's
+// walk error previously hit the not-found demote which passes nil to
+// HandleGetError and returns (nil, nil) — "no wallet, success". Cap exhaustion
+// must propagate as a real error.
+func TestBatchN4_GetWalletByAddress_CapExhaustionPropagates(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "WALLET#ethereum#0xabc").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BEGINS_WITH", "USER#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewAuthRepository(mockDB, "test-table", zap.NewNop())
+	cred, err := repo.GetWalletByAddress(ctx, "ethereum", "0xAbC")
+	require.Nil(t, cred)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+// MAJOR-1 rework: GetAlertStats's three count-family loops previously logged
+// and continued on ANY error, returning zeroed counters as a valid stats
+// object. Cap exhaustion must fail the whole call closed.
+func TestBatchN4_GetAlertStats_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.Alert")).Return(mockQuery).Maybe()
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+
+	// The first status count (firing) caps out: the statuses loop's sentinel
+	// split must fail GetAlertStats closed instead of returning a partial stats
+	// object with zeroed counters.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Alert")).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewAlertRepository(mockDB, "test-table", zap.NewNop(), nil)
+	stats, err := repo.GetAlertStats(ctx, time.Now().Add(-time.Hour))
+	require.Nil(t, stats)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+// MAJOR-1 rework: GetOAuthSessionByState replaced the walk error with a
+// synthesized "OAuth session not found for state". The sentinel must propagate
+// distinguishably.
+func TestBatchN4_GetOAuthSessionByState_CapExhaustionPropagates(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.OAuthAuthSession")).Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2PK", "=", "OAUTH_STATE#state-1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.OAuthAuthSession")).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewOAuthSessionRepository(mockDB, "test-table", zap.NewNop(), nil)
+	session, err := repo.GetOAuthSessionByState(ctx, "state-1")
+	require.Nil(t, session)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+// MAJOR-2 rework: GetUserOAuthSessions at limit==0 walks the whole keyed gsi1
+// partition (page-capped, fail-closed) instead of flooring at a single 500-row
+// page — CountUserOAuthSessions above 500 was silently under-reported.
+func TestBatchN4_GetUserOAuthSessions_WalkAtZero_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.OAuthAuthSession")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "USER_OAUTH#user-1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.OAuthAuthSession")).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewOAuthSessionRepository(mockDB, "test-table", zap.NewNop(), nil)
+	sessions, err := repo.GetUserOAuthSessions(ctx, "user-1", 0)
+	require.Nil(t, sessions)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+// MAJOR-2 rework: the limit==0 walk accumulates across pages — a floor that
+// issues a single Limit(500) read would return 500 rows here and die on
+// require.Len(sessions, 1000); a `sessions = page` overwrite dies too.
+func TestBatchN4_GetUserOAuthSessions_WalkAtZero_MultiPageAccumulation(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.OAuthAuthSession")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "USER_OAUTH#user-1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	validPage := func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.OAuthAuthSession)
+		*out = make([]models.OAuthAuthSession, 500)
+		for i := range *out {
+			(*out)[i].ExpiresAt = time.Now().Add(time.Hour).Unix()
+		}
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.OAuthAuthSession")).Run(validPage).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Once()
+	mockQuery.On("Cursor", "c").Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.OAuthAuthSession")).Run(validPage).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewOAuthSessionRepository(mockDB, "test-table", zap.NewNop(), nil)
+	sessions, err := repo.GetUserOAuthSessions(ctx, "user-1", 0)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1000)
+	mockQuery.AssertExpectations(t)
+}
+
+// MAJOR-1 rework: searchFollowedActors gained an error return; cap exhaustion
+// must propagate through SearchActors instead of returning a partial/empty
+// follow graph as success.
+func TestBatchN4_SearchActors_CapExhaustionPropagates(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Follow")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "FOLLOWER#alice").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BEGINS_WITH", "FOLLOWS#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Follow")).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	actors, err := repo.SearchActors(ctx, "bo", 10, 0, true, "alice")
+	require.Nil(t, actors)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+// MAJOR-1 rework: getFollowingUsernames gained an error return; cap exhaustion
+// must propagate through GetAccountSuggestions instead of returning suggestions
+// computed over an empty/partial following set.
+func TestBatchN4_GetAccountSuggestions_CapExhaustionPropagates(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Follow")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "FOLLOWER#alice").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BEGINS_WITH", "FOLLOWS#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Follow")).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	suggestions, err := repo.GetAccountSuggestions(ctx, "alice", 5)
+	require.Nil(t, suggestions)
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
 }

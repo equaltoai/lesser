@@ -222,7 +222,7 @@ func TestEnhancedBaseRepository_round09_core_paths(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", "PK", "=", "PK#db").Return(mockQuery)
 		mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery)
-		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+		mockQuery.On("Limit", 500).Return(mockQuery)
 		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*testEBRModel)
 			*dest = []*testEBRModel{{PK: "PK#db", SK: "SK#1", ID: "1"}}

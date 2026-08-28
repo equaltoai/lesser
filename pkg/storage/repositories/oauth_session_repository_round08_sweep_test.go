@@ -86,7 +86,7 @@ func TestRound08_OAuthSessionRepository_CoverageSweep(t *testing.T) {
 		t.Run("GetUserOAuthSessions without limit and query error", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+			mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("query failed")).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewOAuthSessionRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)

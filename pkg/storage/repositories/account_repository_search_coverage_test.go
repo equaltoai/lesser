@@ -48,7 +48,7 @@ func TestAccountRepository_SearchRepositoryCoverageSweep(t *testing.T) {
 	_, _ = repo.GetActiveUsers(ctx, baseTime.Add(-1*time.Hour), 2)
 	_, _ = repo.GetInactiveUsers(ctx, baseTime.Add(-24*time.Hour), 2)
 
-	_ = repo.getFollowingUsernames(ctx, "user-1")
+	_, _ = repo.getFollowingUsernames(ctx, "user-1")
 	_ = extractDomainFromActorID("https://mastodon.social/users/alice")
 
 	mockDB.AssertExpectations(t)
@@ -316,7 +316,7 @@ func TestAccountRepository_SearchFollowedActors_Branches(t *testing.T) {
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-	actors := repo.searchFollowedActors(ctx, "alice", "bo", 10, 0)
+	actors, _ := repo.searchFollowedActors(ctx, "alice", "bo", 10, 0)
 	require.Len(t, actors, 1)
 	require.Equal(t, "bob", actors[0].PreferredUsername)
 }
@@ -329,11 +329,11 @@ func TestAccountRepository_FriendOfFriendSuggestions_MutualsAndEmptyFollowing(t 
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Once()
 		setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-		suggestions := repo.getFriendOfFriendSuggestions(ctx, "alice", map[string]bool{}, 10)
+		suggestions, _ := repo.getFriendOfFriendSuggestions(ctx, "alice", map[string]bool{}, 10)
 		require.Empty(t, suggestions)
 	})
 
@@ -373,7 +373,8 @@ func TestAccountRepository_FriendOfFriendSuggestions_MutualsAndEmptyFollowing(t 
 		setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-		suggestions := repo.getFriendOfFriendSuggestions(ctx, "alice", map[string]bool{}, 10)
+		suggestions, err := repo.getFriendOfFriendSuggestions(ctx, "alice", map[string]bool{}, 10)
+		require.NoError(t, err)
 		require.Len(t, suggestions, 1)
 		require.Equal(t, "dave", suggestions[0].Actor.PreferredUsername)
 	})
