@@ -215,3 +215,41 @@ func TestBatchCloser_SearchStatuses_ZeroLimitFloorsAndKeepsWalking(t *testing.T)
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
+
+// One page holding more matches than the caller's limit must be trimmed to
+// exactly limit: page 1 yields 5 matches with limit=2, so the walk stops after
+// that single page but the result is cut to the 2 newest matches. A mutation
+// that drops the trim returns 5 items and dies on require.Len; the restored
+// HasMore semantics (len(result) == limit → true, i.e. the walk collected >=
+// limit matches so more may exist beyond the page) are pinned by require.True.
+func TestBatchCloser_SearchStatuses_OvershootTrimmedToLimit(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.Status")).Return(mockQuery)
+	searchStatusesChain(t, mockQuery, "hello")
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.Status)
+		*out = []models.Status{
+			{StatusID: "s1", Content: "hello 1"},
+			{StatusID: "s2", Content: "hello 2"},
+			{StatusID: "s3", Content: "hello 3"},
+			{StatusID: "s4", Content: "hello 4"},
+			{StatusID: "s5", Content: "hello 5"},
+		}
+	}).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Once()
+
+	repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
+	res, err := repo.SearchStatuses(ctx, "hello", interfaces.PaginationOptions{Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 2)
+	require.Equal(t, "s1", res.Items[0].StatusID)
+	require.Equal(t, "s2", res.Items[1].StatusID)
+	require.Equal(t, "", res.NextCursor)
+	require.True(t, res.HasMore)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}

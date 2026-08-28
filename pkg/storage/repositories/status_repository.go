@@ -1370,8 +1370,10 @@ func (r *StatusRepository) GetConversationThreadReverse(ctx context.Context, con
 // "{published_timestamp}#{status_id}"), walked newest-first in bounded pages
 // (Limit(500)/page via AllPaginated, 100-page cap, fail-closed
 // errBoundedPageCapExceeded on exhaustion) with the per-page Content CONTAINS
-// and Deleted filters on the chain. The result keeps the pre-existing one-page
-// contract — at most opts.Limit matches with NextCursor "" hardcoded — so
+// and Deleted filters on the chain. The walk stops as soon as limit matches are
+// collected and the final page's overshoot is trimmed, so the result keeps the
+// pre-existing one-page contract — at most limit matches (the sanitized
+// opts.Limit) with NextCursor "" hardcoded and HasMore = len(result) == limit —
 // bounding the walk is not a contract regression (callers could never page
 // beyond one page today).
 func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
@@ -1393,6 +1395,15 @@ func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opt
 	)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "search by content")
+	}
+
+	// Trim the final page's overshoot to the caller's limit: the walk stops as
+	// soon as limit matches are collected, but one page can hold more matches
+	// than the limit. The legacy .Scan path auto-paginated and trimmed to
+	// exactly limit, so the trim restores HasMore = len(result) == limit (true
+	// exactly when the walk collected >= limit matches, i.e. more may exist).
+	if len(statuses) > limit {
+		statuses = statuses[:limit]
 	}
 
 	// Convert to pointer slice
