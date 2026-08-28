@@ -207,7 +207,6 @@ type FilterRepository interface {
 	CreateFilter(ctx context.Context, filter *models.Filter) error
 	GetFilter(ctx context.Context, filterID string) (*models.Filter, error)
 	UpdateFilter(ctx context.Context, filter *models.Filter) error
-	DeleteFilter(ctx context.Context, filterID string) error
 
 	// User filter management
 	GetUserFilters(ctx context.Context, username string) ([]*models.Filter, error)
@@ -215,12 +214,10 @@ type FilterRepository interface {
 
 	// Filter keyword operations
 	AddFilterKeyword(ctx context.Context, keyword *models.FilterKeyword) error
-	RemoveFilterKeyword(ctx context.Context, keywordID string) error
 	GetFilterKeywords(ctx context.Context, filterID string) ([]*models.FilterKeyword, error)
 
 	// Filter status operations
 	AddFilterStatus(ctx context.Context, filterStatus *models.FilterStatus) error
-	RemoveFilterStatus(ctx context.Context, filterStatusID string) error
 	GetFilterStatuses(ctx context.Context, filterID string) ([]*models.FilterStatus, error)
 
 	// Content filtering evaluation

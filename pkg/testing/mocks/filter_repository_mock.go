@@ -43,12 +43,6 @@ func (m *MockFilterRepository) UpdateFilter(ctx context.Context, filter *models.
 	return args.Error(0)
 }
 
-// DeleteFilter mocks the DeleteFilter method
-func (m *MockFilterRepository) DeleteFilter(ctx context.Context, filterID string) error {
-	args := m.Called(ctx, filterID)
-	return args.Error(0)
-}
-
 // ===== Filter Query Operations =====
 
 // GetUserFilters mocks the GetUserFilters method
@@ -77,12 +71,6 @@ func (m *MockFilterRepository) AddFilterKeyword(ctx context.Context, keyword *mo
 	return args.Error(0)
 }
 
-// RemoveFilterKeyword mocks the RemoveFilterKeyword method
-func (m *MockFilterRepository) RemoveFilterKeyword(ctx context.Context, keywordID string) error {
-	args := m.Called(ctx, keywordID)
-	return args.Error(0)
-}
-
 // GetFilterKeywords mocks the GetFilterKeywords method
 func (m *MockFilterRepository) GetFilterKeywords(ctx context.Context, filterID string) ([]*models.FilterKeyword, error) {
 	args := m.Called(ctx, filterID)
@@ -97,12 +85,6 @@ func (m *MockFilterRepository) GetFilterKeywords(ctx context.Context, filterID s
 // AddFilterStatus mocks the AddFilterStatus method
 func (m *MockFilterRepository) AddFilterStatus(ctx context.Context, filterStatus *models.FilterStatus) error {
 	args := m.Called(ctx, filterStatus)
-	return args.Error(0)
-}
-
-// RemoveFilterStatus mocks the RemoveFilterStatus method
-func (m *MockFilterRepository) RemoveFilterStatus(ctx context.Context, filterStatusID string) error {
-	args := m.Called(ctx, filterStatusID)
 	return args.Error(0)
 }
 
