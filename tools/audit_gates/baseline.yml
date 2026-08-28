@@ -66,8 +66,26 @@ goInsecureSkipVerify:
 # exhaustion fails the cascade closed — never a silent partial delete);
 # object_repository.go getTombstonesByGSI (.Scan → keyed .All on the GSI with
 # the sort-key cursor range kept as a key condition, zero-limit floored to the
-# query-utils default 50 so Limit(n>0) is always issued). The S2 (moderation/ML)
-# and S3 (analytics/search) keyed .Scan leftovers remain baselined below.
+# query-utils default 50 so Limit(n>0) is always issued). The S3
+# (analytics/search) keyed .Scan leftovers remain baselined below.
+# Wave part 2 (batch S2, umbrella #1469, issue #1498, 2026-08-28) eliminated
+# the moderation/ML keyed-filter .Scan class (all 8 of the 9 entries this batch
+# carried) plus the key-less GetFlag All: moderation_repository.go GetAuditLogs
+# and getAuditLogsByGSI (.Scan → keyed .All on the AUDIT_LOG partition / the
+# GSI with the SK > cursor range kept as a key condition, both with the
+# query-utils limit clamp — default 50 / hard max 100 — so Limit(n>0) is always
+# issued), moderation_ml_repository.go ListSamplesByLabel/ListSamplesByReviewer/
+# ListEffectivenessMetricsByPattern/ListEffectivenessMetricsByPeriod (.Scan →
+# keyed .All, existing <=0 floors preserved), moderation_ml_repository_ext.go
+# GetPredictionsByModelVersion/GetPredictionsByReviewStatus (.Scan → keyed .All
+# with the gsi1/gsi2 SK time-range kept as key conditions, added a <=0 floor of
+# 100 with NO max clamp — the internal caller pkg/services/moderationml
+# computeEffectiveness passes 1000 and expects the full reviewed-prediction set
+# for the period, the GetActiveBudgets precedent), and moderation_repository.go
+# GetFlag (key-less SK LIKE + Limit(10) All → exact keyed point read on the new
+# additive Flag GSI3 listing key FLAGS#ALL/ID#<flag id> — pre-existing gsi3
+# slot, batch-F precedent; legacy flag rows written before the key shape are
+# not findable until next written, documented fail-closed change).
 # Wave part 2 (batch F, umbrella #1469, 2026-08-27) eliminated all 22
 # federation_repository.go sites: 21 keyed partition/GSI queries converted
 # `.Scan` → `.All` (instances, costs, health, nodes, clusters, connections,
@@ -112,9 +130,6 @@ goDynamoDBQueryScan:
   pkg/cost/dynamorm_tracker.go: 1
   pkg/storage/repositories/analytics_repository.go: 2
   pkg/storage/repositories/hashtag_repository.go: 1
-  pkg/storage/repositories/moderation_ml_repository.go: 4
-  pkg/storage/repositories/moderation_ml_repository_ext.go: 2
-  pkg/storage/repositories/moderation_repository.go: 2
 
 # Exact occurrences of partition-key prefix/range predicates in `.Where(...)` (tracked by count per file).
 # Partition keys must be queried by equality; prefix/range predicates force scans.
@@ -202,11 +217,15 @@ goDynamoDBBadPKWhere:
 #   GetPopularQueries + ResetBudgets (deleted — zero callers), search_repository.go
 #   PruneOldSuggestions + UnindexStatus (deleted — zero callers; wrapper forwards
 #   dropped).
-# - moderation_repository.go GetFlag (1) REMAINS baselined but is NOT latent:
-#   it is reached from the event path via DeleteFlag ← cmd/activity-processor
-#   (flag-undo handling). It is already bounded (Limit 10 on the SK LIKE
-#   suffix lookup — no existing index serves a flag-ID lookup without the
-#   object key) and stays for the request/event-path batch.
+# - moderation_repository.go GetFlag (1) was eliminated in wave part 2 batch S2
+#   (umbrella #1469, issue #1498, 2026-08-28): the key-less SK LIKE + Limit(10)
+#   All — reached from the event path via DeleteFlag ← cmd/activity-processor
+#   (flag-undo handling) — is now an exact keyed point read on the additive
+#   Flag GSI3 listing key (FLAGS#ALL / ID#<flag id>, pre-existing gsi3 slot,
+#   batch-F FED_EDGES#ALL precedent, populated by Flag.UpdateKeys on every
+#   write). Legacy flag rows written before the key shape existed are not
+#   findable by GetFlag until the flag is next written (documented fail-closed
+#   change; see docs/architecture/dynamodb-scan-inventory.md).
 # - The other 8 calls are pre-existing unkeyed scans baselined for tracking,
 #   scheduled for elimination under the same umbrella issue (disposition:
 #   "elimination pending — wave #1469", NOT sanctioned).
@@ -215,7 +234,6 @@ goDynamoDBAllNoKey:
   pkg/storage/repositories/filter_repository.go: 1
   pkg/storage/repositories/hashtag_trending_engine.go: 1
   pkg/storage/repositories/instance_counts.go: 5
-  pkg/storage/repositories/moderation_repository.go: 1
   pkg/storage/repositories/object_repository.go: 1
 
 # Key-less TableTheory `Count(...)` on freshly-built query chains, which
