@@ -41,8 +41,12 @@ goInsecureSkipVerify:
 # (newest-first, per-page Content CONTAINS + Deleted filters, Limit(500)/page,
 # 100-page cap, fail-closed errBoundedPageCapExceeded on exhaustion; one-page
 # contract preserved). GSI7 reachability finding recorded in the inventory doc:
-# the URL index is not populated on the write path, so the LinkTimeline parity
-# resolver stays on the walk. No request-path .Scan sites remain baselined.
+# GSI7 IS populated with materialized remote Notes' object IDs (URLs = [note.ID]
+# from BuildCanonicalRemoteStatus, persisted via CreateStatus/UpdateStatus on the
+# inbound Create/Update paths), never with content links extracted from status
+# text — an exact keyed GSI7 lookup still cannot answer the LinkTimeline
+# content-link case, so the parity resolver stays on the recency walk
+# (disposition UNCHANGED). No request-path .Scan sites remain baselined.
 # Wave part 2 (batch F, umbrella #1469, 2026-08-27) eliminated all 22
 # federation_repository.go sites: 21 keyed partition/GSI queries converted
 # `.Scan` → `.All` (instances, costs, health, nodes, clusters, connections,
