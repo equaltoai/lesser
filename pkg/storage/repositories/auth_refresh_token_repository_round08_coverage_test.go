@@ -155,7 +155,7 @@ func TestRound08_AuthRefreshTokenRepository_RotationAndRevocation(t *testing.T) 
 		}).Return(nil).Once()
 
 		// Ensure GetTokensByFamily returns empty so RevokeTokenFamily short-circuits before any transaction.
-		mockQuery.On("All", mock.Anything).Return(nil).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		setupPermissiveRound08Mocks(mockInner, mockQuery, nil, baseTime)
 
@@ -203,7 +203,7 @@ func TestRound08_AuthRefreshTokenRepository_RotationAndRevocation(t *testing.T) 
 		t.Run("empty -> no-op", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Return(nil).Once()
+			mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewAuthRefreshTokenRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)
@@ -219,12 +219,12 @@ func TestRound08_AuthRefreshTokenRepository_RotationAndRevocation(t *testing.T) 
 			mockInner.On("WithContext", mock.Anything).Return(mockInner).Maybe()
 			mockInner.On("Model", mock.Anything).Return(mockQuery).Maybe()
 			mockInner.On("TransactWrite", mock.Anything, mock.Anything).Return(errors.New("update failed")).Once()
-			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+			mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 				tokens := args.Get(0).(*[]models.AuthRefreshToken)
 				*tokens = append(*tokens,
 					models.AuthRefreshToken{Token: "t1", UserID: "user-1", Family: "family-1", CreatedAt: baseTime.Unix(), ExpiresAt: baseTime.Add(time.Hour).Unix()},
 				)
-			}).Return(nil).Once()
+			}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 			setupPermissiveRound08Mocks(mockInner, mockQuery, nil, baseTime)
 
@@ -244,17 +244,17 @@ func TestRound08_AuthRefreshTokenRepository_RotationAndRevocation(t *testing.T) 
 		mockInner.On("Transaction", mock.Anything).Return(nil).Maybe()
 
 		// RevokeUserTokens not found.
-		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
 		// GetTokensByUser: not found -> empty slice.
-		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
 		// GetTokensByFamily: return two tokens.
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(0).(*[]models.AuthRefreshToken)
 			*out = append(*out,
 				models.AuthRefreshToken{Token: "active", UserID: "user-1", Family: "family-1", CreatedAt: baseTime.Unix(), ExpiresAt: baseTime.Add(time.Hour).Unix(), Revoked: false},
 				models.AuthRefreshToken{Token: "revoked", UserID: "user-1", Family: "family-1", CreatedAt: baseTime.Unix(), ExpiresAt: baseTime.Add(time.Hour).Unix(), Revoked: true},
 			)
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		setupPermissiveRound08Mocks(mockInner, mockQuery, nil, baseTime)
 

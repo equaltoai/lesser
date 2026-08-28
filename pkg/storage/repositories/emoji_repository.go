@@ -499,19 +499,33 @@ func (r *EmojiRepository) calculateSearchScore(model *models.EmojiModel, query s
 
 // queryEmojiGSI is a helper method for querying GSI with correct field names
 func (r *EmojiRepository) queryEmojiGSI(ctx context.Context, indexName, pkField, pkValue string, limit int) ([]*models.EmojiModel, error) {
-	var results []*models.EmojiModel
-
 	// Create query
 	query := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
 		Index(indexName).
 		Where(pkField, "=", pkValue)
 
+	var results []*models.EmojiModel
+	var err error
 	if limit > 0 {
-		query = query.Limit(limit)
+		err = query.Limit(limit).All(&results)
+	} else {
+		// Wave #1469: limit <= 0 (GetCustomEmojis / GetCustomEmojisByCategory /
+		// SearchEmojis, which need the whole keyed partition for their post-read
+		// filtering and scoring) previously skipped Limit entirely — an
+		// unbounded keyed read. The whole partition is now read via a bounded
+		// page walk (500/page, 100-page cap, fail-closed on exhaustion).
+		var items []models.EmojiModel
+		err = walkKeyedPages(query, 500, 100, func(page []models.EmojiModel) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		})
+		if err == nil {
+			results = make([]*models.EmojiModel, len(items))
+			for i := range items {
+				results[i] = &items[i]
+			}
+		}
 	}
-
-	// Execute query
-	err := query.All(&results)
 	if err != nil {
 		r.logger.Error("failed to query emoji GSI",
 			zap.Error(err),

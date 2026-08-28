@@ -282,7 +282,8 @@ func TestAgentAccessLeaseRepository_ReadPaths(t *testing.T) {
 		mockDB.On("Model", mock.AnythingOfType("*models.AgentAccessLease")).Return(mockQuery).Once()
 		mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent-1").Return(mockQuery).Once()
 		mockQuery.On("Where", "SK", "BEGINS_WITH", "LEASE#").Return(mockQuery).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AgentAccessLease")).
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AgentAccessLease")).
 			Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*[]models.AgentAccessLease)
 				*dest = []models.AgentAccessLease{
@@ -290,7 +291,7 @@ func TestAgentAccessLeaseRepository_ReadPaths(t *testing.T) {
 					{ID: "lease-2", Username: "agent-1"},
 				}
 			}).
-			Return(nil).Once()
+			Return(&dynamormcore.PaginatedResult{HasMore: false}, nil).Once()
 
 		repo := NewAgentAccessLeaseRepository(mockDB, "table", zap.NewNop())
 		leases, err := repo.ListLeases(context.Background(), "agent-1")
@@ -342,7 +343,8 @@ func TestAgentAccessLeaseRepository_ReadPaths(t *testing.T) {
 			mockDB.On("Model", mock.AnythingOfType("*models.AgentAccessLease")).Return(mockQuery).Once()
 			mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent-1").Return(mockQuery).Once()
 			mockQuery.On("Where", "SK", "BEGINS_WITH", "LEASE#").Return(mockQuery).Once()
-			mockQuery.On("All", mock.AnythingOfType("*[]models.AgentAccessLease")).Return(errors.New("boom")).Once()
+			mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+			mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AgentAccessLease")).Return(nil, errors.New("boom")).Once()
 
 			repo := NewAgentAccessLeaseRepository(mockDB, "table", zap.NewNop())
 			_, err := repo.ListLeases(context.Background(), "agent-1")

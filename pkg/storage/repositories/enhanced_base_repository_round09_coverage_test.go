@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -216,16 +217,16 @@ func TestEnhancedBaseRepository_round09_core_paths(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, out, 1)
 
-		// cache miss: FindByPK hits DB
+		// cache miss: FindByPK hits DB (bounded page walk, wave #1469)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", "PK", "=", "PK#db").Return(mockQuery)
 		mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery)
-		mockQuery.On("Limit", 100).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("Limit", 500).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*testEBRModel)
 			*dest = []*testEBRModel{{PK: "PK#db", SK: "SK#1", ID: "1"}}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		out, err = repo.FindWithCache(ctx, "PK#db", 0)
 		require.NoError(t, err)
@@ -243,9 +244,12 @@ func TestEnhancedBaseRepository_round09_core_paths(t *testing.T) {
 		require.NoError(t, repo.GetWithCache(ctx, "pk", "sk", &result, 0))
 		assert.Equal(t, "x", result.ID)
 
-		// CountWhere: valid PK and missing PK
+		// CountWhere: valid PK and missing PK (Count walks the keyed partition)
 		mockQuery.On("Where", "PK", "=", "PK#count").Return(mockQuery)
-		mockQuery.On("Count").Return(int64(3), nil).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*testEBRModel)
+			*dest = []*testEBRModel{{PK: "PK#count", SK: "SK#1", ID: "1"}, {PK: "PK#count", SK: "SK#2", ID: "2"}, {PK: "PK#count", SK: "SK#3", ID: "3"}}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		n, err := repo.CountWhere(ctx, map[string]interface{}{"PK": "PK#count"})
 		require.NoError(t, err)
 		assert.EqualValues(t, 3, n)

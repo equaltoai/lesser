@@ -644,15 +644,25 @@ func (r *SocialRepository) GetActorAnnounces(ctx context.Context, actorID string
 
 // CountObjectAnnounces returns the total number of announces for an object
 func (r *SocialRepository) CountObjectAnnounces(ctx context.Context, objectID string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.Announce{}).
-		Where("PK", "=", fmt.Sprintf("OBJECT#%s#ANNOUNCES", objectID)).
-		Count()
+	// The whole keyed OBJECT#<id>#ANNOUNCES partition must be read to count
+	// every announce, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var announceModels []models.Announce
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Announce{}).
+			Where("PK", "=", fmt.Sprintf("OBJECT#%s#ANNOUNCES", objectID)),
+		500, 100,
+		func(page []models.Announce) (bool, error) {
+			announceModels = append(announceModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityAnnounce, "count")
 	}
 
-	return int(count), nil
+	return len(announceModels), nil
 }
 
 // CascadeDeleteAnnounces deletes all announces for an object
@@ -1153,15 +1163,25 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 
 // CountUserPinnedStatuses counts how many statuses a user has pinned
 func (r *SocialRepository) CountUserPinnedStatuses(ctx context.Context, username string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.StatusPin{}).
-		Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)).
-		Count()
+	// The whole keyed user-pins partition must be read to count every pin, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
+	var pinModels []models.StatusPin
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.StatusPin{}).
+			Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)),
+		500, 100,
+		func(page []models.StatusPin) (bool, error) {
+			pinModels = append(pinModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityStatusPin, "count")
 	}
 
-	return int(count), nil
+	return len(pinModels), nil
 }
 
 // ================== Helper Functions ==================

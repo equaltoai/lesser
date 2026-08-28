@@ -139,8 +139,6 @@ func (r *PatternRepository) GetPattern(ctx context.Context, patternID string) (*
 
 // GetPatterns retrieves patterns based on filter criteria
 func (r *PatternRepository) GetPatterns(ctx context.Context, category string, activeOnly bool) ([]*models.ModerationPattern, error) {
-	patterns := []*models.ModerationPattern{}
-
 	// Build filters for the pattern listing
 	filters := make(map[string]interface{})
 	if category != "" {
@@ -164,13 +162,29 @@ func (r *PatternRepository) GetPatterns(ctx context.Context, category string, ac
 		query = query.Filter(field, "=", value)
 	}
 
-	err := query.All(&patterns)
+	// The whole keyed gsi3 MODERATION_PATTERNS#ALL partition must be read to
+	// return every matching pattern, so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	// The filter loop above stays on the chain and applies per page.
+	var patternModels []models.ModerationPattern
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []models.ModerationPattern) (bool, error) {
+			patternModels = append(patternModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error("failed to get patterns",
 			zap.Error(err),
 			zap.String("category", category),
 			zap.Bool("activeOnly", activeOnly))
 		return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "patterns by filters")
+	}
+	patterns := make([]*models.ModerationPattern, len(patternModels))
+	for i := range patternModels {
+		patterns[i] = &patternModels[i]
 	}
 
 	// Track cost if available

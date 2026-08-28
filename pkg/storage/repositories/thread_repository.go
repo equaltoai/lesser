@@ -110,21 +110,39 @@ func (r *ThreadRepository) SaveThreadNode(ctx context.Context, node *models.Thre
 }
 
 // GetThreadNodes retrieves all nodes for a thread by root status ID
+//
+//nolint:dupl // thread-node and missing-reply reads share the wave #1469 bounded-walk shape by design
 func (r *ThreadRepository) GetThreadNodes(ctx context.Context, rootStatusID string) ([]*models.ThreadNode, error) {
 	pk := fmt.Sprintf("THREAD#%s", rootStatusID)
 
-	// Query all nodes with PK = THREAD#{rootStatusID} and SK begins_with NODE#
-	var nodes []*models.ThreadNode
-	err := r.db.WithContext(ctx).Model(&models.ThreadNode{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "NODE#").
-		All(&nodes)
+	// Query all nodes with PK = THREAD#{rootStatusID} and SK begins_with NODE# —
+	// the whole keyed THREAD#<root> partition must be read to return every node,
+	// so the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
+	var nodeValues []models.ThreadNode
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ThreadNode{}).
+			Where("PK", "=", pk).
+			Where("SK", "begins_with", "NODE#"),
+		500, 100,
+		func(page []models.ThreadNode) (bool, error) {
+			nodeValues = append(nodeValues, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get thread nodes",
 			zap.String("root_status_id", rootStatusID),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get thread nodes for %s: %w", rootStatusID, err)
+	}
+
+	// The walk collects values; re-point them so the caller sees the same
+	// pointer slice shape (callers only read fields).
+	nodes := make([]*models.ThreadNode, len(nodeValues))
+	for i := range nodeValues {
+		nodes[i] = &nodeValues[i]
 	}
 
 	r.logger.Debug("retrieved thread nodes",
@@ -224,21 +242,39 @@ func (r *ThreadRepository) MarkMissingReplies(ctx context.Context, rootStatusID,
 }
 
 // GetMissingReplies retrieves all missing replies for a thread
+//
+//nolint:dupl // thread-node and missing-reply reads share the wave #1469 bounded-walk shape by design
 func (r *ThreadRepository) GetMissingReplies(ctx context.Context, rootStatusID string) ([]*models.MissingReply, error) {
 	pk := fmt.Sprintf("THREAD#%s", rootStatusID)
 
-	// Query all missing replies with PK = THREAD#{rootStatusID} and SK begins_with MISSING#
-	var missing []*models.MissingReply
-	err := r.db.WithContext(ctx).Model(&models.MissingReply{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "MISSING#").
-		All(&missing)
+	// Query all missing replies with PK = THREAD#{rootStatusID} and SK begins_with
+	// MISSING# — the whole keyed THREAD#<root> partition must be read to return
+	// every missing reply, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var missingValues []models.MissingReply
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MissingReply{}).
+			Where("PK", "=", pk).
+			Where("SK", "begins_with", "MISSING#"),
+		500, 100,
+		func(page []models.MissingReply) (bool, error) {
+			missingValues = append(missingValues, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get missing replies",
 			zap.String("root_status_id", rootStatusID),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get missing replies for %s: %w", rootStatusID, err)
+	}
+
+	// The walk collects values; re-point them so the caller sees the same
+	// pointer slice shape (callers only read fields).
+	missing := make([]*models.MissingReply, len(missingValues))
+	for i := range missingValues {
+		missing[i] = &missingValues[i]
 	}
 
 	r.logger.Debug("retrieved missing replies",

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -104,22 +105,36 @@ func TestLikeRepository_round09_create_delete_get_and_counts(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 
-		mockQuery.On("Count").Return(int64(4), nil).Once()
+		// GetLikeCount and GetBoostCount now walk keyed partitions (wave #1469):
+		// the BaseRepository.Count / Announce walks read via AllPaginated.
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Like")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.Like)
+			*dest = []*models.Like{
+				models.NewLike("a1", "s1", "u1"),
+				models.NewLike("a2", "s1", "u1"),
+				models.NewLike("a3", "s1", "u1"),
+				models.NewLike("a4", "s1", "u1"),
+			}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		n, err := repo.GetLikeCount(ctx, "s1")
 		require.NoError(t, err)
 		assert.EqualValues(t, 4, n)
 
-		mockQuery.On("Count").Return(int64(0), fmt.Errorf("boom")).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Like")).Return(nil, fmt.Errorf("boom")).Once()
 		_, err = repo.GetLikeCount(ctx, "s1")
 		assert.Error(t, err)
 
-		mockQuery.On("Count").Return(int64(9), nil).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Announce")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.Announce)
+			*dest = make([]models.Announce, 9)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		n, err = repo.GetBoostCount(ctx, "s1")
 		require.NoError(t, err)
 		assert.EqualValues(t, 9, n)
 
-		mockQuery.On("Count").Return(int64(0), fmt.Errorf("boom")).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Announce")).Return(nil, fmt.Errorf("boom")).Once()
 		_, err = repo.GetBoostCount(ctx, "s1")
 		assert.Error(t, err)
 	})
@@ -302,7 +317,12 @@ func TestLikeRepository_round09_cascade_and_tombstone_paths(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("Count").Return(int64(1), nil).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		// CountForObject walks the keyed partition via AllPaginated (wave #1469).
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Like")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.Like)
+			*dest = []*models.Like{models.NewLike("a1", "o1", "u1")}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		n, err := repo.CountForObject(ctx, "o1")
 		require.NoError(t, err)
 		assert.EqualValues(t, 1, n)
@@ -324,7 +344,11 @@ func TestLikeRepository_round09_cascade_and_tombstone_paths(t *testing.T) {
 		// CountActorLikes + HasLiked (success/error)
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", "gsi1PK", "=", "actor#a1#likes").Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(2), nil).Once()
+		// CountActorLikes walks the keyed gsi1 partition via AllPaginated (wave #1469).
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Like")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.Like)
+			*dest = make([]models.Like, 2)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		count, err := repo.CountActorLikes(ctx, "a1")
 		require.NoError(t, err)
 		assert.EqualValues(t, 2, count)

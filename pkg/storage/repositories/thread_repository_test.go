@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -205,7 +206,8 @@ func TestThreadRepository_GetThreadNodes_MissingReplies(t *testing.T) {
 		mockDB.On("Model", mock.AnythingOfType("*models.ThreadNode")).Return(mockQuery)
 		mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 		mockQuery.On("Where", "SK", "begins_with", "NODE#").Return(mockQuery).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.ThreadNode")).Return(fmt.Errorf("scan failed")).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ThreadNode")).Return(nil, fmt.Errorf("scan failed")).Once()
 
 		nodes, err := repo.GetThreadNodes(context.Background(), "root1")
 		assert.Nil(t, nodes)
@@ -221,7 +223,8 @@ func TestThreadRepository_GetThreadNodes_MissingReplies(t *testing.T) {
 		mockDB.On("Model", mock.AnythingOfType("*models.MissingReply")).Return(mockMissingQuery)
 		mockMissingQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockMissingQuery).Once()
 		mockMissingQuery.On("Where", "SK", "begins_with", "MISSING#").Return(mockMissingQuery).Once()
-		mockMissingQuery.On("All", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("scan failed")).Once()
+		mockMissingQuery.On("Limit", mock.Anything).Return(mockMissingQuery).Maybe()
+		mockMissingQuery.On("AllPaginated", mock.AnythingOfType("*[]models.MissingReply")).Return(nil, fmt.Errorf("scan failed")).Once()
 
 		missing, err := repo.GetMissingReplies(context.Background(), "root1")
 		assert.Nil(t, missing)
@@ -275,26 +278,25 @@ func TestThreadRepository_GetThreadContext_and_helpers(t *testing.T) {
 		dest.RootStatusID = "root1"
 	}).Return(nil).Once()
 
-	// GetThreadNodes query
+	// GetThreadNodes query (keyed walk, wave #1469)
 	mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "begins_with", "NODE#").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.ThreadNode")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.ThreadNode)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ThreadNode")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.ThreadNode)
 		root := models.NewThreadNode("root1", "root1", "", 0, "a1")
 		root.ReplyCount = 1
 		child := models.NewThreadNode("root1", "s1", "root1", 1, "a2")
 		child.ReplyCount = 0
-		*dest = []*models.ThreadNode{root, child}
-	}).Return(nil).Once()
+		*dest = []models.ThreadNode{*root, *child}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
-	// GetMissingReplies query returns empty but succeeds
+	// GetMissingReplies query returns empty but succeeds (keyed walk)
 	mockDB.On("Model", mock.AnythingOfType("*models.MissingReply")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "begins_with", "MISSING#").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.MissingReply")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.MissingReply)
-		*dest = []*models.MissingReply{}
-	}).Return(nil).Once()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.MissingReply")).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	res, err := repo.GetThreadContext(context.Background(), "s1")
 	assert.NoError(t, err)
@@ -349,20 +351,22 @@ func TestThreadRepository_GetThreadContext_missing_replies_scan_error_continues(
 		*dest = *models.NewThreadNode("root1", "s1", "root1", 1, "a1")
 	}).Return(nil).Once()
 
-	// GetThreadNodes query
+	// GetThreadNodes query (keyed walk, wave #1469)
 	mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "begins_with", "NODE#").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.ThreadNode")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.ThreadNode)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ThreadNode")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.ThreadNode)
 		root := models.NewThreadNode("root1", "root1", "", 0, "a1")
-		*dest = []*models.ThreadNode{root}
-	}).Return(nil).Once()
+		*dest = []models.ThreadNode{*root}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// GetMissingReplies scan fails but should be ignored in GetThreadContext.
 	mockDB.On("Model", mock.AnythingOfType("*models.MissingReply")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "THREAD#root1").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "begins_with", "MISSING#").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("scan failed")).Once()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.MissingReply")).Return(nil, fmt.Errorf("scan failed")).Once()
 
 	res, err := repo.GetThreadContext(context.Background(), "s1")
 	assert.NoError(t, err)

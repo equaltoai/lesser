@@ -705,6 +705,7 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 
@@ -725,12 +726,14 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 		dest.LastHit = time.Now()
 	}).Return(nil).Maybe()
 
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		dest, ok := args.Get(0).(*[]*models.ModerationPattern)
+	// GetPatterns/LoadActivePatterns are bounded page walks (wave #1469) now —
+	// AllPaginated instead of All; the walk collects value slices.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		dest, ok := args.Get(0).(*[]models.ModerationPattern)
 		if !ok {
 			return
 		}
-		*dest = []*models.ModerationPattern{
+		*dest = []models.ModerationPattern{
 			{
 				PatternID:   "pat-2",
 				Pattern:     "bar",
@@ -742,7 +745,7 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 				Active:      true,
 			},
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	patternRepo := repositories.NewPatternRepository(mockDB, "test-table", zap.NewNop(), nil)
 	adapter := advanced.NewPatternRepositoryAdapter(patternRepo)
@@ -1075,7 +1078,8 @@ func TestInitAdvancedModerationEngine_CoversBasicModeWithoutAWS(t *testing.T) {
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	db = mockDB
 	patternRepo = repositories.NewPatternRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -1111,7 +1115,8 @@ func TestInitAdvancedModerationEngine_CoversAWSModeBranches(t *testing.T) {
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	db = mockDB
 	patternRepo = repositories.NewPatternRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -1199,6 +1204,7 @@ func TestInitialize_CoversRepositoryWiring_WithInjectedDependencies(t *testing.T
 	mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("Scan", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()

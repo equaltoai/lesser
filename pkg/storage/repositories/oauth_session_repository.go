@@ -77,12 +77,32 @@ func (r *OAuthSessionRepository) GetOAuthSession(ctx context.Context, sessionID 
 func (r *OAuthSessionRepository) GetOAuthSessionByState(ctx context.Context, state string) (*models.OAuthAuthSession, error) {
 	var sessions []models.OAuthAuthSession
 
-	err := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("OAUTH_STATE#%s", state)).
-		All(&sessions)
+	// The whole keyed gsi2 partition must be read to locate the session row, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("OAUTH_STATE#%s", state)),
+		500, 100,
+		func(page []models.OAuthAuthSession) (bool, error) {
+			sessions = append(sessions, page...)
+			return false, nil
+		},
+	)
 
-	if err != nil || len(sessions) == 0 {
+	if err != nil {
+		// Cap exhaustion must propagate distinguishably — not be masked as
+		// "OAuth session not found for state" (the pre-existing demote
+		// replaces the walk error with a synthesized not-found) — only other
+		// errors keep the demote.
+		if errors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
+		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session not found for state"), EntityOAuthState, state)
+	}
+
+	if len(sessions) == 0 {
 		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session not found for state"), EntityOAuthState, state)
 	}
 
@@ -137,13 +157,29 @@ func (r *OAuthSessionRepository) GetUserOAuthSessions(ctx context.Context, usern
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER_OAUTH#%s", username))
 
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-
-	err := query.All(&sessions)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntitySession, "user sessions")
+	if limit <= 0 {
+		// limit <= 0 means "all sessions for the user": the whole keyed gsi1
+		// partition must be read, so the read is a bounded page walk (wave
+		// #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+		// The caller-observable contract is the full partition — capping at a
+		// single 500-row page would silently under-report CountUserOAuthSessions
+		// above 500.
+		err := walkKeyedPages(
+			query,
+			500, 100,
+			func(page []models.OAuthAuthSession) (bool, error) {
+				sessions = append(sessions, page...)
+				return false, nil
+			},
+		)
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, EntitySession, "user sessions")
+		}
+	} else {
+		err := query.Limit(limit).All(&sessions)
+		if err != nil {
+			return nil, ErrorHandler.HandleQueryError(err, EntitySession, "user sessions")
+		}
 	}
 
 	// Filter out expired sessions

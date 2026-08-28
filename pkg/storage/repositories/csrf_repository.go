@@ -216,12 +216,20 @@ func (r *CSRFRepository) GetUserActiveTokenCount(ctx context.Context, userID str
 	gsi1pk := fmt.Sprintf("USER_CSRF#%s", userID)
 	now := time.Now().Unix()
 
-	// Query using GSI1 to get all tokens for user, then filter active ones
-	// Using direct DB call since BaseRepository doesn't have GSI query method with these specific parameters
-	err := r.db.WithContext(ctx).Model(&models.CSRFToken{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", gsi1pk).
-		All(&tokens)
+	// Query using GSI1 to get all tokens for user, then filter active ones.
+	// The whole keyed gsi1 partition must be read, so the read is a bounded
+	// page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.CSRFToken{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", gsi1pk),
+		500, 100,
+		func(page []models.CSRFToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get user active token count",
@@ -251,12 +259,19 @@ func (r *CSRFRepository) CleanupUserTokens(ctx context.Context, userID string) e
 	gsi1pk := fmt.Sprintf("USER_CSRF#%s", userID)
 	now := time.Now().Unix()
 
-	// Query all tokens for this user using GSI1
-	// Using direct DB call since BaseRepository doesn't have this specific GSI query pattern
-	err := r.db.WithContext(ctx).Model(&models.CSRFToken{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", gsi1pk).
-		All(&tokens)
+	// Query all tokens for this user using GSI1. The whole keyed gsi1 partition
+	// must be read, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.CSRFToken{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", gsi1pk),
+		500, 100,
+		func(page []models.CSRFToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to query user tokens for cleanup",

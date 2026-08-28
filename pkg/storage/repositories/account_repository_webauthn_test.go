@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -73,7 +74,8 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_ListByUser(t *testing.
 
 	mockQuery.On("Where", "PK", "=", "USER#alice").Return(mockQuery).Once()
 	mockQuery.On("Where", "SK", "BEGINS_WITH", "WEBAUTHN_CRED#").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]models.WebAuthnCredential")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.WebAuthnCredential")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]models.WebAuthnCredential)
 		*items = []models.WebAuthnCredential{
 			{
@@ -95,7 +97,7 @@ func TestAccountRepository_WebAuthnCanonicalKeyPredicates_ListByUser(t *testing.
 				Name:   "Phone",
 			},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
 	repo.SetValidationService(nil)

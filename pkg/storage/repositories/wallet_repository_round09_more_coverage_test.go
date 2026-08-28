@@ -105,7 +105,7 @@ func TestWalletRepository_Round09_MoreCoverage(t *testing.T) {
 	t.Run("GetUserWalletCredentials query error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewWalletRepository(mockDB, "test-table", zap.NewNop(), nil)
 		_, err := repo.GetUserWalletCredentials(ctx, "user-1")

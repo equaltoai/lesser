@@ -204,16 +204,29 @@ func (r *FilterRepository) DeleteFilter(ctx context.Context, filterID string) er
 
 // GetUserFilters retrieves all filters for a user
 func (r *FilterRepository) GetUserFilters(ctx context.Context, username string) ([]*models.Filter, error) {
-	var filters []*models.Filter
-
-	err := r.db.WithContext(ctx).Model(&models.Filter{}).
-		Where("PK", "=", fmt.Sprintf(models.KeyPatternUser, username)).
-		Where("SK", ">=", "FILTER#").
-		Where("SK", "<", "FILTER~"). // Use ~ as upper bound since it's after # in ASCII
-		All(&filters)
+	// The whole keyed USER#<username> partition must be read to return every
+	// filter, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	var filterModels []models.Filter
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Filter{}).
+			Where("PK", "=", fmt.Sprintf(models.KeyPatternUser, username)).
+			Where("SK", ">=", "FILTER#").
+			Where("SK", "<", "FILTER~"), // Use ~ as upper bound since it's after # in ASCII
+		500, 100,
+		func(page []models.Filter) (bool, error) {
+			filterModels = append(filterModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilter, "user filters")
+	}
+
+	filters := make([]*models.Filter, len(filterModels))
+	for i := range filterModels {
+		filters[i] = &filterModels[i]
 	}
 
 	return filters, nil
@@ -391,16 +404,29 @@ func (r *FilterRepository) RemoveFilterKeyword(ctx context.Context, keywordID st
 
 // GetFilterKeywords retrieves all keywords for a filter
 func (r *FilterRepository) GetFilterKeywords(ctx context.Context, filterID string) ([]*models.FilterKeyword, error) {
-	var keywords []*models.FilterKeyword
-
-	err := r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
-		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Where("SK", ">=", "KEYWORD#").
-		Where("SK", "<", "KEYWORD~").
-		All(&keywords)
+	// The whole keyed FILTER#<id> partition must be read to return every
+	// keyword, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	var keywordModels []models.FilterKeyword
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
+			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+			Where("SK", ">=", "KEYWORD#").
+			Where("SK", "<", "KEYWORD~"),
+		500, 100,
+		func(page []models.FilterKeyword) (bool, error) {
+			keywordModels = append(keywordModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilterKeyword, "query")
+	}
+
+	keywords := make([]*models.FilterKeyword, len(keywordModels))
+	for i := range keywordModels {
+		keywords[i] = &keywordModels[i]
 	}
 
 	return keywords, nil
@@ -433,16 +459,29 @@ func (r *FilterRepository) RemoveFilterStatus(ctx context.Context, filterStatusI
 
 // GetFilterStatuses retrieves all statuses for a filter
 func (r *FilterRepository) GetFilterStatuses(ctx context.Context, filterID string) ([]*models.FilterStatus, error) {
-	var statuses []*models.FilterStatus
-
-	err := r.db.WithContext(ctx).Model(&models.FilterStatus{}).
-		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Where("SK", ">=", "STATUS#").
-		Where("SK", "<", "STATUS~").
-		All(&statuses)
+	// The whole keyed FILTER#<id> partition must be read to return every
+	// status, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	var statusModels []models.FilterStatus
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FilterStatus{}).
+			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+			Where("SK", ">=", "STATUS#").
+			Where("SK", "<", "STATUS~"),
+		500, 100,
+		func(page []models.FilterStatus) (bool, error) {
+			statusModels = append(statusModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilterStatus, "query")
+	}
+
+	statuses := make([]*models.FilterStatus, len(statusModels))
+	for i := range statusModels {
+		statuses[i] = &statusModels[i]
 	}
 
 	return statuses, nil

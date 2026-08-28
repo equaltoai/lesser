@@ -64,10 +64,19 @@ func (r *RecoveryRepository) GetTrustees(ctx context.Context, username string) (
 	var trustees []models.Trustee
 
 	pk := fmt.Sprintf("USER#%s", username)
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Trustee{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "TRUSTEE#").
-		All(&trustees)
+	// The whole keyed partition must be read to return every trustee, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.BaseRepository.db.WithContext(ctx).Model(&models.Trustee{}).
+			Where("PK", "=", pk).
+			Where("SK", "begins_with", "TRUSTEE#"),
+		500, 100,
+		func(page []models.Trustee) (bool, error) {
+			trustees = append(trustees, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -227,12 +236,20 @@ func (r *RecoveryRepository) GetActiveRecoveryRequests(ctx context.Context, user
 	gsi1pk := fmt.Sprintf("USER#%s", username)
 	now := time.Now()
 
-	// Query using GSI1
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryRequest{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", gsi1pk).
-		Where("gsi1SK", "begins_with", "RECOVERY#").
-		All(&requests)
+	// Query using GSI1. The whole keyed gsi1 partition must be read (the
+	// pending/expiry filter runs post-read), so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryRequest{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", gsi1pk).
+			Where("gsi1SK", "begins_with", "RECOVERY#"),
+		500, 100,
+		func(page []models.RecoveryRequest) (bool, error) {
+			requests = append(requests, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -303,10 +320,19 @@ func (r *RecoveryRepository) GetRecoveryCodes(ctx context.Context, username stri
 	var codes []models.RecoveryCode
 
 	pk := fmt.Sprintf("USER#%s", username)
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryCode{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "RECOVERY_CODE#").
-		All(&codes)
+	// The whole keyed partition must be read to return every code, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryCode{}).
+			Where("PK", "=", pk).
+			Where("SK", "begins_with", "RECOVERY_CODE#"),
+		500, 100,
+		func(page []models.RecoveryCode) (bool, error) {
+			codes = append(codes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {

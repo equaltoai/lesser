@@ -447,12 +447,21 @@ func (r *AccountRepository) IsMuted(ctx context.Context, muterUsername, mutedUse
 
 // GetMutes retrieves all users muted by a user
 func (r *AccountRepository) GetMutes(ctx context.Context, username string) ([]*storage.Mute, error) {
+	// The whole keyed partition must be read to return every mute, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var mutes []models.Mute
 
-	err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", Utils.Keys.MuteKey(username)).
-		Where("SK", "BEGINS_WITH", "MUTED#").
-		All(&mutes)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Mute{}).
+			Where("PK", "=", Utils.Keys.MuteKey(username)).
+			Where("SK", "BEGINS_WITH", "MUTED#"),
+		500, 100,
+		func(page []models.Mute) (bool, error) {
+			mutes = append(mutes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get mutes",
@@ -676,12 +685,21 @@ func (r *AccountRepository) GetPinnedAccounts(ctx context.Context, username stri
 
 // GetAccountPins retrieves all account pins for a user
 func (r *AccountRepository) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
+	// The whole keyed partition must be read to return every pin, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var pins []models.AccountPin
 
-	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
-		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
-		Where("SK", "BEGINS_WITH", "PIN#").
-		All(&pins)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AccountPin{}).
+			Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
+			Where("SK", "BEGINS_WITH", "PIN#"),
+		500, 100,
+		func(page []models.AccountPin) (bool, error) {
+			pins = append(pins, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get account pins",

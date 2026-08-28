@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -39,15 +40,6 @@ func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testin
 			*dest = []models.Bookmark{
 				{PK: pk, SK: "TIME#" + base.Add(2*time.Minute).Format(time.RFC3339Nano) + "#o3", ObjectID: "o3", CreatedAt: base.Add(2 * time.Minute), Locked: false},
 				{PK: pk, SK: "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#o2", ObjectID: "o2", CreatedAt: base.Add(time.Minute), Locked: false},
-				{PK: pk, SK: "OBJECT#o1", ObjectID: "o1", CreatedAt: base, RecordType: models.BookmarkRecordTypeObject},
-				{PK: pk, SK: legacyBookmarkSK(base.Add(-time.Minute), "legacy"), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
-			}
-			return
-		}
-		if allCalls == 2 {
-			*dest = []models.Bookmark{
-				{PK: pk, SK: "TIME#" + base.Add(2*time.Minute).Format(time.RFC3339Nano) + "#o3", ObjectID: "o3", CreatedAt: base.Add(2 * time.Minute), Locked: false},
-				{PK: pk, SK: "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#o2", ObjectID: "o2", CreatedAt: base.Add(time.Minute), Locked: false},
 			}
 			return
 		}
@@ -55,6 +47,16 @@ func TestBookmarkRepository_Round08_CountAndQueryUnlockedTimeBookmarks(t *testin
 			{PK: pk, SK: legacyBookmarkSK(base.Add(-time.Minute), "legacy"), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
 		}
 	}).Return(nil)
+
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Bookmark)
+		*dest = []models.Bookmark{
+			{PK: pk, SK: "TIME#" + base.Add(2*time.Minute).Format(time.RFC3339Nano) + "#o3", ObjectID: "o3", CreatedAt: base.Add(2 * time.Minute), Locked: false},
+			{PK: pk, SK: "TIME#" + base.Add(time.Minute).Format(time.RFC3339Nano) + "#o2", ObjectID: "o2", CreatedAt: base.Add(time.Minute), Locked: false},
+			{PK: pk, SK: "OBJECT#o1", ObjectID: "o1", CreatedAt: base, RecordType: models.BookmarkRecordTypeObject},
+			{PK: pk, SK: legacyBookmarkSK(base.Add(-time.Minute), "legacy"), ObjectID: "legacy", CreatedAt: base.Add(-time.Minute), Locked: false},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
 

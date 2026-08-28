@@ -280,11 +280,20 @@ func (r *WalletRepository) DeleteWalletChallenge(ctx context.Context, challengeI
 func (r *WalletRepository) GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error) {
 	var walletModels []models.WalletCredential
 
-	// Query all wallets for a user using the database directly since we need WalletCredential model
-	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "begins_with", "WALLET#").
-		All(&walletModels)
+	// The whole keyed USER#<username> partition must be read to return every
+	// wallet credential, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. Query the
+	// database directly since we need the WalletCredential model.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.WalletCredential{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", "begins_with", "WALLET#"),
+		500, 100,
+		func(page []models.WalletCredential) (bool, error) {
+			walletModels = append(walletModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to query user wallet credentials",

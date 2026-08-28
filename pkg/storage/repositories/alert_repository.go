@@ -299,6 +299,12 @@ func (r *AlertRepository) GetAlertStats(ctx context.Context, since time.Time) (*
 	for _, status := range statuses {
 		count, err := r.countAlertsByStatus(ctx, status, since)
 		if err != nil {
+			// Cap exhaustion fails the whole stats call closed instead of
+			// silently returning zeroed counters for this family — only other
+			// errors keep the skip-family continue.
+			if errors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("failed to count alerts by status",
 				zap.String("status", status),
 				zap.Error(err))
@@ -323,6 +329,12 @@ func (r *AlertRepository) GetAlertStats(ctx context.Context, since time.Time) (*
 	for _, severity := range severities {
 		count, err := r.countAlertsBySeverity(ctx, severity, since)
 		if err != nil {
+			// Cap exhaustion fails the whole stats call closed instead of
+			// silently returning zeroed counters for this family — only other
+			// errors keep the skip-family continue.
+			if errors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("failed to count alerts by severity",
 				zap.String("severity", severity),
 				zap.Error(err))
@@ -337,6 +349,12 @@ func (r *AlertRepository) GetAlertStats(ctx context.Context, since time.Time) (*
 	for _, alertType := range types {
 		count, err := r.countAlertsByType(ctx, alertType, since)
 		if err != nil {
+			// Cap exhaustion fails the whole stats call closed instead of
+			// silently returning zeroed counters for this family — only other
+			// errors keep the skip-family continue.
+			if errors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("failed to count alerts by type",
 				zap.String("type", alertType),
 				zap.Error(err))
@@ -355,17 +373,27 @@ func (r *AlertRepository) countAlertsByStatus(ctx context.Context, status string
 	sinceTimestamp := since.Format(time.RFC3339)
 	skPattern := fmt.Sprintf("PRIORITY#P0#TIMESTAMP#%s", sinceTimestamp)
 
-	count, err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", fmt.Sprintf("STATUS#%s", status)).
-		Where("gsi3SK", ">=", skPattern).
-		Count()
+	// The whole keyed gsi3 STATUS#<status> partition must be read to count every
+	// alert since the cutoff, so the count is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var alerts []models.Alert
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Alert{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", fmt.Sprintf("STATUS#%s", status)).
+			Where("gsi3SK", ">=", skPattern),
+		500, 100,
+		func(page []models.Alert) (bool, error) {
+			alerts = append(alerts, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return 0, err
 	}
 
-	return int(count), nil
+	return len(alerts), nil
 }
 
 // countAlertsBySeverity counts alerts by severity since a given time
@@ -389,17 +417,27 @@ func (r *AlertRepository) countAlertsBySeverity(ctx context.Context, severity st
 func (r *AlertRepository) countAlertsByType(ctx context.Context, alertType string, since time.Time) (int, error) {
 	sinceTimestamp := fmt.Sprintf("TIMESTAMP#%s", since.Format(time.RFC3339))
 
-	count, err := r.db.WithContext(ctx).Model(&models.Alert{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
-		Where("gsi1SK", ">=", sinceTimestamp).
-		Count()
+	// The whole keyed gsi1 ALERT_TYPE#<type> partition must be read to count
+	// every alert since the cutoff, so the count is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var alerts []models.Alert
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Alert{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("ALERT_TYPE#%s", alertType)).
+			Where("gsi1SK", ">=", sinceTimestamp),
+		500, 100,
+		func(page []models.Alert) (bool, error) {
+			alerts = append(alerts, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return 0, err
 	}
 
-	return int(count), nil
+	return len(alerts), nil
 }
 
 // getAllAlertsSince gets all alerts since a given time (for aggregation)

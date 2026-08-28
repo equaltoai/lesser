@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	dynamormtesting "github.com/theory-cloud/tabletheory/v3/pkg/testing"
@@ -121,7 +122,8 @@ func TestGraphQLStreamSubscriptionRepository_ListByStream(t *testing.T) {
 		testDB := dynamormtesting.NewTestDB()
 		pk := fmt.Sprintf("GQLSUB#%s", "stream-1")
 		testDB.ExpectWhere("PK", "=", pk)
-		testDB.MockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		testDB.MockQuery.On("Limit", mock.Anything).Return(testDB.MockQuery).Maybe()
+		testDB.MockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewGraphQLStreamSubscriptionRepository(testDB.MockDB, "table", zap.NewNop())
 		items, err := repo.ListByStream(ctx, "stream-1")
@@ -139,10 +141,11 @@ func TestGraphQLStreamSubscriptionRepository_ListByStream(t *testing.T) {
 			{Stream: "stream-1", ConnectionID: "c1", SubscriptionID: "s1"},
 			{Stream: "stream-1", ConnectionID: "c2", SubscriptionID: "s2"},
 		}
-		testDB.MockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		testDB.MockQuery.On("Limit", mock.Anything).Return(testDB.MockQuery).Maybe()
+		testDB.MockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.GraphQLStreamSubscription)
 			*dest = expected
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		repo := NewGraphQLStreamSubscriptionRepository(testDB.MockDB, "table", zap.NewNop())
 		items, err := repo.ListByStream(ctx, "stream-1")
@@ -196,7 +199,8 @@ func TestGraphQLStreamSubscriptionRepository_DeleteSubscriptionAndConnection(t *
 		testDB.ExpectIndex("gsi1").
 			ExpectWhere("gsi1PK", "=", "CONN#conn-1").
 			ExpectWhere("gsi1SK", "begins_with", "SUB#sub-1#")
-		testDB.MockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		testDB.MockQuery.On("Limit", mock.Anything).Return(testDB.MockQuery).Maybe()
+		testDB.MockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewGraphQLStreamSubscriptionRepository(testDB.MockDB, "table", zap.NewNop())
 		require.NoError(t, repo.DeleteSubscription(ctx, "conn-1", "sub-1"))
@@ -207,7 +211,8 @@ func TestGraphQLStreamSubscriptionRepository_DeleteSubscriptionAndConnection(t *
 		testDB := dynamormtesting.NewTestDB()
 		testDB.ExpectIndex("gsi1").
 			ExpectWhere("gsi1PK", "=", "CONN#conn-1")
-		testDB.MockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		testDB.MockQuery.On("Limit", mock.Anything).Return(testDB.MockQuery).Maybe()
+		testDB.MockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewGraphQLStreamSubscriptionRepository(testDB.MockDB, "table", zap.NewNop())
 		require.NoError(t, repo.DeleteAllForConnection(ctx, "conn-1"))
@@ -224,10 +229,11 @@ func TestGraphQLStreamSubscriptionRepository_DeleteSubscriptionAndConnection(t *
 			{PK: "GQLSUB#stream-1", SK: "CONN#conn-1#SUB#sub-1", Stream: "stream-1", SubscriptionID: "sub-1"},
 			{PK: "GQLSUB#stream-2", SK: "CONN#conn-1#SUB#sub-1", Stream: "stream-2", SubscriptionID: "sub-1"},
 		}
-		testDB.MockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		testDB.MockQuery.On("Limit", mock.Anything).Return(testDB.MockQuery).Maybe()
+		testDB.MockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.GraphQLStreamSubscription)
 			*dest = stored
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		testDB.ExpectWhere("PK", "=", stored[0].PK).
 			ExpectWhere("SK", "=", stored[0].SK)
@@ -251,10 +257,11 @@ func TestGraphQLStreamSubscriptionRepository_DeleteSubscriptionAndConnection(t *
 			{PK: "GQLSUB#stream-1", SK: "CONN#conn-1#SUB#sub-1", Stream: "stream-1", SubscriptionID: "sub-1"},
 			{PK: "GQLSUB#stream-2", SK: "CONN#conn-1#SUB#sub-2", Stream: "stream-2", SubscriptionID: "sub-2"},
 		}
-		testDB.MockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		testDB.MockQuery.On("Limit", mock.Anything).Return(testDB.MockQuery).Maybe()
+		testDB.MockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.GraphQLStreamSubscription)
 			*dest = stored
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		testDB.ExpectWhere("PK", "=", stored[0].PK).
 			ExpectWhere("SK", "=", stored[0].SK)

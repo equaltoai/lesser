@@ -443,17 +443,37 @@ func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Co
 
 // ListConversationParticipantStates reverse-queries all per-user DM rows for a shared conversation.
 func (r *ConversationRepository) ListConversationParticipantStates(ctx context.Context, conversationID string) ([]*interfaces.UserConversationStateContract, error) {
-	var states []*models.UserConversationState
-	err := r.GetDB().WithContext(ctx).Model(&models.UserConversationState{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
-		OrderBy("gsi3SK", "ASC").
-		All(&states)
+	// The whole keyed gsi3 CONVERSATION#<id> partition must be read to return
+	// every participant state, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The OrderBy ASC
+	// is preserved across pages via cursors.
+	var stateModels []models.UserConversationState
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.UserConversationState{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
+			OrderBy("gsi3SK", "ASC"),
+		500, 100,
+		func(page []models.UserConversationState) (bool, error) {
+			stateModels = append(stateModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no participants" — only other errors keep the pre-existing not-found
+		// swallow.
+		if stdErrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		if errors.IsNotFound(err) {
 			return []*interfaces.UserConversationStateContract{}, nil
 		}
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "conversation participant states")
+	}
+	states := make([]*models.UserConversationState, len(stateModels))
+	for i := range stateModels {
+		states[i] = &stateModels[i]
 	}
 
 	items := make([]*interfaces.UserConversationStateContract, 0, len(states))

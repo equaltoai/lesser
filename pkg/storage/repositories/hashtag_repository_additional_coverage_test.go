@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -171,6 +172,29 @@ func TestHashtagRepository_Sweep_IndexTimelineStatsAndCleanup(t *testing.T) {
 		default:
 		}
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks (RemoveStatusFromHashtagIndex) iterate with
+	// AllPaginated instead of a bare All.
+	q.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		switch dest := args.Get(0).(type) {
+		case *[]models.HashtagStatusIndex:
+			*dest = []models.HashtagStatusIndex{
+				{
+					PK:           "HASHTAG_TIMELINE#golang",
+					SK:           "TS#1",
+					StatusID:     "s1",
+					AuthorID:     "alice",
+					AuthorHandle: "alice",
+					StatusURL:    "https://example.com/s/1",
+					Content:      "hello",
+					Visibility:   models.VisibilityPublic,
+					Published:    time.Now().Add(-1 * time.Hour),
+					GSI2SK:       "TS#1",
+				},
+			}
+		default:
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	q.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
@@ -364,6 +388,28 @@ func TestHashtagRepository_CoverageSweep_Exports(t *testing.T) {
 		default:
 		}
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks (RemoveStatusFromHashtagIndex) iterate with
+	// AllPaginated instead of a bare All.
+	q.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		switch dest := args.Get(0).(type) {
+		case *[]models.HashtagStatusIndex:
+			*dest = []models.HashtagStatusIndex{
+				{
+					PK:           "HASHTAG_TIMELINE#golang",
+					SK:           "TS#1",
+					StatusID:     "s1",
+					AuthorID:     "alice",
+					AuthorHandle: "alice",
+					StatusURL:    "https://example.com/s/1",
+					Content:      "hi",
+					Published:    time.Now().Add(-1 * time.Hour),
+					GSI2SK:       "TS#1",
+				},
+			}
+		default:
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	q.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {

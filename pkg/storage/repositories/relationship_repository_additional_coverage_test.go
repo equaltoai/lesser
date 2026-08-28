@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -100,12 +101,20 @@ func TestRelationshipRepository_additional_zero_percent_methods(t *testing.T) {
 	mockQuery5.On("Index", mock.Anything).Return(mockQuery5).Maybe()
 	mockQuery5.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery5).Maybe()
 	mockQuery5.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery5).Maybe()
-	mockQuery5.On("Count").Return(int64(5), nil).Once()
-	mockQuery5.On("Count").Return(int64(7), nil).Once()
+	mockQuery5.On("Limit", mock.Anything).Return(mockQuery5).Maybe()
+	// CountFollowers/CountFollowing walk the keyed partitions (wave #1469).
+	mockQuery5.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.RelationshipRecord)
+		*out = make([]models.RelationshipRecord, 5)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	repo5 := NewRelationshipRepository(mockDB5, "test-table", logger)
 	followerCount, err := repo5.GetFollowerCount(ctx, "alice")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(5), followerCount)
+	mockQuery5.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.RelationshipRecord)
+		*out = make([]models.RelationshipRecord, 7)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	followingCount, err := repo5.GetFollowingCount(ctx, "alice")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(7), followingCount)

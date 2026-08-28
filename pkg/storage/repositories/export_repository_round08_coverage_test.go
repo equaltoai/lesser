@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -106,6 +107,39 @@ func TestExportRepository_Round08_CoverageSweep(t *testing.T) {
 			},
 		}
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks (GetUserExportsByStatus and
+	// GetExportCostTracking) iterate with AllPaginated; populate the same rows.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Export")).Run(func(args mock.Arguments) {
+		items := args.Get(0).(*[]*models.Export)
+		*items = []*models.Export{
+			{ID: "exp-1", Username: "alice", Type: "archive", Status: StatusCompleted, CreatedAt: baseTime.Add(-2 * time.Hour)},
+			{ID: "exp-2", Username: "alice", Type: "followers", Status: StatusFailed, CreatedAt: baseTime.Add(-1 * time.Hour)},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ExportCostTracking")).Run(func(args mock.Arguments) {
+		items := args.Get(0).(*[]models.ExportCostTracking)
+		*items = []models.ExportCostTracking{
+			{
+				ExportID:            "exp-1",
+				Username:            "alice",
+				Type:                "archive",
+				Status:              StatusCompleted,
+				Timestamp:           baseTime.Add(-30 * time.Minute),
+				TotalCostMicroCents: 2_000_000,
+				LambdaExecutionCost: 1_000_000,
+			},
+			{
+				ExportID:            "exp-2",
+				Username:            "alice",
+				Type:                "followers",
+				Status:              StatusFailed,
+				Timestamp:           baseTime.Add(-20 * time.Minute),
+				TotalCostMicroCents: 1_000_000,
+				LambdaExecutionCost: 500_000,
+			},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
 
@@ -263,7 +297,7 @@ func TestExportRepository_GetExportCostTracking_Error(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	setupExportRepoMocks(mockDB, mockQuery)
 
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("query failed")).Once()
 
 	repo := NewExportRepository(mockDB, "test-table", zap.NewNop())
 	_, err := repo.GetExportCostTracking(context.Background(), "exp-1")

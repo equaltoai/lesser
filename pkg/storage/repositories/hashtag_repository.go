@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -308,13 +309,23 @@ func (r *HashtagRepository) IndexStatusHashtags(ctx context.Context, statusID st
 
 // RemoveStatusFromHashtagIndex removes a status from all hashtag indexes
 func (r *HashtagRepository) RemoveStatusFromHashtagIndex(ctx context.Context, statusID string) error {
-	// Query all hashtag index entries for this status using the reverse index
+	// Query all hashtag index entries for this status using the reverse index —
+	// the whole keyed STATUS_HASHTAGS#<status> gsi1 partition must be read
+	// before any entry is deleted, so the read is a bounded page walk (wave
+	// #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion (never a
+	// silent partial removal).
 	var indexEntries []models.HashtagStatusIndex
-	err := r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("STATUS_HASHTAGS#%s", statusID)).
-		Where("gsi1SK", "BEGINS_WITH", "HASHTAG#").
-		All(&indexEntries)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.HashtagStatusIndex{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("STATUS_HASHTAGS#%s", statusID)).
+			Where("gsi1SK", "BEGINS_WITH", "HASHTAG#"),
+		500, 100,
+		func(page []models.HashtagStatusIndex) (bool, error) {
+			indexEntries = append(indexEntries, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil && !errors.IsNotFound(err) {
 		return ErrorHandler.HandleQueryError(err, "hashtag index", statusID)
@@ -429,12 +440,22 @@ func (r *HashtagRepository) GetHashtagUsageHistory(ctx context.Context, hashtag 
 func (r *HashtagRepository) GetHashtagActivity(_ context.Context, hashtag string, since time.Time) ([]*storage.Activity, error) {
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 
-	var usageRecords []*models.HashtagUsage
-	err := r.db.Model(&models.HashtagUsage{}).
-		Where("PK", "=", fmt.Sprintf("HASHTAG#%s", tagLower)).
-		Where("SK", ">=", fmt.Sprintf("USAGE#%d", since.Unix())).
-		OrderBy("SK", "DESC"). // Descending order
-		All(&usageRecords)
+	var usageValues []models.HashtagUsage
+	// The whole keyed HASHTAG#<tag> partition in the since-window must be read
+	// to return every activity, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. Page order
+	// follows the DESC sort via cursors.
+	err := walkKeyedPages(
+		r.db.Model(&models.HashtagUsage{}).
+			Where("PK", "=", fmt.Sprintf("HASHTAG#%s", tagLower)).
+			Where("SK", ">=", fmt.Sprintf("USAGE#%d", since.Unix())).
+			OrderBy("SK", "DESC"), // Descending order
+		500, 100,
+		func(page []models.HashtagUsage) (bool, error) {
+			usageValues = append(usageValues, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get hashtag activity",
@@ -442,6 +463,13 @@ func (r *HashtagRepository) GetHashtagActivity(_ context.Context, hashtag string
 			zap.Time("since", since),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "hashtag activity", tagLower)
+	}
+
+	// The walk collects values; re-point them so the conversion loop below sees
+	// the same element type (callers only read fields).
+	usageRecords := make([]*models.HashtagUsage, len(usageValues))
+	for i := range usageValues {
+		usageRecords[i] = &usageValues[i]
 	}
 
 	// Convert to Activity records
@@ -481,15 +509,38 @@ func (r *HashtagRepository) GetHashtagStats(ctx context.Context, hashtag string)
 		history = make([]int64, 7) // Default to zeros
 	}
 
-	// Calculate unique users from recent usage (simplified for DynamORM compatibility)
-	var usageRecords []*models.HashtagUsage
-	err = r.db.Model(&models.HashtagUsage{}).
-		Where("PK", "=", fmt.Sprintf("HASHTAG#%s", tagLower)).
-		Where("SK", ">=", fmt.Sprintf("USAGE#%d", time.Now().AddDate(0, 0, -30).Unix())).
-		All(&usageRecords)
+	// Calculate unique users from recent usage (simplified for DynamORM
+	// compatibility) — the 30-day usage window must be read in full to count
+	// every unique author, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var usageValues []models.HashtagUsage
+	err = walkKeyedPages(
+		r.db.Model(&models.HashtagUsage{}).
+			Where("PK", "=", fmt.Sprintf("HASHTAG#%s", tagLower)).
+			Where("SK", ">=", fmt.Sprintf("USAGE#%d", time.Now().AddDate(0, 0, -30).Unix())),
+		500, 100,
+		func(page []models.HashtagUsage) (bool, error) {
+			usageValues = append(usageValues, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no usage" — a >50k-row partition must not degrade to zero unique
+		// users; only other errors keep the pre-existing swallow.
+		if stdErrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
+	}
 
 	uniqueUsers := 0
 	if err == nil {
+		// The walk collects values; re-point them so the unique-user loop below
+		// sees the same element type (callers only read fields).
+		usageRecords := make([]*models.HashtagUsage, len(usageValues))
+		for i := range usageValues {
+			usageRecords[i] = &usageValues[i]
+		}
 		// Count unique users manually
 		userSet := make(map[string]bool)
 		for _, record := range usageRecords {

@@ -74,7 +74,7 @@ func TestRound09_ImportExportSimpleHelpers_ByStatusAndCosts(t *testing.T) {
 
 	mockDBAllErr := new(mocks.MockDB)
 	mockQueryAllErr := new(mocks.MockQuery)
-	mockQueryAllErr.On("All", mock.Anything).Return(errors.New("boom")).Once()
+	mockQueryAllErr.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 	setupPermissiveRound08Mocks(mockDBAllErr, mockQueryAllErr, nil, baseTime)
 	_, err = getImportExportItemsByStatus[*models.Import](ctx, mockDBAllErr, logger, "user-1", []string{"processing"}, "import", &models.Import{})
 	require.Error(t, err)

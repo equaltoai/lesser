@@ -29,7 +29,7 @@ func TestRecoveryRepository_Round09_FinalPush(t *testing.T) {
 	t.Run("GetActiveRecoveryRequests not found and query error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewRecoveryRepository(mockDB, "test-table", zap.NewNop(), nil)
 		items, err := repo.GetActiveRecoveryRequests(ctx, "user-1")
@@ -38,7 +38,7 @@ func TestRecoveryRepository_Round09_FinalPush(t *testing.T) {
 
 		mockDB2 := new(mocks.MockDB)
 		mockQuery2 := new(mocks.MockQuery)
-		mockQuery2.On("All", mock.Anything).Return(ErrTestMockError).Once()
+		mockQuery2.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB2, mockQuery2, nil, baseTime)
 		repo2 := NewRecoveryRepository(mockDB2, "test-table", zap.NewNop(), nil)
 		_, err = repo2.GetActiveRecoveryRequests(ctx, "user-1")
@@ -74,7 +74,7 @@ func TestRecoveryRepository_Round09_FinalPush(t *testing.T) {
 	t.Run("CountUnusedRecoveryCodes propagates get error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewRecoveryRepository(mockDB, "test-table", zap.NewNop(), nil)
 		_, err := repo.CountUnusedRecoveryCodes(ctx, "user-1")

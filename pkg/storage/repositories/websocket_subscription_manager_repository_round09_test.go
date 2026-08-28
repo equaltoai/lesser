@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -21,7 +22,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_FlowAndFiltering(t *test
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		ptr, ok := args.Get(0).(*[]models.WebSocketEventSubscription)
 		if !ok {
 			return
@@ -31,7 +32,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_FlowAndFiltering(t *test
 		notSub := models.WebSocketEventSubscription{ConnectionID: "conn-1", SubscriptionType: "metadata"}
 		notSub.SK = "METADATA"
 		*ptr = append(*ptr, okSub, notSub)
-	}).Return(nil).Twice()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Twice()
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 	repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -62,7 +63,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_GetSubscriptionsForType_
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Now().UTC())
 
 	repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -84,7 +85,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_GetAllAndUserConnections
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		switch typed := args.Get(0).(type) {
 		case *[]models.WebSocketConnection:
 			one := models.WebSocketConnection{
@@ -121,7 +122,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_GetAllAndUserConnections
 			_ = stale.UpdateKeys()
 			*typed = append(*typed, active, expired, stale)
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 	repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)

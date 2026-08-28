@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -201,6 +202,7 @@ func TestRelationshipRepository_endorsements_and_delegating_wrappers(t *testing.
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Scan", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Count").Return(int64(0), nil).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()

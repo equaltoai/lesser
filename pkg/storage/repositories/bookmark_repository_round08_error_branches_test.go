@@ -23,7 +23,8 @@ func TestBookmarkRepository_Round08_CountUserBookmarks_ErrorPath(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("count failed")).Once()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("count failed")).Once()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	_, err := repo.CountUserBookmarks(ctx, "alice")

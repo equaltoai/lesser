@@ -100,7 +100,7 @@ func TestRound08_AuthRepository_AdditionalBranches(t *testing.T) {
 	t.Run("GetWalletByAddress index query error maps to not found (no fallback scan)", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(errors.New("index down")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("index down")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
 		cred, err := repo.GetWalletByAddress(ctx, "ethereum", "0xabc")

@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -39,11 +40,12 @@ func TestRelationshipRepository_resolveLocalDomain_and_count_wrappers(t *testing
 
 	repo := NewRelationshipRepository(mockDB, "test-table", logger)
 
-	mockQuery.On("Count").Return(int64(0), errors.New("count failed")).Once()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Return(nil, errors.New("count failed")).Once()
 	_, err := repo.GetFollowerCount(ctx, "alice")
 	assert.Error(t, err)
 
-	mockQuery.On("Count").Return(int64(0), errors.New("count failed")).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Return(nil, errors.New("count failed")).Once()
 	_, err = repo.GetFollowingCount(ctx, "alice")
 	assert.Error(t, err)
 }
@@ -223,11 +225,15 @@ func TestRelationshipRepository_CountCollectionItems_error_path(t *testing.T) {
 
 	repo := NewRelationshipRepository(mockDB, "test-table", logger)
 
-	mockQuery.On("Count").Return(int64(0), errors.New("count failed")).Once()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CollectionItem")).Return(nil, errors.New("count failed")).Once()
 	_, err := repo.CountCollectionItems(ctx, "c")
 	assert.Error(t, err)
 
-	mockQuery.On("Count").Return(int64(3), nil).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CollectionItem")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.CollectionItem)
+		*out = make([]models.CollectionItem, 3)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	count, err := repo.CountCollectionItems(ctx, "c")
 	assert.NoError(t, err)
 	assert.Equal(t, 3, count)

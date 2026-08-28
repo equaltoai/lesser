@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dmerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -104,7 +105,27 @@ func TestBlockRepository_PaginationAndCounts(t *testing.T) {
 		v.Elem().Set(slice)
 	}).Return(nil).Maybe()
 
-	mockQuery.On("Count").Return(int64(3), nil).Maybe()
+	// CountBlockedUsers / CountUsersWhoBlocked are bounded page walks (wave
+	// #1469) — the keyed Count() → walkKeyedPages conversion; the walk counts
+	// the collected rows. CountBlockedUsers goes through BaseRepository.Count
+	// (T = *models.Block → []*models.Block); CountUsersWhoBlocked walks the
+	// gsi5 chain directly on the value model ([]models.Block).
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Block")).Run(func(args mock.Arguments) {
+		dst := args.Get(0).(*[]*models.Block)
+		*dst = []*models.Block{
+			{Object: "https://example.com/users/b", Actor: "https://example.com/users/a"},
+			{Object: "https://example.com/users/c", Actor: "https://example.com/users/a"},
+			{Object: "https://example.com/users/d", Actor: "https://example.com/users/a"},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Block")).Run(func(args mock.Arguments) {
+		dst := args.Get(0).(*[]models.Block)
+		*dst = []models.Block{
+			{Object: "https://example.com/users/b", Actor: "https://example.com/users/a"},
+			{Object: "https://example.com/users/c", Actor: "https://example.com/users/a"},
+			{Object: "https://example.com/users/d", Actor: "https://example.com/users/a"},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	repo := &BlockRepository{
 		EnhancedBaseRepository: NewEnhancedBaseRepository[*models.Block](mockDB, "tbl", zap.NewNop(), nil, "BlockRepository", "block"),
@@ -239,13 +260,15 @@ func TestBlockRepository_AdditionalBranches(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "act-1", b.ID)
 
-	// CountBlockedUsers error path
-	mockQuery.On("Count").Return(int64(0), errors.New("boom")).Once()
+	// CountBlockedUsers error path (bounded page walk, wave #1469) — the
+	// helper's Maybe Limit covers the walk; the explicit AllPaginated error
+	// routes the failure out.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Block")).Return(nil, errors.New("boom")).Once()
 	_, err = repo.CountBlockedUsers(context.Background(), "https://example.com/users/a")
 	require.Error(t, err)
 
-	// CountUsersWhoBlocked error path
-	mockQuery.On("Count").Return(int64(0), errors.New("boom")).Once()
+	// CountUsersWhoBlocked error path (bounded page walk, wave #1469)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Block")).Return(nil, errors.New("boom")).Once()
 	_, err = repo.CountUsersWhoBlocked(context.Background(), "https://example.com/users/b")
 	require.Error(t, err)
 

@@ -248,12 +248,21 @@ func (r *AccountRepository) RevokeAdvancedUserTokens(ctx context.Context, userID
 
 // GetAdvancedTokensByUser retrieves all tokens for a user
 func (r *AccountRepository) GetAdvancedTokensByUser(ctx context.Context, userID string) ([]models.AuthRefreshToken, error) {
+	// The whole keyed gsi1 partition must be read to return every token, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
 	var tokens []models.AuthRefreshToken
 
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		All(&tokens)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)),
+		500, 100,
+		func(page []models.AuthRefreshToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get tokens by user",
@@ -267,12 +276,21 @@ func (r *AccountRepository) GetAdvancedTokensByUser(ctx context.Context, userID 
 
 // GetAdvancedTokensByFamily retrieves all tokens in a family
 func (r *AccountRepository) GetAdvancedTokensByFamily(ctx context.Context, family string) ([]models.AuthRefreshToken, error) {
+	// The whole keyed gsi2 partition must be read to return every token, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
 	var tokens []models.AuthRefreshToken
 
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("FAMILY#%s", family)).
-		All(&tokens)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("FAMILY#%s", family)),
+		500, 100,
+		func(page []models.AuthRefreshToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get tokens by family",

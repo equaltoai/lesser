@@ -160,12 +160,19 @@ func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, dom
 
 // GetHealthHistory retrieves health history for a domain within a time range with trend analysis
 func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain string, since time.Time, limit int) ([]*models.InstanceHealth, error) {
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed PK read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	var healthChecks []*models.InstanceHealth
 
 	// Build query using BaseRepository's DB
 	query := r.GetDB().WithContext(ctx).Model(&models.InstanceHealth{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
-		OrderBy("SK", "DESC") // Most recent first
+		OrderBy("SK", "DESC"). // Most recent first
+		Limit(limit)
 
 	// Add time range filter if specified
 	if !since.IsZero() {
@@ -173,11 +180,6 @@ func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain 
 	} else {
 		// Ensure we only get health records
 		query = query.Where("SK", ">", "HEALTH#")
-	}
-
-	// Add limit if specified
-	if limit > 0 {
-		query = query.Limit(limit)
 	}
 
 	err := query.All(&healthChecks)
@@ -450,12 +452,20 @@ func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, th
 	// SK=SUMMARY#1h chain compiled to a full table scan; this binds gsi1PK.
 	// Legacy summaries written before the GSI1 shape carry no index keys and
 	// are not evaluated until next written (summaries are TTL-transient, 30d).
-	var summaries []*models.InstanceHealthSummary
-
-	err := r.GetDB().WithContext(ctx).Model(&models.InstanceHealthSummary{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "HEALTH_SUMMARY#1h"). // Check hourly summaries
-		All(&summaries)
+	// The whole keyed gsi1 HEALTH_SUMMARY#1h partition must be read to evaluate
+	// every hourly summary, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var summaries []models.InstanceHealthSummary
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.InstanceHealthSummary{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", "HEALTH_SUMMARY#1h"), // Check hourly summaries
+		500, 100,
+		func(page []models.InstanceHealthSummary) (bool, error) {
+			summaries = append(summaries, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil && !dynamoerrors.IsNotFound(err) {
 		r.logger.Error("Failed to get unhealthy instances", zap.Error(err))

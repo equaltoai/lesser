@@ -160,7 +160,7 @@ func TestRound09_AccountRepository_WalletCredentialOps(t *testing.T) {
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
@@ -200,7 +200,7 @@ func TestRound09_AccountRepository_WalletCredentialOps(t *testing.T) {
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
@@ -217,7 +217,7 @@ func TestRound09_AccountRepository_WalletCredentialOps(t *testing.T) {
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())

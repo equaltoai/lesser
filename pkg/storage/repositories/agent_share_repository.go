@@ -146,13 +146,23 @@ func (r *AgentShareRepository) IsActiveAgentShareGrant(ctx context.Context, agen
 
 // ListAgentShareGrantsByAgent returns the complete owner-view grant history.
 func (r *AgentShareRepository) ListAgentShareGrantsByAgent(ctx context.Context, agentUsername string) ([]*models.AgentShareGrant, error) {
+	// The whole keyed owner-view partition must be read to return the complete
+	// grant history, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The OrderBy ASC
+	// is preserved across pages via cursors.
 	var rows []models.AgentShareGrant
-	err := r.db.WithContext(ctx).
-		Model(&models.AgentShareGrant{}).
-		Where("PK", "=", models.AgentShareGrantPK(agentUsername)).
-		Where("SK", "begins_with", models.AgentShareGrantSKPrefix).
-		OrderBy("SK", "ASC").
-		All(&rows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).
+			Model(&models.AgentShareGrant{}).
+			Where("PK", "=", models.AgentShareGrantPK(agentUsername)).
+			Where("SK", "begins_with", models.AgentShareGrantSKPrefix).
+			OrderBy("SK", "ASC"),
+		500, 100,
+		func(page []models.AgentShareGrant) (bool, error) {
+			rows = append(rows, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -161,14 +171,24 @@ func (r *AgentShareRepository) ListAgentShareGrantsByAgent(ctx context.Context, 
 
 // ListActiveAgentShareGrantsByGrantee returns agents currently shared with one account.
 func (r *AgentShareRepository) ListActiveAgentShareGrantsByGrantee(ctx context.Context, granteeUsername string) ([]*models.AgentShareGrant, error) {
+	// The whole keyed gsi2 grantee partition must be read to return every active
+	// share, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. The RevokedAt filter stays on the
+	// chain and applies per page; OrderBy ASC is preserved via cursors.
 	var rows []models.AgentShareGrant
-	err := r.db.WithContext(ctx).
-		Model(&models.AgentShareGrant{}).
-		Index(models.IndexGSI2).
-		Where("gsi2PK", "=", models.AgentShareGrantGranteeGSI2PK(granteeUsername)).
-		Filter("RevokedAt", "attribute_not_exists", nil).
-		OrderBy("gsi2SK", "ASC").
-		All(&rows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).
+			Model(&models.AgentShareGrant{}).
+			Index(models.IndexGSI2).
+			Where("gsi2PK", "=", models.AgentShareGrantGranteeGSI2PK(granteeUsername)).
+			Filter("RevokedAt", "attribute_not_exists", nil).
+			OrderBy("gsi2SK", "ASC"),
+		500, 100,
+		func(page []models.AgentShareGrant) (bool, error) {
+			rows = append(rows, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

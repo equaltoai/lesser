@@ -140,61 +140,111 @@ func (r *EnhancedPatternRepository) DeletePattern(ctx context.Context, patternID
 
 // GetActivePatterns retrieves all active patterns ordered by priority
 func (r *EnhancedPatternRepository) GetActivePatterns(ctx context.Context, limit int) ([]*models.EnhancedModerationPattern, error) {
-	patterns := []*models.EnhancedModerationPattern{}
-
-	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("gsi1PK", "=", "ENHANCED_PATTERNS#ACTIVE")
-
-	if limit > 0 {
-		query = query.Limit(limit)
+	// The contract returns up to `limit` active patterns; the moderation engine
+	// asks for the full active set (1000). The keyed gsi1 partition read is a
+	// bounded page walk (wave #1469): pages carry min(limit,500) patterns each,
+	// iteration stops once `limit` patterns are gathered, and the explicit
+	// 100-page cap fails closed instead of an unbounded read (the old
+	// `if limit > 0 { Limit(limit) }` gate skipped Limit entirely at 0).
+	pageSize := 500
+	if limit > 0 && limit < pageSize {
+		pageSize = limit
 	}
-
-	err := query.All(&patterns)
+	var patterns []models.EnhancedModerationPattern
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+			Where("gsi1PK", "=", "ENHANCED_PATTERNS#ACTIVE"),
+		pageSize, 100,
+		func(page []models.EnhancedModerationPattern) (bool, error) {
+			patterns = append(patterns, page...)
+			return limit > 0 && len(patterns) >= limit, nil
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", storage.ErrPatternQueryFailed, err)
 	}
-
-	return patterns, nil
+	if limit > 0 && len(patterns) > limit {
+		patterns = patterns[:limit]
+	}
+	result := make([]*models.EnhancedModerationPattern, len(patterns))
+	for i := range patterns {
+		result[i] = &patterns[i]
+	}
+	return result, nil
 }
 
 // GetPatternsByType retrieves patterns by type ordered by effectiveness
+//
+//nolint:dupl // GetPatternsByType/GetPatternsByCategory share the wave #1469 bounded-walk shape by design
 func (r *EnhancedPatternRepository) GetPatternsByType(ctx context.Context, patternType string, limit int) ([]*models.EnhancedModerationPattern, error) {
-	patterns := []*models.EnhancedModerationPattern{}
-
-	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("gsi2PK", "=", fmt.Sprintf("ENHANCED_PATTERNS#%s", patternType)).
-		OrderBy("gsi2SK", "DESC") // Descending order for best effectiveness first
-
-	if limit > 0 {
-		query = query.Limit(limit)
+	// Bounded page walk (wave #1469), same shape as GetActivePatterns: the old
+	// `if limit > 0 { Limit(limit) }` gate skipped Limit entirely at 0 — an
+	// unbounded keyed gsi2 read. OrderBy DESC is preserved via cursor handoff.
+	pageSize := 500
+	if limit > 0 && limit < pageSize {
+		pageSize = limit
 	}
-
-	err := query.All(&patterns)
+	var patterns []models.EnhancedModerationPattern
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+			Where("gsi2PK", "=", fmt.Sprintf("ENHANCED_PATTERNS#%s", patternType)).
+			OrderBy("gsi2SK", "DESC"), // Descending order for best effectiveness first
+		pageSize, 100,
+		func(page []models.EnhancedModerationPattern) (bool, error) {
+			patterns = append(patterns, page...)
+			return limit > 0 && len(patterns) >= limit, nil
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", storage.ErrPatternQueryFailed, err)
 	}
-
-	return patterns, nil
+	if limit > 0 && len(patterns) > limit {
+		patterns = patterns[:limit]
+	}
+	result := make([]*models.EnhancedModerationPattern, len(patterns))
+	for i := range patterns {
+		result[i] = &patterns[i]
+	}
+	return result, nil
 }
 
 // GetPatternsByCategory retrieves patterns by category ordered by effectiveness
+//
+//nolint:dupl // GetPatternsByType/GetPatternsByCategory share the wave #1469 bounded-walk shape by design
 func (r *EnhancedPatternRepository) GetPatternsByCategory(ctx context.Context, category string, limit int) ([]*models.EnhancedModerationPattern, error) {
-	patterns := []*models.EnhancedModerationPattern{}
-
-	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("gsi3PK", "=", fmt.Sprintf("PATTERN_METRICS#%s", category)).
-		OrderBy("gsi3SK", "DESC") // Descending order for best effectiveness first
-
-	if limit > 0 {
-		query = query.Limit(limit)
+	// Bounded page walk (wave #1469), same shape as GetActivePatterns: the old
+	// `if limit > 0 { Limit(limit) }` gate skipped Limit entirely at 0 — an
+	// unbounded keyed gsi3 read. GetOptimalPatterns relies on limit=0 meaning
+	// "the whole category partition" for its in-memory scoring, so a plain
+	// floor would truncate it; the walk preserves the whole-partition contract
+	// and fails closed at the page cap instead. OrderBy DESC is preserved via
+	// cursor handoff.
+	pageSize := 500
+	if limit > 0 && limit < pageSize {
+		pageSize = limit
 	}
-
-	err := query.All(&patterns)
+	var patterns []models.EnhancedModerationPattern
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+			Where("gsi3PK", "=", fmt.Sprintf("PATTERN_METRICS#%s", category)).
+			OrderBy("gsi3SK", "DESC"), // Descending order for best effectiveness first
+		pageSize, 100,
+		func(page []models.EnhancedModerationPattern) (bool, error) {
+			patterns = append(patterns, page...)
+			return limit > 0 && len(patterns) >= limit, nil
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", storage.ErrPatternQueryFailed, err)
 	}
-
-	return patterns, nil
+	if limit > 0 && len(patterns) > limit {
+		patterns = patterns[:limit]
+	}
+	result := make([]*models.EnhancedModerationPattern, len(patterns))
+	for i := range patterns {
+		result[i] = &patterns[i]
+	}
+	return result, nil
 }
 
 // ===== ENHANCED PATTERN ANALYSIS AND DETECTION BUSINESS LOGIC =====
@@ -661,25 +711,40 @@ func (r *EnhancedPatternRepository) CreateTestResult(ctx context.Context, result
 
 // GetTestResults retrieves test results for a pattern
 func (r *EnhancedPatternRepository) GetTestResults(ctx context.Context, patternID string, testType string, limit int) ([]*models.PatternTestResult, error) {
-	results := []*models.PatternTestResult{}
-
+	// Bounded page walk (wave #1469): the old `if limit > 0 { Limit(limit) }`
+	// gate skipped Limit entirely at 0 — an unbounded keyed PK read. The
+	// TestType filter is a post-limit FilterExpression, so pages are walked
+	// until `limit` matching results are gathered (or the partition is
+	// exhausted / the 100-page cap fails closed).
+	pageSize := 500
+	if limit > 0 && limit < pageSize {
+		pageSize = limit
+	}
+	var results []models.PatternTestResult
 	query := r.db.WithContext(ctx).Model(&models.PatternTestResult{}).
 		Where("PK", "=", fmt.Sprintf("PATTERN_TEST#%s", patternID))
-
 	if testType != "" {
 		query = query.Filter("TestType", "=", testType)
 	}
-
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-
-	err := query.All(&results)
+	err := walkKeyedPages(
+		query,
+		pageSize, 100,
+		func(page []models.PatternTestResult) (bool, error) {
+			results = append(results, page...)
+			return limit > 0 && len(results) >= limit, nil
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", storage.ErrPatternTestResultQueryFailed, err)
 	}
-
-	return results, nil
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+	converted := make([]*models.PatternTestResult, len(results))
+	for i := range results {
+		converted[i] = &results[i]
+	}
+	return converted, nil
 }
 
 // GetLatestTestResult gets the most recent test result for a pattern and test type
@@ -698,8 +763,6 @@ func (r *EnhancedPatternRepository) GetLatestTestResult(ctx context.Context, pat
 
 // GetPerformanceMetrics retrieves performance metrics for a pattern and date range
 func (r *EnhancedPatternRepository) GetPerformanceMetrics(ctx context.Context, patternID, startDate, endDate string) ([]*models.PatternPerformanceMetric, error) {
-	metrics := []*models.PatternPerformanceMetric{}
-
 	query := r.db.WithContext(ctx).Model(&models.PatternPerformanceMetric{}).
 		Where("PK", "=", fmt.Sprintf("PATTERN_METRICS#%s", patternID))
 
@@ -710,9 +773,26 @@ func (r *EnhancedPatternRepository) GetPerformanceMetrics(ctx context.Context, p
 		query = query.Filter("SK", "<=", fmt.Sprintf("TIME#%s#23", endDate))
 	}
 
-	err := query.All(&metrics)
+	// The whole keyed PATTERN_METRICS#<id> partition must be read to return the
+	// full date range, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The SK date-range
+	// filter stays on the chain and applies per page.
+	var metricModels []models.PatternPerformanceMetric
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []models.PatternPerformanceMetric) (bool, error) {
+			metricModels = append(metricModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", storage.ErrPatternMetricsQueryFailed, err)
+	}
+
+	metrics := make([]*models.PatternPerformanceMetric, len(metricModels))
+	for i := range metricModels {
+		metrics[i] = &metricModels[i]
 	}
 
 	return metrics, nil
@@ -722,14 +802,27 @@ func (r *EnhancedPatternRepository) GetPerformanceMetrics(ctx context.Context, p
 
 // GetPatternStatistics returns aggregate statistics for patterns
 func (r *EnhancedPatternRepository) GetPatternStatistics(ctx context.Context) (map[string]interface{}, error) {
-	patterns := []*models.EnhancedModerationPattern{}
-	err := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Index("gsi4").
-		Where("gsi4PK", "=", "ENHANCED_PATTERNS#ALL").
-		All(&patterns)
+	// The whole keyed gsi4 ENHANCED_PATTERNS#ALL partition must be read to
+	// aggregate every pattern, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var patternModels []models.EnhancedModerationPattern
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+			Index("gsi4").
+			Where("gsi4PK", "=", "ENHANCED_PATTERNS#ALL"),
+		500, 100,
+		func(page []models.EnhancedModerationPattern) (bool, error) {
+			patternModels = append(patternModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", storage.ErrPatternQueryFailed, err)
+	}
+	patterns := make([]*models.EnhancedModerationPattern, len(patternModels))
+	for i := range patternModels {
+		patterns[i] = &patternModels[i]
 	}
 
 	stats := map[string]interface{}{

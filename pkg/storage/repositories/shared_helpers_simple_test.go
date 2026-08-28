@@ -158,13 +158,14 @@ func TestAuditLogQueryHelper_QueryChainInvocation(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		// Setup mock chain - Limit should NOT be called when limit <= 0
+		// Setup mock chain - limit <= 0 is floored to the 500-page default
+		// (wave #1469), so Limit(500) is always applied.
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Index", "account").Return(mockQuery)
 		mockQuery.On("Where", "accountPK", "=", "ACCOUNT#xyz").Return(mockQuery)
+		mockQuery.On("Limit", 500).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil)
-		// Note: Limit is NOT expected to be called
 
 		ctx := context.Background()
 		_, err := AuditLogQueryHelper(
@@ -183,8 +184,8 @@ func TestAuditLogQueryHelper_QueryChainInvocation(t *testing.T) {
 		mockDB.AssertExpectations(t)
 		mockQuery.AssertExpectations(t)
 
-		// Explicitly verify Limit was not called
-		mockQuery.AssertNotCalled(t, "Limit", mock.Anything)
+		// Explicitly verify the floor page size was applied
+		mockQuery.AssertCalled(t, "Limit", 500)
 	})
 
 	t.Run("query error returns wrapped error", func(t *testing.T) {

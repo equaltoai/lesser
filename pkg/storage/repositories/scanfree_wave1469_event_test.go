@@ -236,6 +236,14 @@ func TestScanFreeWave_Event_MediaAnalyticsReads(t *testing.T) {
 	now := time.Now().UTC()
 	row := &models.MediaAnalytics{}
 	row.SetManifestGeneration("media-1", "hls", 10.5) // sets Date + GSI1 DATE#<date>
+	// Align the row's partition date with the UTC range queries below:
+	// SetManifestGeneration formats Date in the machine's local zone, but every
+	// reader in this file queries by UTC-derived dates, so the two can disagree
+	// near midnight in non-UTC zones (pre-existing test-timezone bug surfaced
+	// by the N4 wave's local verification; fixed to pin the row's keys to the
+	// queried dates exactly).
+	row.Timestamp = now
+	row.Date = now.Format(common.DateFormat)
 	row.DominantVariant = "720p"
 	row.TotalBandwidthBytes = 100 // bandwidth filter requires > 0
 	_ = row.UpdateKeys()          // refreshes GSI1/GSI2
@@ -243,7 +251,12 @@ func TestScanFreeWave_Event_MediaAnalyticsReads(t *testing.T) {
 
 	repo := NewMediaAnalyticsRepository(db, "test-table", zap.NewNop(), nil)
 
-	byDate, err := repo.GetMediaAnalyticsByDate(ctx, now.Format(common.DateFormat))
+	// Query with the row's own Date: SetManifestGeneration formats the date in
+	// the machine's local zone while the test's `now` is UTC, so the two can
+	// disagree near midnight in non-UTC zones (pre-existing test-timezone bug
+	// surfaced by the N4 wave's local verification; fixed to pin the row's
+	// partition key exactly).
+	byDate, err := repo.GetMediaAnalyticsByDate(ctx, row.Date)
 	require.NoError(t, err)
 	require.Len(t, byDate, 1)
 

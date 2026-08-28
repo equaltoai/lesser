@@ -134,11 +134,15 @@ func (r *FederationInstanceRepository) ListInstancesByStatusWithCursor(ctx conte
 		query = query.Cursor(cursor)
 	}
 
+	// Floor the page size (wave #1469): limit == 0 passes validatePaginationParams
+	// but previously skipped Limit entirely — an unbounded keyed gsi1 read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	// Get one extra item to determine if there are more results
 	actualLimit := limit
-	if limit > 0 {
-		query = query.Limit(limit + 1)
-	}
+	query = query.Limit(limit + 1)
 
 	err := query.All(&instances)
 	if err != nil {
@@ -205,11 +209,15 @@ func (r *FederationInstanceRepository) GetInstancesByTierWithCursor(ctx context.
 		query = query.Cursor(cursor)
 	}
 
+	// Floor the page size (wave #1469): limit == 0 passes validatePaginationParams
+	// but previously skipped Limit entirely — an unbounded keyed gsi2 read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	// Get one extra item to determine if there are more results
 	actualLimit := limit
-	if limit > 0 {
-		query = query.Limit(limit + 1)
-	}
+	query = query.Limit(limit + 1)
 
 	err := query.All(&instances)
 	if err != nil {

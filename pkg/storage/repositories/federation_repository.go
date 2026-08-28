@@ -167,15 +167,23 @@ func (r *FederationRepository) GetKnownInstances(ctx context.Context, limit int,
 
 // GetFederationStatistics retrieves federation statistics for a time range
 func (r *FederationRepository) GetFederationStatistics(ctx context.Context, startTime, endTime time.Time) (*storage.FederationStats, error) {
-	// Query instances active within the time range
+	// Query instances active within the time range. The whole keyed gsi1
+	// FEDERATION_ACTIVE partition (within the window) must be read to aggregate
+	// every instance, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var instances []models.FederationInstance
-
-	err := r.db.WithContext(ctx).Model(&models.FederationInstance{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "FEDERATION_ACTIVE").
-		Where("gsi1SK", ">=", startTime.Format(time.RFC3339)).
-		Where("gsi1SK", "<=", endTime.Format(time.RFC3339)).
-		All(&instances)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FederationInstance{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", "FEDERATION_ACTIVE").
+			Where("gsi1SK", ">=", startTime.Format(time.RFC3339)).
+			Where("gsi1SK", "<=", endTime.Format(time.RFC3339)),
+		500, 100,
+		func(page []models.FederationInstance) (bool, error) {
+			instances = append(instances, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("Failed to query federation statistics",
@@ -452,10 +460,19 @@ func (r *FederationRepository) GetCostProjections(ctx context.Context, period st
 	currentMonth := time.Now().Format(common.MonthFormat)
 	pk := fmt.Sprintf("FEDERATION_COSTS#%s", currentMonth)
 
+	// The whole keyed FEDERATION_COSTS partition must be read to project every
+	// cost record, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var costRecords []models.FederationCost
-	err := r.db.WithContext(ctx).Model(&models.FederationCost{}).
-		Where("PK", "=", pk).
-		All(&costRecords)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FederationCost{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.FederationCost) (bool, error) {
+			costRecords = append(costRecords, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("Failed to query current costs",
@@ -1505,11 +1522,21 @@ func (r *FederationRepository) GetAffectedRelationships(ctx context.Context, use
 
 	var relationships []models.Follow
 
-	// Query follows where the user follows someone from the severed domain
-	err := r.db.WithContext(ctx).Model(&models.Follow{}).
-		Where("PK", "=", fmt.Sprintf("follow#%s", userID)).
-		Filter("SK", "BEGINS_WITH", "following#").
-		All(&relationships)
+	// Query follows where the user follows someone from the severed domain. The
+	// whole keyed follow#<user> partition must be read to evaluate every
+	// relationship, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The Filter
+	// applies per page.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Follow{}).
+			Where("PK", "=", fmt.Sprintf("follow#%s", userID)).
+			Filter("SK", "BEGINS_WITH", "following#"),
+		500, 100,
+		func(page []models.Follow) (bool, error) {
+			relationships = append(relationships, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("Failed to query affected relationships",
@@ -2594,7 +2621,10 @@ func (r *FederationRepository) GetDetailedFederationMetrics(ctx context.Context,
 
 	var metrics []models.FederationAnalyticsTimeSeries
 
-	// Query by primary key for the specific domain and period
+	// Query by primary key for the specific domain and period. The whole keyed
+	// FEDERATION_TIMESERIES#<domain>#<period> partition (within the time window)
+	// must be read to return every metric, so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	pk := fmt.Sprintf("FEDERATION_TIMESERIES#%s#%s", domain, period)
 
 	query := r.db.WithContext(ctx).Model(&models.FederationAnalyticsTimeSeries{}).
@@ -2608,7 +2638,14 @@ func (r *FederationRepository) GetDetailedFederationMetrics(ctx context.Context,
 		query = query.Where("SK", "<=", endTime.Format(time.RFC3339))
 	}
 
-	err := query.All(&metrics)
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []models.FederationAnalyticsTimeSeries) (bool, error) {
+			metrics = append(metrics, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error("Failed to get federation time series",
 			zap.String("domain", domain),

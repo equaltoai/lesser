@@ -20,7 +20,7 @@ func TestRound08_RateLimitRepository_MoreBranches(t *testing.T) {
 	t.Run("CheckCommunityNoteRateLimit error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.CommunityNote")).Return(errors.New("all failed")).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CommunityNote")).Return(nil, errors.New("all failed")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)

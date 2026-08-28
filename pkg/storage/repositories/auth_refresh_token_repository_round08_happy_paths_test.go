@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
@@ -25,7 +26,7 @@ func TestRound08_AuthRefreshTokenRepository_HappyPaths(t *testing.T) {
 		mockInner.On("Model", mock.Anything).Return(mockQuery).Maybe()
 		mockInner.On("Transaction", mock.Anything).Return(nil).Maybe()
 
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(0).(*[]models.AuthRefreshToken)
 			*out = append(*out,
 				models.AuthRefreshToken{
@@ -45,7 +46,7 @@ func TestRound08_AuthRefreshTokenRepository_HappyPaths(t *testing.T) {
 					Revoked:   true,
 				},
 			)
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		setupPermissiveRound08Mocks(mockInner, mockQuery, nil, baseTime)
 
@@ -62,7 +63,7 @@ func TestRound08_AuthRefreshTokenRepository_HappyPaths(t *testing.T) {
 		mockInner.On("Model", mock.Anything).Return(mockQuery).Maybe()
 		mockInner.On("Transaction", mock.Anything).Return(nil).Maybe()
 
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(0).(*[]models.AuthRefreshToken)
 			*out = append(*out,
 				models.AuthRefreshToken{
@@ -82,7 +83,7 @@ func TestRound08_AuthRefreshTokenRepository_HappyPaths(t *testing.T) {
 					Revoked:   true,
 				},
 			)
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		setupPermissiveRound08Mocks(mockInner, mockQuery, nil, baseTime)
 
@@ -94,7 +95,7 @@ func TestRound08_AuthRefreshTokenRepository_HappyPaths(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(0).(*[]models.AuthRefreshToken)
 			*out = append(*out,
 				models.AuthRefreshToken{
@@ -122,7 +123,7 @@ func TestRound08_AuthRefreshTokenRepository_HappyPaths(t *testing.T) {
 					Revoked:   false,
 				},
 			)
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 

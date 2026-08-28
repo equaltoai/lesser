@@ -64,7 +64,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_ErrorBranches(t *testing
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -81,7 +81,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_ErrorBranches(t *testing
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -103,7 +103,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_DisconnectCleanupErrors(
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 	mockQuery.On("Delete", mock.Anything).Return(errors.New("boom")).Once()
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
@@ -124,7 +124,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_GetAllConnectionsNotFoun
 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
-	mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 	repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -147,7 +147,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_GetUserConnectionsNotFou
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -164,7 +164,7 @@ func TestRound09_WebSocketSubscriptionManagerRepository_GetUserConnectionsNotFou
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)

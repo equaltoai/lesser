@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dmerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -98,25 +99,25 @@ func TestInstanceHealthRepository_DomainsSummaryAndUnhealthy(t *testing.T) {
 	mockDB, mockQuery := newMockDBQuery()
 	repo := NewInstanceHealthRepository(mockDB, "tbl", zap.NewNop(), nil)
 
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dst := args.Get(0)
 		v := reflect.ValueOf(dst)
 		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
 			return
 		}
 		s := reflect.MakeSlice(v.Elem().Type(), 0, 3)
-		s = reflect.Append(s, reflect.ValueOf(&models.InstanceHealthSummary{Domain: "bad.com", HealthScore: 40, Availability: 0.8, ErrorRate: 0.2}))
-		s = reflect.Append(s, reflect.ValueOf(&models.InstanceHealthSummary{Domain: "meh.com", HealthScore: 70, Availability: 0.95, ErrorRate: 0.05}))
-		s = reflect.Append(s, reflect.ValueOf(&models.InstanceHealthSummary{Domain: "good.com", HealthScore: 99, Availability: 1.0, ErrorRate: 0.0}))
+		s = reflect.Append(s, reflect.ValueOf(models.InstanceHealthSummary{Domain: "bad.com", HealthScore: 40, Availability: 0.8, ErrorRate: 0.2}))
+		s = reflect.Append(s, reflect.ValueOf(models.InstanceHealthSummary{Domain: "meh.com", HealthScore: 70, Availability: 0.95, ErrorRate: 0.05}))
+		s = reflect.Append(s, reflect.ValueOf(models.InstanceHealthSummary{Domain: "good.com", HealthScore: 99, Availability: 1.0, ErrorRate: 0.0}))
 		v.Elem().Set(s)
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	unhealthy, err := repo.GetUnhealthyInstances(context.Background(), 0)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(unhealthy), 2)
 
 	// Query error should fail
-	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 	_, err = repo.GetUnhealthyInstances(context.Background(), 0)
 	require.Error(t, err)
 

@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -788,14 +789,23 @@ func (r *InstanceRepository) getMetricHistory(ctx context.Context, days int, met
 	startDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
 	endDate := time.Now().Format("2006-01-02")
 
-	// Query daily metrics using GSI1
+	// Query daily metrics using GSI1. The whole keyed gsi1 METRIC#<type>
+	// partition (within the date window) must be read to return every history
+	// record, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
 	var histories []models.InstanceHistory
-	err := r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
-		Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
-		Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
-		All(&histories)
+	err := walkKeyedPages(
+		r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
+			Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
+			Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)),
+		500, 100,
+		func(page []models.InstanceHistory) (bool, error) {
+			histories = append(histories, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error(fmt.Sprintf("Failed to get %s", operation), zap.Error(err), zap.Int("days", days))
@@ -983,15 +993,31 @@ func (r *InstanceRepository) GetMetricsSummary(ctx context.Context, timeRange st
 	metricTypes := []string{"user_count", "storage_bytes", "post_count", "federation_count"}
 
 	for _, metricType := range metricTypes {
+		// The whole keyed gsi1 METRIC#<type> partition (within the date window)
+		// must be read to summarize every record, so the read is a bounded page
+		// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+		// exhaustion.
 		var histories []models.InstanceHistory
-		err := r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
-			Index("gsi1").
-			Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
-			Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
-			Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
-			All(&histories)
+		err := walkKeyedPages(
+			r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
+				Index("gsi1").
+				Where("gsi1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
+				Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
+				Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s", endDate)),
+			500, 100,
+			func(page []models.InstanceHistory) (bool, error) {
+				histories = append(histories, page...)
+				return false, nil
+			},
+		)
 
 		if err != nil {
+			// Cap exhaustion fails the whole summary closed instead of silently
+			// skipping this metric — a >50k-row partition must not degrade to
+			// "no data"; only other errors keep the skip-metric swallow.
+			if stderrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("Failed to get metrics summary", zap.Error(err), zap.String("metric_type", metricType))
 			continue
 		}
