@@ -22,12 +22,6 @@ func NewMockHashtagRepository() *MockHashtagRepository {
 	return &MockHashtagRepository{}
 }
 
-// IndexHashtag mocks the IndexHashtag method
-func (m *MockHashtagRepository) IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error {
-	args := m.Called(ctx, hashtag, statusID, authorID, visibility)
-	return args.Error(0)
-}
-
 // IndexStatusHashtags mocks the IndexStatusHashtags method
 func (m *MockHashtagRepository) IndexStatusHashtags(ctx context.Context, statusID string, authorID string, authorHandle string, statusURL string, content string, hashtags []string, published time.Time, visibility string) error {
 	args := m.Called(ctx, statusID, authorID, authorHandle, statusURL, content, hashtags, published, visibility)

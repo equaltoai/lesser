@@ -32,14 +32,16 @@ type Hashtag struct {
 
 // UpdateKeys updates the GSI keys when the hashtag data changes
 //
-// NOTE (wave part 2 batch E rework, #1469): there is deliberately no global
-// "HASHTAGS#ALL" GSI listing key here. The only writer of hashtag metadata
-// rows (HASHTAG#<name> / METADATA) is HashtagRepository.IndexHashtag, which
-// has zero production callers — no live path maintains these rows, so an
-// index key would never be populated and reads keyed on it would silently
-// return nothing. The trend reads (GetRecentHashtags, getCandidateHashtags)
-// therefore stay on their baselined SK = METADATA scans with a documented
-// "no live metadata writer — no rows exist" disposition (see
+// NOTE (wave part 2 batch S3 closeout, #1469 / #1501): there is deliberately
+// no global "HASHTAGS#ALL" GSI listing key here. The metadata rows
+// (HASHTAG#<name> / METADATA) had exactly one writer —
+// HashtagRepository.IndexHashtag, deleted in batch S3 as zero-caller — and
+// the metadata read family was deleted with it (getCandidateHashtags, the
+// hashtag_repository.go date-range reads, the trend-aggregator's
+// GetRecentHashtags step). The model itself is kept: GetHashtagInfo performs
+// a live point read of the same row shape, and the BaseModel interface
+// (base_repository.go) requires UpdateKeys for the embedded
+// EnhancedBaseRepository[*models.Hashtag] (see
 // docs/architecture/dynamodb-scan-inventory.md).
 func (h *Hashtag) UpdateKeys() error {
 	tagLower := strings.ToLower(strings.TrimPrefix(h.Name, "#"))

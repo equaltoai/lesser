@@ -12,9 +12,6 @@ import (
 // HashtagRepository defines the interface for hashtag operations.
 // This handles hashtag indexing, trending, and user hashtag follows.
 type HashtagRepository interface {
-	// IndexHashtag indexes a hashtag when used in a status
-	IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error
-
 	// IndexStatusHashtags indexes a status with its hashtags for efficient search
 	IndexStatusHashtags(ctx context.Context, statusID string, authorID string, authorHandle string, statusURL string, content string, hashtags []string, published time.Time, visibility string) error
 

@@ -101,7 +101,6 @@ func TestHashtagRepository_SkipsNonPublicIndexing(t *testing.T) {
 	q := new(dynamormmocks.MockQuery)
 	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
 
-	require.NoError(t, repo.IndexHashtag(ctx, "#Secret", "status-private", "alice", models.VisibilityPrivate))
 	require.NoError(t, repo.IndexStatusHashtags(ctx, "status-private", "alice", "alice", "https://example.com/s/private", "secret", []string{"#Secret"}, time.Now(), models.VisibilityPrivate))
 
 	db.AssertNotCalled(t, "WithContext", mock.Anything)
@@ -368,7 +367,6 @@ func TestHashtagRepository_CoverageSweep_Exports(t *testing.T) {
 
 	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
 
-	require.NoError(t, repo.IndexHashtag(ctx, "#GoLang", "s1", "alice", models.VisibilityPublic))
 	require.NoError(t, repo.IndexStatusHashtags(ctx, "s1", "alice", "alice", "https://example.com/s/1", "hello", []string{"#GoLang"}, time.Now(), models.VisibilityPublic))
 	require.NoError(t, repo.RemoveStatusFromHashtagIndex(ctx, "s1"))
 
@@ -670,62 +668,6 @@ func TestHashtagRepository_MiscErrorBranches(t *testing.T) {
 	// deleteOldHashtagRecordsBatch unknown type.
 	_, err = repo.deleteOldHashtagRecordsBatch(ctx, time.Now(), "nope")
 	assert.Error(t, err)
-}
-
-func TestHashtagRepository_IndexHashtag_NotFoundCreatesMetadataAndUsage(t *testing.T) {
-	ctx := context.Background()
-	db := new(dynamormmocks.MockDB)
-	getQ := new(dynamormmocks.MockQuery)
-	createQ := new(dynamormmocks.MockQuery)
-	usageQ := new(dynamormmocks.MockQuery)
-
-	db.On("WithContext", mock.Anything).Return(db).Maybe()
-
-	// BaseRepository.Get -> not found.
-	db.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(getQ).Once()
-	getQ.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(getQ).Twice()
-	getQ.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
-
-	// ValidateAndCreate -> BaseRepository.Create
-	db.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(createQ).Once()
-	createQ.On("Create").Return(nil).Once()
-
-	// Usage record create (non-context path).
-	db.On("Model", mock.AnythingOfType("*models.HashtagUsage")).Return(usageQ).Once()
-	usageQ.On("Create").Return(nil).Once()
-
-	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
-	assert.NoError(t, repo.IndexHashtag(ctx, "#GoLang", "s1", "alice", models.VisibilityPublic))
-}
-
-func TestHashtagRepository_IndexHashtag_UsageCreateFailureReturnsError(t *testing.T) {
-	ctx := context.Background()
-	db := new(dynamormmocks.MockDB)
-	getQ := new(dynamormmocks.MockQuery)
-	createQ := new(dynamormmocks.MockQuery)
-	usageQ := new(dynamormmocks.MockQuery)
-
-	db.On("WithContext", mock.Anything).Return(db).Maybe()
-
-	// BaseRepository.Get -> existing metadata.
-	db.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(getQ).Once()
-	getQ.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(getQ).Twice()
-	getQ.On("First", mock.Anything).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*models.Hashtag)
-		dest.UsageCount = 1
-		dest.FirstSeen = time.Now().Add(-time.Hour)
-	}).Return(nil).Once()
-
-	// ValidateAndCreate -> BaseRepository.Create
-	db.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(createQ).Once()
-	createQ.On("Create").Return(nil).Once()
-
-	// Usage record create fails.
-	db.On("Model", mock.AnythingOfType("*models.HashtagUsage")).Return(usageQ).Once()
-	usageQ.On("Create").Return(errors.New("create failed")).Once()
-
-	repo := NewHashtagRepository(db, "test-table", zap.NewNop(), "example.com")
-	assert.Error(t, repo.IndexHashtag(ctx, "#GoLang", "s1", "alice", models.VisibilityPublic))
 }
 
 func TestHashtagRepository_GetHashtagMute_InvalidAndErrorBranches(t *testing.T) {

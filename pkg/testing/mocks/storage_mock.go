@@ -1007,12 +1007,6 @@ func (m *MockStorage) IncrementReblogCount(ctx context.Context, objectID string)
 	return args.Error(0)
 }
 
-// IndexHashtag mocks the IndexHashtag method
-func (m *MockStorage) IndexHashtag(ctx context.Context, hashtag string, statusID string, authorID string, visibility string) error {
-	args := m.Called(ctx, hashtag, statusID, authorID, visibility)
-	return args.Error(0)
-}
-
 // IsBlockedDomain mocks the IsBlockedDomain method
 func (m *MockStorage) IsBlockedDomain(ctx context.Context, username, domain string) (bool, error) {
 	args := m.Called(ctx, username, domain)
