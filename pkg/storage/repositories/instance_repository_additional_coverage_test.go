@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -162,6 +163,19 @@ func TestInstanceRepository_MetricsAndHistory_Sweep(t *testing.T) {
 		default:
 		}
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks (getMetricHistory/GetMetricsSummary) iterate
+	// with AllPaginated instead of a bare All; populate the same rows.
+	q.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		switch dest := args.Get(0).(type) {
+		case *[]models.InstanceHistory:
+			*dest = []models.InstanceHistory{
+				{Value: 10, Date: "2024-12-27"},
+				{Value: 12, Date: "2024-12-28"},
+			}
+		default:
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	q.On("First", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
@@ -556,7 +570,8 @@ func TestInstanceRepository_MetricsSummary_AllQueryErrorsStillReturnsSummary(t *
 	db.On("Model", mock.Anything).Return(q).Maybe()
 	q.On("Index", mock.Anything).Return(q).Maybe()
 	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
-	q.On("All", mock.Anything).Return(fmt.Errorf("boom")).Maybe()
+	q.On("Limit", mock.Anything).Return(q).Maybe()
+	q.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Maybe()
 
 	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
 	summary, err := repo.GetMetricsSummary(ctx, "week")
@@ -606,7 +621,8 @@ func TestInstanceRepository_GetMetricHistory_InvalidDaysDefaults(t *testing.T) {
 	db.On("Model", mock.Anything).Return(q).Maybe()
 	q.On("Index", mock.Anything).Return(q).Maybe()
 	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
-	q.On("All", mock.Anything).Return(nil).Once()
+	q.On("Limit", mock.Anything).Return(q).Maybe()
+	q.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
 	_, err := repo.GetStorageHistory(ctx, 0)
@@ -756,7 +772,8 @@ func TestInstanceRepository_GetMetricsSummary_TimeRangeCases(t *testing.T) {
 	db.On("Model", mock.Anything).Return(q).Maybe()
 	q.On("Index", mock.Anything).Return(q).Maybe()
 	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
-	q.On("All", mock.Anything).Return(nil).Maybe()
+	q.On("Limit", mock.Anything).Return(q).Maybe()
+	q.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
 	_, err := repo.GetMetricsSummary(ctx, "month")

@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
@@ -67,7 +68,7 @@ func TestRound08_OAuthSessionRepository_CorePaths(t *testing.T) {
 		t.Run("not found via empty results", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Return(nil).Once()
+			mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewOAuthSessionRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)
@@ -78,7 +79,7 @@ func TestRound08_OAuthSessionRepository_CorePaths(t *testing.T) {
 		t.Run("expired", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+			mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 				sessions := args.Get(0).(*[]models.OAuthAuthSession)
 				*sessions = append(*sessions, models.OAuthAuthSession{
 					SessionID:   "sid",
@@ -88,7 +89,7 @@ func TestRound08_OAuthSessionRepository_CorePaths(t *testing.T) {
 					FlowStep:    "initiated",
 					ExpiresAt:   baseTime.Add(-time.Minute).Unix(),
 				})
-			}).Return(nil).Once()
+			}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewOAuthSessionRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)

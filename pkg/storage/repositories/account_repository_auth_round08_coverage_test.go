@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
@@ -278,10 +279,10 @@ func TestRound08_AccountRepositoryAuth_SessionsAndRateLimiting(t *testing.T) {
 		// ClearLoginAttempts deletes attempts + lockout.
 		mockQueryDelErr := new(mocks.MockQuery)
 		mockDBDelErr := new(mocks.MockDB)
-		mockQueryDelErr.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQueryDelErr.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			out := args.Get(0).(*[]models.LoginAttempt)
 			*out = append(*out, models.LoginAttempt{PK: "RATELIMIT#user-1", SK: "sk"})
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		mockQueryDelErr.On("Delete").Return(errors.New("delete failed")).Once()
 		mockQueryDelErr.On("Delete").Return(dynamormErrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDBDelErr, mockQueryDelErr, nil, baseTime)
@@ -374,7 +375,7 @@ func TestRound08_AccountRepositoryAuth_RecoveryAndWebAuthn(t *testing.T) {
 		// Not found -> empty slice.
 		mockDBNF := new(mocks.MockDB)
 		mockQueryNF := new(mocks.MockQuery)
-		mockQueryNF.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQueryNF.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDBNF, mockQueryNF, nil, baseTime)
 		repoNF := NewAccountRepository(mockDBNF, "test-table", "example.com", zaptest.NewLogger(t))
 		providers, err = repoNF.GetLinkedProviders(ctx, "user-1")

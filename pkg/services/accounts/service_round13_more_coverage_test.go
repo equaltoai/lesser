@@ -281,8 +281,12 @@ func newPermissiveDynamormDB(t *testing.T, opts permissiveDBOptions) dynamormcor
 	if opts.firstAllError != nil {
 		if opts.allErrorTimes > 0 {
 			q.On("All", mock.Anything).Return(opts.firstAllError).Times(opts.allErrorTimes)
+			// Bounded page walks (wave #1469) read via AllPaginated instead of
+			// All; inject the same failure on the walk path.
+			q.On("AllPaginated", mock.Anything).Return(nil, opts.firstAllError).Times(opts.allErrorTimes)
 		} else {
 			q.On("All", mock.Anything).Return(opts.firstAllError).Once()
+			q.On("AllPaginated", mock.Anything).Return(nil, opts.firstAllError).Once()
 		}
 	}
 	if opts.firstScanError != nil {

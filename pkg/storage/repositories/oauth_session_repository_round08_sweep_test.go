@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
@@ -60,7 +61,7 @@ func TestRound08_OAuthSessionRepository_CoverageSweep(t *testing.T) {
 		t.Run("GetOAuthSessionByState success", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+			mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]models.OAuthAuthSession)
 				*out = append(*out, models.OAuthAuthSession{
 					SessionID:   "sid",
@@ -73,7 +74,7 @@ func TestRound08_OAuthSessionRepository_CoverageSweep(t *testing.T) {
 					UpdatedAt:   baseTime,
 					ExpiresAt:   baseTime.Add(10 * time.Minute).Unix(),
 				})
-			}).Return(nil).Once()
+			}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewOAuthSessionRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)

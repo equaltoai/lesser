@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -55,7 +56,15 @@ func TestStreamingConnectionRepository_Round08_CreateAndUpdateLifecycle(t *testi
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", "gsi1PK", "=", "USER#u1").Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(MaxConnectionsPerUser), nil).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.WebSocketConnection")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.WebSocketConnection)
+			conns := make([]models.WebSocketConnection, MaxConnectionsPerUser)
+			for i := range conns {
+				conns[i] = models.WebSocketConnection{ConnectionID: "c", UserID: "u1"}
+			}
+			*dest = conns
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		setupPermissiveRound08Mocks(mockSubDB, mockSubQuery, nil, baseTime)
 
@@ -583,7 +592,10 @@ func TestStreamingConnectionRepository_Round08_IdleAndMaintenance(t *testing.T) 
 		mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Count").Return(int64(1), nil).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.WebSocketConnection")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.WebSocketConnection)
+			*dest = []models.WebSocketConnection{{ConnectionID: "c1", UserID: "u1", State: models.ConnectionStateConnected}}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			if dest, ok := args.Get(0).(*[]models.WebSocketConnection); ok {
 				*dest = nil
@@ -685,6 +697,18 @@ func TestStreamingConnectionRepository_Round08_Sweep(t *testing.T) {
 		}
 	}).Maybe()
 
+	// Wave #1469 page-capped count walks (GetConnectionCountByState /
+	// GetUserConnectionCount) iterate with AllPaginated instead of Count/All.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		switch dest := args.Get(0).(type) {
+		case *[]models.WebSocketConnection:
+			*dest = []models.WebSocketConnection{
+				{ConnectionID: "c1", UserID: "u1", Username: "alice", State: models.ConnectionStateConnected, LastActivity: now.Add(-2 * time.Hour), IdleTimeout: time.Minute},
+				{ConnectionID: "c2", UserID: "u1", Username: "alice", State: models.ConnectionStateIdle, LastActivity: now.Add(-time.Hour), IdleTimeout: time.Minute},
+			}
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+
 	mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.WebSocketConnection)
 		*dest = []models.WebSocketConnection{
@@ -715,6 +739,16 @@ func TestStreamingConnectionRepository_Round08_Sweep(t *testing.T) {
 			}
 		}
 	}).Maybe()
+
+	// Wave #1469 page-capped walk (DeleteAllSubscriptions) uses AllPaginated.
+	mockSubQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		switch dest := args.Get(0).(type) {
+		case *[]models.WebSocketSubscription:
+			*dest = []models.WebSocketSubscription{
+				{ConnectionID: "c1", UserID: "u1", Stream: "stream1", SubscribedAt: now},
+			}
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	repo := NewStreamingConnectionRepository(mockDB, "table", mockSubDB, "subs", zap.NewNop(), nil)
 	repo.SetValidationService(nil)
@@ -777,7 +811,8 @@ func TestStreamingConnectionRepository_Round08_CountAndStateErrorBranches(t *tes
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), dynamormerrors.ErrItemNotFound).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 		n, err := repo.GetConnectionCountByState(ctx, models.ConnectionStateConnected)
 		require.NoError(t, err)
 		assert.Equal(t, 0, n)
@@ -787,7 +822,7 @@ func TestStreamingConnectionRepository_Round08_CountAndStateErrorBranches(t *tes
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), errors.New("does not have the specified index")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("does not have the specified index")).Once()
 		n, err = repo.GetConnectionCountByState(ctx, models.ConnectionStateConnected)
 		require.NoError(t, err)
 		assert.Equal(t, 0, n)
@@ -797,7 +832,7 @@ func TestStreamingConnectionRepository_Round08_CountAndStateErrorBranches(t *tes
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 		_, err = repo.GetConnectionCountByState(ctx, models.ConnectionStateConnected)
 		require.Error(t, err)
 	})
@@ -811,7 +846,8 @@ func TestStreamingConnectionRepository_Round08_CountAndStateErrorBranches(t *tes
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), dynamormerrors.ErrItemNotFound).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 		n, err := repo.GetUserConnectionCount(ctx, "u1")
 		require.NoError(t, err)
 		assert.Equal(t, 0, n)
@@ -820,7 +856,7 @@ func TestStreamingConnectionRepository_Round08_CountAndStateErrorBranches(t *tes
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), errors.New("requested resource not found")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("requested resource not found")).Once()
 		n, err = repo.GetUserConnectionCount(ctx, "u1")
 		require.NoError(t, err)
 		assert.Equal(t, 0, n)
@@ -829,7 +865,7 @@ func TestStreamingConnectionRepository_Round08_CountAndStateErrorBranches(t *tes
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 		_, err = repo.GetUserConnectionCount(ctx, "u1")
 		require.Error(t, err)
 	})
@@ -888,7 +924,8 @@ func TestStreamingConnectionRepository_Round08_CountAndStateErrorBranches(t *tes
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 		err := repo.DeleteAllSubscriptions(ctx, "c1")
 		require.Error(t, err)
@@ -910,7 +947,8 @@ func TestStreamingConnectionRepository_Round08_MoreErrorBranches(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 		repo := NewStreamingConnectionRepository(mockDB, "table", mockSubDB, "subs", zap.NewNop(), nil)
 		_, err := repo.WriteConnection(ctx, "c1", "u1", "alice", nil)
@@ -933,15 +971,25 @@ func TestStreamingConnectionRepository_Round08_MoreErrorBranches(t *testing.T) {
 
 		queryUser.On("Index", "gsi1").Return(queryUser).Once()
 		queryUser.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(queryUser).Once()
-		queryUser.On("Count").Return(int64(0), nil).Once()
+		queryUser.On("Limit", mock.Anything).Return(queryUser).Maybe()
+		queryUser.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		queryConnected.On("Index", "gsi2").Return(queryConnected).Once()
 		queryConnected.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(queryConnected).Once()
-		queryConnected.On("Count").Return(int64(MaxTotalConnections), nil).Once()
+		queryConnected.On("Limit", mock.Anything).Return(queryConnected).Maybe()
+		queryConnected.On("AllPaginated", mock.AnythingOfType("*[]models.WebSocketConnection")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.WebSocketConnection)
+			conns := make([]models.WebSocketConnection, MaxTotalConnections)
+			for i := range conns {
+				conns[i] = models.WebSocketConnection{ConnectionID: "c"}
+			}
+			*dest = conns
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		queryIdle.On("Index", "gsi2").Return(queryIdle).Once()
 		queryIdle.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(queryIdle).Once()
-		queryIdle.On("Count").Return(int64(0), nil).Once()
+		queryIdle.On("Limit", mock.Anything).Return(queryIdle).Maybe()
+		queryIdle.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		repo := NewStreamingConnectionRepository(mockDB, "table", mockSubDB, "subs", zap.NewNop(), nil)
 		_, err := repo.WriteConnection(ctx, "c1", "u1", "alice", nil)
@@ -1032,7 +1080,8 @@ func TestStreamingConnectionRepository_Round08_PoolAndUnhealthyErrors(t *testing
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 		_, err := repo.GetConnectionPool(ctx)
 		require.Error(t, err)
@@ -1053,11 +1102,13 @@ func TestStreamingConnectionRepository_Round08_PoolAndUnhealthyErrors(t *testing
 
 		qCountConnected.On("Index", "gsi2").Return(qCountConnected).Once()
 		qCountConnected.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(qCountConnected).Once()
-		qCountConnected.On("Count").Return(int64(0), nil).Once()
+		qCountConnected.On("Limit", mock.Anything).Return(qCountConnected).Maybe()
+		qCountConnected.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		qCountIdle.On("Index", "gsi2").Return(qCountIdle).Once()
 		qCountIdle.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(qCountIdle).Once()
-		qCountIdle.On("Count").Return(int64(0), nil).Once()
+		qCountIdle.On("Limit", mock.Anything).Return(qCountIdle).Maybe()
+		qCountIdle.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		qListConnected.On("Index", "gsi2").Return(qListConnected).Once()
 		qListConnected.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(qListConnected).Once()

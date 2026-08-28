@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
@@ -109,20 +110,20 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockQuery.On("Update", mock.Anything).Return(errors.New("update failed")).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
 			dst := args.Get(0).(*[]models.AuthRefreshToken)
 			*dst = []models.AuthRefreshToken{
 				{Token: "token-0001", UserID: "user-1", Family: "family-1", ExpiresAt: baseTime.Add(time.Hour).Unix()},
 				{Token: "token-0002", UserID: "user-1", Family: "family-1", ExpiresAt: baseTime.Add(time.Hour).Unix(), Revoked: true},
 			}
-		}).Return(nil).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
 			dst := args.Get(0).(*[]models.AuthRefreshToken)
 			*dst = []models.AuthRefreshToken{
 				{Token: "token-0003", UserID: "user-1", Family: "family-1", ExpiresAt: baseTime.Add(time.Hour).Unix()},
 				{Token: "token-0004", UserID: "user-1", Family: "family-2", ExpiresAt: baseTime.Add(time.Hour).Unix()},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
@@ -137,7 +138,7 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens(t *testing.T) {
 	t.Run("active filtering, last-used update, cleanup, stats", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
 			dst := args.Get(0).(*[]models.AuthRefreshToken)
 			nowUnix := time.Now().Unix()
 			*dst = []models.AuthRefreshToken{
@@ -145,7 +146,7 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens(t *testing.T) {
 				{Token: "token-revoked", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix + 3600, Revoked: true, LastUsedAt: nowUnix - 10},
 				{Token: "token-expired", UserID: "user-1", Family: "family-2", ExpiresAt: nowUnix - 10, Revoked: false, LastUsedAt: nowUnix - 1},
 			}
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 		mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Return(dynamormErrors.ErrItemNotFound).Once()
 		mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
 			dst := args.Get(0).(*models.AuthRefreshToken)

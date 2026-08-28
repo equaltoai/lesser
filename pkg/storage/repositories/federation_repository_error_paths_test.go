@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -166,10 +167,10 @@ func TestFederationRepository_GetDomainHealthScore_NoRecentDataReturnsNeutral(t 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationAnalyticsTimeSeries")).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.FederationAnalyticsTimeSeries")).Run(func(args mock.Arguments) {
 		target := args.Get(0).(*[]models.FederationAnalyticsTimeSeries)
 		*target = []models.FederationAnalyticsTimeSeries{}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
@@ -186,10 +187,10 @@ func TestFederationRepository_AggregateFederationMetrics_NoData(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationAnalyticsTimeSeries")).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.FederationAnalyticsTimeSeries")).Run(func(args mock.Arguments) {
 		target := args.Get(0).(*[]models.FederationAnalyticsTimeSeries)
 		*target = []models.FederationAnalyticsTimeSeries{}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
@@ -526,7 +527,7 @@ func TestFederationRepository_GetFederationStatistics_ScanError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})

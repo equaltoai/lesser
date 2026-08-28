@@ -42,7 +42,7 @@ func TestRound08_RateLimitRepository_FinalPush(t *testing.T) {
 	t.Run("ClearLoginAttempts query error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.LoginAttempt")).Return(errors.New("all failed")).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.LoginAttempt")).Return(nil, errors.New("all failed")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)

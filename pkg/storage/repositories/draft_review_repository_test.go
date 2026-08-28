@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/v3"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"github.com/theory-cloud/tabletheory/v3/pkg/session"
@@ -514,10 +515,11 @@ func TestDraftRepositoryListsReviewAssignmentsByOwner(t *testing.T) {
 	query.On("Where", "PK", "=", "USER#owner#DRAFT#REVIEW").Return(query).Once()
 	query.On("Where", "SK", "begins_with", "GRANT#").Return(query).Once()
 	query.On("OrderBy", "SK", "ASC").Return(query).Once()
-	query.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	query.On("Limit", mock.Anything).Return(query).Maybe()
+	query.On("AllPaginated", mock.AnythingOfType("*[]models.DraftReviewGrant")).Run(func(args mock.Arguments) {
 		rows := args.Get(0).(*[]models.DraftReviewGrant)
 		*rows = []models.DraftReviewGrant{{DraftID: "d1", Reviewer: "reviewer"}}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	repo := NewDraftRepository(db, "test-table", zap.NewNop(), nil)
 	grants, err := repo.ListDraftReviewGrantsByOwner(ctx, " owner ")

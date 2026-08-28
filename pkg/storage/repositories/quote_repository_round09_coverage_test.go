@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -173,14 +174,18 @@ func TestQuoteRepository_round09_relationship_crud_and_queries(t *testing.T) {
 
 		mockQuery.On("Where", "gsi1PK", "=", "QUOTED#s1").Return(mockQuery).Once()
 		mockQuery.On("Where", "Withdrawn", "=", false).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(3), nil).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.QuoteRelationship")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.QuoteRelationship)
+			*dest = []models.QuoteRelationship{{ID: "q1"}, {ID: "q2"}, {ID: "q3"}}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		n, err := repo.GetQuoteCount(ctx, "s1")
 		require.NoError(t, err)
 		assert.EqualValues(t, 3, n)
 
 		mockQuery.On("Where", "gsi1PK", "=", "QUOTED#s2").Return(mockQuery).Once()
 		mockQuery.On("Where", "Withdrawn", "=", false).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), fmt.Errorf("boom")).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.QuoteRelationship")).Return(nil, fmt.Errorf("boom")).Once()
 		_, err = repo.GetQuoteCount(ctx, "s2")
 		assert.ErrorIs(t, err, ErrQuoteCountQueryFailed)
 
@@ -188,13 +193,13 @@ func TestQuoteRepository_round09_relationship_crud_and_queries(t *testing.T) {
 		mockQuery.On("Where", "gsi2PK", "=", "QUOTER#u1").Return(mockQuery).Once()
 		mockQuery.On("Filter", "TargetNoteID", "=", "t1").Return(mockQuery).Once()
 		mockQuery.On("Filter", "Withdrawn", "=", false).Return(mockQuery).Once()
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.QuoteRelationship")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.QuoteRelationship)
 			*dest = []models.QuoteRelationship{
 				{ID: "q1", QuoterNoteID: "q1", TargetNoteID: "t1", QuoterID: "u1", Timestamp: time.Now()},
 				{ID: "q2", QuoterNoteID: "q2", TargetNoteID: "t1", QuoterID: "u1", Timestamp: time.Now()},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		mockQuery.On("Update", mock.Anything).Return(nil).Once()
 		mockQuery.On("Update", mock.Anything).Return(fmt.Errorf("boom")).Once()

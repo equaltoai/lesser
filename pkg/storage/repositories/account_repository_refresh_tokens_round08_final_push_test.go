@@ -44,7 +44,7 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens_FinalPush(t *testing.T)
 	t.Run("GetAdvancedTokensByUser query error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Return(errors.New("all failed")).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AuthRefreshToken")).Return(nil, errors.New("all failed")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
@@ -55,7 +55,7 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens_FinalPush(t *testing.T)
 	t.Run("GetAdvancedTokensByFamily query error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Return(errors.New("all failed")).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AuthRefreshToken")).Return(nil, errors.New("all failed")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))

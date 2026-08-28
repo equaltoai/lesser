@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -431,6 +432,13 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+		// Count walks the keyed partition in bounded pages (wave #1469);
+		// Exists still uses the keyed Count() call.
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*baseRepoPtrModel)
+			*dest = []*baseRepoPtrModel{{PK: "PK#1", SK: "SK#1"}, {PK: "PK#1", SK: "SK#2"}}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil)
 		mockQuery.On("Count").Return(int64(2), nil)
 
 		repo := NewBaseRepository[*baseRepoPtrModel](mockDB, "table", zap.NewNop())
@@ -447,6 +455,8 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		mockDBErr.On("WithContext", mock.Anything).Return(mockDBErr)
 		mockDBErr.On("Model", mock.Anything).Return(mockQueryErr)
 		mockQueryErr.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryErr)
+		mockQueryErr.On("Limit", mock.Anything).Return(mockQueryErr)
+		mockQueryErr.On("AllPaginated", mock.Anything).Return(nil, assert.AnError)
 		mockQueryErr.On("Count").Return(int64(0), assert.AnError)
 
 		repoErr := NewBaseRepository[*baseRepoPtrModel](mockDBErr, "table", zap.NewNop())
@@ -463,7 +473,8 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*baseRepoPtrModel)
 			*dest = []*baseRepoPtrModel{{PK: "PK#1", SK: "SK#1"}}
 		})
@@ -1062,7 +1073,8 @@ func TestBaseRepository_ErrorPathsMore(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(assert.AnError)
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError)
 
 		repo := NewBaseRepository[*baseRepoPtrModel](mockDB, "table", zap.NewNop())
 		_, err := repo.FindByPK(ctx, "PK#1")

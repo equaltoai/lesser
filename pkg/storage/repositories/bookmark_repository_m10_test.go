@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -181,7 +182,8 @@ func TestBookmarkRepository_M10_CountUserBookmarksCountsLegacyAndTimeRecords(t *
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Bookmark)
 		*dest = []models.Bookmark{
 			{PK: pk, SK: "TIME#" + base.Format(time.RFC3339Nano) + "#status-time", ObjectID: "status-time", Locked: false},
@@ -189,7 +191,7 @@ func TestBookmarkRepository_M10_CountUserBookmarksCountsLegacyAndTimeRecords(t *
 			{PK: pk, SK: "OBJECT#status-time", ObjectID: "status-time", RecordType: models.BookmarkRecordTypeObject},
 			{PK: pk, SK: "TIME#" + base.Add(-2*time.Minute).Format(time.RFC3339Nano) + "#status-locked", ObjectID: "status-locked", Locked: true},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	count, err := repo.CountUserBookmarks(ctx, "alice")

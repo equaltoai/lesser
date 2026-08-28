@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -213,16 +214,17 @@ func TestCommunityNoteRepository_round09_vote_paths_and_author_listing(t *testin
 		assert.Empty(t, notes)
 		assert.Empty(t, next)
 
-		// Votes on a note
+		// Votes on a note (bounded page walk, wave #1469)
 		mockQuery.On("Where", "PK", "=", "NOTE#n1").Return(mockQuery).Once()
 		mockQuery.On("Where", "SK", "BEGINS_WITH", "VOTE#").Return(mockQuery).Once()
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.CommunityNoteVote)
 			*dest = []models.CommunityNoteVote{
 				{NoteID: "n1", VoterID: "u1", VoteType: "helpful"},
 				{NoteID: "n1", VoterID: "u2", VoteType: "not_helpful"},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		v, err := repo.GetCommunityNoteVotes(ctx, "n1")
 		require.NoError(t, err)
 		assert.Len(t, v, 2)
@@ -230,7 +232,8 @@ func TestCommunityNoteRepository_round09_vote_paths_and_author_listing(t *testin
 
 		mockQuery.On("Where", "PK", "=", "NOTE#none").Return(mockQuery).Once()
 		mockQuery.On("Where", "SK", "BEGINS_WITH", "VOTE#").Return(mockQuery).Once()
-		mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 		v, err = repo.GetCommunityNoteVotes(ctx, "none")
 		require.NoError(t, err)
 		assert.Empty(t, v)

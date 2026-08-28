@@ -109,7 +109,7 @@ func TestRound08_AccountRepositoryAuth_FinalErrors(t *testing.T) {
 
 		mockDB2 := new(mocks.MockDB)
 		mockQuery2 := new(mocks.MockQuery)
-		mockQuery2.On("All", mock.Anything).Return(errors.New("boom")).Once()
+		mockQuery2.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 		setupPermissiveRound08Mocks(mockDB2, mockQuery2, nil, baseTime)
 		repo2 := NewAccountRepository(mockDB2, "test-table", "example.com", zaptest.NewLogger(t))
 		_, err = repo2.GetUserDevices(ctx, "user-1")
@@ -166,7 +166,7 @@ func TestRound08_AccountRepositoryAuth_FinalErrors(t *testing.T) {
 
 		mockDB4 := new(mocks.MockDB)
 		mockQuery4 := new(mocks.MockQuery)
-		mockQuery4.On("All", mock.Anything).Return(errors.New("boom")).Once()
+		mockQuery4.On("AllPaginated", mock.Anything).Return(nil, errors.New("boom")).Once()
 		setupPermissiveRound08Mocks(mockDB4, mockQuery4, nil, baseTime)
 		repo4 := NewAccountRepository(mockDB4, "test-table", "example.com", zaptest.NewLogger(t))
 		_, err := repo4.GetLinkedProviders(ctx, "user-1")

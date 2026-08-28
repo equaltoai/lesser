@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -26,17 +27,27 @@ func TestThreadRepository_ext_sweep(t *testing.T) {
 
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	// Bounded page walks (wave #1469) read via AllPaginated instead of All; the
+	// walks collect value slices, so populate both the value and pointer forms.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
+		case *[]models.ThreadNode:
+			root := models.NewThreadNode("root", "root", "", 0, "a1")
+			root.ReplyCount = 1
+			child := models.NewThreadNode("root", "n1", "root", 1, "a2")
+			*dest = []models.ThreadNode{*root, *child}
 		case *[]*models.ThreadNode:
 			root := models.NewThreadNode("root", "root", "", 0, "a1")
 			root.ReplyCount = 1
 			child := models.NewThreadNode("root", "n1", "root", 1, "a2")
 			*dest = []*models.ThreadNode{root, child}
+		case *[]models.MissingReply:
+			*dest = []models.MissingReply{}
 		case *[]*models.MissingReply:
 			*dest = []*models.MissingReply{}
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
 		case *models.ThreadNode:
@@ -70,7 +81,7 @@ func TestThreadRepository_ext_sweep(t *testing.T) {
 	_, _ = repo.GetMissingReplies(ctx, "root")
 
 	// Context: still returns even if missing replies query errors.
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.MissingReply")).Return(fmt.Errorf("query failed")).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.MissingReply")).Return(nil, fmt.Errorf("query failed")).Once()
 	res, err := repo.GetThreadContext(ctx, "n1")
 	assert.NoError(t, err)
 	assert.NotNil(t, res)

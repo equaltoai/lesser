@@ -418,8 +418,11 @@ func (q *registrationPasskeyQuery) BatchUpdateWithOptions([]any, []string, ...an
 }
 func (q *registrationPasskeyQuery) Count() (int64, error) { return 0, fmt.Errorf("unsupported") }
 func (q *registrationPasskeyQuery) CreateOrUpdate() error { return fmt.Errorf("unsupported") }
-func (q *registrationPasskeyQuery) AllPaginated(any) (*dynamormcore.PaginatedResult, error) {
-	return nil, fmt.Errorf("unsupported")
+func (q *registrationPasskeyQuery) AllPaginated(dest any) (*dynamormcore.PaginatedResult, error) {
+	if err := q.All(dest); err != nil {
+		return nil, err
+	}
+	return &dynamormcore.PaginatedResult{HasMore: false}, nil
 }
 
 func (q *registrationPasskeyQuery) First(dest any) error {

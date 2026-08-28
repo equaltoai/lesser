@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
@@ -30,13 +31,13 @@ func TestRound08_RateLimitRepository_LastPush(t *testing.T) {
 	t.Run("IsUserBlocked returns false with no active blocks", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.APIRateLimit")).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.APIRateLimit")).Run(func(args mock.Arguments) {
 			dst := args.Get(0).(*[]*models.APIRateLimit)
 			*dst = []*models.APIRateLimit{
 				{Blocked: false},
 				{Blocked: true, BlockedUntil: time.Now().Add(-time.Minute)},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)

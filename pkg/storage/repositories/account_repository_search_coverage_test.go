@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
@@ -296,14 +297,14 @@ func TestAccountRepository_SearchFollowedActors_Branches(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Follow)
 		*dest = []models.Follow{
 			{FollowedUsername: "bob", State: models.FollowStateAccepted},
 			{FollowedUsername: "carol", State: models.FollowStateAccepted},
 			{FollowedUsername: "dave", State: models.FollowStatePending},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*models.Actor)
@@ -340,28 +341,28 @@ func TestAccountRepository_FriendOfFriendSuggestions_MutualsAndEmptyFollowing(t 
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Follow)
 			*dest = []models.Follow{
 				{FollowedUsername: "bob", State: models.FollowStateAccepted},
 				{FollowedUsername: "carol", State: models.FollowStateAccepted},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Follow)
 			*dest = []models.Follow{
 				{FollowedUsername: "dave", State: models.FollowStateAccepted},
 				{FollowedUsername: "erin", State: models.FollowStateAccepted},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Follow)
 			*dest = []models.Follow{
 				{FollowedUsername: "dave", State: models.FollowStateAccepted},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*models.Actor)

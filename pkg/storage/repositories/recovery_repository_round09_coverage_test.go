@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -23,12 +24,12 @@ func TestRecoveryRepository_Round09_Coverage(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.
-			On("All", mockMatchedByType[*[]models.Trustee]()).
+			On("AllPaginated", mockMatchedByType[*[]models.Trustee]()).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]models.Trustee)
 				*out = append(*out, models.Trustee{Username: "user-1", ActorID: "actor-1", AddedAt: baseTime, Confirmed: true})
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{HasMore: false}, nil).
 			Once()
 
 		mockQuery.
@@ -58,7 +59,7 @@ func TestRecoveryRepository_Round09_Coverage(t *testing.T) {
 
 		mockDBNF := new(mocks.MockDB)
 		mockQueryNF := new(mocks.MockQuery)
-		mockQueryNF.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQueryNF.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDBNF, mockQueryNF, nil, baseTime)
 		repoNF := NewRecoveryRepository(mockDBNF, "test-table", zap.NewNop(), nil)
 		empty, err := repoNF.GetTrustees(ctx, "user-1")
@@ -88,7 +89,7 @@ func TestRecoveryRepository_Round09_Coverage(t *testing.T) {
 			Once()
 
 		mockQuery.
-			On("All", mockMatchedByType[*[]models.RecoveryRequest]()).
+			On("AllPaginated", mockMatchedByType[*[]models.RecoveryRequest]()).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]models.RecoveryRequest)
 				active := models.RecoveryRequest{ID: "r1", Username: "user-1", InitiatedAt: baseTime, ExpiresAt: time.Now().Add(time.Hour), Status: models.StatusPending, ReceivedVotes: map[string]bool{"t1": true}}
@@ -99,7 +100,7 @@ func TestRecoveryRepository_Round09_Coverage(t *testing.T) {
 				_ = complete.UpdateKeys()
 				*out = append(*out, active, expired, complete)
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{HasMore: false}, nil).
 			Once()
 
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
@@ -140,7 +141,7 @@ func TestRecoveryRepository_Round09_Coverage(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.
-			On("All", mockMatchedByType[*[]models.RecoveryCode]()).
+			On("AllPaginated", mockMatchedByType[*[]models.RecoveryCode]()).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]models.RecoveryCode)
 				c1 := models.RecoveryCode{Username: "user-1", Position: 1, CodeHash: "h1", CreatedAt: baseTime}
@@ -149,7 +150,7 @@ func TestRecoveryRepository_Round09_Coverage(t *testing.T) {
 				_ = c2.UpdateKeys()
 				*out = append(*out, c1, c2)
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{HasMore: false}, nil).
 			Maybe()
 
 		mockQuery.
@@ -199,7 +200,7 @@ func TestRecoveryRepository_Round09_Coverage(t *testing.T) {
 
 		mockDBNF := new(mocks.MockDB)
 		mockQueryNF := new(mocks.MockQuery)
-		mockQueryNF.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQueryNF.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
 		mockQueryNF.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDBNF, mockQueryNF, nil, baseTime)
 		repoNF := NewRecoveryRepository(mockDBNF, "test-table", zap.NewNop(), nil)

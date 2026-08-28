@@ -20,6 +20,7 @@ import (
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -362,6 +363,28 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 			*dest = nil
 		}
 	}).Return(nil).Maybe()
+	// Wave #1469 batch N4: the runtime refresh-token reads (ListRefreshTokens
+	// ByUserClient/Family/Session) are bounded page walks now — AllPaginated
+	// instead of All — so mirror the All mock above for the walk path.
+	mockQuery.On("AllPaginated", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*[]storageModels.RefreshToken)
+		return ok
+	})).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]storageModels.RefreshToken)
+		switch {
+		case strings.HasPrefix(lastGSI1PK, "RUNTIME_USER#"):
+			parts := strings.SplitN(lastGSI1PK, "#", 3)
+			if len(parts) == 3 {
+				*dest = state.refreshTokensForUserClient(parts[1], parts[2])
+				return
+			}
+			*dest = nil
+		case strings.HasPrefix(lastGSI2PK, "RUNTIME_FAMILY#"):
+			*dest = state.refreshTokensForFamily(strings.TrimPrefix(lastGSI2PK, "RUNTIME_FAMILY#"))
+		default:
+			*dest = nil
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("All", mock.MatchedBy(func(dest any) bool {
 		_, ok := dest.(*[]*storageModels.OAuthClient)
 		return ok

@@ -1,0 +1,452 @@
+package repositories
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"go.uber.org/zap"
+)
+
+// Batch N4 (umbrella #1469, 2026-08-28) — the keyed whole-partition remainder
+// (108 sites / 52 files).
+//
+// Every conversion is a bounded page walk via walkKeyedPages (Limit(500)/page,
+// 100-page cap, fail-closed errBoundedPageCapExceeded) or a floor/clamp that
+// always issues Limit(n>0). Where a pre-existing error swallow would route cap
+// exhaustion into a silent empty/partial result, a sentinel split routes
+// errBoundedPageCapExceeded back to the caller FIRST.
+//
+// Every assertion pins a LITERAL (Limit(500), 100-page cap, exact cursor
+// handoff) so that removing a bound or breaking the fail-closed routing kills
+// the test. Each test fills a full page of 500 rows with HasMore=true for 100
+// pages — the walk then hits the cap and MUST fail closed with
+// errBoundedPageCapExceeded instead of returning a truncated/empty result.
+
+// fullPage helper fills a page of 500 rows for the element type used by the
+// walk under test; combined with HasMore=true + cursor handoff this exhausts
+// the 100-page cap so the walk must fail closed.
+
+// walkCapExhausted asserts that fn fails closed with errBoundedPageCapExceeded.
+func walkCapExhausted(t *testing.T, mockQuery *dynamormmocks.MockQuery, elementType string, fn func() error) {
+	t.Helper()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		switch v := args.Get(0).(type) {
+		case *[]models.CommunityNoteVote:
+			*v = make([]models.CommunityNoteVote, 500)
+		case *[]models.UserConversationState:
+			*v = make([]models.UserConversationState, 500)
+		case *[]models.GraphQLStreamSubscription:
+			*v = make([]models.GraphQLStreamSubscription, 500)
+		case *[]models.WebSocketSubscription:
+			*v = make([]models.WebSocketSubscription, 500)
+		case *[]models.WebSocketEventSubscription:
+			*v = make([]models.WebSocketEventSubscription, 500)
+		case *[]models.WebSocketEventConnection:
+			*v = make([]models.WebSocketEventConnection, 500)
+		case *[]models.WebSocketConnection:
+			*v = make([]models.WebSocketConnection, 500)
+		case *[]models.InstanceHistory:
+			*v = make([]models.InstanceHistory, 500)
+		case *[]models.HashtagUsage:
+			*v = make([]models.HashtagUsage, 500)
+		}
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType(elementType)).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+	err := fn()
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN4_GetCommunityNoteVotes_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.CommunityNoteVote")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "NOTE#n1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BEGINS_WITH", "VOTE#").Return(mockQuery).Once()
+
+	repo := NewCommunityNoteRepository(mockDB, "test-table", zap.NewNop(), nil)
+	walkCapExhausted(t, mockQuery, "*[]models.CommunityNoteVote", func() error {
+		_, err := repo.GetCommunityNoteVotes(ctx, "n1")
+		return err
+	})
+}
+
+func TestBatchN4_ListConversationParticipantStates_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(mockQuery)
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3PK", "=", "CONVERSATION#conv-1").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "gsi3SK", "ASC").Return(mockQuery).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	walkCapExhausted(t, mockQuery, "*[]models.UserConversationState", func() error {
+		_, err := repo.ListConversationParticipantStates(ctx, "conv-1")
+		return err
+	})
+}
+
+func TestBatchN4_GraphQLListByStream_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.GraphQLStreamSubscription")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "GQLSUB#stream-1").Return(mockQuery).Once()
+
+	repo := NewGraphQLStreamSubscriptionRepository(mockDB, "test-table", zap.NewNop())
+	walkCapExhausted(t, mockQuery, "*[]models.GraphQLStreamSubscription", func() error {
+		_, err := repo.ListByStream(ctx, "stream-1")
+		return err
+	})
+}
+
+func TestBatchN4_GraphQLDeleteAllForConnection_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.GraphQLStreamSubscription")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "CONN#conn-1").Return(mockQuery).Once()
+
+	repo := NewGraphQLStreamSubscriptionRepository(mockDB, "test-table", zap.NewNop())
+	walkCapExhausted(t, mockQuery, "*[]models.GraphQLStreamSubscription", func() error {
+		return repo.DeleteAllForConnection(ctx, "conn-1")
+	})
+}
+
+func TestBatchN4_StreamingDeleteAllSubscriptions_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	subDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	subDB.On("WithContext", ctx).Return(subDB)
+	subDB.On("Model", mock.AnythingOfType("*models.WebSocketSubscription")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "CONN#conn-1").Return(mockQuery).Once()
+
+	repo := NewStreamingConnectionRepository(mockDB, "test-table", subDB, "sub-table", zap.NewNop(), nil)
+	walkCapExhausted(t, mockQuery, "*[]models.WebSocketSubscription", func() error {
+		return repo.DeleteAllSubscriptions(ctx, "conn-1")
+	})
+}
+
+func TestBatchN4_StreamingGetConnectionCountByState_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.WebSocketConnection")).Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2PK", "=", "STATE#connected").Return(mockQuery).Once()
+
+	repo := NewStreamingConnectionRepository(mockDB, "test-table", mockDB, "sub-table", zap.NewNop(), nil)
+	walkCapExhausted(t, mockQuery, "*[]models.WebSocketConnection", func() error {
+		_, err := repo.GetConnectionCountByState(ctx, models.ConnectionStateConnected)
+		return err
+	})
+}
+
+func TestBatchN4_StreamingGetUserConnectionCount_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.WebSocketConnection")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "USER#user-1").Return(mockQuery).Once()
+
+	repo := NewStreamingConnectionRepository(mockDB, "test-table", mockDB, "sub-table", zap.NewNop(), nil)
+	walkCapExhausted(t, mockQuery, "*[]models.WebSocketConnection", func() error {
+		_, err := repo.GetUserConnectionCount(ctx, "user-1")
+		return err
+	})
+}
+
+func TestBatchN4_WebSocketGetSubscriptionsForType_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.WebSocketEventSubscription")).Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "SUBSCRIPTION#notifications").Return(mockQuery).Once()
+
+	repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
+	walkCapExhausted(t, mockQuery, "*[]models.WebSocketEventSubscription", func() error {
+		_, err := repo.GetSubscriptionsForType(ctx, "notifications")
+		return err
+	})
+}
+
+func TestBatchN4_WebSocketGetAllConnections_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.WebSocketConnection")).Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2PK", "=", "STATE#connected").Return(mockQuery).Once()
+
+	repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
+	walkCapExhausted(t, mockQuery, "*[]models.WebSocketConnection", func() error {
+		_, err := repo.GetAllConnections(ctx)
+		return err
+	})
+}
+
+func TestBatchN4_WebSocketGetUserConnections_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.WebSocketEventConnection")).Return(mockQuery)
+	mockQuery.On("Where", "gsi2PK", "=", "USER#user-1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2SK", "begins_with", "CONNECTION#").Return(mockQuery).Once()
+
+	repo := NewWebSocketSubscriptionManagerRepository(mockDB, "test-table", zap.NewNop(), nil)
+	walkCapExhausted(t, mockQuery, "*[]models.WebSocketEventConnection", func() error {
+		_, err := repo.GetUserConnections(ctx, "user-1")
+		return err
+	})
+}
+
+func TestBatchN4_GetMetricsSummary_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.InstanceHistory")).Return(mockQuery).Maybe()
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+
+	// The first metric type's walk caps out: GetMetricsSummary must fail the
+	// whole summary closed instead of skipping the metric (the pre-existing
+	// log+continue swallow would return a partial summary — the test dies on
+	// require.ErrorIs).
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	full := func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.InstanceHistory)
+		*out = make([]models.InstanceHistory, 500)
+	}
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.InstanceHistory")).Run(full).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Times(100)
+	mockQuery.On("Cursor", "c").Return(mockQuery).Times(99)
+
+	repo := NewInstanceRepository(mockDB, "test-table", zap.NewNop())
+	_, err := repo.GetMetricsSummary(ctx, "week")
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestBatchN4_GetHashtagStats_CapExhaustionFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	// GetHashtagInfo resolves through the BaseRepository Get (First terminal).
+	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("First", mock.AnythingOfType("*models.Hashtag")).Run(func(args mock.Arguments) {
+		dst := args.Get(0).(*models.Hashtag)
+		*dst = models.Hashtag{Name: "golang", UsageCount: 42, FirstSeen: time.Now(), LastUsed: time.Now()}
+	}).Return(nil).Once()
+
+	// The 7 per-day usage-history counts (BaseRepository.Count walk on the
+	// embedded Hashtag base — *[]*models.Hashtag) run first and succeed with
+	// empty partitions; the 30-day unique-user walk ([]models.HashtagUsage)
+	// then caps out — GetHashtagStats must fail closed instead of the
+	// pre-existing warn-and-swallow returning zero unique users.
+	mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Hashtag")).Return(&core.PaginatedResult{HasMore: false}, nil).Times(7)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.HashtagUsage")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.HashtagUsage)
+		*out = make([]models.HashtagUsage, 500)
+	}).Return(&core.PaginatedResult{HasMore: true, NextCursor: "c"}, nil).Maybe()
+	mockQuery.On("Cursor", "c").Return(mockQuery).Maybe()
+
+	repo := NewHashtagRepository(mockDB, "test-table", zap.NewNop(), "example.com")
+	_, err := repo.GetHashtagStats(ctx, "#golang")
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+}
+
+func TestBatchN4_GetHashtagStats_CapExhaustionStillFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("First", mock.AnythingOfType("*models.Hashtag")).Run(func(args mock.Arguments) {
+		dst := args.Get(0).(*models.Hashtag)
+		*dst = models.Hashtag{Name: "golang", UsageCount: 1, FirstSeen: time.Now(), LastUsed: time.Now()}
+	}).Return(nil).Once()
+
+	// The 7 per-day usage-history counts (BaseRepository.Count walk on the
+	// embedded Hashtag base — *[]*models.Hashtag) succeed with empty partitions;
+	// the 30-day unique-user walk's FIRST page returns cap exhaustion:
+	// GetHashtagStats must fail closed (the pre-existing swallow would degrade
+	// to zero unique users and return stats — the test dies on require.ErrorIs).
+	mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Hashtag")).Return(&core.PaginatedResult{HasMore: false}, nil).Times(7)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.HashtagUsage")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.HashtagUsage)
+		*out = []models.HashtagUsage{{AuthorID: "u1"}}
+	}).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewHashtagRepository(mockDB, "test-table", zap.NewNop(), "example.com")
+	_, err := repo.GetHashtagStats(ctx, "#golang")
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+}
+
+func TestBatchN4_GetCommunityNoteVotes_OrdinaryErrorKeepsSwallow(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.CommunityNoteVote")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "NOTE#n1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BEGINS_WITH", "VOTE#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CommunityNoteVote")).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewCommunityNoteRepository(mockDB, "test-table", zap.NewNop(), nil)
+	_, err := repo.GetCommunityNoteVotes(ctx, "n1")
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+}
+
+func TestBatchN4_ConversationGetMutedConversations_WalkPreservesExpiryFilter(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("Model", mock.AnythingOfType("*models.ConversationMute")).Return(mockQuery).Maybe()
+	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", "PK", "=", "USER#alice").Return(mockQuery).Once()
+	// The expired mute is cleaned up via DeleteConversationMute (best effort).
+	mockQuery.On("Where", "PK", "=", "USER#alice").Return(mockQuery).Maybe()
+	mockQuery.On("Where", "SK", "=", "CONVERSATION_MUTE#c1").Return(mockQuery).Maybe()
+	mockQuery.On("Delete").Return(nil).Maybe()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ConversationMute")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.ConversationMute)
+		*out = []models.ConversationMute{
+			{PK: "USER#alice", SK: "CONV_MUTE#c1", ConversationID: "c1", ExpiresAt: time.Now().Add(-time.Hour)}, // expired
+			{PK: "USER#alice", SK: "CONV_MUTE#c2", ConversationID: "c2", ExpiresAt: time.Now().Add(time.Hour)},  // live
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	ids, err := repo.GetMutedConversations(ctx, "alice")
+	require.NoError(t, err)
+	require.Equal(t, []string{"c2"}, ids)
+}
+
+func TestBatchN4_GetAccountPreferences_WalkPreservesBooleanParsing(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.UserPreference")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "USER#alice").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "begins_with", "PREFERENCE#").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.UserPreference")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.UserPreference)
+		*out = []models.UserPreference{
+			{Key: "a", Value: "true"},
+			{Key: "b", Value: "false"},
+			{Key: "c", Value: "hello"},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
+	prefs, err := repo.GetAccountPreferences(ctx, "alice")
+	require.NoError(t, err)
+	require.Equal(t, true, prefs["a"])
+	require.Equal(t, false, prefs["b"])
+	require.Equal(t, "hello", prefs["c"])
+}
+
+func TestBatchN4_ListConversationParticipantStates_WalkConversion(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(mockQuery)
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3PK", "=", "CONVERSATION#conv-1").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "gsi3SK", "ASC").Return(mockQuery).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.UserConversationState")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.UserConversationState)
+		*out = []models.UserConversationState{{ViewerID: "u1", ConversationID: "conv-1"}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	items, err := repo.ListConversationParticipantStates(ctx, "conv-1")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, interfaces.UserConversationStateContract{ViewerID: "u1", ConversationID: "conv-1"}, *items[0])
+}
+
+func TestBatchN4_CreateFeaturedTag_StatisticsErrorPropagates(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+
+	// CreateFeaturedTag first checks for existing tags (GetFeaturedTags, the
+	// bounded Limit(101) QueryWithSKPrefixPaginated path — All terminal).
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.FeaturedTag")).Return(nil).Once()
+
+	// calculateTagStatistics walk caps out; the error must propagate out of
+	// CreateFeaturedTag (the helper's signature gained an error return in N4 —
+	// previously the swallow returned 0, nil).
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Status")).Return(nil, errBoundedPageCapExceeded).Once()
+
+	repo := NewFeaturedTagRepository(mockDB, "test-table", zap.NewNop(), nil)
+	err := repo.CreateFeaturedTag(ctx, &storage.FeaturedTag{Username: "alice", Name: "golang"})
+	require.Error(t, err)
+	require.ErrorIs(t, err, errBoundedPageCapExceeded)
+}

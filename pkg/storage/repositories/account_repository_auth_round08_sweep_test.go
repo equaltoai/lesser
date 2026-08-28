@@ -169,7 +169,7 @@ func TestRound08_AccountRepositoryAuth_ErrorBranches(t *testing.T) {
 	t.Run("ClearLoginAttempts scan error and GetLoginAttemptCount scan error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("scan failed")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
@@ -177,7 +177,7 @@ func TestRound08_AccountRepositoryAuth_ErrorBranches(t *testing.T) {
 
 		mockDB2 := new(mocks.MockDB)
 		mockQuery2 := new(mocks.MockQuery)
-		mockQuery2.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
+		mockQuery2.On("AllPaginated", mock.Anything).Return(nil, errors.New("scan failed")).Once()
 		setupPermissiveRound08Mocks(mockDB2, mockQuery2, nil, baseTime)
 		repo2 := NewAccountRepository(mockDB2, "test-table", "example.com", zaptest.NewLogger(t))
 		_, err := repo2.GetLoginAttemptCount(ctx, "user-1", time.Now().Add(-time.Hour))

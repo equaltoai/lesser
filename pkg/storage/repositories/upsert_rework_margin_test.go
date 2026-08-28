@@ -75,15 +75,16 @@ func TestDraftReviewProjectionQueriesAndImmutableVerdicts(t *testing.T) {
 	query.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
 	query.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
 	query.On("OrderBy", mock.Anything, mock.Anything).Return(query).Maybe()
-	query.On("All", mock.AnythingOfType("*[]models.DraftReviewGrant")).Run(func(args mock.Arguments) {
+	query.On("Limit", mock.Anything).Return(query).Maybe()
+	query.On("AllPaginated", mock.AnythingOfType("*[]models.DraftReviewGrant")).Run(func(args mock.Arguments) {
 		rows := args.Get(0).(*[]models.DraftReviewGrant)
 		*rows = []models.DraftReviewGrant{{OwnerID: "alice", DraftID: "draft-1", Reviewer: "bob"}}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	query.On("Create").Return(nil).Once()
-	query.On("All", mock.AnythingOfType("*[]models.DraftReviewVerdict")).Run(func(args mock.Arguments) {
+	query.On("AllPaginated", mock.AnythingOfType("*[]models.DraftReviewVerdict")).Run(func(args mock.Arguments) {
 		rows := args.Get(0).(*[]models.DraftReviewVerdict)
 		*rows = []models.DraftReviewVerdict{{OwnerID: "alice", DraftID: "draft-1", Reviewer: "bob", Verdict: "approve", RecordedAt: now}}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	repo := NewDraftRepository(db, models.MainTableName, zap.NewNop(), nil)
 	grants, err := repo.ListDraftReviewGrants(ctx, "alice", "draft-1")
@@ -340,9 +341,10 @@ func TestDraftReviewProjectionErrorsAreSurfaced(t *testing.T) {
 	query.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
 	query.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
 	query.On("OrderBy", mock.Anything, mock.Anything).Return(query).Maybe()
-	query.On("All", mock.AnythingOfType("*[]models.DraftReviewGrant")).Return(failure).Once()
+	query.On("Limit", mock.Anything).Return(query).Maybe()
+	query.On("AllPaginated", mock.AnythingOfType("*[]models.DraftReviewGrant")).Return(nil, failure).Once()
 	query.On("Create").Return(failure).Once()
-	query.On("All", mock.AnythingOfType("*[]models.DraftReviewVerdict")).Return(failure).Once()
+	query.On("AllPaginated", mock.AnythingOfType("*[]models.DraftReviewVerdict")).Return(nil, failure).Once()
 
 	repo := NewDraftRepository(db, models.MainTableName, zap.NewNop(), nil)
 	_, err := repo.ListDraftReviewGrants(ctx, "alice", "draft-1")

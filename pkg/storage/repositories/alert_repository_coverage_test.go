@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -208,9 +209,15 @@ func TestAlertRepository_Stats_And_Cleanup(t *testing.T) {
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 
-		// countAlertsByStatus uses Count().
-		mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
-		mockQuery.On("Count").Return(int64(2), nil).Maybe()
+		// countAlertsByStatus uses a bounded page walk (wave #1469) instead of Count.
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Alert")).Return(nil, ErrTestMockError).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Alert")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.Alert)
+			*dest = []models.Alert{
+				{AlertID: "a1", Severity: "critical"},
+				{AlertID: "a2", Severity: "warning"},
+			}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 		// getAllAlertsSince uses All() for each alert type; include errors to hit continue.
 		mockQuery.On("All", mock.AnythingOfType("*[]*models.Alert")).Return(ErrTestMockError).Once()
