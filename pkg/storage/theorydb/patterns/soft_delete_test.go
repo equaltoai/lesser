@@ -225,29 +225,6 @@ func TestSoftDeleteRepository_Query(t *testing.T) {
 	})
 }
 
-// TestSoftDeleteRepository_Stats tests statistics functionality
-func TestSoftDeleteRepository_Stats(t *testing.T) {
-	db := new(mocks.MockDB)
-	query := new(mocks.MockQuery)
-	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(db, logger)
-
-	model := &ExampleModel{}
-
-	db.On("WithContext", mock.Anything).Return(db).Maybe()
-	db.On("Model", model).Return(query).Maybe()
-	query.On("Count").Return(int64(100), nil).Once()                                           // Total count
-	query.On("Where", "deleted_at", "attribute_exists", interface{}(nil)).Return(query).Once() // Deleted filter
-	query.On("Count").Return(int64(15), nil).Once()                                            // Deleted count
-
-	stats, err := repo.GetSoftDeleteStats(context.Background(), model)
-	assert.NoError(t, err)
-	assert.Equal(t, 100, stats.TotalItems)
-	assert.Equal(t, 15, stats.DeletedItems)
-	assert.Equal(t, 85, stats.ActiveItems)
-	assert.Equal(t, 15.0, stats.GetDeletionPercentage())
-}
-
 // TestSoftDeleteRepository_Cleanup tests cleanup functionality
 func TestSoftDeleteRepository_Cleanup(t *testing.T) {
 	db := new(mocks.MockDB)
@@ -290,59 +267,6 @@ func TestSoftDeleteRepository_Cleanup(t *testing.T) {
 	db.AssertExpectations(t)
 	query.AssertExpectations(t)
 	deleteQuery.AssertExpectations(t)
-}
-
-func TestSoftDeleteStats_String(t *testing.T) {
-	stats := SoftDeleteStats{
-		TotalItems:   100,
-		ActiveItems:  85,
-		DeletedItems: 15,
-	}
-
-	str := stats.String()
-	assert.Contains(t, str, "Total: 100")
-	assert.Contains(t, str, "Active: 85")
-	assert.Contains(t, str, "Deleted: 15")
-}
-
-func TestSoftDeleteStats_GetDeletionPercentage(t *testing.T) {
-	tests := []struct {
-		name     string
-		stats    SoftDeleteStats
-		expected float64
-	}{
-		{
-			name: "normal case",
-			stats: SoftDeleteStats{
-				TotalItems:   100,
-				DeletedItems: 15,
-			},
-			expected: 15.0,
-		},
-		{
-			name: "no items",
-			stats: SoftDeleteStats{
-				TotalItems:   0,
-				DeletedItems: 0,
-			},
-			expected: 0.0,
-		},
-		{
-			name: "all deleted",
-			stats: SoftDeleteStats{
-				TotalItems:   50,
-				DeletedItems: 50,
-			},
-			expected: 100.0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.stats.GetDeletionPercentage()
-			assert.Equal(t, tt.expected, result)
-		})
-	}
 }
 
 func TestConvenienceFunctions(t *testing.T) {

@@ -315,50 +315,6 @@ func (r *SoftDeleteRepository) GetDeletedItemsOlderThan(ctx context.Context, mod
 	return nil
 }
 
-// GetSoftDeleteStats returns statistics about soft-deleted items
-func (r *SoftDeleteRepository) GetSoftDeleteStats(ctx context.Context, model interface{}) (SoftDeleteStats, error) {
-	stats := SoftDeleteStats{}
-
-	// Count total items using DynamORM
-	totalCount, err := r.db.WithContext(ctx).Model(model).Count()
-	if err != nil {
-		return stats, fmt.Errorf("failed to count total items: %w", err)
-	}
-	stats.TotalItems = int(totalCount)
-
-	// Count soft-deleted items using DynamORM
-	deletedCount, err := r.db.WithContext(ctx).Model(model).
-		Where("deleted_at", "attribute_exists", nil).
-		Count()
-	if err != nil {
-		return stats, fmt.Errorf("failed to count deleted items: %w", err)
-	}
-	stats.DeletedItems = int(deletedCount)
-	stats.ActiveItems = stats.TotalItems - stats.DeletedItems
-
-	return stats, nil
-}
-
-// SoftDeleteStats contains statistics about soft-deleted items
-type SoftDeleteStats struct {
-	TotalItems   int `json:"total_items"`
-	ActiveItems  int `json:"active_items"`
-	DeletedItems int `json:"deleted_items"`
-}
-
-// String returns a string representation of soft delete stats
-func (s SoftDeleteStats) String() string {
-	return fmt.Sprintf("Total: %d, Active: %d, Deleted: %d", s.TotalItems, s.ActiveItems, s.DeletedItems)
-}
-
-// GetDeletionPercentage returns the percentage of items that are soft-deleted
-func (s SoftDeleteStats) GetDeletionPercentage() float64 {
-	if s.TotalItems == 0 {
-		return 0.0
-	}
-	return float64(s.DeletedItems) / float64(s.TotalItems) * 100.0
-}
-
 // fetchDeletedItems loads a batch of deleted items older than the cutoff.
 func (r *SoftDeleteRepository) fetchDeletedItems(ctx context.Context, model interface{}, cutoff time.Time, limit int) ([]interface{}, error) {
 	query := r.db.WithContext(ctx).Model(model).
