@@ -191,8 +191,14 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 			continue
 		}
 
-		// Get review count for this event
-		reviewCount, _ := r.countReviews(ctx, event.ID)
+		// Get review count for this event. Cap exhaustion must fail closed —
+		// the pre-existing `reviewCount, _ :=` discard would otherwise route the
+		// walk's errBoundedPageCapExceeded into a silent zero (wave #1469);
+		// other (transient) errors keep the best-effort zero.
+		reviewCount, countErr := r.countReviews(ctx, event.ID)
+		if stderrors.Is(countErr, errBoundedPageCapExceeded) {
+			return nil, countErr
+		}
 
 		queueItem := &storage.ModerationQueueItem{
 			Event:       event,
@@ -271,8 +277,14 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 			TTL:             model.TTL,
 		}
 
-		// Get review count for this event
-		reviewCount, _ := r.countReviews(ctx, event.ID)
+		// Get review count for this event. Cap exhaustion must fail closed —
+		// the pre-existing `reviewCount, _ :=` discard would otherwise route the
+		// walk's errBoundedPageCapExceeded into a silent zero (wave #1469);
+		// other (transient) errors keep the best-effort zero.
+		reviewCount, countErr := r.countReviews(ctx, event.ID)
+		if stderrors.Is(countErr, errBoundedPageCapExceeded) {
+			return nil, "", countErr
+		}
 
 		queueItem := &storage.ModerationQueueItem{
 			Event:       event,
@@ -773,15 +785,26 @@ func (r *ModerationRepository) getSeverityValue(severity string) float64 {
 
 // countReviews is a helper to count reviews for an event
 func (r *ModerationRepository) countReviews(ctx context.Context, eventID string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.ModerationReview{}).
-		Where("PK", "=", fmt.Sprintf("REVIEW#%s", eventID)).
-		Count()
+	// The whole keyed REVIEW#<event> partition must be read to count every
+	// review, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var reviews []models.ModerationReview
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ModerationReview{}).
+			Where("PK", "=", fmt.Sprintf("REVIEW#%s", eventID)),
+		500, 100,
+		func(page []models.ModerationReview) (bool, error) {
+			reviews = append(reviews, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return 0, err
 	}
 
-	return int(count), nil
+	return len(reviews), nil
 }
 
 // Helper methods from legacy implementation that are still referenced
@@ -1360,18 +1383,32 @@ func (r *ModerationRepository) GetReviewerStats(ctx context.Context, reviewerID 
 
 // GetModerationQueueCount returns the count of items in the moderation queue
 func (r *ModerationRepository) GetModerationQueueCount(ctx context.Context) (int, error) {
-	// Count pending moderation events
-	count, err := r.db.WithContext(ctx).Model(&models.ModerationEvent{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
-		Count()
+	// Count pending moderation events. The whole keyed gsi2 partition must be
+	// read, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap. Cap exhaustion must fail closed — the legacy 0-nil swallow
+	// would otherwise silently drop it; other (transient) errors keep the
+	// return-0 behavior.
+	var events []models.ModerationEvent
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ModerationEvent{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)),
+		500, 100,
+		func(page []models.ModerationEvent) (bool, error) {
+			events = append(events, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return 0, err
+		}
 		// If error, return 0 instead of failing (matches legacy behavior)
 		return 0, nil
 	}
 
-	return int(count), nil
+	return len(events), nil
 }
 
 // RecordPatternMatch records a moderation pattern match for analytics
@@ -2023,19 +2060,33 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 
 // GetOpenReportsCount returns the count of open reports
 func (r *ModerationRepository) GetOpenReportsCount(ctx context.Context) (int, error) {
-	// Count reports with status "open" using GSI3
-	count, err := r.db.WithContext(ctx).Model(&models.Report{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", "STATUS#open").
-		Count()
+	// Count reports with status "open" using GSI3. The whole keyed gsi3
+	// partition must be read, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap. Cap exhaustion must fail closed — the
+	// legacy 0-nil swallow would otherwise silently drop it; other (transient)
+	// errors keep the return-0 behavior.
+	var reports []models.Report
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Report{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", "STATUS#open"),
+		500, 100,
+		func(page []models.Report) (bool, error) {
+			reports = append(reports, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("Failed to count open reports", zap.Error(err))
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return 0, err
+		}
 		// Return 0 instead of error to match legacy behavior
 		return 0, nil
 	}
 
-	return int(count), nil
+	return len(reports), nil
 }
 
 // GetReportedStatuses retrieves statuses associated with a report
@@ -2340,19 +2391,33 @@ func (r *ModerationRepository) UpdateFlagStatus(ctx context.Context, id string, 
 
 // CountPendingFlags returns the count of pending flags
 func (r *ModerationRepository) CountPendingFlags(ctx context.Context) (int, error) {
-	// Count flags with status "pending" using GSI2
-	count, err := r.db.WithContext(ctx).Model(&models.Flag{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", "FLAG_STATUS#pending").
-		Count()
+	// Count flags with status "pending" using GSI2. The whole keyed gsi2
+	// partition must be read, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap. Cap exhaustion must fail closed — the
+	// legacy 0-nil swallow would otherwise silently drop it; other (transient)
+	// errors keep the return-0 behavior.
+	var flags []models.Flag
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Flag{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "FLAG_STATUS#pending"),
+		500, 100,
+		func(page []models.Flag) (bool, error) {
+			flags = append(flags, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("Failed to count pending flags", zap.Error(err))
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return 0, err
+		}
 		// Return 0 instead of error to match legacy behavior
 		return 0, nil
 	}
 
-	return int(count), nil
+	return len(flags), nil
 }
 
 // DeleteFlag removes a flag

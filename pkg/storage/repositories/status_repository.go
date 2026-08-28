@@ -630,28 +630,50 @@ func (r *StatusRepository) findBoostStatus(ctx context.Context, boosterID, targe
 
 // CountStatusesByAuthor counts the total number of statuses by an author
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
-		Count()
+	// The whole keyed gsi1 AUTHOR#<author> partition must be read to count
+	// every status, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. A keyed Count()
+	// would be unbounded by construction (tabletheory strips Limit from Count).
+	var statuses []models.Status
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Status{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)),
+		500, 100,
+		func(page []models.Status) (bool, error) {
+			statuses = append(statuses, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "count by author")
 	}
 
-	return int(count), nil
+	return len(statuses), nil
 }
 
 // CountReplies counts the number of replies to a status
 func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("gsi4").
-		Where("gsi4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
-		Count()
+	// The whole keyed gsi4 REPLIES#<status> partition must be read to count
+	// every reply, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. A keyed Count()
+	// would be unbounded by construction (tabletheory strips Limit from Count).
+	var statuses []models.Status
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Status{}).
+			Index("gsi4").
+			Where("gsi4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)),
+		500, 100,
+		func(page []models.Status) (bool, error) {
+			statuses = append(statuses, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "reply", "count")
 	}
 
-	return int(count), nil
+	return len(statuses), nil
 }
 
 // UpdateEngagementMetrics updates the cached engagement metrics for a status
@@ -850,11 +872,24 @@ func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *in
 	baseQuery := r.buildAdminStatusTimelineQuery(ctx, filter, localDomain)
 
 	if !remoteOnly || localDomain == "" {
-		count, err := baseQuery.Count()
+		// The whole keyed gsi8 ADMIN_TIMELINE window must be read to count, so
+		// the read is a bounded page walk (wave #1469): Limit(500)/page,
+		// 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+		// unbounded by construction (tabletheory strips Limit from Count); the
+		// query's Filters (Deleted=false etc.) apply per page.
+		var statuses []models.Status
+		err := walkKeyedPages(
+			baseQuery,
+			500, 100,
+			func(page []models.Status) (bool, error) {
+				statuses = append(statuses, page...)
+				return false, nil
+			},
+		)
 		if err != nil {
 			return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "count filtered admin statuses")
 		}
-		return count, nil
+		return int64(len(statuses)), nil
 	}
 
 	// Remote-only counts require post-processing (DynamoDB lacks NOT CONTAINS).

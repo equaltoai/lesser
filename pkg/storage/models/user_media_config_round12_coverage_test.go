@@ -232,3 +232,28 @@ func TestUserMediaConfig_UpgradePlanAndExpiryAndUpdateKeys(t *testing.T) {
 	umc2 := &UserMediaConfig{}
 	assert.Error(t, umc2.UpdateKeys())
 }
+
+func TestUserMediaConfig_UpgradePlan_PremiumAppliesPremiumDefaults(t *testing.T) {
+	umc := &UserMediaConfig{
+		UserID:   "user-1",
+		Username: "alice",
+	}
+	assert.NoError(t, umc.BeforeCreate())
+
+	// Valid premium upgrade applies the premium default limits (setDefaults
+	// premium branch): bigger file caps, higher quotas, and moderation enabled.
+	expires := time.Now().Add(24 * time.Hour)
+	assert.NoError(t, umc.UpgradePlan("premium", &expires))
+	assert.Equal(t, "premium", umc.PlanTier)
+	assert.Equal(t, &expires, umc.PlanExpiresAt)
+
+	assert.Equal(t, int64(20*1024*1024), umc.MaxImageSize)
+	assert.Equal(t, int64(200*1024*1024), umc.MaxVideoSize)
+	assert.Equal(t, int64(200*1024*1024), umc.MaxFileSize)
+	assert.Equal(t, 3600, umc.MaxVideoDuration)
+	assert.Equal(t, 1000, umc.MaxDailyUploads)
+	assert.Equal(t, 25000, umc.MaxMonthlyUploads)
+	assert.Equal(t, int64(100*1024*1024*1024), umc.MaxStorageUsage)
+	assert.Equal(t, int64(50_000_000), umc.MonthlyBudgetMicros)
+	assert.True(t, umc.ContentModerationEnabled)
+}

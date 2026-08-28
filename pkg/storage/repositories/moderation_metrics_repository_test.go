@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -208,13 +209,15 @@ func TestModerationMetricsRepository_GetFalsePositives_Success(t *testing.T) {
 	mockQuery.On("Where", "gsi1PK", "=", "FALSE_POSITIVES").Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ModerationFalsePositive)
 		*out = []*models.ModerationFalsePositive{
 			{ContentID: "content-1"},
 			{ContentID: "content-2"},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{}, nil)
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)
@@ -241,7 +244,9 @@ func TestModerationMetricsRepository_GetFalsePositives_Error(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(dbError)
+	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, dbError)
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)
@@ -305,12 +310,14 @@ func TestModerationMetricsRepository_GetDecisionSamples_WithDecision(t *testing.
 	mockQuery.On("Where", "gsi1PK", "=", "DECISION#approve").Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ModerationDecisionSample)
 		*out = []*models.ModerationDecisionSample{
 			{ContentID: "content-1", Decision: "approve"},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{}, nil)
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)
@@ -337,7 +344,9 @@ func TestModerationMetricsRepository_GetDecisionSamples_WithDecision_Error(t *te
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(dbError)
+	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, dbError)
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)
@@ -364,12 +373,14 @@ func TestModerationMetricsRepository_GetDecisionSamples_EmptyDecision_DateLoop(t
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walks (wave #1469): Limit(500)/page via AllPaginated per day.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ModerationDecisionSample)
 		*out = []*models.ModerationDecisionSample{
 			{ContentID: "content-day"},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{}, nil)
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)
@@ -399,14 +410,16 @@ func TestModerationMetricsRepository_GetDecisionSamples_EmptyDecision_PartialFai
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	// First call succeeds, second fails - but partial failures should not abort
-	mockQuery.On("All", mock.Anything).Return(dbError).Once()
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walks (wave #1469): first day fails (transient — skip-day),
+	// second succeeds; partial failures should not abort.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, dbError).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ModerationDecisionSample)
 		*out = []*models.ModerationDecisionSample{
 			{ContentID: "content-day2"},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{}, nil).Once()
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)
@@ -593,12 +606,14 @@ func TestModerationMetricsRepository_GetMetricsEntries_WithMetricTypes(t *testin
 	mockQuery.On("Where", "gsi1PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ModerationMetricsEntry)
 		*out = []*models.ModerationMetricsEntry{
 			{MetricType: "content_type:text", Count: 10},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{}, nil)
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)
@@ -624,12 +639,14 @@ func TestModerationMetricsRepository_GetMetricsEntries_EmptyMetricTypes_DateLoop
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Where", "SK", "begins_with", "STATS#").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walks (wave #1469): Limit(500)/page via AllPaginated per day.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ModerationMetricsEntry)
 		*out = []*models.ModerationMetricsEntry{
 			{MetricType: "content_type:text", Count: 5},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{}, nil)
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)
@@ -660,7 +677,9 @@ func TestModerationMetricsRepository_GetAggregatedStats_Success(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Where", "SK", "begins_with", "STATS#").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walks (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		// Return metrics entries for aggregation
 		if out, ok := args.Get(0).(*[]*models.ModerationMetricsEntry); ok {
 			*out = []*models.ModerationMetricsEntry{
@@ -671,21 +690,23 @@ func TestModerationMetricsRepository_GetAggregatedStats_Success(t *testing.T) {
 				{MetricType: "confidence:0.9", Count: 50},
 			}
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{}, nil).Maybe()
 
 	// Mock for GetFalsePositives
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "FALSE_POSITIVES").Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		if out, ok := args.Get(0).(*[]*models.ModerationFalsePositive); ok {
 			*out = []*models.ModerationFalsePositive{
 				{ContentID: "fp-1"},
 				{ContentID: "fp-2"},
 			}
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{}, nil).Maybe()
 
 	repo := NewModerationMetricsRepository(mockDB, logger)
 	assert.NotNil(t, repo)

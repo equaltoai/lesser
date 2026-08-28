@@ -106,7 +106,13 @@ func TestQueryUtils_db_queries_and_helpers(t *testing.T) {
 
 		mockQuery.On("Where", "PK", "=", "pk1").Return(mockQuery)
 		mockQuery.On("Index", "gsi2").Return(mockQuery)
-		mockQuery.On("Count").Return(int64(7), nil).Once()
+		// CountQuery is now a page-capped walk (wave #1469): Limit(500)/page
+		// via AllPaginated; count = walked rows.
+		mockQuery.On("Limit", 500).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]map[string]interface{})
+			*dest = make([]map[string]interface{}, 7)
+		}).Return(&core.PaginatedResult{}, nil).Once()
 		n, err := q.CountQuery(ctx, "pk1", "gsi2")
 		require.NoError(t, err)
 		assert.Equal(t, 7, n)

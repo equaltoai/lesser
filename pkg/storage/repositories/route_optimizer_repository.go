@@ -69,6 +69,14 @@ func (r *RouteOptimizerRepository) GetRouteResults(ctx context.Context, routeID 
 
 	pk := fmt.Sprintf("ROUTE#%s", routeID)
 
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read. No max is
+	// applied: the internal callers pass 1000 (route_optimizer_repository.go)
+	// and expect the full result set.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 		Where("PK", "=", pk).
 		Where("SK", "begins_with", "RESULT#").
@@ -96,6 +104,12 @@ func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since t
 	var results []*models.RouteDeliveryResult
 
 	sinceKey := fmt.Sprintf("%d", since.Unix())
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed gsi1 read.
+	if limit <= 0 {
+		limit = 500
+	}
 
 	query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 		Index("gsi1").
@@ -145,6 +159,12 @@ func (r *RouteOptimizerRepository) GetOptimizationDecisions(ctx context.Context,
 	var decisions []*models.OptimizationDecision
 
 	sinceKey := fmt.Sprintf("DECISION#%d", since.UnixNano())
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read.
+	if limit <= 0 {
+		limit = 500
+	}
 
 	query := r.optimizationDecisionRepo.GetDB().WithContext(ctx).Model(&models.OptimizationDecision{}).
 		Where("PK", "=", "OPTIMIZATION").
@@ -318,6 +338,12 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 		zap.Int("limit", limit))
 
 	var results []*models.RouteDeliveryResult
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition/GSI read.
+	if limit <= 0 {
+		limit = 500
+	}
 
 	// Query strategy depends on whether we're filtering by specific route
 	if routeID != "" {

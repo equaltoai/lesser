@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/notecontract"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -50,7 +51,13 @@ func TestStatusRepository_CountStatusesByAuthorUsesStatusActorIDGSIContract(t *t
 	mockDB.On("Model", mock.AnythingOfType("*models.Status")).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", status.GSI1PK).Return(mockQuery).Once()
-	mockQuery.On("Count").Return(int64(1), nil).Once()
+	// CountStatusesByAuthor is now a page-capped walk (wave #1469): count =
+	// walked rows.
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.Status)
+		*out = []models.Status{{StatusID: "s1"}}
+	}).Return(&core.PaginatedResult{}, nil).Once()
 
 	countRepo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
 	count, err := countRepo.CountStatusesByAuthor(ctx, actorID)

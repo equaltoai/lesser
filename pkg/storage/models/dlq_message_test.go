@@ -592,3 +592,30 @@ func TestNewTransientErrorDLQ(t *testing.T) {
 	assert.Equal(t, 5, d.MaxReprocessAttempts) // More retries for transient
 	assert.False(t, d.IsPermanent)
 }
+
+func TestDLQMessage_UpdateKeys_SuccessBuildsKeys(t *testing.T) {
+	firstSeen := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	d := &DLQMessage{
+		ID:                "dlq-1",
+		Service:           "notification-processor",
+		OriginalMessageID: "msg-123",
+		ErrorType:         "validation_error",
+		Status:            "new",
+		FirstSeenAt:       firstSeen,
+	}
+
+	err := d.UpdateKeys()
+	require.NoError(t, err)
+
+	// PK/SK construction from Service + FirstSeenAt + OriginalMessageID.
+	assert.Equal(t, "DLQ#notification-processor#20250102", d.PK)
+	assert.Equal(t, "MSG#20250102030405#msg-123", d.SK)
+
+	// GSI keys derived from the same fields.
+	assert.Equal(t, "DLQ_ERROR#validation_error", d.GSI1PK)
+	assert.Equal(t, "2025-01-02T03:04:05Z#notification-processor#dlq-1", d.GSI1SK)
+	assert.Equal(t, "DLQ_RETRY#notification-processor#new", d.GSI2PK)
+	assert.Equal(t, "2025-01-02T03:04:05Z#dlq-1", d.GSI2SK)
+	assert.Equal(t, "DLQ_SERVICE#notification-processor", d.GSI3PK)
+	assert.Equal(t, "2025-01-02T03:04:05Z#validation_error#dlq-1", d.GSI3SK)
+}

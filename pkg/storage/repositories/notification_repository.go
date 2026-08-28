@@ -609,15 +609,27 @@ func (r *NotificationRepository) ConsolidateNotifications(ctx context.Context, g
 func (r *NotificationRepository) GetUnreadNotificationCount(ctx context.Context, userID string) (int64, error) {
 	pk := "USER#" + userID
 
-	count, err := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		Filter("IsRead", "=", false).
-		Count()
+	// The whole keyed USER#<user> partition must be read to count the unread
+	// rows, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. The IsRead=false filter stays on
+	// the query chain so it applies per page; a keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var notifications []models.Notification
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Notification{}).
+			Where("PK", "=", pk).
+			Filter("IsRead", "=", false),
+		500, 100,
+		func(page []models.Notification) (bool, error) {
+			notifications = append(notifications, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityNotification, "unread count")
 	}
 
-	return count, nil
+	return int64(len(notifications)), nil
 }
 
 // GetNotificationCountsByType returns notification counts by type

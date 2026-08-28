@@ -89,15 +89,19 @@ func (r *MediaMetadataRepository) GetMediaMetadataByStatus(ctx context.Context, 
 		zap.String("status", status),
 		zap.Int("limit", limit))
 
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed gsi1 read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	// Use BaseRepository's GetDB() for complex GSI queries that BaseRepository doesn't directly support
 	var metadataList []*models.MediaMetadata
 	query := r.GetDB().WithContext(ctx).Model(&models.MediaMetadata{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("STATUS#%s", status))
 
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
+	query = query.Limit(limit)
 
 	err := query.All(&metadataList)
 	if err != nil {

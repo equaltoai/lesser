@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -166,6 +167,9 @@ func setupMetricsRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery, bas
 	}).Return(nil).Maybe()
 
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+	// Wave #1469 page-capped walks (cleanupAggregatedMetricsByPeriod and the
+	// MetricRecord queries) iterate with AllPaginated.
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{}, nil).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
 }
 
@@ -522,6 +526,10 @@ func TestMetricRecordRepository_QueryErrors(t *testing.T) {
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Maybe()
+	// Wave #1469 page-capped walks (queryMetricsByTimeRange/GetMetricsByDate)
+	// iterate with AllPaginated.
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("query failed")).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 
 	repo := &MetricRecordRepository{
 		EnhancedBaseRepository: NewEnhancedBaseRepository[*models.MetricRecord](mockDB, "test-table", logger, nil, "MetricRecordRepository", "metricrecord"),

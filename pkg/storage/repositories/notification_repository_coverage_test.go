@@ -486,7 +486,10 @@ func TestRound07_NotificationRepository_UnreadCount_ErrorBranch(t *testing.T) {
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 
-	mockQuery.On("Count").Return(int64(0), errors.New("count-failed")).Once()
+	// GetUnreadNotificationCount is now a page-capped walk (wave #1469): the
+	// walk error propagates.
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("count-failed")).Once()
 	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	_, err := repo.GetUnreadNotificationCount(context.Background(), "user-1")
 	require.Error(t, err)

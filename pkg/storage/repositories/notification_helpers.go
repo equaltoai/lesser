@@ -130,6 +130,12 @@ func (h *CostTrackingQueryHelper) buildTimeRangeQuery(ctx context.Context, gsiIn
 	gsiPKField := fmt.Sprintf("gsi%sPK", gsiNumber)
 	gsiSKField := fmt.Sprintf("gsi%sSK", gsiNumber)
 
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	query := h.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Index(gsiIndex).
 		Where(gsiPKField, "=", gsiPKValue).
