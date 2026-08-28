@@ -273,13 +273,17 @@ goDynamoDBAllNoKey:
 # indeterminate, and model-blind-trust rules as goDynamoDBAllNoKey apply
 # (tracked by count per file). Gate added 2026-08-26 (wave part 1 rework).
 #
-# Dispositions (see docs/architecture/dynamodb-scan-inventory.md):
-# - pkg/storage/theorydb/patterns/soft_delete.go: 2 — SoftDeleteRepository.
-#   GetSoftDeleteStats counts total items (:323) and soft-deleted items
-#   (:330) with full-table counted scans. ENUMERATION ONLY in this PR — the
-#   site is NOT modified; disposition "elimination pending — wave #1469".
+# Wave part 2 (batch S4, umbrella #1469, issue #1503, 2026-08-28) closed this
+# gate: the sole baselined site — pkg/storage/theorydb/patterns/soft_delete.go
+# SoftDeleteRepository.GetSoftDeleteStats (key-less Count() on fresh chains at
+# :323 and :330) — was DELETED as zero-caller code (mechanism: batch-L/S3
+# zero-caller deletion; the only reference in the repo was soft_delete_test.go,
+# verified by caller sweep of GetSoftDeleteStats/SoftDeleteStats/
+# GetDeletionPercentage across pkg/ cmd/ graph/). The method, the
+# SoftDeleteStats type, its String/GetDeletionPercentage helpers, and their
+# tests were removed together; no baselined CountNoKey entries remain.
 goDynamoDBCountNoKey:
-  pkg/storage/theorydb/patterns/soft_delete.go: 2
+  {}
 
 # Exact occurrences of unsafe CSP directives in CloudFront/CDK code (tracked by count per file).
 infraCdkCspUnsafeInline:
