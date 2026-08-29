@@ -143,21 +143,15 @@ func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, 
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.db.WithContext(ctx).Model(&models.DynamoDBCostRecord{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("COST_TABLE#%s", tableName)).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
-		OrderBy("gsi1SK", "DESC").
-		Limit(safeLimit + 1)
-
-	if cursor != "" {
-		query = query.Where("gsi1SK", "<", cursor)
-	}
-
+	// One gsi1SK key condition (issue #1500) — see gsi1BetweenCursorScope.
+	query, fetchLimit := gsi1BetweenCursorScope(ctx, r.db, &models.DynamoDBCostRecord{}, fmt.Sprintf("COST_TABLE#%s", tableName), startSK, endSK, cursor, safeLimit+1)
+	query = query.OrderBy("gsi1SK", "DESC").Limit(fetchLimit)
 	err := query.All(&trackingList)
 	if err != nil {
 		return nil, "", MapErrorWithContext(err, "failed to list cost tracking by table")
+	}
+	if cursor != "" {
+		trackingList = dropSortKeyCursorDuplicate(trackingList, cursor, func(c *models.DynamoDBCostRecord) string { return c.GSI1SK })
 	}
 
 	var nextCursor string
@@ -1127,8 +1121,12 @@ func (r *TrackingRepository) GetCostProjections(ctx context.Context, period stri
 
 	err := r.db.WithContext(ctx).Model(&models.CostProjection{}).
 		Where("PK", "=", pk).
-		Where("SK", ">=", skPrefix).
-		Where("SK", "<", skEnd).
+		// One BETWEEN key condition on SK (inclusive both bounds; the old
+		// `>= prefix AND < prefix~` pair becomes BETWEEN [prefix, prefix~] —
+		// inclusive of the sentinel bound, which no real projection SK can
+		// equal, so the row set is unchanged). Two range conditions on one
+		// sort key are rejected by DynamoDB (issue #1500).
+		Where("SK", "BETWEEN", []any{skPrefix, skEnd}).
 		OrderBy("SK", "DESC").
 		Limit(1).
 		All(&projections)
@@ -1227,25 +1225,18 @@ func (r *TrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL st
 	startSK := fmt.Sprintf("TS#%s", startTime.Format(common.CompactTimeFormat))
 	endSK := fmt.Sprintf("TS#%s", endTime.Format(common.CompactTimeFormat))
 
-	query := r.db.WithContext(ctx).Model(&models.RelayCost{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("RELAY_COSTS#%s", relayURL)).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
-		OrderBy("gsi1SK", "DESC").
-		Limit(safeLimit + 1)
-
-	if cursor != "" {
-		query = query.Where("gsi1SK", "<", cursor)
-	}
-
+	// One gsi1SK key condition (issue #1500) — see gsi1BetweenCursorScope.
+	query, fetchLimit := gsi1BetweenCursorScope(ctx, r.db, &models.RelayCost{}, fmt.Sprintf("RELAY_COSTS#%s", relayURL), startSK, endSK, cursor, safeLimit+1)
+	query = query.OrderBy("gsi1SK", "DESC").Limit(fetchLimit)
 	if operationType != "" {
 		query = query.Filter("OperationType", "=", operationType)
 	}
-
 	err := query.All(&costs)
 	if err != nil {
 		return nil, "", MapErrorWithContext(err, "failed to get relay costs by URL")
+	}
+	if cursor != "" {
+		costs = dropSortKeyCursorDuplicate(costs, cursor, func(c *models.RelayCost) string { return c.GSI1SK })
 	}
 
 	var nextCursor string
@@ -1422,21 +1413,15 @@ func (r *TrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayUR
 	startSK := fmt.Sprintf("daily#%s", startTime.Format(common.CompactTimeFormat))
 	endSK := fmt.Sprintf("daily#%s", endTime.Format(common.CompactTimeFormat))
 
-	query := r.db.WithContext(ctx).Model(&models.RelayMetrics{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("RELAY_METRICS#%s", relayURL)).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
-		OrderBy("gsi1SK", "DESC").
-		Limit(safeLimit + 1)
-
-	if cursor != "" {
-		query = query.Where("gsi1SK", "<", cursor)
-	}
-
+	// One gsi1SK key condition (issue #1500) — see gsi1BetweenCursorScope.
+	query, fetchLimit := gsi1BetweenCursorScope(ctx, r.db, &models.RelayMetrics{}, fmt.Sprintf("RELAY_METRICS#%s", relayURL), startSK, endSK, cursor, safeLimit+1)
+	query = query.OrderBy("gsi1SK", "DESC").Limit(fetchLimit)
 	err := query.All(&metricsHistory)
 	if err != nil {
 		return nil, "", MapErrorWithContext(err, "failed to get relay metrics history")
+	}
+	if cursor != "" {
+		metricsHistory = dropSortKeyCursorDuplicate(metricsHistory, cursor, func(m *models.RelayMetrics) string { return m.GSI1SK })
 	}
 
 	var nextCursor string

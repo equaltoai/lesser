@@ -61,14 +61,12 @@ type AccountRepository interface {
 	GetPinnedAccounts(ctx context.Context, username string) ([]*activitypub.Actor, error)
 
 	// ===== Timeline Operations =====
-	GetHomeTimeline(ctx context.Context, username string, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error)
-	GetLocalTimeline(ctx context.Context, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error)
-	GetPublicTimeline(ctx context.Context, limit int, maxID, sinceID string, onlyMedia bool) ([]*storage.TimelineEntry, error)
-	GetHashtagTimeline(ctx context.Context, hashtag string, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error)
-	GetListTimeline(ctx context.Context, username, listID string, limit int, maxID, sinceID string) ([]*storage.TimelineEntry, error)
+	// NOTE: the six legacy timeline reads (GetHomeTimeline, GetLocalTimeline,
+	// GetPublicTimeline, GetHashtagTimeline, GetListTimeline, GetConversations)
+	// were structurally dead (their key shapes never matched the writers,
+	// issue #1506) and are deleted — see account_repository_timeline.go.
 	AddToTimeline(ctx context.Context, username string, entry *storage.TimelineEntry) error
 	RemoveFromTimeline(ctx context.Context, username, objectID string) error
-	GetConversations(ctx context.Context, username string, limit int, maxID, sinceID string) ([]*storage.Conversation, error)
 	MuteConversation(ctx context.Context, username, conversationID string) error
 	UnmuteConversation(ctx context.Context, username, conversationID string) error
 	IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error)

@@ -189,8 +189,7 @@ func TestBatchN1_GetFiltersForUser_PageCappedWalk(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "USER#alice").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", ">=", "FILTER#").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "<", "FILTER~").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Filter)
@@ -213,8 +212,7 @@ func TestBatchN1_GetFilterKeywords_PageCappedWalk(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "FILTER#f1").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", ">=", "KEYWORD#").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "<", "KEYWORD~").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.FilterKeyword)
@@ -237,8 +235,7 @@ func TestBatchN1_GetFilterStatuses_PageCappedWalk(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "FILTER#f1").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", ">=", "STATUS#").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "<", "STATUS~").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.FilterStatus)

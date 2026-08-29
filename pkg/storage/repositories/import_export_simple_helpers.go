@@ -240,8 +240,9 @@ func getUserCosts[T any](
 	query := db.Model(modelPtr).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
+		// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+		// range conditions on one sort key are rejected by DynamoDB (#1500).
+		Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("gsi1SK", "DESC").
 		Limit(limit)
 

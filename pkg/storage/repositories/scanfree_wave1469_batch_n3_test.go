@@ -814,8 +814,7 @@ func TestBatchN3_ModerationMetrics_TypesBranch_PageCappedWalk(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.ModerationMetricsEntry")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "METRIC_TYPE#spam").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", "DATE#2026-08-26").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", "DATE#2026-08-26#Z").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationMetricsEntry")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.ModerationMetricsEntry)
@@ -898,8 +897,7 @@ func TestBatchN3_GetDailySpending_PageCappedWalk(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.NotificationCostTracking")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "USER#alice").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.NotificationCostTracking")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.NotificationCostTracking)
@@ -1058,8 +1056,7 @@ func TestBatchN3_ListByType_ZeroLimitFloored(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.Metrics")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "metrics#request").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
 	// limit=0 previously compiled Limit(0) — no limit; the floor issues
 	// Limit(20).
@@ -1085,8 +1082,7 @@ func TestBatchN3_GetFederationCosts_ZeroLimitFloored(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.FederationCostTracking")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "FED_COSTS#DOMAIN#example.com#2026-08").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Once()
 	// limit=0 previously skipped Limit entirely (the `if limit > 0` gate); the
 	// floor must issue Limit(500).
@@ -1135,8 +1131,7 @@ func TestBatchN3_GetMetricsInRange_ZeroLimitFloored(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.RouteDeliveryResult")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "ROUTE#r1").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
 	// limit=0 previously compiled Limit(0) — no limit; the floor issues
 	// Limit(500).
@@ -1339,8 +1334,7 @@ func TestBatchN3_GetFederationCostsByActivityType_ZeroLimitFloored(t *testing.T)
 	mockDB.On("Model", mock.AnythingOfType("*models.FederationCostTracking")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi2PK", "=", "FED_TYPE#announce").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi2SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi2SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi2SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationCostTracking")).Return(nil).Once()
 
@@ -1467,8 +1461,7 @@ func TestBatchN3_GetFederationCosts_TwoMonthBucketLoop(t *testing.T) {
 	// Limit(500) applied per bucket).
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Times(2)
 	mockQuery.On("Where", "gsi1PK", "=", "FED_COSTS#DOMAIN#example.com#2026-07").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Times(2)
 	// Per-bucket remaining-limit semantics: first bucket Limit(10) (limit), then
 	// Limit(9) once one cost was gathered. The floor guarantees > 0.
@@ -1479,8 +1472,7 @@ func TestBatchN3_GetFederationCosts_TwoMonthBucketLoop(t *testing.T) {
 		*dest = []*models.FederationCostTracking{{Domain: "example.com"}}
 	}).Return(nil).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "FED_COSTS#DOMAIN#example.com#2026-08").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationCostTracking")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.FederationCostTracking)
 		*dest = []*models.FederationCostTracking{{Domain: "example.com"}}
@@ -1583,8 +1575,7 @@ func TestBatchN3_GetDailySpending_QueryError(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.NotificationCostTracking")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "USER#alice").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.NotificationCostTracking")).Return(nil, errors.New("boom")).Once()
 
@@ -1644,13 +1635,11 @@ func TestBatchN3_ModerationMetrics_TypesBranch_TransientErrorSkipsType(t *testin
 	// Type 1 walk errors transiently (skip-type); type 2 returns data.
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Times(2)
 	mockQuery.On("Where", "gsi1PK", "=", "METRIC_TYPE#spam").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", "DATE#2026-08-26").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", "DATE#2026-08-26#Z").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Times(2)
 	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationMetricsEntry")).Return(nil, errors.New("transient")).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "METRIC_TYPE#abuse").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", "DATE#2026-08-26").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", "DATE#2026-08-26#Z").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ModerationMetricsEntry")).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ModerationMetricsEntry)
 		*out = []*models.ModerationMetricsEntry{{MetricType: "abuse"}}
@@ -1866,8 +1855,7 @@ func TestBatchN3_GetFederationCosts_LimitTruncation(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.FederationCostTracking")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "FED_COSTS#DOMAIN#example.com#2026-08").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Once()
 	// remaining = limit(2) - gathered(0) for the first bucket.
 	mockQuery.On("Limit", 2).Return(mockQuery).Once()
@@ -1903,8 +1891,7 @@ func TestBatchN3_GetAICostsByTimeRange_LimitStop(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.AICost")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "AI_COSTS#2026-08").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", ">=", mock.AnythingOfType("string")).Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1SK", "<=", mock.AnythingOfType("string")).Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "gsi1SK", "ASC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 500).Return(mockQuery).Once()
 	// Three matching rows in the window: the in-memory limit-stop keeps one.

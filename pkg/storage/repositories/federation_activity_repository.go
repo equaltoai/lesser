@@ -96,8 +96,11 @@ func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain 
 	// Use BaseRepository's underlying db but preserve federation-specific query logic
 	query := r.db.WithContext(ctx).Model(&models.FederationActivity{}).
 		Where("PK", "=", fmt.Sprintf("fed_activity#%s", domain)).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
+		// The SK time window is ONE BETWEEN key condition (inclusive of both
+		// bounds, exactly the old >= / <= filter bounds): two range conditions
+		// on the same sort key would both compile into the KeyConditionExpression
+		// and be rejected by DynamoDB ("only one condition per key", issue #1500).
+		Where("SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("SK", "DESC").
 		Limit(limit)
 

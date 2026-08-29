@@ -151,25 +151,45 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 		Index("gsi4").
 		Where("gsi4PK", "=", fmt.Sprintf("SEVERITY#%s", severity))
 
-	// Add time range filter for enhanced security monitoring
-	if !startTime.IsZero() && !endTime.IsZero() {
-		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
-		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
-		query = query.Where("gsi4SK", ">=", startTimestamp).Where("gsi4SK", "<=", endTimestamp)
-	}
-
-	// Apply limit with security bounds
+	// Apply limit with security bounds (before the cursor-scoped fetch size).
 	if limit <= 0 {
 		limit = auditSecurityDefaultLimit // Default limit for security events
 	}
 	if limit > auditSecurityMaxLimit {
 		limit = auditSecurityMaxLimit // Maximum security event limit
 	}
-	query = query.OrderBy("gsi4SK", "ASC").Limit(limit + 1)
 
-	if cursor != "" {
+	// The gsi4SK window is EXACTLY ONE key condition (issue #1500: two range
+	// conditions on the same sort key both compile into the
+	// KeyConditionExpression and DynamoDB rejects them). With a time window and
+	// no cursor the window is BETWEEN [start, end]; with a cursor the lower
+	// bound is clamped to the cursor itself — BETWEEN is inclusive, so the
+	// cursor row is re-included and dropped post-read (one extra item is
+	// over-fetched so the has-more detection stays exact).
+	fetchLimit := limit + 1
+	useWindow := !startTime.IsZero() && !endTime.IsZero()
+	switch {
+	case useWindow && cursor == "":
+		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
+		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
+		query = query.Where("gsi4SK", "BETWEEN", []any{startTimestamp, endTimestamp})
+	case useWindow && cursor != "":
+		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
+		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
+		// Clamp the lower bound to max(window start, cursor): a stale/foreign
+		// cursor sorting below the window start must not widen the window
+		// below startTimestamp.
+		lo := cursor
+		if startTimestamp > lo {
+			lo = startTimestamp
+		}
+		query = query.Where("gsi4SK", "BETWEEN", []any{lo, endTimestamp})
+		fetchLimit++
+	case cursor != "":
+		// No time window: the bare cursor bound is one key condition.
 		query = query.Where("gsi4SK", ">", cursor)
 	}
+	query = query.OrderBy("gsi4SK", "ASC").Limit(fetchLimit)
 
 	// Execute query with enhanced error handling
 	if err := query.All(&logs); err != nil {
@@ -179,6 +199,10 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 			zap.Time("end_time", endTime),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityAudit, "security events")
+	}
+
+	if cursor != "" {
+		logs = dropSortKeyCursorDuplicate(logs, cursor, func(l models.AuthAuditLog) string { return l.GSI4SK })
 	}
 
 	// Convert to pointer slice for compatibility

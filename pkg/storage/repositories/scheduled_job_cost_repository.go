@@ -157,8 +157,9 @@ func (r *ScheduledJobCostRepository) ListByJob(ctx context.Context, jobName, sch
 
 	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
+		// One BETWEEN key condition on SK (inclusive both bounds): two range
+		// conditions on one sort key are rejected by DynamoDB (issue #1500).
+		Where("SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("SK", "DESC").
 		Limit(limit)
 
@@ -181,8 +182,9 @@ func (r *ScheduledJobCostRepository) ListByStatus(ctx context.Context, status st
 	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
+		// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+		// range conditions on one sort key are rejected by DynamoDB (#1500).
+		Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("gsi1SK", "DESC").
 		Limit(limit)
 

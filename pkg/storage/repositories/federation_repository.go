@@ -176,8 +176,9 @@ func (r *FederationRepository) GetFederationStatistics(ctx context.Context, star
 		r.db.WithContext(ctx).Model(&models.FederationInstance{}).
 			Index("gsi1").
 			Where("gsi1PK", "=", "FEDERATION_ACTIVE").
-			Where("gsi1SK", ">=", startTime.Format(time.RFC3339)).
-			Where("gsi1SK", "<=", endTime.Format(time.RFC3339)),
+			// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+			// range conditions on one sort key are rejected by DynamoDB (#1500).
+			Where("gsi1SK", "BETWEEN", []any{startTime.Format(time.RFC3339), endTime.Format(time.RFC3339)}),
 		500, 100,
 		func(page []models.FederationInstance) (bool, error) {
 			instances = append(instances, page...)
@@ -2630,11 +2631,15 @@ func (r *FederationRepository) GetDetailedFederationMetrics(ctx context.Context,
 	query := r.db.WithContext(ctx).Model(&models.FederationAnalyticsTimeSeries{}).
 		Where("PK", "=", pk)
 
-	// Add time range filter
-	if !startTime.IsZero() {
+	// Add time range filter. The SK window is AT MOST ONE key condition:
+	// BETWEEN when both bounds are given (two range conditions on one sort key
+	// are rejected by DynamoDB, issue #1500), otherwise the single bound alone.
+	switch {
+	case !startTime.IsZero() && !endTime.IsZero():
+		query = query.Where("SK", "BETWEEN", []any{startTime.Format(time.RFC3339), endTime.Format(time.RFC3339)})
+	case !startTime.IsZero():
 		query = query.Where("SK", ">=", startTime.Format(time.RFC3339))
-	}
-	if !endTime.IsZero() {
+	case !endTime.IsZero():
 		query = query.Where("SK", "<=", endTime.Format(time.RFC3339))
 	}
 
@@ -2684,14 +2689,16 @@ func (r *FederationRepository) GetDetailedMetricsByPeriod(ctx context.Context, p
 		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("PERIOD#%s", period))
 
-	// Add time range filter
-	if !startTime.IsZero() {
-		query = query.Where("gsi2SK", ">=", startTime.Format(time.RFC3339))
-	}
-	if !endTime.IsZero() && !startTime.IsZero() {
+	// Add time range filter. The gsi2SK window is AT MOST ONE key condition:
+	// BETWEEN when both bounds are given (two range conditions on one sort key
+	// are rejected by DynamoDB, issue #1500), otherwise the single bound alone.
+	switch {
+	case !startTime.IsZero() && !endTime.IsZero():
 		// For range queries, we need to construct the sort key properly
 		endKey := fmt.Sprintf("%s#zzzz", endTime.Format(time.RFC3339)) // zzzz ensures we get all domains
-		query = query.Where("gsi2SK", "<=", endKey)
+		query = query.Where("gsi2SK", "BETWEEN", []any{startTime.Format(time.RFC3339), endKey})
+	case !startTime.IsZero():
+		query = query.Where("gsi2SK", ">=", startTime.Format(time.RFC3339))
 	}
 
 	if limit > 0 {
@@ -2953,8 +2960,9 @@ func (r *FederationRepository) GetFederationCostsByUser(ctx context.Context, use
 
 	query := r.db.WithContext(ctx).Model(&models.FederationCost{}).
 		Where("PK", "=", userCostPK).
-		Where("SK", ">=", startTime.Format(time.RFC3339)).
-		Where("SK", "<=", endTime.Format(time.RFC3339)).
+		// One BETWEEN key condition on SK (inclusive both bounds): two range
+		// conditions on one sort key are rejected by DynamoDB (issue #1500).
+		Where("SK", "BETWEEN", []any{startTime.Format(time.RFC3339), endTime.Format(time.RFC3339)}).
 		Limit(limit)
 
 	if offset > 0 {

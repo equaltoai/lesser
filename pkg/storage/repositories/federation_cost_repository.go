@@ -124,8 +124,10 @@ func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domai
 		query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
 			Index("gsi1").
 			Where("gsi1PK", "=", pk).
-			Where("gsi1SK", ">=", startSK).
-			Where("gsi1SK", "<=", endSK).
+			// One BETWEEN key condition on gsi1SK (inclusive both bounds, the
+			// old >= / <= pair): two range conditions on one sort key are
+			// rejected by DynamoDB (issue #1500).
+			Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 			OrderBy("gsi1SK", "ASC")
 
 		if limit > 0 {
@@ -174,8 +176,10 @@ func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.
 	query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
 		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("FED_TYPE#%s", activityType)).
-		Where("gsi2SK", ">=", fmt.Sprintf("DOMAIN#%s", timestampStart)).
-		Where("gsi2SK", "<=", fmt.Sprintf("DOMAIN#%s", timestampEnd)).
+		// One BETWEEN key condition on gsi2SK (inclusive both bounds) — see
+		// GetFederationCostsByDomain: two range conditions on one sort key are
+		// rejected by DynamoDB (issue #1500).
+		Where("gsi2SK", "BETWEEN", []any{fmt.Sprintf("DOMAIN#%s", timestampStart), fmt.Sprintf("DOMAIN#%s", timestampEnd)}).
 		Limit(limit)
 
 	err := query.All(&costs)

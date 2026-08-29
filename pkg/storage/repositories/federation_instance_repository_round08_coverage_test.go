@@ -302,7 +302,7 @@ func TestFederationInstanceRepository_Round08_HealthAndBatchHelpers(t *testing.T
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Times(3)
+		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Times(2)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {

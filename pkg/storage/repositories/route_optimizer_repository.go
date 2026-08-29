@@ -349,11 +349,15 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 	if routeID != "" {
 		// Query by specific route using primary key
 		query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
-			Where("PK", "=", fmt.Sprintf("ROUTE#%s", routeID)).
-			Where("SK", ">=", fmt.Sprintf("RESULT#%d", start.UnixNano()))
+			Where("PK", "=", fmt.Sprintf("ROUTE#%s", routeID))
 
-		if !end.IsZero() {
-			query = query.Where("SK", "<=", fmt.Sprintf("RESULT#%d", end.UnixNano()))
+		// SK window as AT MOST ONE key condition: BETWEEN when both bounds are
+		// given (two range conditions on one sort key are rejected by DynamoDB,
+		// issue #1500), otherwise the single lower bound.
+		if end.IsZero() {
+			query = query.Where("SK", ">=", fmt.Sprintf("RESULT#%d", start.UnixNano()))
+		} else {
+			query = query.Where("SK", "BETWEEN", []any{fmt.Sprintf("RESULT#%d", start.UnixNano()), fmt.Sprintf("RESULT#%d", end.UnixNano())})
 		}
 
 		query = query.OrderBy("SK", "DESC").Limit(limit)
@@ -370,12 +374,15 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 		startKey := fmt.Sprintf("%d", start.Unix())
 		query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 			Index("gsi1").
-			Where("gsi1PK", "=", "RESULTS").
-			Where("gsi1SK", ">=", startKey)
+			Where("gsi1PK", "=", "RESULTS")
 
-		if !end.IsZero() {
+		// gsi1SK window as AT MOST ONE key condition (see route-specific branch
+		// above; issue #1500).
+		if end.IsZero() {
+			query = query.Where("gsi1SK", ">=", startKey)
+		} else {
 			endKey := fmt.Sprintf("%d", end.Unix())
-			query = query.Where("gsi1SK", "<=", endKey)
+			query = query.Where("gsi1SK", "BETWEEN", []any{startKey, endKey})
 		}
 
 		query = query.OrderBy("gsi1SK", "DESC").Limit(limit)

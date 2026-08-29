@@ -159,8 +159,12 @@ func (r *FilterRepository) GetUserFilters(ctx context.Context, username string) 
 	err := walkKeyedPages(
 		r.db.WithContext(ctx).Model(&models.Filter{}).
 			Where("PK", "=", fmt.Sprintf(models.KeyPatternUser, username)).
-			Where("SK", ">=", "FILTER#").
-			Where("SK", "<", "FILTER~"), // Use ~ as upper bound since it's after # in ASCII
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= FILTER# AND < FILTER~` becomes BETWEEN [FILTER#, FILTER~]
+			// (inclusive of the `~` sentinel, which no real filter SK can
+			// equal). Two range conditions on one sort key are rejected by
+			// DynamoDB (issue #1500).
+			Where("SK", "BETWEEN", []any{"FILTER#", "FILTER~"}),
 		500, 100,
 		func(page []models.Filter) (bool, error) {
 			filterModels = append(filterModels, page...)
@@ -269,8 +273,11 @@ func (r *FilterRepository) GetFilterKeywords(ctx context.Context, filterID strin
 	err := walkKeyedPages(
 		r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
 			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-			Where("SK", ">=", "KEYWORD#").
-			Where("SK", "<", "KEYWORD~"),
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= KEYWORD# AND < KEYWORD~` (inclusive `~` sentinel bound; see
+			// GetUserFilters). Two range conditions on one sort key are
+			// rejected by DynamoDB (issue #1500).
+			Where("SK", "BETWEEN", []any{"KEYWORD#", "KEYWORD~"}),
 		500, 100,
 		func(page []models.FilterKeyword) (bool, error) {
 			keywordModels = append(keywordModels, page...)
@@ -310,8 +317,11 @@ func (r *FilterRepository) GetFilterStatuses(ctx context.Context, filterID strin
 	err := walkKeyedPages(
 		r.db.WithContext(ctx).Model(&models.FilterStatus{}).
 			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-			Where("SK", ">=", "STATUS#").
-			Where("SK", "<", "STATUS~"),
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= STATUS# AND < STATUS~` (inclusive `~` sentinel bound; see
+			// GetUserFilters). Two range conditions on one sort key are
+			// rejected by DynamoDB (issue #1500).
+			Where("SK", "BETWEEN", []any{"STATUS#", "STATUS~"}),
 		500, 100,
 		func(page []models.FilterStatus) (bool, error) {
 			statusModels = append(statusModels, page...)

@@ -284,8 +284,12 @@ func TestBaseRepository_QueryAndHelpers(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		// Cursor pages demote the SK prefix to a post-read FilterExpression.
+		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("Limit", 2).Return(mockQuery)
+		// Cursor pages close the BETWEEN range and over-fetch one extra item
+		// (limit+2) for the inclusive-cursor drop.
+		mockQuery.On("Limit", 3).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*baseRepoPtrModel)
 			*dest = []*baseRepoPtrModel{
@@ -541,7 +545,9 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", "SK", SortOrderDesc).Return(mockQuery)
-		mockQuery.On("Limit", 2).Return(mockQuery)
+		// Cursor-scoped BETWEEN over-fetches one extra item so the inclusive
+		// cursor row can be dropped without hiding the has-more sentinel.
+		mockQuery.On("Limit", 3).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*baseRepoPtrModel)
 			*dest = []*baseRepoPtrModel{{PK: "PK#1", SK: "SK#end"}, {PK: "PK#1", SK: "SK#sentinel"}}
@@ -617,6 +623,7 @@ func TestBaseRepository_ConsolidationHelpers(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
@@ -731,7 +738,9 @@ func TestBaseRepository_ConsolidationHelpers(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", "SK", SortOrderDesc).Return(mockQuery)
-		mockQuery.On("Limit", 2).Return(mockQuery)
+		// Cursor-scoped BETWEEN over-fetches one extra item so the inclusive
+		// cursor row can be dropped without hiding the has-more sentinel.
+		mockQuery.On("Limit", 3).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]collectionModel)
 			*dest = []collectionModel{
@@ -1046,8 +1055,9 @@ func TestBaseRepository_QueryBetweenPaginated_CursorAsc(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", SortOrderAsc).Return(mockQuery)
-	mockQuery.On("Limit", 2).Return(mockQuery)
-	mockQuery.On("Where", "SK", ">", "SK#cursor").Return(mockQuery).Once()
+	// Cursor-scoped BETWEEN over-fetches one extra item so the inclusive
+	// cursor row can be dropped without hiding the has-more sentinel.
+	mockQuery.On("Limit", 3).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*baseRepoPtrModel)
 		*dest = []*baseRepoPtrModel{{PK: "PK#1", SK: "SK#end"}, {PK: "PK#1", SK: "SK#sentinel"}}

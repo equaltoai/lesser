@@ -65,8 +65,7 @@ func TestQueryUtils_db_queries_and_helpers(t *testing.T) {
 		assert.Len(t, res.Items, 2)
 
 		mockQuery.On("Where", "PK", "=", "PK#time").Return(mockQuery)
-		mockQuery.On("Where", "SK", ">=", fmt.Sprintf("TIME#%d", int64(1))).Return(mockQuery)
-		mockQuery.On("Where", "SK", "<=", fmt.Sprintf("TIME#%d", int64(2))).Return(mockQuery)
+		mockQuery.On("Where", "SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery)
 		mockQuery.On("Limit", 2).Return(mockQuery)
 		mockQuery.On("Index", "gsi1").Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
