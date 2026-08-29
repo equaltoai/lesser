@@ -56,15 +56,25 @@ func TestArticleRenderedHTMLComposesPersistedMedia(t *testing.T) {
 	require.Nil(t, nilHTML)
 }
 
-// TestCMSGraphArticleRenderMediaSkipsUnmintedBindings proves a persisted
-// binding without a minted serving never composes (fail-closed skip).
-func TestCMSGraphArticleRenderMediaSkipsUnmintedBindings(t *testing.T) {
+// TestArticleRenderedHTMLSkipsUnmintedBindings proves the GraphQL article read
+// path never composes a persisted binding without a minted serving (fail-closed
+// skip): the resolver maps media through the shared RenderArticleMedia helper,
+// which skips empty-URL bindings.
+func TestArticleRenderedHTMLSkipsUnmintedBindings(t *testing.T) {
 	position := 0
-	media := []models.ArticleEditorialMedia{
-		{MediaID: "inline", Role: models.EditorialMediaRoleInline, InlinePosition: &position, URL: "https://cdn.example.test/good.png"},
-		{MediaID: "unminted", Role: models.EditorialMediaRoleInline, InlinePosition: &position, URL: " "},
+	obj := &model.Article{
+		Content:          "# T\n\nOne.",
+		ContentFormat:    model.ContentFormatMarkdown,
+		RawContentFormat: "markdown",
+		RawEditorialMedia: []models.ArticleEditorialMedia{
+			{MediaID: "inline", Role: models.EditorialMediaRoleInline, InlinePosition: &position, URL: "https://cdn.example.test/good.png"},
+			{MediaID: "unminted", Role: models.EditorialMediaRoleInline, InlinePosition: &position, URL: " "},
+		},
 	}
-	rendered := cmsGraphArticleRenderMedia(media)
-	require.Len(t, rendered, 1)
-	require.Equal(t, "https://cdn.example.test/good.png", rendered[0].URL)
+	resolver := &articleResolver{&Resolver{}}
+	html, err := resolver.RenderedHTML(context.Background(), obj)
+	require.NoError(t, err)
+	require.NotNil(t, html)
+	require.Contains(t, *html, `src="https://cdn.example.test/good.png"`)
+	require.NotContains(t, *html, "unminted")
 }

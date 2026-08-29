@@ -7,6 +7,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRenderArticleMediaSharedHelper proves the shared inline-only mapping used
+// by Article.RenderMediaList and the GraphQL article read path: only inline
+// media with a minted URL composes; hero, social-card, and unminted bindings
+// never reach the renderer descriptors; empty and nil inputs yield nil.
+func TestRenderArticleMediaSharedHelper(t *testing.T) {
+	position := 1
+	media := []ArticleEditorialMedia{
+		{MediaID: "hero", Role: EditorialMediaRoleHero, URL: "https://cdn.example.test/hero.png"},
+		{MediaID: "inline", Role: EditorialMediaRoleInline, InlinePosition: &position, URL: " https://cdn.example.test/inline.png "},
+		{MediaID: "card", Role: EditorialMediaRoleSocialCard, URL: "https://cdn.example.test/card.png"},
+		{MediaID: "unminted", Role: EditorialMediaRoleInline, InlinePosition: &position, URL: " "},
+	}
+	rendered := RenderArticleMedia(media)
+	require.Len(t, rendered, 1)
+	require.Equal(t, cmsrender.ArticleMediaRoleInline, rendered[0].Role)
+	require.Equal(t, "https://cdn.example.test/inline.png", rendered[0].URL)
+
+	require.Nil(t, RenderArticleMedia(nil))
+	require.Nil(t, RenderArticleMedia([]ArticleEditorialMedia{}))
+}
+
 func TestArticleEditorialMediaRenderMedia(t *testing.T) {
 	position := 2
 	m := ArticleEditorialMedia{

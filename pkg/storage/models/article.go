@@ -97,29 +97,19 @@ func (a *Article) APAttachments() []activitypub.Attachment {
 }
 
 // RenderMediaList maps the article's persisted inline editorial bindings onto
-// the canonical renderer's media descriptors so every published article read
-// path composes the minted serving. Only inline media composes into published
-// article HTML: the hero is the article's leading image in draft previews only
-// and otherwise lives on Article.featuredImage, and social-card media never
-// composes into the body. A binding without a minted URL is skipped: the
-// publish gate only mints digest-verified assets, so an empty URL here is a
-// fail-closed skip, never a placeholder.
+// the canonical renderer's media descriptors through the shared
+// RenderArticleMedia helper, so every published article read path composes the
+// minted serving. Only inline media composes into published article HTML: the
+// hero is the article's leading image in draft previews only and otherwise
+// lives on Article.featuredImage, and social-card media never composes into
+// the body. A binding without a minted URL is skipped: the publish gate only
+// mints digest-verified assets, so an empty URL here is a fail-closed skip,
+// never a placeholder.
 func (a *Article) RenderMediaList() []cmsrender.ArticleMedia {
 	if a == nil {
 		return nil
 	}
-	var out []cmsrender.ArticleMedia
-	for _, m := range a.EditorialMedia {
-		if m.Role != EditorialMediaRoleInline {
-			continue
-		}
-		render := m.RenderMedia()
-		if strings.TrimSpace(render.URL) == "" {
-			continue
-		}
-		out = append(out, render)
-	}
-	return out
+	return RenderArticleMedia(a.EditorialMedia)
 }
 
 // TableName returns the DynamoDB table backing Article.

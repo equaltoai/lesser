@@ -160,6 +160,33 @@ func (m ArticleEditorialMedia) RenderMedia() cmsrender.ArticleMedia {
 	}
 }
 
+// RenderArticleMedia maps persisted editorial bindings onto the canonical
+// renderer's media descriptors so every published article read path composes
+// the minted serving. It is the single home for the inline-only filter shared
+// by Article.RenderMediaList and the GraphQL article read. Only inline media
+// composes into published article HTML: the hero is the article's leading
+// image in draft previews only and otherwise lives on Article.featuredImage,
+// and social-card media never composes into the body. A binding without a
+// minted URL is skipped: the publish gate only mints digest-verified assets,
+// so an empty URL here is a fail-closed skip, never a placeholder.
+func RenderArticleMedia(media []ArticleEditorialMedia) []cmsrender.ArticleMedia {
+	if len(media) == 0 {
+		return nil
+	}
+	out := make([]cmsrender.ArticleMedia, 0, len(media))
+	for _, m := range media {
+		if m.Role != EditorialMediaRoleInline {
+			continue
+		}
+		render := m.RenderMedia()
+		if strings.TrimSpace(render.URL) == "" {
+			continue
+		}
+		out = append(out, render)
+	}
+	return out
+}
+
 // Normalize validates and canonicalizes a provenance record while binding it
 // to the media byte digest established by the M0 upload pipeline.
 func (p *MediaProvenance) Normalize(owner, contentIntegrity string, now time.Time) error {
