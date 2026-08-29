@@ -20,7 +20,8 @@ func listByPKSKPrefixPaginated[T skGetter](ctx context.Context, db dynamormCore.
 	// The SK window is EXACTLY ONE key condition (issue #1500: two range
 	// conditions on the same sort key both compile into the
 	// KeyConditionExpression and DynamoDB rejects them). The first page keys
-	// BEGINS_WITH; a cursor page keys the exclusive `>` bound and demotes
+	// BEGINS_WITH; a cursor page keys BETWEEN [cursor, prefix~] — the `~`
+	// sentinel closes the key range at the top of the block — and demotes
 	// BEGINS_WITH to a post-read FilterExpression. The matching rows of a
 	// prefix form a contiguous SK block, so the Limit-before-Filter
 	// interaction only ever shortens the final page — has-more detection stays

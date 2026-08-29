@@ -3073,8 +3073,9 @@ const loginHistorySKPrefix = "LOGIN#"
 
 // loginHistoryCursorInRange reports whether a decoded login-history cursor is
 // a sort key inside the LOGIN# block. It mirrors notificationCursorInSortKeyRange:
-// only a cursor that is a real block member may key the `< sk` bound; anything
-// else falls back to the keyed begins_with bound (never a PK-only walk).
+// only a cursor that is a real block member may key the BETWEEN window's upper
+// bound; anything else falls back to the keyed begins_with bound (never a
+// PK-only walk).
 func loginHistoryCursorInRange(sk string) bool {
 	return strings.HasPrefix(sk, loginHistorySKPrefix) && sk > loginHistorySKPrefix
 }
@@ -3083,8 +3084,9 @@ func loginHistoryCursorInRange(sk string) bool {
 func (r *AccountRepository) GetLoginHistory(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.LoginAttempt], error) {
 	var logins []models.UserLogin
 	// One SK key condition (issue #1500): begins_with on the first page; with
-	// a cursor (DESC order) key the exclusive `<` bound and demote begins_with
-	// to a post-read FilterExpression.
+	// a cursor (DESC order) key BETWEEN ["LOGIN#", sk] — closing the range at
+	// the block bottom — and demote begins_with to a post-read
+	// FilterExpression.
 	queryBuilder := r.db.WithContext(ctx).Model(&models.UserLogin{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		OrderBy("SK", "DESC")
