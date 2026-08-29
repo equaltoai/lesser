@@ -2404,35 +2404,57 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 
 	var users []models.User
 	// The gsi5SK window is EXACTLY ONE key condition (issue #1500). The first
-	// page keys BEGINS_WITH; a cursor page keys the exclusive `>` bound and
-	// demotes BEGINS_WITH to a post-read FilterExpression (prefix rows form a
-	// contiguous SK block, so the Limit-before-Filter interaction only ever
-	// shortens the final page — has-more detection stays exact).
+	// page keys BEGINS_WITH; a cursor page closes the key range at the top of
+	// the block with the `~` sentinel (0x7E sorts above every ASCII username
+	// block member) via BETWEEN — the cursor row is re-included and dropped
+	// post-read (one extra item is over-fetched so the has-more detection stays
+	// exact), and the final page can never keep reading the partition tail.
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("gsi5").
 		Where("gsi5PK", "=", prefixKey).
-		OrderBy("gsi5SK", "ASC").
-		Limit(searchLimit + 1)
+		OrderBy("gsi5SK", "ASC")
 
+	fetchLimit := searchLimit + 1
+	var skCursor string
 	if opts.Cursor != "" {
-		pkCursor, skCursor, err := Utils.Pagination.DecodeCursor(opts.Cursor)
-		if err != nil {
+		pkCursor, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
+		switch {
+		case err != nil:
 			r.logger.Warn("invalid search cursor provided",
 				zap.String("cursor", opts.Cursor),
 				zap.Error(err))
-		} else if skCursor != "" {
-			if pkCursor != "" && pkCursor != prefixKey {
-				r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
-					zap.String("expected_prefix", prefixKey),
-					zap.String("cursor_prefix", pkCursor))
-			} else {
-				queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor).Filter("gsi5SK", "BEGINS_WITH", normalizedQuery)
-			}
+			// Clean restart: re-key BEGINS_WITH. The query must NEVER degrade to
+			// a PK-only unfiltered read of the whole 2-char handle-prefix
+			// partition (the nextCursor would also be derived from wrong rows).
+			queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		case sk == "":
+			// Empty SK in the cursor: same clean restart.
+			queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		case pkCursor != "" && pkCursor != prefixKey:
+			r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
+				zap.String("expected_prefix", prefixKey),
+				zap.String("cursor_prefix", pkCursor))
+			// Normal client behavior when the query text changes between pages:
+			// restart the walk under the NEW prefix partition, keyed on
+			// BEGINS_WITH (never an unfiltered PK-only read).
+			queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		default:
+			skCursor = sk
+			queryBuilder = queryBuilder.Where("gsi5SK", "BETWEEN", []any{sk, normalizedQuery + "~"}).
+				Filter("gsi5SK", "BEGINS_WITH", normalizedQuery)
+			fetchLimit++
 		}
+	} else {
+		// First page: key BEGINS_WITH on the prefix block.
+		queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
 	}
+	queryBuilder = queryBuilder.Limit(fetchLimit)
 
 	if err := queryBuilder.All(&users); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "search")
+	}
+	if skCursor != "" {
+		users = dropSortKeyCursorDuplicate(users, skCursor, func(u models.User) string { return u.GSI5SK })
 	}
 
 	hasMore := len(users) > searchLimit
@@ -2505,20 +2527,32 @@ func (r *AccountRepository) decodeShortHandleSearchCursor(prefixKeys []string, c
 func (r *AccountRepository) queryShortHandlePrefixPartition(ctx context.Context, prefixKey, normalizedQuery string, searchLimit int, skCursor string) ([]models.User, error) {
 	var users []models.User
 	// One gsi5SK key condition (issue #1500): BEGINS_WITH on the first page;
-	// with a cursor, key the exclusive `>` bound and demote BEGINS_WITH to a
-	// post-read FilterExpression (see the search cursor chain above).
+	// with a cursor, BETWEEN [cursor, query+"~"] closes the key range at the
+	// top of the block (the `~` sentinel sorts above every ASCII username
+	// block member) and demotes BEGINS_WITH to a post-read FilterExpression —
+	// the final page can never keep reading the partition tail.
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("gsi5").
 		Where("gsi5PK", "=", prefixKey).
-		OrderBy("gsi5SK", "ASC").
-		Limit(searchLimit + 1)
+		OrderBy("gsi5SK", "ASC")
 
+	fetchLimit := searchLimit + 1
 	if skCursor != "" {
-		queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor).Filter("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		queryBuilder = queryBuilder.Where("gsi5SK", "BETWEEN", []any{skCursor, normalizedQuery + "~"}).
+			Filter("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		fetchLimit++
+	} else {
+		// First page (or reset cursor): key BEGINS_WITH on the prefix block —
+		// never a PK-only unfiltered read of the whole partition.
+		queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
 	}
+	queryBuilder = queryBuilder.Limit(fetchLimit)
 
 	if err := queryBuilder.All(&users); err != nil {
 		return nil, err
+	}
+	if skCursor != "" {
+		users = dropSortKeyCursorDuplicate(users, skCursor, func(u models.User) string { return u.GSI5SK })
 	}
 	return users, nil
 }
@@ -3034,6 +3068,17 @@ func (r *AccountRepository) RecordLogin(ctx context.Context, attempt *storage.Lo
 	return nil
 }
 
+// loginHistorySKPrefix is the SK block prefix for login attempts.
+const loginHistorySKPrefix = "LOGIN#"
+
+// loginHistoryCursorInRange reports whether a decoded login-history cursor is
+// a sort key inside the LOGIN# block. It mirrors notificationCursorInSortKeyRange:
+// only a cursor that is a real block member may key the `< sk` bound; anything
+// else falls back to the keyed begins_with bound (never a PK-only walk).
+func loginHistoryCursorInRange(sk string) bool {
+	return strings.HasPrefix(sk, loginHistorySKPrefix) && sk > loginHistorySKPrefix
+}
+
 // GetLoginHistory retrieves login history for a user
 func (r *AccountRepository) GetLoginHistory(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.LoginAttempt], error) {
 	var logins []models.UserLogin
@@ -3048,26 +3093,51 @@ func (r *AccountRepository) GetLoginHistory(ctx context.Context, username string
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	queryBuilder = queryBuilder.Limit(limit + 1)
 
+	fetchLimit := limit + 1
+	cursorSK := ""
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
-		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("SK", "<", sk).Filter("SK", "begins_with", "LOGIN#") // Reverse order for recent first
+		if err != nil {
+			r.logger.Warn("invalid login history cursor provided",
+				zap.String("cursor", opts.Cursor),
+				zap.Error(err))
+		}
+		if err == nil && loginHistoryCursorInRange(sk) {
+			// Cursor page (DESC): BETWEEN ["LOGIN#", sk] closes the key range at
+			// the bottom of the block — the final page can never keep reading the
+			// partition head. BETWEEN is inclusive, so the cursor row is
+			// re-included and dropped post-read (one extra item is over-fetched
+			// so the has-more detection stays exact).
+			cursorSK = sk
+			queryBuilder = queryBuilder.Where("SK", "BETWEEN", []any{loginHistorySKPrefix, sk}).
+				Filter("SK", "begins_with", "LOGIN#") // Reverse order for recent first
+			fetchLimit++
+		} else {
+			// Decode failure, empty SK, or a cursor outside the LOGIN# block:
+			// validation-gated fallback (mirrors applyNotificationSortKeyScope)
+			// — the query NEVER degrades to a PK-only unfiltered walk of the
+			// whole USER# partition; it re-keys begins_with on the first page.
+			queryBuilder = queryBuilder.Where("SK", "begins_with", "LOGIN#")
 		}
 	} else {
 		queryBuilder = queryBuilder.Where("SK", "begins_with", "LOGIN#")
 	}
+	queryBuilder = queryBuilder.Limit(fetchLimit)
 
 	// Sort by SK descending to get most recent first
 	queryBuilder = queryBuilder.OrderBy("SK", "DESC")
 
 	// Keyed PK query (USER#username, SK BEGINS_WITH LOGIN# on the first page /
-	// SK < cursor + begins_with filter on cursor pages, Limit clamped above)
-	// — .All compiles to a DynamoDB Query instead of the previous .Scan.
+	// BETWEEN ["LOGIN#", cursor] + begins_with filter on cursor pages, Limit
+	// clamped above) — .All compiles to a DynamoDB Query instead of the
+	// previous .Scan.
 	err := queryBuilder.All(&logins)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "login_history")
+	}
+	if cursorSK != "" {
+		logins = dropSortKeyCursorDuplicate(logins, cursorSK, func(l models.UserLogin) string { return l.SK })
 	}
 
 	// Convert to storage type
