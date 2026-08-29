@@ -62,14 +62,26 @@ validation until a private derivative pipeline exists. Editorial uploads begin
 with `visibility=internal`. Their original object:
 
 1. is stored in the existing media bucket with SSE-KMS under the instance's
-   `KMS_KEY_ID`, rather than the public/social SSE-S3 posture;
+   `KMS_KEY_ID` when it arrives through the byte-path `uploadMedia` pipeline
+   (see `uploadOriginal`), rather than the public/social SSE-S3 posture;
 2. receives no unsigned `CDNUrl`;
 3. fails closed before object or database creation if the KMS key or internal
    object-store capability is unavailable.
 
+Objects that arrive through the presigned-companion PUT transport (see the next
+section) are the exception to point 1: the presigned PUT signs no SSE
+parameters, so those objects land encrypted at rest under the media bucket's
+default encryption (SSE-S3, `BucketEncryption_S3_MANAGED`), exactly like every
+other object in the bucket.
+
 The existing CloudFront origin may address media-bucket keys, but its service
-principal has no decrypt grant on the instance KMS key. Therefore guessing an
-internal object's key does not make its bytes world-readable. Lesser's
+principal has no decrypt grant on the instance KMS key. Therefore guessing a
+byte-path internal object's key does not make its bytes world-readable. For
+presigned-companion objects (SSE-S3), the confidentiality basis is the
+unguessable key: every object key embeds a random media ID minted with the
+grant, and the bucket enforces `BlockPublicAccess_BLOCK_ALL`, so no object is
+publicly listable or readable without an authorized signed URL — the same
+posture as every other media-bucket object. Lesser's
 encryption Lambda role can upload it. The current asynchronous media processor
 writes public CDN derivatives, so internal editorial images are validated and
 dimensioned synchronously and do not enter that derivative pipeline. This
@@ -89,26 +101,26 @@ internal media for every non-owner, including unauthenticated readers.
 ### Presigned-companion PUT contract
 
 `mintUploadGrant` returns `UploadGrant.presignedUrl`, a SigV4 presigned PUT
-whose signature binds the object key and the SSE-KMS headers. The declared
-sha256 checksum is hoisted into the URL as `X-Amz-Checksum-Sha256`; S3 validates
-the body against it. A compliant PUT must send:
+whose signature binds the object key and signs only the `host` header
+(`X-Amz-SignedHeaders=host`). The declared sha256 checksum is hoisted into the
+URL as the `X-Amz-Checksum-Sha256` query parameter; S3 validates the body
+against it. No server-side-encryption parameters are signed into the URL, so
+the PUT needs no headers to echo and the object lands encrypted at rest under
+the media bucket's default encryption (`BucketEncryption_S3_MANAGED`). A
+client holding nothing but the URL completes the upload with:
 
-- `x-amz-server-side-encryption: aws:kms`
-- `x-amz-server-side-encryption-aws-kms-key-id: <instance KMS key id>`
 - `Content-Type: <declared contentType>` (not signed, but finalize rejects a
   stored type that does not match the declaration, so a client that omits it
-  stores `binary/octet-stream` and fails finalize with FAILED_DIGEST)
-- the exact declared bytes as the body
+  stores `binary/octet-stream` and fails finalize with FAILED_DIGEST);
+- the exact declared bytes as the body.
 
-The signed SSE header names and their exact values are returned on the grant
-itself (`UploadGrant.signedHeaders`, populated by both `mintUploadGrant` and the
-`uploadGrant(grantId:)` query) because the instance KMS key id is an internal
-deployment detail no client can discover out-of-band — that return value is
-what makes the flow fulfillable. Omitting or altering any signed header makes
-S3 reject the PUT with `403 SignatureDoesNotMatch`; sending a body that does
-not hash to the declared sha256 fails with `BadDigest`. Client-added headers
-that are not signed (for example `Cache-Control`) do not invalidate the
-signature, but they must not overwrite a signed header's value.
+Sending a body that does not hash to the declared sha256 fails with
+`BadDigest`. Client-added headers that are not signed (for example
+`Cache-Control`) do not invalidate the signature. There is no `signedHeaders`
+field on the grant: the earlier SSE-KMS presign that required echoing the
+instance KMS key id (issue #1472) was removed because the undisclosed signed
+values made every client PUT fail with `403 SignatureDoesNotMatch`; the
+presigned URL is now self-sufficient.
 
 ## Preview contract
 
