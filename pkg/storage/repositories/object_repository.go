@@ -690,13 +690,15 @@ func objectModelToActivityPubNote(objModel *models.Object) *activitypub.Note {
 
 func (r *ObjectRepository) objectModelToActivityPubArticle(ctx context.Context, objModel *models.Object) (*activitypub.Article, error) {
 	format := ""
-	if article, err := r.getArticleModelForObject(ctx, objModel); err == nil && article != nil {
-		format = article.ContentFormat
-		articleObject := article.Object
+	var article *models.Article
+	if loaded, err := r.getArticleModelForObject(ctx, objModel); err == nil && loaded != nil {
+		format = loaded.ContentFormat
+		article = loaded
+		articleObject := loaded.Object
 		objModel = &articleObject
 	}
 
-	rendered, err := cmsrender.RenderArticleContent(objModel.Content, format)
+	rendered, err := cmsrender.RenderArticleContentWithMedia(objModel.Content, format, article.RenderMediaList())
 	if err != nil {
 		return nil, err
 	}
@@ -707,6 +709,9 @@ func (r *ObjectRepository) objectModelToActivityPubArticle(ctx context.Context, 
 	note := objectModelToActivityPubNote(&renderedObject)
 	note.Type = activitypub.ArticleType
 	note.Summary = renderedObject.Summary
+	if article != nil {
+		note.Attachment = append(note.Attachment, article.APAttachments()...)
+	}
 
 	return &activitypub.Article{
 		Note: *note,

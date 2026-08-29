@@ -267,7 +267,7 @@ func StorageArticleToActivityPub(article *storagemodels.Article) (*activitypub.A
 		return nil, common.ValidationError{Field: "article", Message: "article cannot be nil"}
 	}
 
-	rendered, err := cmsrender.RenderArticleContent(article.Content, article.ContentFormat)
+	rendered, err := cmsrender.RenderArticleContentWithMedia(article.Content, article.ContentFormat, article.RenderMediaList())
 	if err != nil {
 		return nil, err
 	}
@@ -280,6 +280,7 @@ func StorageArticleToActivityPub(article *storagemodels.Article) (*activitypub.A
 	if err != nil {
 		return nil, err
 	}
+	note.Attachment = append(note.Attachment, article.APAttachments()...)
 
 	apArticle := &activitypub.Article{
 		Note: *note,
