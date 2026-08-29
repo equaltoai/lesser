@@ -100,7 +100,9 @@ type S3Presigner interface {
 // PublishedMediaCopier copies the exact original bytes of an internal editorial
 // asset to the durable unsigned serving surface at the publish transition. The
 // destination object is SSE-S3 (the CloudFront origin can serve it) while the
-// source remains SSE-KMS under the instance key.
+// source is SSE-KMS under the instance key for byte-path internal uploads, or
+// bucket-default SSE-S3 for presigned-companion/grant-path uploads (their
+// presigned PUTs sign no SSE parameters).
 type PublishedMediaCopier interface {
 	CopyFileToPublished(ctx context.Context, bucket, sourceKey, destinationKey, contentType string) (string, error)
 }
