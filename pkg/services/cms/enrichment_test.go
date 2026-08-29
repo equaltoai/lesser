@@ -63,6 +63,42 @@ func TestCMSExtractTOCFallsBackToMarkdownParserWhenRendererRejectsFormat(t *test
 	}, entries)
 }
 
+// TestEnrichArticleContentComposesPersistedMedia proves the enrichment read
+// path (enrichment.go) renders a media-bearing article through the canonical
+// renderer: enrichArticleContent passes article.RenderMediaList() into
+// cmsExtractTOC, which extracts headings from the composed render, so the
+// persisted inline binding must compose while hero and social-card media never
+// duplicate into it.
+func TestEnrichArticleContentComposesPersistedMedia(t *testing.T) {
+	position := 0
+	article := &models.Article{
+		Object: models.Object{
+			Content: "# T\n\nOne.",
+		},
+		ContentFormat: "markdown",
+		EditorialMedia: []models.ArticleEditorialMedia{
+			{MediaID: "hero", Role: models.EditorialMediaRoleHero, URL: "https://cdn.example.test/hero.png"},
+			{MediaID: "inline", Role: models.EditorialMediaRoleInline, InlinePosition: &position, URL: "https://cdn.example.test/inline.png", ContentType: "image/png", AltText: "inline"},
+			{MediaID: "card", Role: models.EditorialMediaRoleSocialCard, URL: "https://cdn.example.test/card.png"},
+		},
+	}
+
+	enrichArticleContent(article)
+	require.Equal(t, 2, article.WordCount)
+	require.Equal(t, 1, article.ReadingTimeMinutes)
+	require.Equal(t, []models.TOCEntry{{ID: "t", Level: 1, Text: "T"}}, article.TableOfContents)
+
+	// The enrichment read path's composition expression (enrichment.go:130)
+	// composes the persisted inline media into the render the TOC headings are
+	// extracted from; hero and social-card media never duplicate.
+	rendered, err := cmsrender.RenderArticleContentWithMedia(article.Content, article.ContentFormat, article.RenderMediaList())
+	require.NoError(t, err)
+	require.Contains(t, rendered.HTML, `src="https://cdn.example.test/inline.png"`)
+	require.Contains(t, rendered.HTML, "<figure>")
+	require.NotContains(t, rendered.HTML, "hero.png")
+	require.NotContains(t, rendered.HTML, "card.png")
+}
+
 func TestEnrichArticleContent_HTML(t *testing.T) {
 	article := &models.Article{
 		Object: models.Object{
