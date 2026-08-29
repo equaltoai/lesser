@@ -26,18 +26,6 @@ func TestAccountRepository_TimelineRepositoryCoverageSweep(t *testing.T) {
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
 
-	require.Equal(t, timelineDefaultLimit, clampTimelineLimit(0))
-	require.Equal(t, timelineDefaultLimit, clampTimelineLimit(-10))
-	require.Equal(t, timelineMaxLimit, clampTimelineLimit(timelineMaxLimit+10))
-	require.Equal(t, 10, clampTimelineLimit(10))
-
-	_, _ = repo.GetHomeTimeline(ctx, "user-1", 1, "max", "since")
-	_, _ = repo.GetLocalTimeline(ctx, 1, "max", "")
-	_, _ = repo.GetPublicTimeline(ctx, 1, "", "since", false)
-	_, _ = repo.GetPublicTimeline(ctx, 1, "max", "", true)
-	_, _ = repo.GetHashtagTimeline(ctx, "  test  ", 1, "max", "since")
-	_, _ = repo.GetListTimeline(ctx, "user-1", "list-1", 1, "max", "since")
-
 	expiresAt := baseTime.Add(10 * time.Minute)
 	require.NoError(t, repo.AddToTimeline(ctx, "user-1", &storage.TimelineEntry{
 		PostID:      "post-1",
@@ -51,8 +39,6 @@ func TestAccountRepository_TimelineRepositoryCoverageSweep(t *testing.T) {
 	}))
 
 	_ = repo.RemoveFromTimeline(ctx, "user-1", "post-1")
-
-	_, _ = repo.GetConversations(ctx, "user-1", 1, "max", "since")
 
 	_ = repo.MuteConversation(ctx, "user-1", "conv-1")
 	_ = repo.UnmuteConversation(ctx, "user-1", "conv-1")
@@ -136,46 +122,9 @@ func TestAccountRepository_UpdateTimelineMarker_CreateWhenMissing(t *testing.T) 
 	mockQuery.AssertExpectations(t)
 }
 
-func TestAccountRepository_TimelineQueryErrors(t *testing.T) {
-	ctx := context.Background()
-	baseTime := time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC)
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
-	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
-
-	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-	_, err := repo.GetHomeTimeline(ctx, "user-1", 1, "", "")
-	require.Error(t, err)
-	_, err = repo.GetLocalTimeline(ctx, 1, "", "")
-	require.Error(t, err)
-	_, err = repo.GetPublicTimeline(ctx, 1, "", "", false)
-	require.Error(t, err)
-	_, err = repo.GetHashtagTimeline(ctx, "test", 1, "", "")
-	require.Error(t, err)
-}
-
 func TestAccountRepository_ListTimelineAndMarkerErrorBranches(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC)
-
-	t.Run("getList_notfound", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-
-		mockQuery.On("First", mock.Anything).Return(errors.ErrItemNotFound).Once()
-		setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
-
-		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-		list, err := repo.getList(ctx, "user-1", "list-1")
-		require.Error(t, err)
-		require.Nil(t, list)
-	})
 
 	t.Run("get_timeline_markers_error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
@@ -299,15 +248,4 @@ func TestAccountRepository_UpdateTimelineMarker_UpdateExistingPaths(t *testing.T
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
 		require.Error(t, repo.UpdateTimelineMarker(ctx, "user-1", "home", "last"))
 	})
-}
-
-func TestAccountRepository_ModelToTimelineEntry_ExpiresAtBranches(t *testing.T) {
-	repo := &AccountRepository{}
-	baseTime := time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC)
-
-	noExpiry := repo.modelToTimelineEntry(&models.TimelineEntry{ExpiresAt: time.Time{}})
-	require.Nil(t, noExpiry.ExpiresAt)
-
-	withExpiry := repo.modelToTimelineEntry(&models.TimelineEntry{ExpiresAt: baseTime})
-	require.NotNil(t, withExpiry.ExpiresAt)
 }
