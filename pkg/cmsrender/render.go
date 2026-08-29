@@ -113,6 +113,16 @@ func ValidateArticleSource(content string, format string) error {
 
 // RenderArticleContent renders Article source to the canonical sanitized public HTML body.
 func RenderArticleContent(content string, format string) (RenderedArticleContent, error) {
+	return RenderArticleContentWithMedia(content, format, nil)
+}
+
+// RenderArticleContentWithMedia renders Article source to the canonical
+// sanitized public HTML body, composing bound editorial media into the output.
+// Media descriptors carry only the URL, alt, caption, credit, dimensions, and
+// placement of each asset; the renderer never resolves, mints, or authorizes
+// URLs itself. When no media is supplied the result is byte-identical to
+// RenderArticleContent.
+func RenderArticleContentWithMedia(content string, format string, media []ArticleMedia) (RenderedArticleContent, error) {
 	if err := ValidateArticleSource(content, format); err != nil {
 		return RenderedArticleContent{}, err
 	}
@@ -123,15 +133,24 @@ func RenderArticleContent(content string, format string) (RenderedArticleContent
 	var err error
 	switch normalizedFormat {
 	case FormatHTML:
-		rendered = SanitizeArticleHTML(content)
+		rendered = content
 	case FormatMarkdown:
 		rendered, err = renderMarkdownToHTML(content)
 		if err != nil {
 			return RenderedArticleContent{}, err
 		}
-		rendered = SanitizeArticleHTML(rendered)
 	default:
 		return RenderedArticleContent{}, fmt.Errorf("%w: %s", ErrUnsupportedContentFormat, normalizedFormat)
+	}
+
+	if len(media) == 0 {
+		rendered = SanitizeArticleHTML(rendered)
+	} else {
+		// Compose against sanitized block content, then sanitize the composed
+		// document so every emitted figure/image passes the publication policy.
+		rendered = SanitizeArticleHTML(rendered)
+		rendered = composeArticleMedia(rendered, media)
+		rendered = SanitizeArticleHTML(rendered)
 	}
 
 	if len(rendered) > MaxArticleRenderedHTMLBytes {
@@ -186,6 +205,7 @@ func articlePolicy() *bluemonday.Policy {
 		"p", "br", "span", "del", "pre", "code", "em", "strong", "b", "i", "u", "s", "strike",
 		"blockquote", "ul", "ol", "li", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "a", "img",
 		"table", "thead", "tbody", "tr", "th", "td",
+		"figure", "figcaption",
 	)
 
 	policy.AllowAttrs("id").Matching(articleHeadingIDRE).OnElements("h1", "h2", "h3", "h4", "h5", "h6")
