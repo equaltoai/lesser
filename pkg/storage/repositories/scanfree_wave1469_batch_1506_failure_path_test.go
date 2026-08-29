@@ -64,7 +64,10 @@ func TestBatch1506_SearchAccounts_DecodeFailure_BoundedFiltered(t *testing.T) {
 // partition with a cursor whose PK prefix belongs to a DIFFERENT 2-char prefix
 // (normal client behavior when the query text changes between pages). The walk
 // must restart keyed on the NEW prefix — bounded and filtered, never an
-// unfiltered read of the old partition.
+// unfiltered read of the old partition. alex shares the USER_HANDLE_PREFIX#al
+// partition but must never surface: a restart that misreads the cursor and
+// keys an equal-bound window (BETWEEN [prefix, prefix]) over the partition
+// would return both rows and fail the exactly-one assertion.
 func TestBatch1506_SearchAccounts_PrefixMismatch_CleanRestart(t *testing.T) {
 	ctx := context.Background()
 	_, _, inner := newSeamRowDB(t)
@@ -76,6 +79,7 @@ func TestBatch1506_SearchAccounts_PrefixMismatch_CleanRestart(t *testing.T) {
 		require.NoError(t, inner.Model(u).Create())
 	}
 	seed("alice")
+	seed("alex")
 
 	repo := NewAccountRepository(inner, "test-table", "example.com", zap.NewNop())
 	// Cursor under USER_HANDLE_PREFIX#zz (a different partition than "al").
@@ -84,6 +88,7 @@ func TestBatch1506_SearchAccounts_PrefixMismatch_CleanRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Items, 1, "prefix-mismatch cursor must cleanly restart under the new prefix (issue #1505 M2)")
 	require.Equal(t, "alice", result.Items[0].User.Username)
+	require.NotEqual(t, "alex", result.Items[0].User.Username, "the same-prefix row must not leak into the page")
 }
 
 // TestBatch1506_GetLoginHistory_DecodeFailure_BoundedFiltered seeds the
