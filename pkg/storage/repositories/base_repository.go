@@ -728,22 +728,29 @@ func (r *BaseRepository[T]) QueryWithSKPrefixPaginated(ctx context.Context, pk, 
 	var results []T
 
 	// One SK key condition (issue #1500): BEGINS_WITH on the first page; with
-	// a cursor key the exclusive bound (`<` DESC / `>` ASC) and demote
-	// BEGINS_WITH to a post-read FilterExpression.
+	// a cursor, BETWEEN closes the key range at the block boundary — DESC
+	// pages are bounded below by the prefix itself, ASC pages above by the
+	// `~` sentinel (0x7E sorts above every ASCII block member) — so the final
+	// page can never keep reading the partition tail. BEGINS_WITH is demoted
+	// to a post-read FilterExpression; BETWEEN is inclusive, so the cursor row
+	// is re-included and dropped post-read (one extra item is over-fetched so
+	// the has-more detection stays exact).
 	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
-		OrderBy("SK", order).
-		Limit(safeLimit + 1)
+		OrderBy("SK", order)
 
+	fetchLimit := safeLimit + 1
 	if opts.Cursor != "" {
 		if order == SortOrderDesc {
-			query = query.Where("SK", "<", opts.Cursor).Filter("SK", "BEGINS_WITH", skPrefix)
+			query = query.Where("SK", "BETWEEN", []any{skPrefix, opts.Cursor}).Filter("SK", "BEGINS_WITH", skPrefix)
 		} else {
-			query = query.Where("SK", ">", opts.Cursor).Filter("SK", "BEGINS_WITH", skPrefix)
+			query = query.Where("SK", "BETWEEN", []any{opts.Cursor, skPrefix + "~"}).Filter("SK", "BEGINS_WITH", skPrefix)
 		}
+		fetchLimit++
 	} else {
 		query = query.Where("SK", "BEGINS_WITH", skPrefix)
 	}
+	query = query.Limit(fetchLimit)
 
 	if err := query.All(&results); err != nil {
 		r.logger.Error("failed to query items with SK prefix",
@@ -752,6 +759,9 @@ func (r *BaseRepository[T]) QueryWithSKPrefixPaginated(ctx context.Context, pk, 
 			zap.String("skPrefix", skPrefix),
 			zap.Int("limit", safeLimit))
 		return nil, ErrorHandler.HandleQueryError(err, "base entity", "prefix query")
+	}
+	if opts.Cursor != "" {
+		results = dropSortKeyCursorDuplicate(results, opts.Cursor, func(item T) string { return item.GetSK() })
 	}
 
 	hasMore := len(results) > safeLimit
@@ -1068,16 +1078,24 @@ type GSIQueryConfig struct {
 // demote BEGINS_WITH to a post-read FilterExpression.
 func collectionMainTableQuery[M BaseModel](ctx context.Context, r *BaseRepository[M], pkValue, skPattern, cursor string, safeLimit int) core.Query {
 	query := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
-		Where("PK", "=", pkValue).
-		Limit(safeLimit + 1)
+		Where("PK", "=", pkValue)
 
 	if cursor != "" {
-		query = query.Where("SK", ">", cursor)
+		// BETWEEN [cursor, skPattern+"~"] closes the key range at the top of
+		// the block (the `~` sentinel sorts above every ASCII block member) so
+		// the final page can never keep reading the partition tail; BEGINS_WITH
+		// is demoted to a post-read FilterExpression. The caller over-fetches
+		// one extra item and drops the re-included cursor row.
+		query = query.Where("SK", "BETWEEN", []any{cursor, skPattern + "~"}).
+			Limit(safeLimit + 2)
 		if skPattern != "" {
 			query = query.Filter("SK", "BEGINS_WITH", skPattern)
 		}
-	} else if skPattern != "" {
-		query = query.Where("SK", "BEGINS_WITH", skPattern)
+	} else {
+		query = query.Limit(safeLimit + 1)
+		if skPattern != "" {
+			query = query.Where("SK", "BEGINS_WITH", skPattern)
+		}
 	}
 	return query
 }
@@ -1148,6 +1166,10 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 
 		query := collectionMainTableQuery(ctx, r, pkValue, skPattern, cursor, safeLimit)
 		err = query.All(&models)
+		if err == nil && cursor != "" && skPattern != "" {
+			// BETWEEN re-includes the cursor row; drop it post-read.
+			models = dropSortKeyCursorDuplicate(models, cursor, func(m M) string { return m.GetSK() })
+		}
 	}
 	if err != nil {
 		r.logger.Error(fmt.Sprintf("failed to %s", config.ErrorPrefix),
@@ -1352,9 +1374,15 @@ func ListAggregatedByPeriod[T BaseModel](
 			return nil, "", MapErrorWithContext(err, config.ErrorPrefix)
 		}
 	} else {
+		// Clamp the upper bound to min(window end, cursor): a stale/foreign
+		// cursor sorting above the window end must not widen the window.
+		hi := cursor
+		if endSK < hi {
+			hi = endSK
+		}
 		query := db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 			Where("PK", "=", pk).
-			Where("SK", "BETWEEN", []any{startSK, cursor}).
+			Where("SK", "BETWEEN", []any{startSK, hi}).
 			OrderBy("SK", SortOrderDesc).
 			Limit(fetchLimit + 1)
 		err := query.All(&aggregatedList)
@@ -1803,8 +1831,18 @@ func (r *BaseRepository[T]) QueryBetweenPaginated(ctx context.Context, pk, start
 		var lo, hi string
 		if order == SortOrderDesc {
 			lo, hi = startSK, opts.Cursor
+			// Clamp the upper bound to min(window end, cursor): a stale/foreign
+			// cursor sorting above the window end must not widen the window.
+			if hi > endSK {
+				hi = endSK
+			}
 		} else {
 			lo, hi = opts.Cursor, endSK
+			// Clamp the lower bound to max(window start, cursor): a stale/foreign
+			// cursor sorting below the window start must not widen the window.
+			if lo < startSK {
+				lo = startSK
+			}
 		}
 		query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 			Where("PK", "=", pk).

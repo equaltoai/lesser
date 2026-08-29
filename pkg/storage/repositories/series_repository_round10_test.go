@@ -38,7 +38,9 @@ func TestRound10_SeriesRepository_CRUDAndPagination(t *testing.T) {
 	_, _, err = repo.ListSeriesByAuthorPaginated(ctx, "   ", 1, "")
 	require.Error(t, err)
 
-	items, next, err := repo.ListSeriesByAuthorPaginated(ctx, "user-1", 1, "series-1")
+	// Cursor below both permissive-mock rows ("ID#series-0"): the BETWEEN
+	// [cursor, "ID#~"] sentinel page returns both rows, so has-more holds.
+	items, next, err := repo.ListSeriesByAuthorPaginated(ctx, "user-1", 1, "series-0")
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.NotEmpty(t, next)

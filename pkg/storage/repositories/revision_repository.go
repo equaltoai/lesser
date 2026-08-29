@@ -68,27 +68,36 @@ func (r *RevisionRepository) ListRevisionsPaginated(ctx context.Context, objectI
 
 	pk := fmt.Sprintf("OBJECT#%s#REVISION", objectID)
 	// One SK key condition (issue #1500): BEGINS_WITH on the first page; with
-	// a cursor (DESC order) key the exclusive `<` bound and demote BEGINS_WITH
-	// to a post-read FilterExpression.
+	// a cursor (DESC order), BETWEEN ["VERSION#", cursor] closes the key range
+	// at the bottom of the block so the final page can never keep reading the
+	// partition head; BEGINS_WITH is demoted to a post-read FilterExpression.
+	// BETWEEN is inclusive, so the cursor row is re-included and dropped
+	// post-read (one extra item is over-fetched so the has-more detection
+	// stays exact).
 	query := r.db.WithContext(ctx).Model(&models.Revision{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC")
 
 	cursor = strings.TrimSpace(cursor)
+	fetchLimit := limit + 1
 	if cursor != "" {
 		if !strings.HasPrefix(cursor, "VERSION#") {
 			cursor = fmt.Sprintf("VERSION#%s", cursor)
 		}
-		query = query.Where("SK", "<", cursor).Filter("SK", "BEGINS_WITH", "VERSION#")
+		query = query.Where("SK", "BETWEEN", []any{"VERSION#", cursor}).Filter("SK", "BEGINS_WITH", "VERSION#")
+		fetchLimit++
 	} else {
 		query = query.Where("SK", "BEGINS_WITH", "VERSION#")
 	}
 
-	query = query.Limit(limit + 1)
+	query = query.Limit(fetchLimit)
 
 	var revisionModels []models.Revision
 	if err := query.All(&revisionModels); err != nil {
 		return nil, "", err
+	}
+	if cursor != "" {
+		revisionModels = dropSortKeyCursorDuplicate(revisionModels, cursor, func(r models.Revision) string { return r.SK })
 	}
 
 	nextCursor := ""

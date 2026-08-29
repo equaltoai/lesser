@@ -1348,6 +1348,15 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 	// (issue #1500): BEGINS_WITH on the first page; with a cursor key the
 	// exclusive `>` bound and demote BEGINS_WITH to a post-read
 	// FilterExpression.
+	//
+	// NO upper sentinel is applied to this cursor page: the gsi3SK block is
+	// the raw lowercased hashtag name (Hashtag.UpdateKeys), whose writer
+	// alphabet is `[\p{L}\p{N}_]+` — Unicode letters and numbers are allowed,
+	// so block members can carry UTF-8 bytes above 0x7E (e.g. "café" sorts
+	// ABOVE the ASCII sentinel "caf~"). No static sentinel can close this key
+	// range without excluding valid block members, so the range stays open
+	// above the cursor and the amplification is bounded by the 2-char
+	// HASHTAG_SEARCH partition itself. See the batch-1505 compile-pin header.
 	hashtagQuery := r.db.WithContext(ctx).Model(&models.Hashtag{}).
 		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("HASHTAG_SEARCH#%s", normalizedQuery[:2])).

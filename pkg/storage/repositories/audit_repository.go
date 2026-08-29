@@ -174,8 +174,16 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
 		query = query.Where("gsi4SK", "BETWEEN", []any{startTimestamp, endTimestamp})
 	case useWindow && cursor != "":
+		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
 		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
-		query = query.Where("gsi4SK", "BETWEEN", []any{cursor, endTimestamp})
+		// Clamp the lower bound to max(window start, cursor): a stale/foreign
+		// cursor sorting below the window start must not widen the window
+		// below startTimestamp.
+		lo := cursor
+		if startTimestamp > lo {
+			lo = startTimestamp
+		}
+		query = query.Where("gsi4SK", "BETWEEN", []any{lo, endTimestamp})
 		fetchLimit++
 	case cursor != "":
 		// No time window: the bare cursor bound is one key condition.

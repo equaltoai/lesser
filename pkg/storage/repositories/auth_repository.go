@@ -794,22 +794,29 @@ func (r *AuthRepository) queryWalletCredentials(ctx context.Context, pk, skPrefi
 	safeLimit := clampWalletCredentialLimit(limit)
 
 	// One SK key condition (issue #1500): BEGINS_WITH on the first page; with
-	// a cursor key the exclusive `>` bound and demote BEGINS_WITH to a
-	// post-read FilterExpression.
+	// a cursor, BETWEEN [cursor, skPrefix+"~"] closes the key range at the top
+	// of the block (the `~` sentinel sorts above every ASCII block member) and
+	// demotes BEGINS_WITH to a post-read FilterExpression — the final page can
+	// never keep reading the partition tail.
 	query := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
 		Where("PK", "=", pk).
-		OrderBy("SK", "ASC").
-		Limit(safeLimit + 1)
+		OrderBy("SK", "ASC")
 
+	fetchLimit := safeLimit + 1
 	if cursor != "" {
-		query = query.Where("SK", ">", cursor).Filter("SK", "BEGINS_WITH", skPrefix)
+		query = query.Where("SK", "BETWEEN", []any{cursor, skPrefix + "~"}).Filter("SK", "BEGINS_WITH", skPrefix)
+		fetchLimit++
 	} else {
 		query = query.Where("SK", "BEGINS_WITH", skPrefix)
 	}
+	query = query.Limit(fetchLimit)
 
 	err := query.All(&modelList)
 	if err != nil {
 		return nil, "", err
+	}
+	if cursor != "" {
+		modelList = dropSortKeyCursorDuplicate(modelList, cursor, func(w models.WalletCredential) string { return w.SK })
 	}
 
 	var nextCursor string

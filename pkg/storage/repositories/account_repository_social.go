@@ -206,18 +206,23 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 	safeLimit := clampFollowLimit(limit)
 
 	// Build query using primary key. One SK key condition (issue #1500):
-	// BEGINS_WITH on the first page; with a cursor key the exclusive `>` bound
-	// and demote BEGINS_WITH to a post-read FilterExpression.
+	// BEGINS_WITH on the first page; with a cursor, BETWEEN [cursor,
+	// "following#~"] closes the key range at the top of the block (the `~`
+	// sentinel sorts above every ASCII username block member) and demotes
+	// BEGINS_WITH to a post-read FilterExpression — the final page can never
+	// keep reading the partition tail.
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Where("PK", "=", Utils.Keys.FollowKey(username)).
-		OrderBy("SK", "ASC").
-		Limit(safeLimit + 1)
+		OrderBy("SK", "ASC")
 
+	fetchLimit := safeLimit + 1
 	if cursor != "" {
-		query = query.Where("SK", ">", cursor).Filter("SK", "BEGINS_WITH", "following#")
+		query = query.Where("SK", "BETWEEN", []any{cursor, "following#~"}).Filter("SK", "BEGINS_WITH", "following#")
+		fetchLimit++
 	} else {
 		query = query.Where("SK", "BEGINS_WITH", "following#")
 	}
+	query = query.Limit(fetchLimit)
 
 	err := query.All(&follows)
 	if err != nil {
@@ -225,6 +230,9 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("following for %s", username))
+	}
+	if cursor != "" {
+		follows = dropSortKeyCursorDuplicate(follows, cursor, func(f models.Follow) string { return f.SK })
 	}
 
 	hasMore := len(follows) > safeLimit

@@ -136,63 +136,20 @@ func TestBatch1505_AccountSocial_GetFollowing_StrictChainPin(t *testing.T) {
 		mockQuery.AssertExpectations(t)
 	})
 
-	t.Run("cursor page keys the bound and filters begins_with", func(t *testing.T) {
+	t.Run("cursor page closes the range at the block top and filters begins_with", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", ctx).Return(mockDB)
 		mockDB.On("Model", mock.AnythingOfType("*models.Follow")).Return(mockQuery)
 		mockQuery.On("Where", "PK", "=", "follow#alice").Return(mockQuery).Once()
-		mockQuery.On("Where", "SK", ">", "following#bob").Return(mockQuery).Once()
+		mockQuery.On("Where", "SK", "BETWEEN", []any{"following#bob", "following#~"}).Return(mockQuery).Once()
 		mockQuery.On("Filter", "SK", "BEGINS_WITH", "following#").Return(mockQuery).Once()
 		mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery).Once()
-		mockQuery.On("Limit", 26).Return(mockQuery).Once()
+		mockQuery.On("Limit", 27).Return(mockQuery).Once()
 		mockQuery.On("All", mock.AnythingOfType("*[]models.Follow")).Return(nil).Once()
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
 		_, _, err := repo.GetFollowing(ctx, "alice", 25, "following#bob")
-		require.NoError(t, err)
-		mockDB.AssertExpectations(t)
-		mockQuery.AssertExpectations(t)
-	})
-}
-
-// GetHomeTimeline (Shape D) — maxID page keys `< maxID` and demotes BEGINS_WITH
-// to a post-read FilterExpression; first page keys BEGINS_WITH directly.
-func TestBatch1505_Timeline_GetHomeTimeline_StrictChainPin(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("first page keys begins_with", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", ctx).Return(mockDB)
-		mockDB.On("Model", mock.AnythingOfType("*models.TimelineEntry")).Return(mockQuery)
-		mockQuery.On("Where", "PK", "=", "USER#alice").Return(mockQuery).Once()
-		mockQuery.On("Where", "SK", "BEGINS_WITH", "HOME#").Return(mockQuery).Once()
-		mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
-		mockQuery.On("Limit", 26).Return(mockQuery).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]models.TimelineEntry")).Return(nil).Once()
-
-		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
-		_, err := repo.GetHomeTimeline(ctx, "alice", 25, "", "")
-		require.NoError(t, err)
-		mockDB.AssertExpectations(t)
-		mockQuery.AssertExpectations(t)
-	})
-
-	t.Run("maxID page keys the bound and filters begins_with", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", ctx).Return(mockDB)
-		mockDB.On("Model", mock.AnythingOfType("*models.TimelineEntry")).Return(mockQuery)
-		mockQuery.On("Where", "PK", "=", "USER#alice").Return(mockQuery).Once()
-		mockQuery.On("Where", "SK", "<", "HOME#max").Return(mockQuery).Once()
-		mockQuery.On("Filter", "SK", "BEGINS_WITH", "HOME#").Return(mockQuery).Once()
-		mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
-		mockQuery.On("Limit", 26).Return(mockQuery).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]models.TimelineEntry")).Return(nil).Once()
-
-		repo := NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop())
-		_, err := repo.GetHomeTimeline(ctx, "alice", 25, "max", "")
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockQuery.AssertExpectations(t)

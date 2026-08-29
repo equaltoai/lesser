@@ -30,17 +30,27 @@ func listByPKSKPrefixPaginated[T skGetter](ctx context.Context, db dynamormCore.
 		OrderBy("SK", "ASC")
 
 	cursor = strings.TrimSpace(cursor)
+	fetchLimit := limit + 1
 	if cursor == "" {
 		query = query.Where("SK", "BEGINS_WITH", skPrefix)
 	} else {
-		query = query.Where("SK", ">", cursor).Filter("SK", "BEGINS_WITH", skPrefix)
+		// Close the key range at the top of the block with the `~` sentinel
+		// (0x7E sorts above every ASCII block member) so a final page that
+		// exhausts the block cannot keep reading the partition tail. BETWEEN is
+		// inclusive, so the cursor row is re-included and dropped post-read (one
+		// extra item is over-fetched so the has-more detection stays exact).
+		query = query.Where("SK", "BETWEEN", []any{cursor, skPrefix + "~"}).Filter("SK", "BEGINS_WITH", skPrefix)
+		fetchLimit++
 	}
 
-	query = query.Limit(limit + 1)
+	query = query.Limit(fetchLimit)
 
 	var items []T
 	if err := query.All(&items); err != nil {
 		return nil, "", err
+	}
+	if cursor != "" {
+		items = dropSortKeyCursorDuplicate(items, cursor, func(item T) string { return item.GetSK() })
 	}
 
 	nextCursor := ""

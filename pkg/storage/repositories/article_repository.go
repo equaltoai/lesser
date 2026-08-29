@@ -183,24 +183,33 @@ func (r *ArticleRepository) listArticlesByCMSIndexPaginated(ctx context.Context,
 	}
 
 	// One SK key condition (issue #1500): BEGINS_WITH on the first page; with
-	// a cursor (DESC order) key the exclusive `<` bound and demote BEGINS_WITH
-	// to a post-read FilterExpression.
+	// a cursor (DESC order), BETWEEN [CMSArticleIndexSKPrefix, cursor] closes
+	// the key range at the bottom of the block so the final page can never keep
+	// reading the partition head; BEGINS_WITH is demoted to a post-read
+	// FilterExpression. BETWEEN is inclusive, so the cursor row is re-included
+	// and dropped post-read (one extra item is over-fetched so the has-more
+	// detection stays exact).
 	query := r.db.WithContext(ctx).Model(&models.CMSArticleIndex{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC")
 
 	cursor = strings.TrimSpace(cursor)
+	fetchLimit := limit + 1
 	if cursor != "" {
-		query = query.Where("SK", "<", cursor).Filter("SK", "BEGINS_WITH", models.CMSArticleIndexSKPrefix)
+		query = query.Where("SK", "BETWEEN", []any{models.CMSArticleIndexSKPrefix, cursor}).Filter("SK", "BEGINS_WITH", models.CMSArticleIndexSKPrefix)
+		fetchLimit++
 	} else {
 		query = query.Where("SK", "BEGINS_WITH", models.CMSArticleIndexSKPrefix)
 	}
 
-	query = query.Limit(limit + 1)
+	query = query.Limit(fetchLimit)
 
 	var indexModels []models.CMSArticleIndex
 	if err := query.All(&indexModels); err != nil {
 		return nil, "", err
+	}
+	if cursor != "" {
+		indexModels = dropSortKeyCursorDuplicate(indexModels, cursor, func(m models.CMSArticleIndex) string { return m.SK })
 	}
 
 	nextCursor := ""

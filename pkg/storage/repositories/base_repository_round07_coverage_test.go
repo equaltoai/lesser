@@ -287,7 +287,9 @@ func TestBaseRepository_QueryAndHelpers(t *testing.T) {
 		// Cursor pages demote the SK prefix to a post-read FilterExpression.
 		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("Limit", 2).Return(mockQuery)
+		// Cursor pages close the BETWEEN range and over-fetch one extra item
+		// (limit+2) for the inclusive-cursor drop.
+		mockQuery.On("Limit", 3).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*baseRepoPtrModel)
 			*dest = []*baseRepoPtrModel{
