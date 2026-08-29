@@ -242,8 +242,10 @@ the article's persisted media:
   sanitized HTML.
 - ActivityPub article objects (federation Create/Update and object fetch) carry
   the composed content and attach the minted servings as `Document`
-  attachments; the REST/Mastodon status representation built from those objects
-  therefore carries the images in `content` and `media_attachments`.
+  attachments. The REST/Mastodon status representation would compose `content`
+  + `media_attachments` only where a status is built from an AP article object;
+  lesser exposes no such REST article route today, so wiring one is a
+  parent-milestone follow-up decision rather than a delivered surface.
 - The CMS validation, enrichment/TOC, and object-repository conversions render
   through the same composition step.
 
@@ -251,10 +253,11 @@ the article's persisted media:
 (a list of the published binding records). No PK, SK, GSI, projection, version,
 TTL, table, or stream-routing changes; no migration or backfill is required.
 Contract impact is additive and backward-compatible: GraphQL `renderedHtml`
-gains composed `<figure>` elements, AP Article objects gain `attachment`
-Documents, and REST statuses of articles with bound media gain composed
-`content` and `media_attachments`. Articles without bound media render exactly
-as before.
+gains composed `<figure>` elements and AP Article objects gain `attachment`
+Documents. A REST/Mastodon status built from an AP article object would also
+compose `content` + `media_attachments`, but no such REST article route exists
+in lesser today — wiring one is a parent-milestone follow-up decision. Articles
+without bound media render exactly as before.
 
 ### Bounded grant expiry
 
@@ -275,8 +278,10 @@ are additive (new lifecycle enum, state values, `publishedUrl`/`publishedAt`/
 `expiresAt` fields, and the `updateEditorialMediaLifecycle` mutation).
 Mastodon REST, OpenAPI, ActivityPub actor and object shapes, JSON-LD, WebFinger,
 federation signing, and streaming contracts are unchanged; M3's composed
-`renderedHtml`, AP `attachment` Documents, and REST `media_attachments` are
-additive and backward-compatible.
+`renderedHtml` and AP `attachment` Documents are additive and backward-
+compatible. REST `media_attachments` would follow only where a status is built
+from an AP article object, which no lesser REST route does today (a
+parent-milestone follow-up decision).
 
 ## GraphQL exercise
 
