@@ -174,7 +174,9 @@ lifecycle-available; otherwise publish fails with an explicit reason
 
 The publish transition is the single point where durable public serving is
 minted. For each bound asset, `PublishMediaDurably` copies the exact original
-bytes (SSE-KMS internal source) to a `published/` key with SSE-S3 so the
+bytes (SSE-KMS internal source for byte-path arrivals; bucket-default SSE-S3
+for presigned-companion/grant-path arrivals) to a `published/` key with SSE-S3
+so the
 unsigned CloudFront origin can serve them, records `publishedS3Key`,
 `publishedURL`, and `publishedAt` on the media record, and the CMS service
 verifies the minted digest equals the digest bound into the approved revision

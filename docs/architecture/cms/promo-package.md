@@ -28,8 +28,12 @@ minted `publishedS3Key`, `publishedURL`, and `publishedAt`), and the release
 seam re-verifies every asset against the same guard at the outbound surface
 (`preparePromoPublishedAttachments` in `pkg/services/notes/promo.go`) plus the
 digest bound into the reviewed package. A pre-publication internal asset's
-bytes are SSE-KMS-encrypted, receive no unsigned CDN URL, and are never
-referenced by a promo package, so they cannot leak through this lane.
+bytes are encrypted at rest — SSE-KMS under the instance key when they arrive
+through the byte-path `uploadMedia` pipeline, or the media bucket's default
+SSE-S3 (`BucketEncryption_S3_MANAGED`) when they arrive through the
+presigned-companion grant path (whose presigned PUT signs no SSE parameters) —
+receive no unsigned CDN URL, and are never referenced by a promo package, so
+they cannot leak through this lane.
 
 Pre-release promo package *records* are not world-readable either: they resolve
 only for the owner and holders of an active review grant (same posture as M2

@@ -1604,8 +1604,11 @@ func (s *mediaS3ObjectStore) CopyFileToPublished(
 	if strings.TrimSpace(bucket) == "" || strings.TrimSpace(sourceKey) == "" || strings.TrimSpace(destinationKey) == "" {
 		return "", errors.New("published copy requires a bucket, source key, and destination key")
 	}
-	// The source is SSE-KMS under the instance key; the durable published copy
-	// is SSE-S3 so the unsigned CloudFront origin can serve the exact bytes.
+	// The source is SSE-KMS under the instance key for byte-path internal
+	// uploads, or bucket-default SSE-S3 for presigned-companion/grant-path
+	// uploads (their presigned PUTs sign no SSE parameters); the durable
+	// published copy is SSE-S3 so the unsigned CloudFront origin can serve the
+	// exact bytes.
 	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:               aws.String(strings.TrimSpace(bucket)),
 		Key:                  aws.String(strings.TrimSpace(destinationKey)),
