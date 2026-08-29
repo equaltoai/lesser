@@ -46,7 +46,7 @@ Hello world.
 
 func TestCMSExtractTOCFromMarkdown_NormalizesHeadingText(t *testing.T) {
 	content := "## **Bold** [Link](https://example.com)\n"
-	entries := cmsExtractTOC(content, "markdown")
+	entries := cmsExtractTOC(content, "markdown", nil)
 
 	require.Equal(t, []models.TOCEntry{
 		{ID: "bold-linkhttpsexamplecom", Level: 2, Text: "Bold Link"},
@@ -55,7 +55,7 @@ func TestCMSExtractTOCFromMarkdown_NormalizesHeadingText(t *testing.T) {
 
 func TestCMSExtractTOCFallsBackToMarkdownParserWhenRendererRejectsFormat(t *testing.T) {
 	content := "## Section One\n\n## Section One\n\n```md\n## Not A Heading\n```\n"
-	entries := cmsExtractTOC(content, "asciidoc")
+	entries := cmsExtractTOC(content, "asciidoc", nil)
 
 	require.Equal(t, []models.TOCEntry{
 		{ID: "section-one", Level: 2, Text: "Section One"},

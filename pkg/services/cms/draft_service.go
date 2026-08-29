@@ -4,6 +4,7 @@ import (
 	"context"
 	stdErrors "errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -316,13 +317,23 @@ func (s *DraftService) PreviewDraft(ctx context.Context, authorID, draftID strin
 
 // RenderDraftPreview renders draft source through the canonical Article renderer.
 func RenderDraftPreview(draft *models.Draft) (cmsrender.RenderedArticleContent, error) {
+	return RenderDraftPreviewWithMedia(draft, nil)
+}
+
+// RenderDraftPreviewWithMedia renders draft source through the canonical
+// Article renderer, composing the caller-provided media descriptors so
+// draftPreview.renderedHtml carries the bound images. Draft-time media URLs are
+// the caller-authorized short-lived servings minted by the exact-asset access
+// lane; the renderer never resolves media itself and only emits the descriptors
+// it is given.
+func RenderDraftPreviewWithMedia(draft *models.Draft, media []cmsrender.ArticleMedia) (cmsrender.RenderedArticleContent, error) {
 	if draft == nil {
 		return cmsrender.RenderedArticleContent{}, stdErrors.New("draft is required")
 	}
 	if !strings.EqualFold(strings.TrimSpace(draft.ContentType), activitypub.ArticleType) {
 		return cmsrender.RenderedArticleContent{}, stdErrors.New("only article drafts can be previewed")
 	}
-	rendered, err := cmsrender.RenderArticleContent(draft.Content, draft.ContentFormat)
+	rendered, err := cmsrender.RenderArticleContentWithMedia(draft.Content, draft.ContentFormat, media)
 	if err != nil {
 		return cmsrender.RenderedArticleContent{}, err
 	}
@@ -693,11 +704,12 @@ func (s *DraftService) publishDraftUpdateExistingArticle(ctx context.Context, au
 	return article, nil
 }
 
-// applyPublishedDraftMedia wires the hero binding into Article.featuredImage and
-// the social card binding into Article.ogImage using the durable published
-// serving minted from the exact approved bytes. Inline positions remain
-// structured (M1 contract); their assets are durably served at the media-record
-// level so any future reference resolves to the approved bytes.
+// applyPublishedDraftMedia wires the hero binding into Article.featuredImage,
+// the social card binding into Article.ogImage, and the full bound set (hero,
+// inline, social card) onto Article.EditorialMedia using the durable published
+// serving minted from the exact approved bytes. The article record durably
+// carries the bindings because the draft is deleted after publish; every
+// article read path composes inline media from the persisted list.
 func applyPublishedDraftMedia(article *models.Article, draft *models.Draft, mints map[string]EditorialPublishedMedia) {
 	if article == nil || draft == nil {
 		return
@@ -716,6 +728,70 @@ func applyPublishedDraftMedia(article *models.Article, draft *models.Draft, mint
 			}
 		}
 	}
+	article.EditorialMedia = cmsPublishedEditorialMedia(draft, mints)
+}
+
+// cmsPublishedEditorialMedia snapshots the draft's bound usages with their
+// minted public serving onto the durable article form, in canonical order
+// (hero, inline by position, social card). A usage without a mint never
+// composes: the publish gate requires every required asset to serve the exact
+// approved bytes, so a missing mint here is a fail-closed skip, not a
+// placeholder.
+func cmsPublishedEditorialMedia(draft *models.Draft, mints map[string]EditorialPublishedMedia) []models.ArticleEditorialMedia {
+	if draft == nil || len(draft.EditorialMedia) == 0 {
+		return nil
+	}
+	usages := make([]models.DraftMediaUsage, 0, len(draft.EditorialMedia))
+	usages = append(usages, draft.EditorialMedia...)
+	sort.SliceStable(usages, func(i, j int) bool {
+		ri, rj := cmsEditorialRoleRank(usages[i].Role), cmsEditorialRoleRank(usages[j].Role)
+		if ri != rj {
+			return ri < rj
+		}
+		return cmsEditorialUsagePosition(usages[i]) < cmsEditorialUsagePosition(usages[j])
+	})
+	out := make([]models.ArticleEditorialMedia, 0, len(usages))
+	for _, usage := range usages {
+		mint, ok := mints[usage.MediaID]
+		if !ok {
+			continue
+		}
+		out = append(out, models.ArticleEditorialMedia{
+			MediaID:        usage.MediaID,
+			Role:           usage.Role,
+			InlinePosition: usage.InlinePosition,
+			Caption:        usage.Caption,
+			CreditLine:     usage.CreditLine,
+			AltText:        usage.AltText,
+			Focus:          usage.Focus,
+			URL:            mint.URL,
+			ContentType:    mint.ContentType,
+			ContentHash:    mint.ContentHash,
+			Width:          mint.Width,
+			Height:         mint.Height,
+		})
+	}
+	return out
+}
+
+func cmsEditorialRoleRank(role models.EditorialMediaRole) int {
+	switch role {
+	case models.EditorialMediaRoleHero:
+		return 0
+	case models.EditorialMediaRoleInline:
+		return 1
+	case models.EditorialMediaRoleSocialCard:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func cmsEditorialUsagePosition(usage models.DraftMediaUsage) int {
+	if usage.InlinePosition == nil {
+		return 0
+	}
+	return *usage.InlinePosition
 }
 
 // cmsFeaturedImageSnapshot builds the published article's featured-image
@@ -760,6 +836,7 @@ func cmsCloneArticleForDraftMutation(article *models.Article) *models.Article {
 	cp.BCC = append([]string{}, article.BCC...)
 	cp.CategoryIDs = append([]string{}, article.CategoryIDs...)
 	cp.TableOfContents = append([]models.TOCEntry{}, article.TableOfContents...)
+	cp.EditorialMedia = append([]models.ArticleEditorialMedia{}, article.EditorialMedia...)
 	if article.InReplyTo != nil {
 		v := *article.InReplyTo
 		cp.InReplyTo = &v

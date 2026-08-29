@@ -2,7 +2,11 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 )
 
 // Article represents a long-form content object
@@ -16,6 +20,12 @@ type Article struct {
 	Excerpt         string     `theorydb:"attr:excerpt" json:"excerpt,omitempty"`
 	FeaturedImage   *Media     `theorydb:"attr:featuredImage" json:"featured_image,omitempty"`
 	TableOfContents []TOCEntry `theorydb:"attr:tableOfContents" json:"table_of_contents,omitempty"`
+
+	// EditorialMedia durably carries the published editorial bindings minted at
+	// the publish transition. The draft is deleted after publish, so the article
+	// record is the surviving source for composed inline media; every article
+	// read path composes from this persisted list.
+	EditorialMedia []ArticleEditorialMedia `theorydb:"attr:editorialMedia,omitempty" json:"editorial_media,omitempty"`
 
 	// Publishing metadata
 	ReadingTimeMinutes int    `theorydb:"attr:readingTimeMinutes" json:"reading_time_minutes"`
@@ -55,6 +65,61 @@ type TOCEntry struct {
 	ID    string `json:"id"`
 	Level int    `json:"level"` // 1-6 for h1-h6
 	Text  string `json:"text"`
+}
+
+// APAttachments renders the article's bound editorial media as ActivityPub
+// Document attachments from their minted public serving URLs. Social-card
+// media is promotional and never attaches to the article object; inline and
+// hero media attach in canonical binding order.
+func (a *Article) APAttachments() []activitypub.Attachment {
+	if a == nil {
+		return nil
+	}
+	var out []activitypub.Attachment
+	for _, m := range a.EditorialMedia {
+		if m.Role == EditorialMediaRoleSocialCard {
+			continue
+		}
+		url := strings.TrimSpace(m.URL)
+		if url == "" {
+			continue
+		}
+		out = append(out, activitypub.Attachment{
+			Type:      "Document",
+			MediaType: strings.TrimSpace(m.ContentType),
+			URL:       url,
+			Name:      strings.TrimSpace(m.AltText),
+			Width:     m.Width,
+			Height:    m.Height,
+		})
+	}
+	return out
+}
+
+// RenderMediaList maps the article's persisted inline editorial bindings onto
+// the canonical renderer's media descriptors so every published article read
+// path composes the minted serving. Only inline media composes into published
+// article HTML: the hero is the article's leading image in draft previews only
+// and otherwise lives on Article.featuredImage, and social-card media never
+// composes into the body. A binding without a minted URL is skipped: the
+// publish gate only mints digest-verified assets, so an empty URL here is a
+// fail-closed skip, never a placeholder.
+func (a *Article) RenderMediaList() []cmsrender.ArticleMedia {
+	if a == nil {
+		return nil
+	}
+	var out []cmsrender.ArticleMedia
+	for _, m := range a.EditorialMedia {
+		if m.Role != EditorialMediaRoleInline {
+			continue
+		}
+		render := m.RenderMedia()
+		if strings.TrimSpace(render.URL) == "" {
+			continue
+		}
+		out = append(out, render)
+	}
+	return out
 }
 
 // TableName returns the DynamoDB table backing Article.
