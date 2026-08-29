@@ -78,18 +78,7 @@ func TestUploadGrantMintFinalizeGraphQLFlow(t *testing.T) {
 	require.Equal(t, *minted.MediaID, grantIDFromS3Key(t, presign.key), "the PUT key must be scoped to the grant's minted media ID")
 	require.Equal(t, "image/png", presign.contentType)
 	require.Equal(t, round12UploadDigest(round12TinyPNG()), presign.contentSHA256)
-	require.Equal(t, "alias/lesser-test", presign.kmsKeyID)
 	require.Equal(t, 15*time.Minute, presign.expiry)
-
-	// The mint response carries the signed SSE-KMS headers the PUT must echo:
-	// names and exact values (the algorithm and the instance key id that the
-	// presigned URL signs), so a client can fulfill the PUT out-of-band. This is
-	// the contract that closes issue #1472.
-	require.Len(t, minted.SignedHeaders, 2, "the grant response must name the signed PUT headers")
-	require.Equal(t, "x-amz-server-side-encryption", minted.SignedHeaders[0].Name)
-	require.Equal(t, "aws:kms", minted.SignedHeaders[0].Value)
-	require.Equal(t, "x-amz-server-side-encryption-aws-kms-key-id", minted.SignedHeaders[1].Name)
-	require.Equal(t, "alias/lesser-test", minted.SignedHeaders[1].Value, "the KMS key id must equal the value signed into the PUT (see presign.kmsKeyID)")
 
 	// 2. PUT the exact declared bytes (simulated against the same fake store).
 	stored, err := storage.UploadGrant().GetUploadGrant(context.Background(), "alice", minted.ID)
@@ -124,14 +113,6 @@ func TestUploadGrantMintFinalizeGraphQLFlow(t *testing.T) {
 	require.Equal(t, model.UploadGrantStatusUsed, queried.Status)
 	require.Nil(t, queried.PresignedURL)
 	require.NotNil(t, queried.UsedAt)
-	// The uploadGrant query path also carries the signed-header contract (a
-	// client retrying a transient PUT failure needs the same echo values the
-	// mint response carried).
-	require.Len(t, queried.SignedHeaders, 2, "the uploadGrant query must carry the signed PUT header contract")
-	require.Equal(t, "x-amz-server-side-encryption", queried.SignedHeaders[0].Name)
-	require.Equal(t, "aws:kms", queried.SignedHeaders[0].Value)
-	require.Equal(t, "x-amz-server-side-encryption-aws-kms-key-id", queried.SignedHeaders[1].Name)
-	require.Equal(t, "alias/lesser-test", queried.SignedHeaders[1].Value)
 }
 
 func TestUploadGrantDigestMismatchGraphQLSurface(t *testing.T) {
@@ -207,39 +188,6 @@ func TestUploadGrantExpiredFailsClosedGraphQL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.UploadGrantStatusExpired, queried.Status)
 	require.Nil(t, queried.PresignedURL)
-}
-
-func TestUploadGrantQueryPathEmptyKeyReturnsValidGrant(t *testing.T) {
-	resolver, _, state := newRound12UploadGrantResolver(t)
-	ctx := round12AuthContext("alice")
-
-	// Mint normally with the configured instance key, then remove the key
-	// mid-TTL (KMS_KEY_ID unset/removed while a still-valid grant is
-	// persisted). The uploadGrant(grantId:) query path must still resolve the
-	// grant object with a non-null signedHeaders list — empty, never nil —
-	// instead of failing the schema's non-null [UploadGrantSignedHeader!]!.
-	minted, err := resolver.Mutation().MintUploadGrant(ctx, model.MintUploadGrantInput{
-		ContentType: "image/png", MaxSizeBytes: 5 * 1024 * 1024, Sha256: round12UploadDigest(round12TinyPNG()),
-	})
-	require.NoError(t, err)
-	require.NotNil(t, minted)
-	require.Len(t, state.uploadGrantPresigns, 1)
-	require.Equal(t, "alias/lesser-test", state.uploadGrantPresigns[0].kmsKeyID)
-
-	resolver.Registry.Media().SetEditorialKMSKeyID("")
-
-	queried, err := resolver.Query().UploadGrant(ctx, minted.ID)
-	require.NoError(t, err)
-	require.Equal(t, model.UploadGrantStatusMinted, queried.Status)
-	require.NotNil(t, queried.SignedHeaders,
-		"signedHeaders is non-null ([UploadGrantSignedHeader!]!); an empty instance key must yield an empty list, never nil")
-	require.Empty(t, queried.SignedHeaders,
-		"no SSE-KMS headers are bound when the instance key is unset")
-	// The re-presign path ran against the now-empty key, mirroring the
-	// adversary's scenario: the grant object resolves with the empty contract.
-	require.Len(t, state.uploadGrantPresigns, 2)
-	require.Equal(t, "", state.uploadGrantPresigns[1].kmsKeyID,
-		"the query-path re-presign must observe the empty instance key")
 }
 
 func TestUploadGrantActorIsolationGraphQL(t *testing.T) {
