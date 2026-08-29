@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
@@ -118,8 +119,8 @@ func TestRound08_AuthRepository_ChallengeAndWalletOps(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
 
-			// First All() call returns an index record with a username.
-			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+			// First AllPaginated() call returns an index record with a username.
+			mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 				value := reflect.ValueOf(args.Get(0))
 				require.True(t, value.Kind() == reflect.Ptr && value.Elem().Kind() == reflect.Slice)
 				elemType := value.Elem().Type().Elem()
@@ -129,7 +130,7 @@ func TestRound08_AuthRepository_ChallengeAndWalletOps(t *testing.T) {
 					usernameField.SetString("user-1")
 				}
 				value.Elem().Set(reflect.Append(value.Elem(), elem))
-			}).Return(nil).Once()
+			}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 			repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
@@ -138,11 +139,10 @@ func TestRound08_AuthRepository_ChallengeAndWalletOps(t *testing.T) {
 			require.Equal(t, "user-1", cred.Username)
 		})
 
-		t.Run("fallback to scan then not found", func(t *testing.T) {
+		t.Run("empty reverse index returns not found without fallback scan", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.Anything).Return(nil).Once() // index empty
-			mockQuery.On("Scan", mock.Anything).Return(nil).Once()
+			mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once() // index empty
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 			repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
 			cred, err := repo.GetWalletByAddress(ctx, "ethereum", "0xAbC")

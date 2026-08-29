@@ -143,19 +143,31 @@ func (r *QueryCacheRepository) invalidateCachePrefix(ctx context.Context, prefix
 
 	for {
 		var entries []models.QueryCacheEntry
+		// One SK key condition (issue #1500): begins_with on the first page;
+		// with a cursor, BETWEEN [cursor, skPrefix+"~"] closes the key range at
+		// the top of the block (the `~` sentinel sorts above every ASCII cache
+		// key — cache keys are namespaced `namespace:key` strings) so the final
+		// page can never keep reading the partition tail; begins_with is demoted
+		// to a post-read FilterExpression.
 		query := r.GetDB().WithContext(ctx).Model(&models.QueryCacheEntry{}).
 			Where("PK", "=", pk).
-			Where("SK", "begins_with", skPrefix).
-			OrderBy("SK", "ASC").
-			Limit(pageLimit + 1)
+			OrderBy("SK", "ASC")
 
+		fetchLimit := pageLimit + 1
 		if cursor != "" {
-			query = query.Where("SK", ">", cursor)
+			query = query.Where("SK", "BETWEEN", []any{cursor, skPrefix + "~"}).Filter("SK", "begins_with", skPrefix)
+			fetchLimit++
+		} else {
+			query = query.Where("SK", "begins_with", skPrefix)
 		}
+		query = query.Limit(fetchLimit)
 
 		err := query.All(&entries)
 		if err != nil {
 			return ErrorHandler.HandleQueryError(err, EntityQueryCache, "prefix query")
+		}
+		if cursor != "" {
+			entries = dropSortKeyCursorDuplicate(entries, cursor, func(e models.QueryCacheEntry) string { return e.SK })
 		}
 
 		if len(entries) == 0 {

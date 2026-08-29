@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -121,24 +122,26 @@ func TestAnnouncementRepository_Round09_Coverage(t *testing.T) {
 		// Base delete succeeds.
 		mockQuery.On("Delete").Return(nil).Once()
 
-		// Cleanup reactions returns one item.
+		// Cleanup reactions: bounded page walk (wave #1469) returns one item.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
 		mockQuery.
-			On("All", mockMatchedByType[*[]*models.AnnouncementReaction]()).
+			On("AllPaginated", mock.AnythingOfType("*[]*models.AnnouncementReaction")).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.AnnouncementReaction)
 				*out = append(*out, &models.AnnouncementReaction{Username: "u", AnnouncementID: "a1", EmojiName: "thumbsup"})
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{}, nil).
 			Once()
 
-		// Cleanup dismissals returns one matching item.
+		// Cleanup dismissals: bounded page walk returns one matching item.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
 		mockQuery.
-			On("All", mockMatchedByType[*[]*models.AnnouncementDismissal]()).
+			On("AllPaginated", mock.AnythingOfType("*[]*models.AnnouncementDismissal")).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.AnnouncementDismissal)
 				*out = append(*out, &models.AnnouncementDismissal{Username: "u", AnnouncementID: "a1"})
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{}, nil).
 			Once()
 
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
@@ -152,17 +155,21 @@ func TestAnnouncementRepository_Round09_Coverage(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		// GetDismissedAnnouncements: bounded page walk returns one dismissal.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
 		mockQuery.
-			On("All", mockMatchedByType[*[]*models.AnnouncementDismissal]()).
+			On("AllPaginated", mock.AnythingOfType("*[]*models.AnnouncementDismissal")).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.AnnouncementDismissal)
 				*out = append(*out, &models.AnnouncementDismissal{Username: "u", AnnouncementID: "a1"})
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{}, nil).
 			Once()
 
+		// GetAnnouncementReactions: bounded page walk returns three reactions.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
 		mockQuery.
-			On("All", mockMatchedByType[*[]*models.AnnouncementReaction]()).
+			On("AllPaginated", mock.AnythingOfType("*[]*models.AnnouncementReaction")).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.AnnouncementReaction)
 				*out = append(*out,
@@ -171,7 +178,7 @@ func TestAnnouncementRepository_Round09_Coverage(t *testing.T) {
 					&models.AnnouncementReaction{Username: "u3", AnnouncementID: "a1", EmojiName: "heart"},
 				)
 			}).
-			Return(nil).
+			Return(&core.PaginatedResult{}, nil).
 			Once()
 
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)

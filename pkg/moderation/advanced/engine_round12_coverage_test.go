@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -233,6 +234,8 @@ func setupPermissiveDynamormMocks(db *mocks.MockDB, q *mocks.MockQuery, ub *mock
 	q.On("Cursor", mock.Anything).Return(q).Maybe()
 
 	q.On("All", mock.Anything).Return(nil).Maybe()
+	// Bounded page walks (wave #1469) read via AllPaginated instead of All.
+	q.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	q.On("First", mock.Anything).Return(nil).Maybe()
 	q.On("Create").Return(nil).Maybe()
 	q.On("Update").Return(nil).Maybe()

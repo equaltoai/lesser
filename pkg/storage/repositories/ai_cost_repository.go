@@ -120,11 +120,26 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 		query := r.db.WithContext(ctx).Model(&models.AICost{}).
 			Index("gsi1").
 			Where("gsi1PK", "=", bucketPK).
-			Where("gsi1SK", ">=", startSK).
-			Where("gsi1SK", "<=", endSK).
+			// One BETWEEN key condition on gsi1SK (inclusive both bounds; the
+			// `TS#...~` sentinel upper bound keeps the exact-millisecond window
+			// identical to the old `>=` + `<=` pair). Two range conditions on
+			// one sort key are rejected by DynamoDB (issue #1500).
+			Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 			OrderBy("gsi1SK", "ASC")
 
-		if err := query.All(&bucketCosts); err != nil {
+		// Each month bucket is a keyed gsi1 partition read with no enforced
+		// limit; the whole window must be read to aggregate, so the read is a
+		// bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+		// fail-closed on exhaustion.
+		err := walkKeyedPages(
+			query,
+			500, 100,
+			func(page []*models.AICost) (bool, error) {
+				bucketCosts = append(bucketCosts, page...)
+				return false, nil
+			},
+		)
+		if err != nil {
 			r.logger.Error("Failed to query AI costs by time range",
 				zap.Time("start", startTime),
 				zap.Time("end", endTime),
@@ -165,6 +180,12 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 
 // GetAICostsByOperationType retrieves AI cost records by operation type
 func (r *AICostRepository) GetAICostsByOperationType(ctx context.Context, operationType string, startTime time.Time, limit int) ([]*models.AICost, error) {
+	// Clamp the page size (wave #1469): a zero/negative limit previously left
+	// the read unbounded. The query itself is keyed on gsi2PK.
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+
 	query := r.db.WithContext(ctx).Model(&models.AICost{}).
 		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("AI_TYPE#%s", operationType))
@@ -173,12 +194,13 @@ func (r *AICostRepository) GetAICostsByOperationType(ctx context.Context, operat
 		query = query.Where("gsi2SK", ">=", fmt.Sprintf("MODEL#%s", startTime.Format(common.CompactTimeFormat)))
 	}
 
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
+	query = query.Limit(limit)
 
 	var aiCosts []models.AICost
-	err := query.Scan(&aiCosts)
+	// Keyed GSI2 query — .All compiles to a DynamoDB Query instead of the
+	// previous .Scan, which applied the gsi2PK condition as a post-limit
+	// FilterExpression.
+	err := query.All(&aiCosts)
 	if err != nil {
 		r.logger.Error("Failed to query AI costs by operation type",
 			zap.String("operation_type", operationType),
@@ -201,16 +223,23 @@ func (r *AICostRepository) GetTopCostlyOperations(ctx context.Context, costTier 
 		costTier = models.CostTierHigh // Default to high-cost operations
 	}
 
+	// Clamp the page size (wave #1469): a zero/negative limit previously left
+	// the read unbounded. The query itself is keyed on gsi3PK.
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+
 	query := r.db.WithContext(ctx).Model(&models.AICost{}).
 		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("AI_COST_RANGE#%s", costTier))
 
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
+	query = query.Limit(limit)
 
 	var aiCosts []models.AICost
-	err := query.Scan(&aiCosts)
+	// Keyed GSI3 query — .All compiles to a DynamoDB Query instead of the
+	// previous .Scan, which applied the gsi3PK condition as a post-limit
+	// FilterExpression.
+	err := query.All(&aiCosts)
 	if err != nil {
 		r.logger.Error("Failed to query top costly AI operations",
 			zap.String("cost_tier", costTier),
@@ -732,20 +761,34 @@ func (r *AICostRepository) CreateOrUpdateAggregatedCost(ctx context.Context, agg
 // GetAggregatedCosts retrieves aggregated cost data for analysis
 func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string, startTime, endTime time.Time) ([]*models.AIAggregatedCost, error) {
 	// Note: This uses the AIAggregatedCost model directly since BaseRepository is typed for AICost
+	// The read is a keyed GSI1 query on the per-period partition
+	// (gsi1PK = AI_AGG_TIME#<period>); the optional gsi1SK time-range filters
+	// narrow the window further. .All compiles to a DynamoDB Query instead of
+	// the previous .Scan (wave #1469: no table-wide scan).
 	query := r.db.WithContext(ctx).Model(&models.AIAggregatedCost{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("AI_AGG_TIME#%s", period))
 
-	// Add time range filter
-	if !startTime.IsZero() {
+	// Add time range filter. The gsi1SK window is expressed as AT MOST ONE key
+	// condition: BETWEEN when both bounds are given (the old `>=` + `<=` pair
+	// compiled to two conditions on one sort key and was rejected by DynamoDB,
+	// issue #1500), otherwise the single bound alone.
+	switch {
+	case !startTime.IsZero() && !endTime.IsZero():
+		startStr := startTime.Format(common.CompactDateFormat)
+		endStr := endTime.Format(common.CompactDateFormat)
+		if period == models.PeriodTimeHour {
+			startStr = startTime.Format(common.CompactTimeFormat)[:13]
+			endStr = endTime.Format(common.CompactTimeFormat)[:13]
+		}
+		query = query.Where("gsi1SK", "BETWEEN", []any{startStr, endStr})
+	case !startTime.IsZero():
 		startStr := startTime.Format(common.CompactDateFormat)
 		if period == models.PeriodTimeHour {
 			startStr = startTime.Format(common.CompactTimeFormat)[:13]
 		}
 		query = query.Where("gsi1SK", ">=", startStr)
-	}
-
-	if !endTime.IsZero() {
+	case !endTime.IsZero():
 		endStr := endTime.Format(common.CompactDateFormat)
 		if period == models.PeriodTimeHour {
 			endStr = endTime.Format(common.CompactTimeFormat)[:13]
@@ -754,7 +797,7 @@ func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string
 	}
 
 	var aggregatedCosts []models.AIAggregatedCost
-	err := query.Scan(&aggregatedCosts)
+	err := query.All(&aggregatedCosts)
 	if err != nil {
 		r.logger.Error("Failed to query aggregated AI costs",
 			zap.String("period", period),

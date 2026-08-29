@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -62,13 +63,14 @@ func TestFeaturedTagRepository_CreateFeaturedTag_SetsFieldsAndCreatesModel(t *te
 		*dest = []*models.FeaturedTag{}
 	}).Return(nil).Once()
 
-	// Tag statistics query.
+	// Tag statistics query (bounded page walk, wave #1469).
 	mockDB.On("Model", mock.Anything).Return(statusQuery).Once()
 	statusQuery.On("Index", "gsi3").Return(statusQuery).Once()
 	statusQuery.On("Where", "gsi3PK", "=", "USER_STATUS#alice").Return(statusQuery).Once()
 	statusQuery.On("OrderBy", "gsi3SK", "DESC").Return(statusQuery).Once()
+	statusQuery.On("Limit", mock.Anything).Return(statusQuery).Once()
 	published := time.Date(2024, 12, 28, 12, 0, 0, 0, time.UTC)
-	statusQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	statusQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Status)
 		*dest = []models.Status{
 			{
@@ -90,7 +92,7 @@ func TestFeaturedTagRepository_CreateFeaturedTag_SetsFieldsAndCreatesModel(t *te
 				},
 			},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Create the FeaturedTag model (ValidateAndCreate -> BaseRepository.Create).
 	mockDB.On("Model", mock.Anything).Return(createQuery).Once()

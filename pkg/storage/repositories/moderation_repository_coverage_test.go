@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -31,6 +32,12 @@ func setupPermissiveDynamormMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQue
 		populateSliceResult(args.Get(0))
 	}).Return(nil).Maybe()
 
+	// Wave #1469 page-capped walks iterate with AllPaginated instead of a bare
+	// All; populate the destination and report no more pages by default.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateSliceResult(args.Get(0))
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateSliceResult(args.Get(0))
 	}).Return(nil).Maybe()
@@ -43,6 +50,16 @@ func setupPermissiveDynamormMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQue
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
 	mockQuery.On("Count").Return(int64(1), nil).Maybe()
+
+	// UpdateBuilder — fluent builder used by the report writers
+	// (UnassignReport / UpdateReportStatus maintain GSI keys explicitly, wave
+	// part 2 batch E rework #1469).
+	updateBuilder := new(mocks.MockUpdateBuilder)
+	updateBuilder.On("Set", mock.Anything, mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("Remove", mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("ConditionExists", mock.Anything).Return(updateBuilder).Maybe()
+	updateBuilder.On("Execute").Return(nil).Maybe()
+	mockQuery.On("UpdateBuilder").Return(updateBuilder).Maybe()
 }
 
 func populateStructResult(target any) {
@@ -436,7 +453,7 @@ func TestModerationRepository_Coverage_Smoke(t *testing.T) {
 	_, err = repo.GetFilterKeywords(ctx, "filter-1")
 	require.NoError(t, err)
 
-	require.NoError(t, repo.UpdateFilterKeyword(ctx, "keyword-1", map[string]any{
+	require.NoError(t, repo.UpdateFilterKeyword(ctx, "filter-1", "keyword-1", map[string]any{
 		"keyword":    "ham",
 		"whole_word": false,
 	}))

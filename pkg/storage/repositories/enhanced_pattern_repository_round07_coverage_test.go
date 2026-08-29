@@ -3,13 +3,13 @@ package repositories
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -124,9 +124,9 @@ func TestEnhancedPatternRepository_CRUDAndQueries(t *testing.T) {
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.EnhancedModerationPattern)
-			*dest = []*models.EnhancedModerationPattern{
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.EnhancedModerationPattern)
+			*dest = []models.EnhancedModerationPattern{
 				{PatternID: "p1", Active: true, Effectiveness: 0.9, Category: "spam", PatternType: "text"},
 			}
 		})
@@ -185,9 +185,9 @@ func TestEnhancedPatternRepository_AnalysisAndFeedback(t *testing.T) {
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.EnhancedModerationPattern)
-			*dest = []*models.EnhancedModerationPattern{
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.EnhancedModerationPattern)
+			*dest = []models.EnhancedModerationPattern{
 				{
 					PatternID:       "p1",
 					PatternType:     "text",
@@ -236,9 +236,10 @@ func TestEnhancedPatternRepository_AnalysisAndFeedback(t *testing.T) {
 		}).Once()
 
 		// GetPerformanceMetrics
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.PatternPerformanceMetric)
-			*dest = []*models.PatternPerformanceMetric{
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.PatternPerformanceMetric)
+			*dest = []models.PatternPerformanceMetric{
 				{TruePositives: 10, FalsePositives: 5},
 			}
 		}).Once()
@@ -258,9 +259,10 @@ func TestEnhancedPatternRepository_AnalysisAndFeedback(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.EnhancedModerationPattern)
-			*dest = []*models.EnhancedModerationPattern{
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.EnhancedModerationPattern)
+			*dest = []models.EnhancedModerationPattern{
 				{PatternID: "best", Active: true, Effectiveness: 0.9, ConfidenceScore: 0.9, Priority: 10},
 				{PatternID: "skip_inactive", Active: false, Effectiveness: 0.9},
 				{PatternID: "skip_low", Active: true, Effectiveness: 0.2},
@@ -289,9 +291,10 @@ func TestEnhancedPatternRepository_AnalysisAndFeedback(t *testing.T) {
 			*dest = models.EnhancedModerationPattern{PatternID: "p1", Active: true, MatchCount: 1, TruePositiveCount: 1, ConfidenceScore: 0.5}
 			_ = dest.UpdateKeys()
 		}).Once()
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.PatternPerformanceMetric)
-			*dest = []*models.PatternPerformanceMetric{}
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.PatternPerformanceMetric)
+			*dest = []models.PatternPerformanceMetric{}
 		}).Once()
 		mockQuery.On("Update", mock.Anything).Return(nil).Once()
 
@@ -398,16 +401,16 @@ func TestEnhancedPatternRepository_CacheAndMetrics(t *testing.T) {
 		mockQuery.On("Create").Return(nil).Once()
 		require.NoError(t, repo.CreateTestResult(ctx, &models.PatternTestResult{PatternID: "p1", TestType: "unit"}))
 
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.PatternTestResult)
-			*dest = []*models.PatternTestResult{{PatternID: "p1", TestType: "unit"}}
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.PatternTestResult)
+			*dest = []models.PatternTestResult{{PatternID: "p1", TestType: "unit"}}
 		}).Once()
 		_, err := repo.GetTestResults(ctx, "p1", "unit", 1)
 		require.NoError(t, err)
 
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.PatternTestResult)
-			*dest = []*models.PatternTestResult{}
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.PatternTestResult)
+			*dest = []models.PatternTestResult{}
 		}).Once()
 		_, err = repo.GetLatestTestResult(ctx, "p1", "unit")
 		require.Error(t, err)
@@ -420,9 +423,10 @@ func TestEnhancedPatternRepository_CacheAndMetrics(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.PatternPerformanceMetric)
-			*dest = []*models.PatternPerformanceMetric{{PK: "PATTERN_METRICS#p1"}}
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.PatternPerformanceMetric)
+			*dest = []models.PatternPerformanceMetric{{PK: "PATTERN_METRICS#p1"}}
 		})
 
 		repo := newEnhancedPatternRepo(t, mockDB)
@@ -435,45 +439,17 @@ func TestEnhancedPatternRepository_CacheAndMetrics(t *testing.T) {
 func TestEnhancedPatternRepository_Maintenance(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("CleanupExpiredPatterns returns cleaned count", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-
-		// CleanupExpiredPatterns initial scan
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.EnhancedModerationPattern)
-			*dest = []*models.EnhancedModerationPattern{
-				{PatternID: "expired", Active: true, ExpiresAt: time.Now().Add(-time.Hour)},
-				{PatternID: "active", Active: true},
-			}
-		}).Once()
-
-		// DeletePattern -> GetPattern
-		mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*models.EnhancedModerationPattern)
-			*dest = models.EnhancedModerationPattern{PatternID: "expired", Active: true}
-			_ = dest.UpdateKeys()
-		}).Once()
-		mockQuery.On("Update", mock.Anything).Return(nil).Once()
-
-		repo := newEnhancedPatternRepo(t, mockDB)
-		count, err := repo.CleanupExpiredPatterns(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, 1, count)
-	})
-
 	t.Run("GetPatternStatistics aggregates", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.EnhancedModerationPattern)
-			*dest = []*models.EnhancedModerationPattern{
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.EnhancedModerationPattern)
+			*dest = []models.EnhancedModerationPattern{
 				{PatternID: "p1", Active: true, Effectiveness: 0.2, MatchCount: 10, FalsePositiveCount: 1, TruePositiveCount: 9, Category: "spam", PatternType: "text", Severity: StatusLow},
 				{PatternID: "p2", Active: false, Effectiveness: 0.8, MatchCount: 0, Category: "spam", PatternType: "text", Severity: StatusHigh},
 			}
@@ -497,7 +473,7 @@ func TestEnhancedPatternRepository_GetLatestTestResult_NotFoundError(t *testing.
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 	repo := newEnhancedPatternRepo(t, mockDB)
 	_, err := repo.GetLatestTestResult(ctx, "p1", "unit")
@@ -606,7 +582,8 @@ func TestEnhancedPatternRepository_ErrorPaths(t *testing.T) {
 		assert.ErrorIs(t, err, storage.ErrPatternTestResultCreateFailed)
 
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 		_, err = repo.GetTestResults(ctx, "p1", "", 0)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, storage.ErrPatternTestResultQueryFailed)
@@ -618,7 +595,8 @@ func TestEnhancedPatternRepository_ErrorPaths(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 		repo := newEnhancedPatternRepo(t, mockDB)
 		_, err := repo.GetPerformanceMetrics(ctx, "p1", "", "")
@@ -626,21 +604,18 @@ func TestEnhancedPatternRepository_ErrorPaths(t *testing.T) {
 		assert.ErrorIs(t, err, storage.ErrPatternMetricsQueryFailed)
 	})
 
-	t.Run("CleanupExpiredPatterns and GetPatternStatistics query failures", func(t *testing.T) {
+	t.Run("GetPatternStatistics query failure", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
+		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 		repo := newEnhancedPatternRepo(t, mockDB)
-		_, err := repo.CleanupExpiredPatterns(ctx)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, storage.ErrPatternQueryFailed)
-
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
-		_, err = repo.GetPatternStatistics(ctx)
+		_, err := repo.GetPatternStatistics(ctx)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, storage.ErrPatternQueryFailed)
 	})

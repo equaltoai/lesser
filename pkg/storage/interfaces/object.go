@@ -123,9 +123,6 @@ type ObjectRepository interface {
 	// CountQuotes counts the number of quotes for a specific note
 	CountQuotes(ctx context.Context, noteID string) (int, error)
 
-	// CountWithdrawnQuotes counts the number of withdrawn quotes for a specific note
-	CountWithdrawnQuotes(ctx context.Context, noteID string) (int, error)
-
 	// CreateQuoteRelationship creates a new quote relationship between notes
 	CreateQuoteRelationship(ctx context.Context, quote *storage.QuoteRelationship) error
 

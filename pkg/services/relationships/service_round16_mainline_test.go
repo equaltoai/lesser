@@ -95,6 +95,10 @@ func setupPermissiveDynamormMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQue
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateSlice(args.Get(0), state)
 	}).Return(nil).Maybe()
+	// Bounded page walks (wave #1469) read via AllPaginated instead of All.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateSlice(args.Get(0), state)
+	}).Return(&dynamormCore.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateSlice(args.Get(0), state)
 	}).Return(nil).Maybe()

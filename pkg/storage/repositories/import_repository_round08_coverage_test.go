@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -56,14 +57,13 @@ func TestImportRepository_Round08_CoverageSweep(t *testing.T) {
 		importRecord.UpdateKeys()
 	}).Return(nil).Maybe()
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.Import")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.Import")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]*models.Import)
 		*items = []*models.Import{
 			{ID: "imp-1", Username: "alice", Type: "followers", Status: StatusCompleted, CreatedAt: baseTime.Add(-2 * time.Hour)},
 			{ID: "imp-2", Username: "alice", Type: "archive", Status: StatusFailed, CreatedAt: baseTime.Add(-1 * time.Hour)},
 		}
 	}).Return(nil).Maybe()
-	mockQuery.On("Scan", mock.Anything).Return(nil).Maybe()
 
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.Import")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]*models.Import)
@@ -110,6 +110,39 @@ func TestImportRepository_Round08_CoverageSweep(t *testing.T) {
 			},
 		}
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks (GetUserImportsByStatus and
+	// GetImportCostTracking) iterate with AllPaginated; populate the same rows.
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Import")).Run(func(args mock.Arguments) {
+		items := args.Get(0).(*[]*models.Import)
+		*items = []*models.Import{
+			{ID: "imp-1", Username: "alice", Type: "followers", Status: StatusCompleted, CreatedAt: baseTime.Add(-2 * time.Hour)},
+			{ID: "imp-2", Username: "alice", Type: "archive", Status: StatusFailed, CreatedAt: baseTime.Add(-1 * time.Hour)},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ImportCostTracking")).Run(func(args mock.Arguments) {
+		items := args.Get(0).(*[]models.ImportCostTracking)
+		*items = []models.ImportCostTracking{
+			{
+				ImportID:            "imp-1",
+				Username:            "alice",
+				Type:                "followers",
+				Status:              StatusCompleted,
+				Timestamp:           baseTime.Add(-30 * time.Minute),
+				TotalCostMicroCents: 2_000_000,
+				LambdaExecutionCost: 1_000_000,
+			},
+			{
+				ImportID:            "imp-2",
+				Username:            "alice",
+				Type:                "archive",
+				Status:              StatusFailed,
+				Timestamp:           baseTime.Add(-20 * time.Minute),
+				TotalCostMicroCents: 1_000_000,
+				LambdaExecutionCost: 500_000,
+			},
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
 
@@ -305,7 +338,7 @@ func TestImportRepository_GetImportCostTracking_Error(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	setupImportRepoMocks(mockDB, mockQuery)
 
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("query failed")).Once()
 
 	repo := NewImportRepository(mockDB, "test-table", zap.NewNop())
 	_, err := repo.GetImportCostTracking(context.Background(), "imp-1")

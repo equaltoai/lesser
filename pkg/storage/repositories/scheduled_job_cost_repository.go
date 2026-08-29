@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"sort"
 	"time"
@@ -105,13 +106,29 @@ func (r *ScheduledJobCostRepository) GetByID(ctx context.Context, id string) (*m
 	for _, status := range statuses {
 		var statusRecords []*models.ScheduledJobCostRecord
 
-		err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
-			Index("gsi1").
-			Where("gsi1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
-			Where("gsi1SK", "contains", fmt.Sprintf("#%s", id)).
-			All(&statusRecords)
+		// Each status is a keyed gsi1 SCHEDULED_JOB_STATUS#<status> partition
+		// (the `contains` predicate is a post-limit filter, so the whole
+		// partition must be read); the read is a bounded page walk (wave #1469):
+		// Limit(500)/page, 100-page cap. Cap exhaustion must fail closed — the
+		// pre-existing warn-and-continue swallow would otherwise silently route
+		// it into a not-found result; other (transient) errors keep the
+		// skip-this-status behavior.
+		err := walkKeyedPages(
+			r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
+				Index("gsi1").
+				Where("gsi1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
+				Where("gsi1SK", "contains", fmt.Sprintf("#%s", id)),
+			500, 100,
+			func(page []*models.ScheduledJobCostRecord) (bool, error) {
+				statusRecords = append(statusRecords, page...)
+				return false, nil
+			},
+		)
 
 		if err != nil {
+			if stdErrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Warn("failed to query job cost records by status",
 				zap.String("status", status),
 				zap.Error(err))
@@ -140,8 +157,9 @@ func (r *ScheduledJobCostRepository) ListByJob(ctx context.Context, jobName, sch
 
 	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
+		// One BETWEEN key condition on SK (inclusive both bounds): two range
+		// conditions on one sort key are rejected by DynamoDB (issue #1500).
+		Where("SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("SK", "DESC").
 		Limit(limit)
 
@@ -164,8 +182,9 @@ func (r *ScheduledJobCostRepository) ListByStatus(ctx context.Context, status st
 	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
+		// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+		// range conditions on one sort key are rejected by DynamoDB (#1500).
+		Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("gsi1SK", "DESC").
 		Limit(limit)
 

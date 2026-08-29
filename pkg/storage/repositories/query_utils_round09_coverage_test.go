@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -64,8 +65,7 @@ func TestQueryUtils_db_queries_and_helpers(t *testing.T) {
 		assert.Len(t, res.Items, 2)
 
 		mockQuery.On("Where", "PK", "=", "PK#time").Return(mockQuery)
-		mockQuery.On("Where", "SK", ">=", fmt.Sprintf("TIME#%d", int64(1))).Return(mockQuery)
-		mockQuery.On("Where", "SK", "<=", fmt.Sprintf("TIME#%d", int64(2))).Return(mockQuery)
+		mockQuery.On("Where", "SK", "BETWEEN", mock.AnythingOfType("[]interface {}")).Return(mockQuery)
 		mockQuery.On("Limit", 2).Return(mockQuery)
 		mockQuery.On("Index", "gsi1").Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
@@ -105,7 +105,13 @@ func TestQueryUtils_db_queries_and_helpers(t *testing.T) {
 
 		mockQuery.On("Where", "PK", "=", "pk1").Return(mockQuery)
 		mockQuery.On("Index", "gsi2").Return(mockQuery)
-		mockQuery.On("Count").Return(int64(7), nil).Once()
+		// CountQuery is now a page-capped walk (wave #1469): Limit(500)/page
+		// via AllPaginated; count = walked rows.
+		mockQuery.On("Limit", 500).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]map[string]interface{})
+			*dest = make([]map[string]interface{}, 7)
+		}).Return(&core.PaginatedResult{}, nil).Once()
 		n, err := q.CountQuery(ctx, "pk1", "gsi2")
 		require.NoError(t, err)
 		assert.Equal(t, 7, n)
@@ -326,21 +332,25 @@ func TestQueryUtils_collection_and_convert_helpers(t *testing.T) {
 
 		mockQuery.On("Where", "PK", "=", "pk").Return(mockQuery)
 		mockQuery.On("Where", "SK", "BEGINS_WITH", "p").Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		// Both flags now iterate via a bounded page walk (wave #1469): a clamped
+		// Limit(500) page read via AllPaginated, not a bare All or Scan.
+		mockQuery.On("Limit", 500).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]m)
 			*dest = []m{{PK: "pk", SK: "p1"}}
-		}).Return(nil)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		out, err := QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk", "p", false, convert, "op", "param")
 		require.NoError(t, err)
 		assert.Equal(t, []string{"pk#p1"}, out)
 
 		mockQuery.On("Where", "PK", "=", "pk2").Return(mockQuery)
-		mockQuery.On("Filter", "SK", "BEGINS_WITH", "p").Return(mockQuery)
-		mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("Where", "SK", "BEGINS_WITH", "p").Return(mockQuery)
+		mockQuery.On("Limit", 500).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]m)
 			*dest = []m{{PK: "pk2", SK: "p2"}}
-		}).Return(nil)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		out, err = QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk2", "p", true, convert, "op", "param")
 		require.NoError(t, err)
@@ -464,14 +474,15 @@ func TestQueryUtils_round09_more_error_and_success_branches(t *testing.T) {
 	mockQuery.On("Create").Return(nil).Once()
 	require.NoError(t, q.AddToCollectionHelper(ctx, "col", &storage.CollectionItem{ItemID: "1", ItemType: "t", AddedBy: "u"}, mockDB))
 
-	// QueryWithPKAndSKPrefix error branches (All / Scan)
+	// QueryWithPKAndSKPrefix error branches (AllPaginated walk; both flags walk)
 	type m struct{ PK, SK string }
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Once()
 	_, err = QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk", "p", false, func(in m) string { return in.PK }, "op", "param")
 	assert.Error(t, err)
 
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-	mockQuery.On("Scan", mock.Anything).Return(fmt.Errorf("boom")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Once()
 	_, err = QueryWithPKAndSKPrefix[m, string](ctx, q, func() *m { return &m{} }, "pk", "p", true, func(in m) string { return in.PK }, "op", "param")
 	assert.Error(t, err)
 }

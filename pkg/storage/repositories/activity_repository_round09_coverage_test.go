@@ -226,12 +226,12 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 		require.Equal(t, activityMaxLimit, clampActivityLimit(activityMaxLimit+1))
 	})
 
-	t.Run("Weekly and hashtag activity", func(t *testing.T) {
+	t.Run("Hashtag activity", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.
-			On("All", mock.Anything).
+			On("AllPaginated", mock.Anything).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.Activity)
 				*out = append(*out,
@@ -239,17 +239,13 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 					&models.Activity{CreatedAt: baseTime, Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "c2", Type: "Like"}, Object: map[string]interface{}{"content": "no tag"}}},
 				)
 			}).
-			Return(nil).
+			Return(nil, nil).
 			Maybe()
 
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewActivityRepository(mockDB, "test-table", zap.NewNop(), nil)
 		repo.costService = newRound09CostService()
 		defer func() { _ = repo.costService.Close(ctx) }()
-		weekly, err := repo.GetWeeklyActivity(ctx, baseTime.Unix())
-		require.NoError(t, err)
-		require.NotNil(t, weekly)
-		require.Equal(t, 1, weekly.Statuses)
 
 		acts, err := repo.GetHashtagActivity(ctx, "go", baseTime.Add(-time.Hour))
 		require.NoError(t, err)

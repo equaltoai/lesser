@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -32,8 +33,10 @@ func TestMediaAnalyticsRepository_Round08_RecordAndFetchAndSummaries(t *testing.
 		*dest = models.MediaAnalytics{PK: pk, SK: sk, MediaID: "m1", Format: "hls"}
 	}).Return(nil).Once()
 
-	// Custom Scan: return deterministic analytics for any Scan call in this test.
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	// Custom read: return deterministic analytics for any page-capped walk
+	// (wave #1469 — GetMediaAnalyticsByDate/ByVariant/ByTimeRange now iterate
+	// with AllPaginated instead of a bare .All).
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
 		case *[]*models.MediaAnalytics:
 			eventTime := time.Date(2025, 12, 27, 10, 0, 0, 0, time.UTC)
@@ -68,7 +71,7 @@ func TestMediaAnalyticsRepository_Round08_RecordAndFetchAndSummaries(t *testing.
 		case *[]models.MediaAnalytics:
 			*dest = nil
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{}, nil)
 
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
 
@@ -106,8 +109,9 @@ func TestMediaAnalyticsRepository_Round08_ReportsRecommendationsCleanupAndRanges
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	// Custom Scan for old record cleanup and time range queries.
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	// Custom read for page-capped walks (wave #1469 — the range queries now
+	// iterate with AllPaginated instead of a bare .All).
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
 		case *[]*models.MediaAnalytics:
 			eventTime := time.Date(2025, 12, 27, 10, 0, 0, 0, time.UTC)
@@ -116,7 +120,7 @@ func TestMediaAnalyticsRepository_Round08_ReportsRecommendationsCleanupAndRanges
 				{PK: "PK2", SK: "SK2", MediaID: "m2", Date: eventTime.Format(common.DateFormat), Timestamp: eventTime.Add(5 * time.Minute), TotalBandwidthBytes: 0},
 			}
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{}, nil).Maybe()
 
 	// CleanupOldAnalytics: Scan returns records; delete failures are swallowed.
 	mockQuery.On("Delete").Return(errors.New("delete failed")).Once()
@@ -193,7 +197,10 @@ func TestMediaAnalyticsRepository_Round08_GetByDateAndVariant_QueryErrors(t *tes
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(queryErr).Twice()
+	// Page-capped walks (wave #1469): Limit(500)/page via AllPaginated; the
+	// walk error is what propagates from GetMediaAnalyticsByDate/ByVariant.
+	mockQuery.On("Limit", 500).Return(mockQuery).Times(2)
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, queryErr).Twice()
 
 	repo := NewMediaAnalyticsRepository(mockDB, "test-table", zap.NewNop(), nil)
 	repo.SetValidationService(nil)

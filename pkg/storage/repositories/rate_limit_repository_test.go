@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -49,7 +50,7 @@ func TestRateLimitRepository_CheckCommunityNoteRateLimit_WithinLimit(t *testing.
 	repo := NewRateLimitRepository(mockDB, "test-table", logger, nil)
 
 	// Mock the query to return 5 existing notes (under limit of 10)
-	notes := []*models.CommunityNote{
+	notes := []models.CommunityNote{
 		{ID: "note1", AuthorID: "test-user"},
 		{ID: "note2", AuthorID: "test-user"},
 		{ID: "note3", AuthorID: "test-user"},
@@ -62,10 +63,11 @@ func TestRateLimitRepository_CheckCommunityNoteRateLimit_WithinLimit(t *testing.
 	mockQuery.On("Index", "gsi3").Return(mockQuery)
 	mockQuery.On("Where", "gsi3PK", "=", "AUTHOR#test-user#NOTES").Return(mockQuery)
 	mockQuery.On("Where", "gsi3SK", ">", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.CommunityNote")).Run(func(args mock.Arguments) {
-		result := args.Get(0).(*[]*models.CommunityNote)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CommunityNote")).Run(func(args mock.Arguments) {
+		result := args.Get(0).(*[]models.CommunityNote)
 		*result = notes
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil)
 
 	canCreate, remaining, err := repo.CheckCommunityNoteRateLimit(context.Background(), "test-user", 10)
 

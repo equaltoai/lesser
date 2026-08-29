@@ -333,8 +333,11 @@ func (q *authenticatorInvariantQuery) BatchUpdateWithOptions([]any, []string, ..
 }
 func (q *authenticatorInvariantQuery) Count() (int64, error) { return 0, fmt.Errorf("unsupported") }
 func (q *authenticatorInvariantQuery) CreateOrUpdate() error { return fmt.Errorf("unsupported") }
-func (q *authenticatorInvariantQuery) AllPaginated(any) (*dynamormcore.PaginatedResult, error) {
-	return nil, fmt.Errorf("unsupported")
+func (q *authenticatorInvariantQuery) AllPaginated(dest any) (*dynamormcore.PaginatedResult, error) {
+	if err := q.All(dest); err != nil {
+		return nil, err
+	}
+	return &dynamormcore.PaginatedResult{HasMore: false}, nil
 }
 
 func (q *authenticatorInvariantQuery) First(dest any) error {

@@ -161,39 +161,6 @@ func TestReputationScorer_GetReputationHistory_ParsesItems(t *testing.T) {
 	query.AssertExpectations(t)
 }
 
-func TestReputationScorer_GetActorsByReputation_ParsesItems(t *testing.T) {
-	db := new(mocks.MockDB)
-	query := new(mocks.MockQuery)
-
-	db.On("WithContext", mock.Anything).Return(db).Once()
-	db.On("Model", mock.Anything).Return(query).Once()
-
-	query.On("Filter", "SK", "=", skReputation).Return(query).Once()
-	query.On("Filter", "Score", "BETWEEN", []any{50.0, 80.0}).Return(query).Once()
-	query.On("Limit", 10).Return(query).Once()
-	query.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]reputationScoreRecord)
-		*dest = []reputationScoreRecord{
-			{
-				PK:        "ACTOR#actor-1",
-				SK:        skReputation,
-				Score:     75.0,
-				Level:     reputationLevelNormal,
-				UpdatedAt: time.Now().UTC(),
-			},
-		}
-	}).Return(nil).Once()
-
-	rs := NewReputationScorer(db, zap.NewNop(), DefaultModerationConfig())
-	scores, err := rs.GetActorsByReputation(context.Background(), 50, 80, 10)
-	require.NoError(t, err)
-	require.Len(t, scores, 1)
-	assert.Equal(t, "actor-1", scores[0].ActorID)
-
-	db.AssertExpectations(t)
-	query.AssertExpectations(t)
-}
-
 func TestReputationScorer_CalculateReputationImpact_AppliesSeverityAndConfidence(t *testing.T) {
 	rs := NewReputationScorer(nil, zap.NewNop(), DefaultModerationConfig())
 	impact := rs.CalculateReputationImpact(&ModerationDecision{
@@ -326,4 +293,39 @@ func TestReputationScorer_GetReputationScore_PropagatesUnexpectedErrors(t *testi
 
 	db.AssertExpectations(t)
 	query.AssertExpectations(t)
+}
+
+func TestReputationScorer_applyDecay_DecaysTowardNeutral(t *testing.T) {
+	cfg := DefaultModerationConfig()
+	cfg.ReputationDecayRate = 0.1
+	cfg.TrustedActorThreshold = 80
+	cfg.BadActorThreshold = 20
+	rs := &ReputationScorer{config: cfg}
+
+	// 48h old score of 90: decay factor (1-0.1)^(48/24) = 0.81, so the score
+	// moves toward neutral 50: 50 + (90-50)*0.81 = 82.4.
+	score := &ReputationScore{
+		ActorID:   "actor-1",
+		Score:     90,
+		Level:     reputationLevelTrusted,
+		UpdatedAt: time.Now().Add(-48 * time.Hour),
+	}
+
+	out := rs.applyDecay(score)
+	require.NotNil(t, out)
+	assert.InDelta(t, 82.4, out.Score, 0.01)
+	assert.Equal(t, reputationLevelTrusted, out.Level)
+	assert.WithinDuration(t, time.Now(), out.UpdatedAt, 2*time.Second)
+
+	// A score below neutral decays upward toward 50.
+	low := &ReputationScore{
+		ActorID:   "actor-2",
+		Score:     10,
+		Level:     reputationLevelBadActor,
+		UpdatedAt: time.Now().Add(-24 * time.Hour),
+	}
+	out = rs.applyDecay(low)
+	require.NotNil(t, out)
+	assert.InDelta(t, 50+(10-50)*0.9, out.Score, 0.01)
+	assert.Equal(t, reputationLevelBadActor, out.Level)
 }

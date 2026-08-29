@@ -54,7 +54,7 @@ func TestModerationMLRepository_Round09_Coverage(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.
-			On("Scan", mockMatchedByType[*[]models.ModerationSample]()).
+			On("All", mockMatchedByType[*[]models.ModerationSample]()).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]models.ModerationSample)
 				*out = append(*out,

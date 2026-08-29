@@ -406,9 +406,18 @@ func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, f
 			UpdatedAt:  now,
 			ExpiresAt:  now.Add(30 * 24 * time.Hour).Unix(), // 30 days TTL
 		}
-		// Set up keys manually
-		notification.PK = fmt.Sprintf("NOTIF#%s", followeeID)
-		notification.SK = fmt.Sprintf("%s#%s", now.Format("2006-01-02T15:04:05.000Z"), notificationID)
+		// BeforeCreate derives the canonical row shape (USER#<userID> /
+		// notif#<compact timestamp>#<id>) AND the GSI5 object listing keys
+		// (NOTIF_OBJECT#<targetID>) — the wave part 2 batch E GSI5 surface
+		// (DeleteNotificationsByObject) depends on them. Previously the keys
+		// were hand-built (NOTIF#<userID> / <RFC3339>#<id>) with no BeforeCreate,
+		// so this row carried no GSI5 keys; if the method were ever wired into
+		// a live caller, the object-scoped cascade would silently miss its
+		// follow notifications (latent, zero callers; fence added 2026-08-27,
+		// wave part 2 batch E rework #1469).
+		if err := notification.BeforeCreate(); err != nil {
+			return fmt.Errorf("failed to set up follow notification keys: %w", err)
+		}
 
 		if err := txCtx.Put(notification); err != nil {
 			return fmt.Errorf("failed to create notification: %w", err)

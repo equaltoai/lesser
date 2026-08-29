@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -48,6 +49,13 @@ func setupPermissiveFederationRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.M
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateFederationSliceForCoverage(args.Get(0), baseTime)
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks (GetFederationStatistics/GetCostProjections/
+	// GetAffectedRelationships/GetDetailedFederationMetrics) iterate with
+	// AllPaginated instead of a bare All.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateFederationSliceForCoverage(args.Get(0), baseTime)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateFederationSliceForCoverage(args.Get(0), baseTime)

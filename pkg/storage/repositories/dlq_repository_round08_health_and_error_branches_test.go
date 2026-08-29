@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -54,28 +53,6 @@ func TestDLQRepository_Round08_MonitorDLQHealth_Alerts(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, health.IsHealthy)
 	require.GreaterOrEqual(t, len(health.Alerts), 1)
-}
-
-func TestDLQRepository_Round08_GetSimilarMessages_Error(t *testing.T) {
-	ctx := context.Background()
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-
-	mockDB.On("WithContext", mock.Anything).Return(mockDB)
-	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("all failed")).Once()
-
-	repo := NewDLQRepository(mockDB, "test-table", zap.NewNop(), nil)
-	repo.SetValidationService(nil)
-	repo.SetPermissionService(nil)
-	repo.SetCachingService(nil)
-	repo.SetEventService(nil)
-
-	_, err := repo.GetSimilarMessages(ctx, "hash", 10)
-	require.Error(t, err)
 }
 
 func TestDLQRepository_Round08_SendToDeadLetterQueue_NonPermanent(t *testing.T) {

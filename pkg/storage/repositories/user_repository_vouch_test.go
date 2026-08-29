@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -42,7 +43,7 @@ func TestUserRepository_GetVouch_NotFound(t *testing.T) {
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = nil
 	}).Return(nil)
@@ -59,7 +60,7 @@ func TestUserRepository_GetVouch_InvalidJSON(t *testing.T) {
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{{VouchData: "not-json"}}
 	}).Return(nil)
@@ -84,7 +85,7 @@ func TestUserRepository_GetVouch_Success(t *testing.T) {
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{{VouchData: string(payload)}}
 	}).Return(nil)
@@ -113,14 +114,15 @@ func TestUserRepository_GetVouchesByActor_FiltersInvalidEntries(t *testing.T) {
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{
 			{VouchData: ""},            // dropped
 			{VouchData: "not-json"},    // dropped
 			{VouchData: string(valid)}, // kept
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	vouches, err := repo.GetVouchesByActor(context.Background(), "alice", true)
 	assert.NoError(t, err)
@@ -143,7 +145,7 @@ func TestUserRepository_UpdateVouchStatus_UpdatesAndStores(t *testing.T) {
 
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{{VouchData: string(payload)}}
 	}).Return(nil)
@@ -162,14 +164,15 @@ func TestUserRepository_GetMonthlyVouchCount_CountsInRange(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Vouch)
 		*dest = []*models.Vouch{
 			{CreatedAt: time.Date(2025, time.January, 2, 0, 0, 0, 0, time.UTC)},
 			{CreatedAt: time.Date(2025, time.January, 31, 23, 0, 0, 0, time.UTC)},
 			{CreatedAt: time.Date(2025, time.February, 1, 0, 0, 0, 0, time.UTC)},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	count, err := repo.GetMonthlyVouchCount(context.Background(), "alice", 2025, time.January)
 	assert.NoError(t, err)

@@ -23,6 +23,10 @@ type MediaAnalytics struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2pk"` // VARIANT#{variant_key}
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2sk"` // COST#{timestamp}
 
+	// GSI3 for per-media quality-change queries (quality_changed rows only)
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3pk"` // MEDIA_QUALITY#{mediaID}
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3sk"` // TS#{unix}#{quality}
+
 	// Business fields
 	MediaID   string    `theorydb:"attr:mediaID" json:"media_id"`
 	Format    string    `theorydb:"attr:format" json:"format"`       // hls, dash
@@ -185,6 +189,11 @@ func (m *MediaAnalytics) SetQualityChange(mediaID, userID, _, newQuality string)
 	m.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
 
 	_ = m.UpdateKeys() // Ignore error as this is internal model operation
+
+	// Set GSI3 keys for per-media quality-change lookups (quality-change rows
+	// only — other event types would carry misleading keys).
+	m.GSI3PK = fmt.Sprintf("MEDIA_QUALITY#%s", mediaID)
+	m.GSI3SK = fmt.Sprintf("TS#%d#%s", m.Timestamp.Unix(), newQuality)
 }
 
 // SetGeneralEvent configures this record for general media events

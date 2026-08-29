@@ -132,6 +132,12 @@ type InstanceHealthSummary struct {
 	PK string `theorydb:"pk,attr:PK" json:"-"` // INSTANCE#domain
 	SK string `theorydb:"sk,attr:SK" json:"-"` // SUMMARY#window (e.g., SUMMARY#1h, SUMMARY#24h)
 
+	// GSI1 - hourly-summary listing for GetUnhealthyInstances (wave part 2 batch
+	// E, #1469). Partition: "HEALTH_SUMMARY#<window>"; sort key
+	// "INSTANCE#<domain>".
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`
+
 	// Metadata
 	Domain      string        `theorydb:"attr:domain" json:"domain"`
 	Window      time.Duration `theorydb:"attr:window" json:"window"` // Time window for aggregation
@@ -177,6 +183,12 @@ func (s *InstanceHealthSummary) UpdateKeys() error {
 	}
 
 	s.SK = fmt.Sprintf("SUMMARY#%s", windowStr)
+
+	// GSI1 - summary listing by window (GetUnhealthyInstances reads the 1h
+	// partition). Maintained on every summary write through
+	// SaveHealthSummary → UpdateKeys.
+	s.GSI1PK = fmt.Sprintf("HEALTH_SUMMARY#%s", windowStr)
+	s.GSI1SK = fmt.Sprintf("INSTANCE#%s", s.Domain)
 
 	// Set TTL to 30 days from last update
 	s.TTL = s.LastUpdated.Add(30 * 24 * time.Hour).Unix()

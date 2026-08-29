@@ -167,7 +167,7 @@ func TestAccountRepository_GetSuggestedAccounts_ScanError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.Anything).Return(fmt.Errorf("boom")).Once()
+	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))

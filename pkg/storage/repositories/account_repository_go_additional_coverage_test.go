@@ -425,7 +425,7 @@ func TestAccountRepository_DiscoveryAndPreferences_CursorAndTypeBranches(t *test
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.UserPreference)
 			*dest = []models.UserPreference{
 				{Key: "feature_new_ui", Value: "maybe"},

@@ -42,8 +42,10 @@ func TestModerationRepository_GetModerationQueue_FilterBranches(t *testing.T) {
 		}
 	}).Return(nil)
 
-	// Force countReviews to take its error branch; GetModerationQueue ignores the error.
-	mockQuery.On("Count").Return(int64(0), ErrTestMockError).Maybe()
+	// Force countReviews to take its error branch; GetModerationQueue ignores
+	// the (non-cap) error. countReviews is now a page-capped walk (wave #1469).
+	mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Maybe()
 
 	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
 
@@ -170,7 +172,9 @@ func TestModerationRepository_GetOpenReportsCount_And_CountPendingFlags_ErrorBra
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
+		// Walk (wave #1469): the transient walk error keeps the legacy 0-on-error.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
@@ -182,6 +186,8 @@ func TestModerationRepository_GetOpenReportsCount_And_CountPendingFlags_ErrorBra
 	t.Run("CountPendingFlags returns 0 on count error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 
 		mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
@@ -199,7 +205,9 @@ func TestModerationRepository_GetDecisionHistory_NotFoundAndError(t *testing.T) 
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.Anything).Return(errors.ErrItemNotFound).Once()
+		// GetDecisionHistory now iterates via a bounded page walk (wave #1469):
+		// the page read is AllPaginated, not a bare All.
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.ErrItemNotFound).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
@@ -213,7 +221,7 @@ func TestModerationRepository_GetDecisionHistory_NotFoundAndError(t *testing.T) 
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
@@ -222,43 +230,25 @@ func TestModerationRepository_GetDecisionHistory_NotFoundAndError(t *testing.T) 
 	})
 }
 
-func TestModerationRepository_deleteFilterEntity_SuccessAndInvalidType(t *testing.T) {
+func TestModerationRepository_DeleteFilterEntity_KeyedDeletes(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("DeleteFilterKeyword succeeds when entity found", func(t *testing.T) {
+	t.Run("DeleteFilterKeyword issues keyed delete", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]models.FilterKeyword)
-			*target = []models.FilterKeyword{{FilterID: "filter-1"}}
-		}).Return(nil).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
-		require.NoError(t, repo.DeleteFilterKeyword(ctx, "keyword-1"))
+		require.NoError(t, repo.DeleteFilterKeyword(ctx, "filter-1", "keyword-1"))
 	})
 
-	t.Run("DeleteFilterStatus succeeds when entity found", func(t *testing.T) {
+	t.Run("DeleteFilterStatus issues keyed delete", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]models.FilterStatus)
-			*target = []models.FilterStatus{{FilterID: "filter-1"}}
-		}).Return(nil).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
-		require.NoError(t, repo.DeleteFilterStatus(ctx, "status-id-1"))
-	})
-
-	t.Run("invalid entity type returns error", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-
-		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
-		err := repo.deleteFilterEntity(ctx, "id-1", "KEYWORD", &struct{}{})
-		require.Error(t, err)
+		require.NoError(t, repo.DeleteFilterStatus(ctx, "filter-1", "status-id-1"))
 	})
 }
 
@@ -512,7 +502,8 @@ func TestModerationRepository_GetModerationQueueCount_CountErrorReturnsZero(t *t
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 	setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
@@ -581,14 +572,11 @@ func TestModerationRepository_GetFilter_And_GetFlag_NotFoundBranches(t *testing.
 		require.Error(t, err)
 	})
 
-	t.Run("GetFlag returns not found when no matching ID in scan", func(t *testing.T) {
+	t.Run("GetFlag returns not found when the keyed gsi3 lookup misses", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.AnythingOfType("*[]models.Flag")).Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]models.Flag)
-			*target = []models.Flag{{ID: "other"}}
-		}).Return(nil).Once()
+		mockQuery.On("First", mock.AnythingOfType("*models.Flag")).Return(errors.ErrItemNotFound).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 
 		repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
@@ -692,18 +680,16 @@ func TestModerationRepository_DeleteFlag_DeleteError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("All", mock.AnythingOfType("*[]models.Flag")).Run(func(args mock.Arguments) {
-		target := args.Get(0).(*[]models.Flag)
-		*target = []models.Flag{
-			{
-				ID:        "flag-1",
-				Actor:     "actor-1",
-				Object:    []string{"obj-1"},
-				Content:   "reason",
-				Published: time.Now(),
-				Status:    string(storage.FlagStatusPending),
-				CreatedAt: time.Now(),
-			},
+	mockQuery.On("First", mock.AnythingOfType("*models.Flag")).Run(func(args mock.Arguments) {
+		target := args.Get(0).(*models.Flag)
+		*target = models.Flag{
+			ID:        "flag-1",
+			Actor:     "actor-1",
+			Object:    []string{"obj-1"},
+			Content:   "reason",
+			Published: time.Now(),
+			Status:    string(storage.FlagStatusPending),
+			CreatedAt: time.Now(),
 		}
 	}).Return(nil).Once()
 

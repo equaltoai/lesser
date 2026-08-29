@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -164,6 +165,11 @@ func TestSearchCostTrackingWrapper_CoverageSweep(t *testing.T) {
 		}
 	}).Return(nil).Maybe()
 
+	// Wave #1469 page-capped walks (GetSearchAnalytics) iterate with
+	// AllPaginated.
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{}, nil).Maybe()
+
 	mockQuery.On("Create").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Delete").Return(nil).Maybe()
@@ -192,9 +198,7 @@ func TestSearchCostTrackingWrapper_CoverageSweep(t *testing.T) {
 	_ = w.CreateSearchSuggestion(ctx, &models.SearchSuggestion{Type: "username", Term: "al"})
 	_ = w.UpdateSearchSuggestion(ctx, "username", "al", map[string]interface{}{"score": 1.1})
 	_ = w.IncrementSuggestionUse(ctx, "username", "al")
-	_ = w.PruneOldSuggestions(ctx, time.Now().Add(-time.Hour))
 	_ = w.IndexStatus(ctx, &models.Object{ID: "status-1", Type: ActivityTypeNote, Content: "hello"})
-	_ = w.UnindexStatus(ctx, "status-1")
 	_, _ = w.SearchStatusesByHashtag(ctx, "tag", 5)
 	_, _ = w.SearchStatusesByAuthor(ctx, "author-1", 5)
 	_ = w.RecordSearch(ctx, &models.SearchAnalytics{Query: "hello", SearchType: "accounts", Timestamp: now})

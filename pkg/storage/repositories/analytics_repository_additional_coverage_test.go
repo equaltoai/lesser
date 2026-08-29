@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -39,6 +40,7 @@ func setupPermissiveAnalyticsRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.Mo
 
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
@@ -50,6 +52,13 @@ func setupPermissiveAnalyticsRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.Mo
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateAnalyticsSliceForCoverage(args.Get(0), baseTime)
 	}).Return(nil).Maybe()
+
+	// Bounded page walks (wave #1469) terminate on AllPaginated: populate a
+	// single short page so the walk stops after the first page.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateAnalyticsSliceForCoverage(args.Get(0), baseTime)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+	mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 		populateAnalyticsStructForCoverage(args.Get(0), 0, baseTime)
@@ -316,18 +325,6 @@ func TestTrendingRepository_AnalyticsAdditionalCoverage(t *testing.T) {
 	t.Run("search analytics", func(t *testing.T) {
 		require.NoError(t, repo.TrackSearchQuery(ctx, "user-1", "Golang", 10))
 		require.NoError(t, repo.IndexByEngagement(ctx, "status-1", "high"))
-
-		popular, err := repo.GetPopularSearchQueries(ctx, 1, 24*time.Hour)
-		require.NoError(t, err)
-		require.NotEmpty(t, popular)
-
-		history, err := repo.GetUserSearchHistory(ctx, "user-1", 5)
-		require.NoError(t, err)
-		require.NotEmpty(t, history)
-
-		suggestions, err := repo.GenerateSearchSuggestions(ctx, "user-1", "go", 5)
-		require.NoError(t, err)
-		require.NotEmpty(t, suggestions)
 	})
 
 	t.Run("statuses by link", func(t *testing.T) {
@@ -435,8 +432,6 @@ func TestTrendingRepository_AnalyticsAdditionalCoverage(t *testing.T) {
 		require.NoError(t, repo.IncrementQueryCount(ctx, "golang", 1))
 		_, _ = repo.GetQueryCount(ctx, "golang")
 		_, _ = repo.GetTopQueries(ctx, 5, 24*time.Hour)
-
-		_, _ = repo.GetActorInteraction(ctx, "https://example.com/users/a", "https://example.com/users/b")
 	})
 }
 
@@ -577,23 +572,6 @@ func TestTrendingRepository_GetQueryCount_NotFound(t *testing.T) {
 	require.Equal(t, 0, count)
 }
 
-func TestTrendingRepository_GetActorInteraction_NotFound(t *testing.T) {
-	ctx := context.Background()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Twice()
-
-	_, err := repo.GetActorInteraction(ctx, "actor-1", "actor-2")
-	require.Error(t, err)
-}
-
 func TestTrendingRepository_GetTotalUserCount_QueryError(t *testing.T) {
 	ctx := context.Background()
 
@@ -620,7 +598,8 @@ func TestTrendingRepository_getMediaAnalyticsStatsGeneric_QueryError(t *testing.
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, fmt.Errorf("query failed")).Once()
 
 	_, err := repo.getMediaAnalyticsStatsGeneric(ctx, "MEDIA_EVENT", "session_start", "2025-01-01", "2025-01-02")
 	require.Error(t, err)
@@ -765,45 +744,6 @@ func TestTrendingRepository_TrackSearchQuery_ValidationAndCreateErrors(t *testin
 
 		require.Error(t, repo.TrackSearchQuery(ctx, "user-1", "golang", 10))
 	})
-}
-
-func TestTrendingRepository_GetPopularSearchQueries_NotFound(t *testing.T) {
-	ctx := context.Background()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.SearchQuery")).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
-
-	results, err := repo.GetPopularSearchQueries(ctx, 10, 24*time.Hour)
-	require.NoError(t, err)
-	require.Empty(t, results)
-}
-
-func TestTrendingRepository_GetUserSearchHistory_NotFound(t *testing.T) {
-	ctx := context.Background()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.SearchQuery")).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
-
-	results, err := repo.GetUserSearchHistory(ctx, "user-1", 10)
-	require.NoError(t, err)
-	require.Empty(t, results)
 }
 
 func TestTrendingRepository_RecordEngagement_CreateError(t *testing.T) {
@@ -1028,7 +968,8 @@ func TestTrendingRepository_querySessionEvents_QueryError(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, errors.New("query failed")).Once()
 
 	_, err := repo.querySessionEvents(ctx, time.Now().Add(-24*time.Hour))
 	require.Error(t, err)
@@ -1198,71 +1139,6 @@ func TestTrendingRepository_GetQueryCount_QueryError(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestTrendingRepository_GetActorInteraction_QueryError(t *testing.T) {
-	ctx := context.Background()
-
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
-
-	_, err := repo.GetActorInteraction(ctx, "actor-1", "actor-2")
-	require.Error(t, err)
-}
-
-func TestTrendingRepository_scoreHashtagSuggestions_Branches(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("query too short returns early", func(t *testing.T) {
-		repo := &TrendingRepository{}
-		suggestions := map[string]float64{"keep": 1}
-		repo.scoreHashtagSuggestions(ctx, "a", suggestions)
-		require.Equal(t, float64(1), suggestions["keep"])
-	})
-
-	t.Run("no matching hashtags continues", func(t *testing.T) {
-		baseTime := time.Now().Add(-1 * time.Hour)
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			populateAnalyticsSliceForCoverage(args.Get(0), baseTime)
-		}).Return(nil).Maybe()
-
-		suggestions := make(map[string]float64)
-		repo.scoreHashtagSuggestions(ctx, "zz", suggestions)
-		require.Empty(t, suggestions)
-	})
-
-	t.Run("query error returns early", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-
-		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-		mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery).Maybe()
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
-
-		suggestions := make(map[string]float64)
-		repo.scoreHashtagSuggestions(ctx, "go", suggestions)
-		require.Empty(t, suggestions)
-	})
-}
-
 func TestTrendingRepository_queryBufferingEvents_ErrorIgnored(t *testing.T) {
 	ctx := context.Background()
 
@@ -1273,7 +1149,8 @@ func TestTrendingRepository_queryBufferingEvents_ErrorIgnored(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, errors.New("query failed")).Once()
 
 	count, err := repo.queryBufferingEvents(ctx, "media-1", time.Now().Add(-24*time.Hour))
 	require.NoError(t, err)
@@ -1289,8 +1166,10 @@ func TestTrendingRepository_queryQualityChangeEvents_ErrorIgnored(t *testing.T) 
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
+	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, errors.New("query failed")).Once()
 
 	count, err := repo.queryQualityChangeEvents(ctx, "media-1", time.Now().Add(-24*time.Hour))
 	require.NoError(t, err)
@@ -1307,7 +1186,8 @@ func TestTrendingRepository_GetStreamingAnalytics_SessionQueryError(t *testing.T
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaAnalytics")).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, errors.New("query failed")).Once()
 
 	_, err := repo.GetStreamingAnalytics(ctx, "media-1")
 	require.Error(t, err)

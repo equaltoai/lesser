@@ -7,6 +7,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -125,7 +126,8 @@ func TestUserRepository_UnlinkProviderAccount_QueryError(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, ErrTestMockError).Once()
 
 	err := repo.UnlinkProviderAccount(ctx, "testuser", "google")
 
@@ -144,14 +146,15 @@ func TestUserRepository_UnlinkProviderAccount_NotLinked(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		// Return accounts for different providers
 		out := args.Get(0).(*[]models.ProviderAccount)
 		*out = []models.ProviderAccount{
 			{UserID: "testuser", Provider: "github", ProviderID: "456", IsActive: true},
 			{UserID: "testuser", Provider: "facebook", ProviderID: "789", IsActive: true},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	err := repo.UnlinkProviderAccount(ctx, "testuser", "google")
 
@@ -171,12 +174,13 @@ func TestUserRepository_UnlinkProviderAccount_DeleteSuccess(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.ProviderAccount)
 		*out = []models.ProviderAccount{
 			{UserID: "testuser", Provider: "google", ProviderID: "123", IsActive: true},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Expect delete
 	mockDB.On("Model", mock.AnythingOfType("*models.ProviderAccount")).Return(mockQuery)
@@ -199,12 +203,13 @@ func TestUserRepository_UnlinkProviderAccount_DeleteError(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.ProviderAccount)
 		*out = []models.ProviderAccount{
 			{UserID: "testuser", Provider: "google", ProviderID: "123", IsActive: true},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Expect delete to fail
 	mockDB.On("Model", mock.AnythingOfType("*models.ProviderAccount")).Return(mockQuery)
@@ -227,7 +232,8 @@ func TestUserRepository_UnlinkProviderAccount_MultipleProviders(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		// User has multiple google accounts
 		out := args.Get(0).(*[]models.ProviderAccount)
 		*out = []models.ProviderAccount{
@@ -235,7 +241,7 @@ func TestUserRepository_UnlinkProviderAccount_MultipleProviders(t *testing.T) {
 			{UserID: "testuser", Provider: "google", ProviderID: "456", IsActive: true},
 			{UserID: "testuser", Provider: "github", ProviderID: "789", IsActive: true},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Expect two deletes (for both google accounts)
 	mockDB.On("Model", mock.AnythingOfType("*models.ProviderAccount")).Return(mockQuery)
@@ -262,14 +268,15 @@ func TestUserRepository_GetLinkedProviders_Success(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.ProviderAccount)
 		*out = []models.ProviderAccount{
 			{UserID: "testuser", Provider: "google", ProviderID: "123", IsActive: true},
 			{UserID: "testuser", Provider: "github", ProviderID: "456", IsActive: true},
 			{UserID: "testuser", Provider: "facebook", ProviderID: "789", IsActive: true},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	providers, err := repo.GetLinkedProviders(ctx, "testuser")
 
@@ -292,14 +299,15 @@ func TestUserRepository_GetLinkedProviders_FilterInactive(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.ProviderAccount)
 		*out = []models.ProviderAccount{
 			{UserID: "testuser", Provider: "google", ProviderID: "123", IsActive: true},
 			{UserID: "testuser", Provider: "github", ProviderID: "456", IsActive: false}, // Inactive
 			{UserID: "testuser", Provider: "facebook", ProviderID: "789", IsActive: true},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	providers, err := repo.GetLinkedProviders(ctx, "testuser")
 
@@ -322,7 +330,8 @@ func TestUserRepository_GetLinkedProviders_UniqueProviders(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		// Multiple google accounts
 		out := args.Get(0).(*[]models.ProviderAccount)
 		*out = []models.ProviderAccount{
@@ -330,7 +339,7 @@ func TestUserRepository_GetLinkedProviders_UniqueProviders(t *testing.T) {
 			{UserID: "testuser", Provider: "google", ProviderID: "456", IsActive: true},
 			{UserID: "testuser", Provider: "github", ProviderID: "789", IsActive: true},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	providers, err := repo.GetLinkedProviders(ctx, "testuser")
 
@@ -352,7 +361,8 @@ func TestUserRepository_GetLinkedProviders_QueryError(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, ErrTestMockError).Once()
 
 	providers, err := repo.GetLinkedProviders(ctx, "testuser")
 
@@ -372,7 +382,8 @@ func TestUserRepository_GetLinkedProviders_NoProviders(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(nil) // Empty result
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once() // Empty result
 
 	providers, err := repo.GetLinkedProviders(ctx, "testuser")
 

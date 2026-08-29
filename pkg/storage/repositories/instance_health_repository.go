@@ -160,12 +160,19 @@ func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, dom
 
 // GetHealthHistory retrieves health history for a domain within a time range with trend analysis
 func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain string, since time.Time, limit int) ([]*models.InstanceHealth, error) {
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed PK read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	var healthChecks []*models.InstanceHealth
 
 	// Build query using BaseRepository's DB
 	query := r.GetDB().WithContext(ctx).Model(&models.InstanceHealth{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
-		OrderBy("SK", "DESC") // Most recent first
+		OrderBy("SK", "DESC"). // Most recent first
+		Limit(limit)
 
 	// Add time range filter if specified
 	if !since.IsZero() {
@@ -173,11 +180,6 @@ func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain 
 	} else {
 		// Ensure we only get health records
 		query = query.Where("SK", ">", "HEALTH#")
-	}
-
-	// Add limit if specified
-	if limit > 0 {
-		query = query.Limit(limit)
 	}
 
 	err := query.All(&healthChecks)
@@ -227,76 +229,6 @@ func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain 
 	}
 
 	return healthChecks, nil
-}
-
-// GetDomainsForHealthCheck retrieves a list of domains that need health checking with monitoring prioritization
-func (r *InstanceHealthRepository) GetDomainsForHealthCheck(ctx context.Context, limit int) ([]string, error) {
-	// Query for recent health summaries to get active domains
-	var summaries []*models.InstanceHealthSummary
-
-	// Use BaseRepository's underlying DB for complex query
-	query := r.GetDB().WithContext(ctx).Model(&models.InstanceHealthSummary{}).
-		Where("SK", "=", "SUMMARY#24h").
-		OrderBy("PK", "ASC") // Consistent ordering
-
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-
-	err := query.All(&summaries)
-	if err != nil && !dynamoerrors.IsNotFound(err) {
-		r.logger.Error("Failed to get domains for health check", zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, EntityInstanceHealth, "health check domains")
-	}
-
-	// Prioritize domains based on health status for monitoring efficiency
-	type domainPriority struct {
-		domain       string
-		healthScore  float64
-		availability float64
-	}
-
-	domainPriorities := make([]domainPriority, 0, len(summaries))
-	for _, summary := range summaries {
-		domainPriorities = append(domainPriorities, domainPriority{
-			domain:       summary.Domain,
-			healthScore:  summary.HealthScore,
-			availability: summary.Availability,
-		})
-	}
-
-	// Sort by health score (lowest first) to prioritize problematic instances
-	sort.Slice(domainPriorities, func(i, j int) bool {
-		return domainPriorities[i].healthScore < domainPriorities[j].healthScore
-	})
-
-	domains := make([]string, 0, len(domainPriorities))
-	lowHealthCount := 0
-	for _, dp := range domainPriorities {
-		domains = append(domains, dp.domain)
-		if dp.healthScore < 80.0 {
-			lowHealthCount++
-		}
-	}
-
-	// Log monitoring status
-	r.logger.Info("Retrieved domains for health checking",
-		zap.Int("total_domains", len(domains)),
-		zap.Int("low_health_domains", lowHealthCount),
-		zap.Int("requested_limit", limit))
-
-	if lowHealthCount > 0 {
-		r.logger.Info("Prioritizing unhealthy domains for monitoring",
-			zap.Int("low_health_count", lowHealthCount),
-			zap.Float64("percentage", float64(lowHealthCount)/float64(len(domains))*100))
-	}
-
-	// If no summaries found, we could fallback to querying known remote actors
-	if len(domains) == 0 {
-		r.logger.Info("No domains found for health checking via summaries")
-	}
-
-	return domains, nil
 }
 
 // SaveHealthSummary saves an aggregated health summary with uptime monitoring alerts
@@ -513,12 +445,27 @@ func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, th
 		threshold = 80.0 // Default threshold for unhealthy instances
 	}
 
-	// Query recent summaries and check health scores
-	var summaries []*models.InstanceHealthSummary
-
-	err := r.GetDB().WithContext(ctx).Model(&models.InstanceHealthSummary{}).
-		Where("SK", "=", "SUMMARY#1h"). // Check hourly summaries
-		All(&summaries)
+	// Query recent summaries and check health scores. Hourly summaries resolve
+	// through the GSI1 summary-window listing (HEALTH_SUMMARY#1h /
+	// INSTANCE#<domain>) maintained by InstanceHealthSummary.UpdateKeys on
+	// every summary write (wave part 2 batch E, #1469). The previous
+	// SK=SUMMARY#1h chain compiled to a full table scan; this binds gsi1PK.
+	// Legacy summaries written before the GSI1 shape carry no index keys and
+	// are not evaluated until next written (summaries are TTL-transient, 30d).
+	// The whole keyed gsi1 HEALTH_SUMMARY#1h partition must be read to evaluate
+	// every hourly summary, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var summaries []models.InstanceHealthSummary
+	err := walkKeyedPages(
+		r.GetDB().WithContext(ctx).Model(&models.InstanceHealthSummary{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", "HEALTH_SUMMARY#1h"), // Check hourly summaries
+		500, 100,
+		func(page []models.InstanceHealthSummary) (bool, error) {
+			summaries = append(summaries, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil && !dynamoerrors.IsNotFound(err) {
 		r.logger.Error("Failed to get unhealthy instances", zap.Error(err))

@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	dynamock "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 
@@ -108,47 +107,6 @@ func TestAccountRepository_ListOAuthClients_InvalidCursor(t *testing.T) {
 	assert.Empty(t, nextCursor)
 
 	mockDB.AssertExpectations(t)
-}
-
-func TestAccountRepository_DeleteRefreshTokensByUsernameAndClientID_ScanNotFound(t *testing.T) {
-	ctx := context.Background()
-	mockDB := new(dynamock.MockDB)
-	mockQuery := new(dynamock.MockQuery)
-	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-
-	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Scan", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
-
-	deleted, err := repo.DeleteRefreshTokensByUsernameAndClientID(ctx, "alice", "client-1")
-	require.NoError(t, err)
-	require.Equal(t, 0, deleted)
-	mockQuery.AssertNotCalled(t, "Delete")
-}
-
-func TestAccountRepository_DeleteRefreshTokensByUsernameAndClientID_DeletesAll(t *testing.T) {
-	ctx := context.Background()
-	mockDB := new(dynamock.MockDB)
-	mockQuery := new(dynamock.MockQuery)
-	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
-
-	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]models.RefreshToken)
-		*dest = []models.RefreshToken{
-			{Token: "token-1", Username: "alice", ClientID: "client-1"},
-			{Token: "token-2", Username: "alice", ClientID: "client-1"},
-		}
-	}).Return(nil).Once()
-	mockQuery.On("Delete").Return(nil).Maybe()
-
-	deleted, err := repo.DeleteRefreshTokensByUsernameAndClientID(ctx, "alice", "client-1")
-	require.NoError(t, err)
-	require.Equal(t, 2, deleted)
-	mockQuery.AssertNumberOfCalls(t, "Delete", 2)
 }
 
 func buildOAuthClientModel(t *testing.T, clientID string, createdAt time.Time) *models.OAuthClient {

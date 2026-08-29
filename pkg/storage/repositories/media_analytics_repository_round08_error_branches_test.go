@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -62,7 +63,9 @@ func TestMediaAnalyticsRepository_Round08_TimeRangeQuery_ScanErrorPaths(t *testi
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	// Page-capped walks (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery).Times(3)
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("scan failed")).Once()
 
 	repo := NewMediaAnalyticsRepository(mockDB, "test-table", zap.NewNop(), nil)
 	repo.SetValidationService(nil)
@@ -76,11 +79,11 @@ func TestMediaAnalyticsRepository_Round08_TimeRangeQuery_ScanErrorPaths(t *testi
 	_, err := repo.GetMediaAnalyticsByTimeRange(ctx, "m1", start, end, 10)
 	require.Error(t, err)
 
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("scan failed")).Once()
 	_, err = repo.GetAllMediaAnalyticsByTimeRange(ctx, start, end, 10)
 	require.Error(t, err)
 
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, errors.New("scan failed")).Once()
 	_, err = repo.GetBandwidthByTimeRange(ctx, start, end, 10)
 	require.Error(t, err)
 }
@@ -91,7 +94,10 @@ func TestMediaAnalyticsRepository_Round08_GetMediaMetricsForDate_VariantPaths(t 
 	mockQuery := new(mocks.MockQuery)
 
 	date := time.Date(2025, 12, 27, 0, 0, 0, 0, time.UTC).Format(common.DateFormat)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	// GetMediaMetricsForDate walks the keyed gsi1 partition (wave #1469):
+	// Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.MediaAnalytics)
 		*dest = []*models.MediaAnalytics{
 			{
@@ -109,7 +115,7 @@ func TestMediaAnalyticsRepository_Round08_GetMediaMetricsForDate_VariantPaths(t 
 				QualityDistribution: map[string]int{"720p": 2},
 			},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{}, nil).Once()
 
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
 

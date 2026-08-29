@@ -27,14 +27,16 @@ func getImportExportItemsForUser(
 	if isExport {
 		var exports []*models.Export
 		query := db.Model(&models.Export{}).
-			Where("Username", "=", username).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username)).
+			OrderBy("gsi1SK", "ASC").
 			Limit(limit)
 
 		if cursor != "" {
-			query = query.Where("CreatedAt", ">", cursor)
+			query = query.Where("gsi1SK", ">", "CREATED#"+cursor)
 		}
 
-		err := query.Scan(&exports)
+		err := query.All(&exports)
 		if err != nil {
 			logger.Error(fmt.Sprintf("failed to get %ss for user", itemType),
 				zap.String("username", username),
@@ -56,14 +58,16 @@ func getImportExportItemsForUser(
 
 	var imports []*models.Import
 	query := db.Model(&models.Import{}).
-		Where("Username", "=", username).
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username)).
+		OrderBy("gsi1SK", "ASC").
 		Limit(limit)
 
 	if cursor != "" {
-		query = query.Where("CreatedAt", ">", cursor)
+		query = query.Where("gsi1SK", ">", "CREATED#"+cursor)
 	}
 
-	err := query.Scan(&imports)
+	err := query.All(&imports)
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to get %ss for user", itemType),
 			zap.String("username", username),
@@ -105,7 +109,17 @@ func getImportExportItemsByStatus[T ImportExportItem](
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username))
 
-	err := query.All(&items)
+	// The whole keyed gsi1 USER#<username> partition must be read to evaluate
+	// every item, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []T) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to query %ss by GSI1", itemType),
 			zap.String("username", username),
@@ -226,8 +240,9 @@ func getUserCosts[T any](
 	query := db.Model(modelPtr).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
+		// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+		// range conditions on one sort key are rejected by DynamoDB (#1500).
+		Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("gsi1SK", "DESC").
 		Limit(limit)
 

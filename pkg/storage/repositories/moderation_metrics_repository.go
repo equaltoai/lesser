@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"time"
 
@@ -143,13 +144,23 @@ func (r *moderationMetricsRepository) RecordFalsePositive(ctx context.Context, f
 func (r *moderationMetricsRepository) GetFalsePositives(ctx context.Context, timeRange models.ModerationMetricsTimeRange) ([]*models.ModerationFalsePositive, error) {
 	var results []*models.ModerationFalsePositive
 
-	// Query by GSI1 for efficient time range queries
-	err := r.falsePositiveRepo.GetDB().WithContext(ctx).Model(&models.ModerationFalsePositive{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "FALSE_POSITIVES").
-		Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-		Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
-		All(&results)
+	// The whole keyed gsi1 FALSE_POSITIVES window must be read, so the read is
+	// a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.falsePositiveRepo.GetDB().WithContext(ctx).Model(&models.ModerationFalsePositive{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", "FALSE_POSITIVES").
+			// One BETWEEN key condition on gsi1SK (inclusive both bounds): two
+			// range conditions on one sort key are rejected by DynamoDB
+			// (issue #1500).
+			Where("gsi1SK", "BETWEEN", []any{fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat)), fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))}),
+		500, 100,
+		func(page []*models.ModerationFalsePositive) (bool, error) {
+			results = append(results, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrModerationMetricsFalsePositivesQueryFailed, err)
@@ -169,13 +180,24 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 	var results []*models.ModerationDecisionSample
 
 	if decision != "" {
-		// Query by specific decision type using GSI1
-		err := r.decisionSampleRepo.GetDB().WithContext(ctx).Model(&models.ModerationDecisionSample{}).
-			Index("gsi1").
-			Where("gsi1PK", "=", fmt.Sprintf("DECISION#%s", decision)).
-			Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-			Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
-			All(&results)
+		// Query by specific decision type using GSI1. The whole keyed gsi1
+		// DECISION#<decision> window must be read, so the read is a bounded page
+		// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+		// exhaustion.
+		err := walkKeyedPages(
+			r.decisionSampleRepo.GetDB().WithContext(ctx).Model(&models.ModerationDecisionSample{}).
+				Index("gsi1").
+				Where("gsi1PK", "=", fmt.Sprintf("DECISION#%s", decision)).
+				// One BETWEEN key condition on gsi1SK (inclusive both bounds;
+				// see GetFalsePositives). Two range conditions on one sort key
+				// are rejected by DynamoDB (issue #1500).
+				Where("gsi1SK", "BETWEEN", []any{fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat)), fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))}),
+			500, 100,
+			func(page []*models.ModerationDecisionSample) (bool, error) {
+				results = append(results, page...)
+				return false, nil
+			},
+		)
 
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrModerationMetricsDecisionSamplesQueryFailed, err)
@@ -188,10 +210,24 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 			dateStr := current.Format(common.DateFormat)
 			var dayResults []*models.ModerationDecisionSample
 
-			err := r.decisionSampleRepo.GetDB().WithContext(ctx).Model(&models.ModerationDecisionSample{}).
-				Where("PK", "=", fmt.Sprintf("SAMPLES#%s", dateStr)).
-				All(&dayResults)
+			// Each day is a keyed SAMPLES#<date> partition; the whole partition
+			// must be read, so the read is a bounded page walk (wave #1469).
+			// Cap exhaustion must fail closed (the pre-existing `err == nil`
+			// swallow would otherwise silently drop it); other errors keep the
+			// skip-this-day behavior.
+			err := walkKeyedPages(
+				r.decisionSampleRepo.GetDB().WithContext(ctx).Model(&models.ModerationDecisionSample{}).
+					Where("PK", "=", fmt.Sprintf("SAMPLES#%s", dateStr)),
+				500, 100,
+				func(page []*models.ModerationDecisionSample) (bool, error) {
+					dayResults = append(dayResults, page...)
+					return false, nil
+				},
+			)
 
+			if stdErrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			if err == nil {
 				results = append(results, dayResults...)
 			}
@@ -212,6 +248,15 @@ func (r *moderationMetricsRepository) UpdatePatternStats(ctx context.Context, st
 // GetTopPatterns retrieves the top patterns by hit count
 func (r *moderationMetricsRepository) GetTopPatterns(ctx context.Context, limit int) ([]*models.ModerationPatternStats, error) {
 	var results []*models.ModerationPatternStats
+
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI1 read.
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
 
 	// Query by GSI1 ordered by hit count (descending)
 	err := r.patternStatsRepo.GetDB().WithContext(ctx).Model(&models.ModerationPatternStats{}).
@@ -267,13 +312,30 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 		// Query by specific metric types using GSI1
 		for _, metricType := range metricTypes {
 			var results []*models.ModerationMetricsEntry
-			err := r.GetDB().WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
-				Index("gsi1").
-				Where("gsi1PK", "=", fmt.Sprintf("METRIC_TYPE#%s", metricType)).
-				Where("gsi1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
-				Where("gsi1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
-				All(&results)
 
+			// The whole keyed gsi1 METRIC_TYPE#<type> window must be read, so
+			// the read is a bounded page walk (wave #1469): Limit(500)/page,
+			// 100-page cap. Cap exhaustion must fail closed (the pre-existing
+			// `err == nil` swallow would otherwise silently drop it); other
+			// errors keep the skip-this-type behavior.
+			err := walkKeyedPages(
+				r.GetDB().WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
+					Index("gsi1").
+					Where("gsi1PK", "=", fmt.Sprintf("METRIC_TYPE#%s", metricType)).
+					// One BETWEEN key condition on gsi1SK (inclusive both
+					// bounds; see GetFalsePositives). Two range conditions on
+					// one sort key are rejected by DynamoDB (issue #1500).
+					Where("gsi1SK", "BETWEEN", []any{fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat)), fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))}),
+				500, 100,
+				func(page []*models.ModerationMetricsEntry) (bool, error) {
+					results = append(results, page...)
+					return false, nil
+				},
+			)
+
+			if stdErrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			if err == nil {
 				allResults = append(allResults, results...)
 			}
@@ -285,11 +347,25 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 			dateStr := current.Format(common.DateFormat)
 			var dayResults []*models.ModerationMetricsEntry
 
-			err := r.GetDB().WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
-				Where("PK", "=", fmt.Sprintf("METRICS#%s", dateStr)).
-				Where("SK", "begins_with", "STATS#").
-				All(&dayResults)
+			// Each day is a keyed METRICS#<date> partition (SK prefix STATS#);
+			// the whole partition must be read, so the read is a bounded page
+			// walk (wave #1469). Cap exhaustion must fail closed (the
+			// pre-existing `err == nil` swallow would otherwise silently drop
+			// it); other errors keep the skip-this-day behavior.
+			err := walkKeyedPages(
+				r.GetDB().WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
+					Where("PK", "=", fmt.Sprintf("METRICS#%s", dateStr)).
+					Where("SK", "begins_with", "STATS#"),
+				500, 100,
+				func(page []*models.ModerationMetricsEntry) (bool, error) {
+					dayResults = append(dayResults, page...)
+					return false, nil
+				},
+			)
 
+			if stdErrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			if err == nil {
 				allResults = append(allResults, dayResults...)
 			}

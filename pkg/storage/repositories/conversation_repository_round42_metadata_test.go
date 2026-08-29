@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -226,13 +227,14 @@ func TestRound42_ConversationRepository_ListConversationParticipantStates_Branch
 		query.On("Index", "gsi3").Return(query).Once()
 		query.On("Where", "gsi3PK", "=", "CONVERSATION#conv-list").Return(query).Once()
 		query.On("OrderBy", "gsi3SK", "ASC").Return(query).Once()
-		query.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.UserConversationState)
-			*dest = []*models.UserConversationState{
+		query.On("Limit", mock.Anything).Return(query).Maybe()
+		query.On("AllPaginated", mock.AnythingOfType("*[]models.UserConversationState")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.UserConversationState)
+			*dest = []models.UserConversationState{
 				{ViewerID: "arch", ConversationID: "conv-list", CounterpartID: "medic", Folder: models.UserConversationFolderInbox, SortAt: sortAt, CreatedAt: sortAt, UpdatedAt: sortAt},
 				{ViewerID: "medic", ConversationID: "conv-list", CounterpartID: "arch", Folder: models.UserConversationFolderInbox, SortAt: sortAt, CreatedAt: sortAt, UpdatedAt: sortAt},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 		items, err := repo.ListConversationParticipantStates(ctx, "conv-list")
@@ -252,7 +254,8 @@ func TestRound42_ConversationRepository_ListConversationParticipantStates_Branch
 		query.On("Index", "gsi3").Return(query).Once()
 		query.On("Where", "gsi3PK", "=", "CONVERSATION#conv-empty").Return(query).Once()
 		query.On("OrderBy", "gsi3SK", "ASC").Return(query).Once()
-		query.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Return(dynamormerrors.ErrItemNotFound).Once()
+		query.On("Limit", mock.Anything).Return(query).Maybe()
+		query.On("AllPaginated", mock.AnythingOfType("*[]models.UserConversationState")).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 		items, err := repo.ListConversationParticipantStates(ctx, "conv-empty")
@@ -270,7 +273,8 @@ func TestRound42_ConversationRepository_ListConversationParticipantStates_Branch
 		query.On("Index", "gsi3").Return(query).Once()
 		query.On("Where", "gsi3PK", "=", "CONVERSATION#conv-error").Return(query).Once()
 		query.On("OrderBy", "gsi3SK", "ASC").Return(query).Once()
-		query.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Return(stdErrors.New("boom")).Once()
+		query.On("Limit", mock.Anything).Return(query).Maybe()
+		query.On("AllPaginated", mock.AnythingOfType("*[]models.UserConversationState")).Return(nil, stdErrors.New("boom")).Once()
 
 		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 		items, err := repo.ListConversationParticipantStates(ctx, "conv-error")

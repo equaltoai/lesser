@@ -222,13 +222,28 @@ func (r *ThreatIntelRepository) convertModelToThreat(model *models.ThreatIntel) 
 
 // LoadActiveThreats loads all active (non-expired) threats
 func (r *ThreatIntelRepository) LoadActiveThreats(ctx context.Context) ([]*ThreatIntel, error) {
-	var models []models.ThreatIntel
+	var threatModels []models.ThreatIntel
 
-	// We need to scan since DynamORM doesn't support filter expressions directly
-	// This matches the legacy scan operation
-	err := r.db.WithContext(ctx).Model(&models).
-		Where("SK", "=", "METADATA"). // Only get threat metadata records
-		All(&models)
+	// Active threats resolve through the existing GSI2 global listing
+	// (THREATS / <lastSeen>#<id>) maintained by ThreatIntel.UpdateKeys on
+	// every create/update (wave part 2 batch E, #1469). The previous
+	// SK=METADATA chain compiled to a full table scan; this binds gsi2PK.
+	// Legacy threat rows written before the GSI2 shape (or before UpdateKeys
+	// maintenance) carry no index keys and are not loaded until next written
+	// (threats are TTL-transient).
+	// The whole keyed gsi2 partition must be read to load every threat, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ThreatIntel{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "THREATS"),
+		500, 100,
+		func(page []models.ThreatIntel) (bool, error) {
+			threatModels = append(threatModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityThreatIntel, "active threats")
@@ -237,7 +252,7 @@ func (r *ThreatIntelRepository) LoadActiveThreats(ctx context.Context) ([]*Threa
 	threats := make([]*ThreatIntel, 0)
 	now := time.Now().Unix()
 
-	for _, model := range models {
+	for _, model := range threatModels {
 		// Filter out expired threats (TTL check)
 		if model.TTL > 0 && model.TTL <= now {
 			continue

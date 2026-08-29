@@ -205,16 +205,24 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 
 	safeLimit := clampFollowLimit(limit)
 
-	// Build query using primary key
+	// Build query using primary key. One SK key condition (issue #1500):
+	// BEGINS_WITH on the first page; with a cursor, BETWEEN [cursor,
+	// "following#~"] closes the key range at the top of the block (the `~`
+	// sentinel sorts above every ASCII username block member) and demotes
+	// BEGINS_WITH to a post-read FilterExpression — the final page can never
+	// keep reading the partition tail.
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Where("PK", "=", Utils.Keys.FollowKey(username)).
-		Where("SK", "BEGINS_WITH", "following#").
-		OrderBy("SK", "ASC").
-		Limit(safeLimit + 1)
+		OrderBy("SK", "ASC")
 
+	fetchLimit := safeLimit + 1
 	if cursor != "" {
-		query = query.Where("SK", ">", cursor)
+		query = query.Where("SK", "BETWEEN", []any{cursor, "following#~"}).Filter("SK", "BEGINS_WITH", "following#")
+		fetchLimit++
+	} else {
+		query = query.Where("SK", "BEGINS_WITH", "following#")
 	}
+	query = query.Limit(fetchLimit)
 
 	err := query.All(&follows)
 	if err != nil {
@@ -222,6 +230,9 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 			zap.String("username", username),
 			zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("following for %s", username))
+	}
+	if cursor != "" {
+		follows = dropSortKeyCursorDuplicate(follows, cursor, func(f models.Follow) string { return f.SK })
 	}
 
 	hasMore := len(follows) > safeLimit
@@ -447,12 +458,21 @@ func (r *AccountRepository) IsMuted(ctx context.Context, muterUsername, mutedUse
 
 // GetMutes retrieves all users muted by a user
 func (r *AccountRepository) GetMutes(ctx context.Context, username string) ([]*storage.Mute, error) {
+	// The whole keyed partition must be read to return every mute, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var mutes []models.Mute
 
-	err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", Utils.Keys.MuteKey(username)).
-		Where("SK", "BEGINS_WITH", "MUTED#").
-		All(&mutes)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Mute{}).
+			Where("PK", "=", Utils.Keys.MuteKey(username)).
+			Where("SK", "BEGINS_WITH", "MUTED#"),
+		500, 100,
+		func(page []models.Mute) (bool, error) {
+			mutes = append(mutes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get mutes",
@@ -676,12 +696,21 @@ func (r *AccountRepository) GetPinnedAccounts(ctx context.Context, username stri
 
 // GetAccountPins retrieves all account pins for a user
 func (r *AccountRepository) GetAccountPins(ctx context.Context, username string) ([]*storage.AccountPin, error) {
+	// The whole keyed partition must be read to return every pin, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var pins []models.AccountPin
 
-	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
-		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
-		Where("SK", "BEGINS_WITH", "PIN#").
-		All(&pins)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AccountPin{}).
+			Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
+			Where("SK", "BEGINS_WITH", "PIN#"),
+		500, 100,
+		func(page []models.AccountPin) (bool, error) {
+			pins = append(pins, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get account pins",

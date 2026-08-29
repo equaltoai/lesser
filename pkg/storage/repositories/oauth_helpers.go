@@ -377,15 +377,18 @@ func (h *OAuthHelper) DeleteOAuthClientGeneric(ctx context.Context, clientID str
 
 // ListOAuthClientsGeneric lists OAuth clients for an owner
 func (h *OAuthHelper) ListOAuthClientsGeneric(ctx context.Context, ownerID string, limit int) ([]*storage.OAuthClient, string, error) {
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed gsi1 read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	// Query for OAuth clients by owner
 	var models []models.OAuthClient
 	query := h.db.WithContext(ctx).Model(&models).
 		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("OWNER#%s", ownerID))
-
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
+		Where("gsi1PK", "=", fmt.Sprintf("OWNER#%s", ownerID)).
+		Limit(limit)
 
 	err := query.All(&models)
 	if err != nil {
@@ -695,11 +698,21 @@ func (h *OAuthHelper) UpdateRefreshTokenGeneric(ctx context.Context, token *stor
 
 // ListRefreshTokensByUserClientGeneric returns all refresh tokens for a username and client ID.
 func (h *OAuthHelper) ListRefreshTokensByUserClientGeneric(ctx context.Context, username, clientID string) ([]storage.RefreshToken, error) {
+	// The whole keyed gsi1 partition must be read, so the read is a bounded
+	// page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion.
 	var modelsOut []models.RefreshToken
-	if err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("RUNTIME_USER#%s#%s", username, clientID)).
-		All(&modelsOut); err != nil {
+	err := walkKeyedPages(
+		h.db.WithContext(ctx).Model(&models.RefreshToken{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("RUNTIME_USER#%s#%s", username, clientID)),
+		500, 100,
+		func(page []models.RefreshToken) (bool, error) {
+			modelsOut = append(modelsOut, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		if errors.IsNotFound(err) {
 			return []storage.RefreshToken{}, nil
 		}
@@ -712,11 +725,21 @@ func (h *OAuthHelper) ListRefreshTokensByUserClientGeneric(ctx context.Context, 
 // ListRefreshTokensByFamilyGeneric returns all generations in a refresh-token
 // family. Both standard OAuth and dedicated runtime refresh paths use GSI2.
 func (h *OAuthHelper) ListRefreshTokensByFamilyGeneric(ctx context.Context, familyID string) ([]storage.RefreshToken, error) {
+	// The whole keyed gsi2 partition must be read, so the read is a bounded
+	// page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion.
 	var modelsOut []models.RefreshToken
-	if err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", "RUNTIME_FAMILY#"+familyID).
-		All(&modelsOut); err != nil {
+	err := walkKeyedPages(
+		h.db.WithContext(ctx).Model(&models.RefreshToken{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "RUNTIME_FAMILY#"+familyID),
+		500, 100,
+		func(page []models.RefreshToken) (bool, error) {
+			modelsOut = append(modelsOut, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		if errors.IsNotFound(err) {
 			return []storage.RefreshToken{}, nil
 		}
@@ -728,11 +751,21 @@ func (h *OAuthHelper) ListRefreshTokensByFamilyGeneric(ctx context.Context, fami
 
 // ListRefreshTokensBySessionGeneric returns all refresh tokens for a runtime session.
 func (h *OAuthHelper) ListRefreshTokensBySessionGeneric(ctx context.Context, sessionID string) ([]storage.RefreshToken, error) {
+	// The whole keyed gsi3 partition must be read, so the read is a bounded
+	// page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion.
 	var modelsOut []models.RefreshToken
-	if err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", "RUNTIME_SESSION#"+sessionID).
-		All(&modelsOut); err != nil {
+	err := walkKeyedPages(
+		h.db.WithContext(ctx).Model(&models.RefreshToken{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", "RUNTIME_SESSION#"+sessionID),
+		500, 100,
+		func(page []models.RefreshToken) (bool, error) {
+			modelsOut = append(modelsOut, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		if errors.IsNotFound(err) {
 			return []storage.RefreshToken{}, nil
 		}

@@ -154,23 +154,6 @@ if err != nil {
 fmt.Printf("Found %d items ready for cleanup\n", len(oldItems))
 ```
 
-### Statistics
-
-Get soft delete statistics:
-
-```go
-stats, err := repo.GetSoftDeleteStats(ctx)
-if err != nil {
-    log.Fatal(err)
-}
-
-fmt.Printf("Total: %d, Active: %d, Deleted: %d (%.1f%%)\n",
-    stats.TotalItems,
-    stats.ActiveItems, 
-    stats.DeletedItems,
-    stats.GetDeletionPercentage())
-```
-
 ### Convenience Functions
 
 ```go
@@ -229,12 +212,11 @@ Comprehensive tests cover:
 - Repository operations (query, scan, get)
 - Filtering behavior
 - Cleanup operations
-- Statistics calculation
 - Error handling
 
 Run tests:
 ```bash
-go test ./pkg/storage/dynamorm/patterns/ -v
+go test ./pkg/storage/theorydb/patterns/ -v
 ```
 
 ## Best Practices
@@ -256,7 +238,7 @@ go test ./pkg/storage/dynamorm/patterns/ -v
 
 1. **Regular cleanup**: Schedule cleanup jobs to run weekly/monthly
 2. **Retention policy**: Define clear retention periods (30-90 days)
-3. **Monitoring**: Track soft delete statistics
+3. **Monitoring**: Track cleanup-job counts (rows examined / purged per run) in metrics
 4. **Backup**: Consider backing up before permanent deletion
 
 ### Performance Considerations

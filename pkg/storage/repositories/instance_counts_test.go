@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -89,55 +88,6 @@ func seedActivities(t *testing.T, ctx context.Context, db core.DB, n, daysCount 
 	}
 }
 
-// deleteAllUsers removes every user row (single-table scans can surface items
-// of other entity types; guard on the USER# key prefix so counters survive).
-func deleteAllUsers(t *testing.T, ctx context.Context, db core.DB) {
-	t.Helper()
-	var users []models.User
-	require.NoError(t, db.WithContext(ctx).Model(&models.User{}).All(&users))
-	for _, u := range users {
-		if !strings.HasPrefix(u.PK, "USER#") {
-			continue
-		}
-		require.NoError(t, db.WithContext(ctx).Model(&models.User{}).
-			Where("PK", "=", u.PK).
-			Where("SK", "=", u.SK).
-			Delete())
-	}
-}
-
-// deleteAllActors removes every actor row (guard on the ACTOR#/#PROFILE keys).
-func deleteAllActors(t *testing.T, ctx context.Context, db core.DB) {
-	t.Helper()
-	var actors []models.Actor
-	require.NoError(t, db.WithContext(ctx).Model(&models.Actor{}).All(&actors))
-	for _, a := range actors {
-		if !strings.HasPrefix(a.PK, "ACTOR#") || a.SK != "PROFILE" {
-			continue
-		}
-		require.NoError(t, db.WithContext(ctx).Model(&models.Actor{}).
-			Where("PK", "=", a.PK).
-			Where("SK", "=", a.SK).
-			Delete())
-	}
-}
-
-// deleteAllActivities removes every activity row (guard on the ACTIVITY# SK).
-func deleteAllActivities(t *testing.T, ctx context.Context, db core.DB) {
-	t.Helper()
-	var activities []models.Activity
-	require.NoError(t, db.WithContext(ctx).Model(&models.Activity{}).All(&activities))
-	for _, a := range activities {
-		if !strings.HasPrefix(a.SK, "ACTIVITY#") {
-			continue
-		}
-		require.NoError(t, db.WithContext(ctx).Model(&models.Activity{}).
-			Where("PK", "=", a.PK).
-			Where("SK", "=", a.SK).
-			Delete())
-	}
-}
-
 // seedTotalUsersMetric writes the TOTAL_USERS counter item directly.
 func seedTotalUsersMetric(t *testing.T, ctx context.Context, db core.DB, value int64) {
 	t.Helper()
@@ -198,10 +148,11 @@ func TestInstanceCounts_TotalUsers_CounterWinsOverRows(t *testing.T) {
 	require.Equal(t, 42, count)
 }
 
-// TestInstanceCounts_TotalUsers_LazySeedOnce pins the one-time lazy seed: the
-// first read computes the total from a scan and persists it; afterwards the
-// read never touches item bodies (deleting every row leaves the count intact).
-func TestInstanceCounts_TotalUsers_LazySeedOnce(t *testing.T) {
+// TestInstanceCounts_TotalUsers_UnseededReadsZero pins the scan-free read
+// doctrine: on an unseeded table (no counter item) the public read returns the
+// documented default (0) and never computes from a scan. The counter is seeded
+// off the request path (write-path maintenance + the offline recount).
+func TestInstanceCounts_TotalUsers_UnseededReadsZero(t *testing.T) {
 	ctx := context.Background()
 	db, _ := newInstanceCountsTestDB(t, &models.User{}, &models.InstanceMetrics{})
 
@@ -210,19 +161,14 @@ func TestInstanceCounts_TotalUsers_LazySeedOnce(t *testing.T) {
 	repo := NewTrendingRepository(db, zap.NewNop(), nil)
 	count, err := repo.GetTotalUserCount(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 500, count)
+	require.Zero(t, count)
 
-	// Counter now authoritative: removing every row must not change the read.
-	deleteAllUsers(t, ctx, db)
+	// Seeding the counter (as the write path / offline recount would) makes the
+	// read serve it.
+	seedTotalUsersMetric(t, ctx, db, 42)
 	count, err = repo.GetTotalUserCount(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 500, count)
-
-	// And the seed never runs twice.
-	seedUsers(t, ctx, db, 3)
-	count, err = repo.GetTotalUserCount(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 500, count)
+	require.Equal(t, 42, count)
 }
 
 // TestInstanceCounts_TotalUsers_Maintenance pins the write-path increment and
@@ -269,9 +215,10 @@ func TestInstanceCounts_Domains_CounterWinsOverRows(t *testing.T) {
 	require.Equal(t, 7, count)
 }
 
-// TestInstanceCounts_Domains_LazySeed pins the domain seed (distinct hosts of
-// actor records) and its one-time nature.
-func TestInstanceCounts_Domains_LazySeed(t *testing.T) {
+// TestInstanceCounts_Domains_UnseededReadsZero pins the scan-free read
+// doctrine for TOTAL_DOMAINS: unseeded reads return the documented default
+// (0); once the counter exists the read serves it.
+func TestInstanceCounts_Domains_UnseededReadsZero(t *testing.T) {
 	ctx := context.Background()
 	db, _ := newInstanceCountsTestDB(t, &models.Actor{}, &models.InstanceMetrics{})
 
@@ -280,12 +227,12 @@ func TestInstanceCounts_Domains_LazySeed(t *testing.T) {
 	repo := NewTrendingRepository(db, zap.NewNop(), nil)
 	count, err := repo.GetTotalDomainCount(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 2, count)
+	require.Zero(t, count)
 
-	deleteAllActors(t, ctx, db)
+	seedTotalDomainsMetric(t, ctx, db, 7)
 	count, err = repo.GetTotalDomainCount(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 2, count)
+	require.Equal(t, 7, count)
 }
 
 // TestInstanceCounts_Domains_Maintenance pins the per-domain tally and the
@@ -336,9 +283,11 @@ func TestInstanceCounts_ActiveMonth_CounterWinsOverRows(t *testing.T) {
 	require.Equal(t, 9, count)
 }
 
-// TestInstanceCounts_ActiveMonth_LazySeed pins the active-month backfill and
-// its one-time nature.
-func TestInstanceCounts_ActiveMonth_LazySeed(t *testing.T) {
+// TestInstanceCounts_ActiveMonth_UnseededReadsZero pins the scan-free read
+// doctrine for active_month: with no day counters the read returns the
+// documented default (0); the rollup is populated off the request path (write
+// path + offline recount).
+func TestInstanceCounts_ActiveMonth_UnseededReadsZero(t *testing.T) {
 	ctx := context.Background()
 	db, _ := newInstanceCountsTestDB(t, &models.Activity{}, &models.ActivityDayCounter{}, &models.InstanceMetrics{})
 
@@ -347,13 +296,13 @@ func TestInstanceCounts_ActiveMonth_LazySeed(t *testing.T) {
 	repo := NewTrendingRepository(db, zap.NewNop(), nil)
 	count, err := repo.GetActiveUserCount(ctx, 30)
 	require.NoError(t, err)
-	// 500 distinct actors across the window.
-	require.Equal(t, 500, count)
+	require.Zero(t, count)
 
-	deleteAllActivities(t, ctx, db)
+	// With day counters present the read sums them.
+	seedActiveMonthCounters(t, ctx, db, 9)
 	count, err = repo.GetActiveUserCount(ctx, 30)
 	require.NoError(t, err)
-	require.Equal(t, 500, count)
+	require.Equal(t, 9, count)
 }
 
 // TestInstanceCounts_ActiveMonth_RollupMaintenance pins the write-path rollup:

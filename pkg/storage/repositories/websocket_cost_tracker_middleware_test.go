@@ -184,6 +184,8 @@ func TestCheckBudgetIfRequired_BudgetBranches(t *testing.T) {
 		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
+		// queryBudgetsByGSI now always issues Limit(500) (wave #1469 floor).
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 		mockQuery.On("All", mock.AnythingOfType("*[]*models.WebSocketCostBudget")).Return(errors.New("db error"))
 
 		repo := &WebSocketCostRepository{

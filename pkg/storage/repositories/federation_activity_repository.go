@@ -57,14 +57,22 @@ func (r *FederationActivityRepository) RecordFederationActivity(ctx context.Cont
 
 // GetFederationActivity retrieves a federation activity by ID and domain using GSI
 func (r *FederationActivityRepository) GetFederationActivity(ctx context.Context, domain, id string) (*models.FederationActivity, error) {
-	var activities []*models.FederationActivity
-
-	// Query by domain partition and filter by ID
-	err := r.db.WithContext(ctx).Model(&models.FederationActivity{}).
-		Where("PK", "=", fmt.Sprintf("fed_activity#%s", domain)).
-		Where("SK", "begins_with", "activity#").
-		Filter("ID", "=", id).
-		All(&activities)
+	// Query by domain partition and filter by ID. The whole keyed
+	// fed_activity#<domain> partition must be read to find the matching ID, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion. The Filter applies per page.
+	var activities []models.FederationActivity
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FederationActivity{}).
+			Where("PK", "=", fmt.Sprintf("fed_activity#%s", domain)).
+			Where("SK", "begins_with", "activity#").
+			Filter("ID", "=", id),
+		500, 100,
+		func(page []models.FederationActivity) (bool, error) {
+			activities = append(activities, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, MapErrorWithContext(err, "failed to get federation activity")
@@ -74,7 +82,7 @@ func (r *FederationActivityRepository) GetFederationActivity(ctx context.Context
 		return nil, fmt.Errorf("%w: domain=%s, id=%s", ErrFederationActivityNotFound, domain, id)
 	}
 
-	return activities[0], nil
+	return &activities[0], nil
 }
 
 // ListByDomain lists federation activities for a specific domain - federation analytics logic preserved
@@ -88,8 +96,11 @@ func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain 
 	// Use BaseRepository's underlying db but preserve federation-specific query logic
 	query := r.db.WithContext(ctx).Model(&models.FederationActivity{}).
 		Where("PK", "=", fmt.Sprintf("fed_activity#%s", domain)).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
+		// The SK time window is ONE BETWEEN key condition (inclusive of both
+		// bounds, exactly the old >= / <= filter bounds): two range conditions
+		// on the same sort key would both compile into the KeyConditionExpression
+		// and be rejected by DynamoDB ("only one condition per key", issue #1500).
+		Where("SK", "BETWEEN", []any{startSK, endSK}).
 		OrderBy("SK", "DESC").
 		Limit(limit)
 
@@ -138,14 +149,21 @@ func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID 
 func (r *FederationActivityRepository) GetRecentActivities(ctx context.Context, since time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
-	// Use type index to get recent activities (preserve federation monitoring logic)
+	// Recent activities resolve through the GSI3 global listing
+	// (FED_ACTIVITY#ALL / <RFC3339 timestamp>#<domain>#<id>) maintained by
+	// FederationActivity.setupGSIKeys on every write (wave part 2 batch E,
+	// #1469). The previous gsi1 sort-key-only range was an index-wide scan;
+	// this binds the gsi3 partition key. Legacy activities written before the
+	// GSI3 shape carry no index keys and are not returned until next written
+	// (activities are TTL-transient, 90d).
 	startSK := since.Format(time.RFC3339)
 
 	// Use BaseRepository's underlying db but preserve federation-specific recent query logic
 	err := r.db.WithContext(ctx).Model(&models.FederationActivity{}).
-		Index("gsi1").
-		Where("gsi1SK", ">=", startSK).
-		OrderBy("gsi1SK", "DESC").
+		Index("gsi3").
+		Where("gsi3PK", "=", "FED_ACTIVITY#ALL").
+		Where("gsi3SK", ">=", startSK).
+		OrderBy("gsi3SK", "DESC").
 		Limit(limit).
 		All(&activities)
 

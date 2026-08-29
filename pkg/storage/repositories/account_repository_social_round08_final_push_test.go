@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
@@ -32,12 +33,12 @@ func TestRound08_AccountRepository_Social_FinalPush(t *testing.T) {
 	t.Run("GetPinnedAccounts skips actor lookup failures", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AccountPin")).Run(func(args mock.Arguments) {
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AccountPin")).Run(func(args mock.Arguments) {
 			dst := args.Get(0).(*[]models.AccountPin)
 			*dst = []models.AccountPin{
 				{Username: "alice", PinnedActorID: "https://example.com/users/bob", PinnedUsername: "bob", CreatedAt: baseTime},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		mockQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(errors.New("actor failed")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
@@ -50,7 +51,7 @@ func TestRound08_AccountRepository_Social_FinalPush(t *testing.T) {
 	t.Run("GetAccountPins error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]models.AccountPin")).Return(errors.New("all failed")).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.AccountPin")).Return(nil, errors.New("all failed")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))

@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
@@ -59,14 +60,14 @@ func TestRound08_RateLimitRepository_CorePaths(t *testing.T) {
 	t.Run("community note limits", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.CommunityNote")).Run(func(args mock.Arguments) {
-			dst := args.Get(0).(*[]*models.CommunityNote)
-			*dst = make([]*models.CommunityNote, 2)
-		}).Return(nil).Once()
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.CommunityNote")).Run(func(args mock.Arguments) {
-			dst := args.Get(0).(*[]*models.CommunityNote)
-			*dst = make([]*models.CommunityNote, 15)
-		}).Return(nil).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CommunityNote")).Run(func(args mock.Arguments) {
+			dst := args.Get(0).(*[]models.CommunityNote)
+			*dst = make([]models.CommunityNote, 2)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CommunityNote")).Run(func(args mock.Arguments) {
+			dst := args.Get(0).(*[]models.CommunityNote)
+			*dst = make([]models.CommunityNote, 15)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)
 

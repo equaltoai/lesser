@@ -384,7 +384,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 	t.Run("Trust graph storage error returns 500", func(t *testing.T) {
 		state := cloneState()
-		state.scanErrorOnce = errors.New("trust query failed")
+		state.allErrorByType = map[string]error{"*[]*models.TrustRelationship": errors.New("trust query failed")}
 		h := newHandler(t, state)
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/trust/graph", headers, nil, nil)

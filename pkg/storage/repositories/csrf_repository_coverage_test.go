@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -237,14 +238,15 @@ func TestCSRFRepository_GetUserActiveTokenCount_FiltersExpiredAndUsed(t *testing
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "USER_CSRF#user-1").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.CSRFToken)
 		*dest = []models.CSRFToken{
 			{Token: "a", Used: false, ExpiresAt: now + 60},
 			{Token: "b", Used: true, ExpiresAt: now + 60},
 			{Token: "c", Used: false, ExpiresAt: now - 60},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	count, err := repo.GetUserActiveTokenCount(ctx, "user-1")
 	require.NoError(t, err)
@@ -265,13 +267,14 @@ func TestCSRFRepository_CleanupUserTokens_ContinuesOnDeleteError(t *testing.T) {
 
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "USER_CSRF#user-1").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.CSRFToken)
 		*dest = []models.CSRFToken{
 			{PK: "CSRF#a", SK: models.SKToken, Token: "a", Used: true, ExpiresAt: now + 60},
 			{PK: "CSRF#b", SK: models.SKToken, Token: "b", Used: false, ExpiresAt: now - 60},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// First delete fails, second succeeds; cleanup continues.
 	mockQuery.On("Where", "PK", "=", "CSRF#a").Return(mockQuery).Twice()
@@ -304,7 +307,8 @@ func TestCSRFRepository_Store_TooManyTokensAfterCleanup(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Maybe()
 	mockQuery.On("Where", "gsi1PK", "=", "USER_CSRF#user-1").Return(mockQuery).Maybe()
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
 		allCalls++
 		dest := args.Get(0).(*[]models.CSRFToken)
 		switch allCalls {
@@ -316,7 +320,7 @@ func TestCSRFRepository_Store_TooManyTokensAfterCleanup(t *testing.T) {
 		default:
 			*dest = activeTokens
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil)
 
 	err := repo.Store(ctx, "tok-new", "user-1", time.Now().Add(5*time.Minute))
 	require.Error(t, err)
@@ -334,10 +338,11 @@ func TestCSRFRepository_Store_DuplicateTokenReturnsAlreadyExists(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "USER_CSRF#user-1").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.CSRFToken)
 		*dest = []models.CSRFToken{}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// 2) ValidateAndCreate fails (DB create error).
 	mockQuery.On("Create").Return(ErrTestMockError).Once()
@@ -377,10 +382,11 @@ func TestCSRFRepository_Store_Success_NoCleanup(t *testing.T) {
 
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "USER_CSRF#user-1").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.CSRFToken)
 		*dest = []models.CSRFToken{}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	mockQuery.On("Create").Return(nil).Once()
 
@@ -403,21 +409,22 @@ func TestCSRFRepository_Store_CleanupErrorStillStores(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 
 	// 1) Initial active token count >= 10.
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.CSRFToken)
 		*dest = activeTokens
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// 2) Cleanup query fails.
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Return(ErrTestMockError).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Return(nil, ErrTestMockError).Once()
 
 	// 3) Post-cleanup active token count below limit.
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.CSRFToken)
 		*dest = []models.CSRFToken{}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// 4) Store succeeds.
 	mockQuery.On("Create").Return(nil).Once()
@@ -438,10 +445,11 @@ func TestCSRFRepository_Store_CreateErrorNonDuplicate(t *testing.T) {
 	// Token count below limit.
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "USER_CSRF#user-1").Return(mockQuery).Once()
-	mockQuery.On("All", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CSRFToken")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.CSRFToken)
 		*dest = []models.CSRFToken{}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Create fails.
 	mockQuery.On("Create").Return(ErrTestMockError).Once()

@@ -2,13 +2,16 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -124,13 +127,12 @@ func TestInstanceCounts_Recount_RewritesCountersAndStaleItems(t *testing.T) {
 	require.Zero(t, result2.StaleDomainCounters)
 }
 
-// TestInstanceCounts_Recount_TrueUserCountVsLegacySeed pins the documented
-// semantic: the lazy seed reproduces the legacy whole-table scan count (on
-// this mixed fixture every item — 2 users + 6 actors = 8 — is counted), while
-// the recount writes the true USER#/METADATA account count. The recount is the
-// drift remedy for that divergence, and after it runs the seed path reads the
-// rewritten counter.
-func TestInstanceCounts_Recount_TrueUserCountVsLegacySeed(t *testing.T) {
+// TestInstanceCounts_Recount_UnseededReadsThenRecount pins the scan-free read
+// doctrine and the recount as the sanctioned seed: reads on an unseeded table
+// return the documented default (0); after the offline recount the reads serve
+// the recomputed counters. The recount also rewrites the true USER#/METADATA
+// account count (not a legacy whole-table item count).
+func TestInstanceCounts_Recount_UnseededReadsThenRecount(t *testing.T) {
 	ctx := context.Background()
 	db, _ := newInstanceCountsTestDB(t, &models.User{}, &models.Actor{}, &models.DomainCounter{}, &models.InstanceMetrics{})
 
@@ -138,27 +140,190 @@ func TestInstanceCounts_Recount_TrueUserCountVsLegacySeed(t *testing.T) {
 	seedUsers(t, ctx, db, 2)
 
 	repo := NewTrendingRepository(db, zap.NewNop(), nil)
-	// Legacy-preserving seed: whole-table item count (8), not the true count.
+	// Unseeded: reads return the documented default without scanning.
 	userCount, err := repo.GetTotalUserCount(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 8, userCount)
-	// Domain semantics agree (only real actor rows carry the actor attribute).
+	require.Zero(t, userCount)
 	domainCount, err := repo.GetTotalDomainCount(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 3, domainCount)
+	require.Zero(t, domainCount)
 
 	result, err := RecountInstanceCounts(ctx, db, zap.NewNop(), true)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, result.Users)
 	require.EqualValues(t, 3, result.Domains)
 
-	// The seed path now reads the rewritten counter.
+	// The reads now serve the recounted counters.
 	userCount, err = repo.GetTotalUserCount(ctx)
 	require.NoError(t, err)
 	domainCount, err = repo.GetTotalDomainCount(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 2, userCount)
 	require.Equal(t, 3, domainCount)
+}
+
+// recountActiveMonthFixtureDB builds a dataset with activity rows across two
+// days plus a drifted in-window day counter the recount must correct and a
+// stale in-window day counter the recount must remove.
+func recountActiveMonthFixtureDB(t *testing.T) core.DB {
+	t.Helper()
+	ctx := context.Background()
+	db, _ := newInstanceCountsTestDB(t, &models.Activity{}, &models.ActivityDayCounter{}, &models.ActivityActorDay{}, &models.InstanceMetrics{})
+
+	// seedActivities(5, 2): actors user-0..user-4 with days [0,1,0,1,0] ->
+	// 3 distinct actors today, 2 distinct actors yesterday.
+	seedActivities(t, ctx, db, 5, 2)
+
+	now := time.Now().UTC()
+
+	// Drifted counter for today: says 99, should be 3.
+	drifted := &models.ActivityDayCounter{Date: models.DayFormat(now), Value: 99, UpdatedAt: now}
+	require.NoError(t, drifted.UpdateKeys())
+	require.NoError(t, db.WithContext(ctx).Model(drifted).Create())
+
+	// Stale in-window counter: a day inside the retention window with no
+	// activity rows.
+	staleDay := models.DayFormat(now.AddDate(0, 0, -10))
+	stale := &models.ActivityDayCounter{Date: staleDay, Value: 5, UpdatedAt: now}
+	require.NoError(t, stale.UpdateKeys())
+	require.NoError(t, db.WithContext(ctx).Model(stale).Create())
+	return db
+}
+
+// TestInstanceCounts_Recount_ActiveMonth_DryRunReportsWithoutWriting pins that
+// the active-month recount reports the recomputed rollup and changes without
+// writing anything.
+func TestInstanceCounts_Recount_ActiveMonth_DryRunReportsWithoutWriting(t *testing.T) {
+	ctx := context.Background()
+	db := recountActiveMonthFixtureDB(t)
+
+	result, err := RecountInstanceCounts(ctx, db, zap.NewNop(), false)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, result.ActiveMonthDays)
+	require.EqualValues(t, 1, result.StaleActiveMonthDays)
+	require.EqualValues(t, 5, result.ActiveMonthSum)
+	require.False(t, result.ActiveMonthSeedMarker)
+
+	// Nothing written: the drifted counter is untouched and no marker exists.
+	now := time.Now().UTC()
+	var today models.ActivityDayCounter
+	require.NoError(t, db.WithContext(ctx).Model(&models.ActivityDayCounter{}).
+		Where("PK", "=", models.ActivityDayKey(models.DayFormat(now))).
+		Where("SK", "=", models.DayCounterSK).
+		First(&today))
+	require.EqualValues(t, 99, today.Value)
+
+	var marker models.InstanceMetrics
+	err = db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", models.InstanceMetricsPK).
+		Where("SK", "=", models.ActiveMonthSeedMetricSK).
+		First(&marker)
+	require.True(t, errors.IsNotFound(err), "seed marker must not be written in dry-run")
+}
+
+// TestInstanceCounts_Recount_ActiveMonth_RewritesRollupAndMarker pins that the
+// active-month recount rewrites the per-day rollup, removes stale in-window
+// counters, writes today's ActivityActorDay markers (so the write path does
+// not double-count a same-day reactivation), persists the SEED#ACTIVE_MONTH
+// marker, and that the reads then serve the recounted rollup.
+func TestInstanceCounts_Recount_ActiveMonth_RewritesRollupAndMarker(t *testing.T) {
+	ctx := context.Background()
+	db := recountActiveMonthFixtureDB(t)
+
+	result, err := RecountInstanceCounts(ctx, db, zap.NewNop(), true)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, result.ActiveMonthDays)
+	require.EqualValues(t, 1, result.StaleActiveMonthDays)
+	require.EqualValues(t, 5, result.ActiveMonthSum)
+	require.True(t, result.ActiveMonthSeedMarker)
+
+	now := time.Now().UTC()
+	var today models.ActivityDayCounter
+	require.NoError(t, db.WithContext(ctx).Model(&models.ActivityDayCounter{}).
+		Where("PK", "=", models.ActivityDayKey(models.DayFormat(now))).
+		Where("SK", "=", models.DayCounterSK).
+		First(&today))
+	require.EqualValues(t, 3, today.Value)
+
+	// Stale in-window counter removed.
+	var stale models.ActivityDayCounter
+	err = db.WithContext(ctx).Model(&models.ActivityDayCounter{}).
+		Where("PK", "=", models.ActivityDayKey(models.DayFormat(now.AddDate(0, 0, -10)))).
+		Where("SK", "=", models.DayCounterSK).
+		First(&stale)
+	require.True(t, errors.IsNotFound(err), "stale in-window day counter should be removed")
+
+	// Marker persisted.
+	var marker models.InstanceMetrics
+	require.NoError(t, db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", models.InstanceMetricsPK).
+		Where("SK", "=", models.ActiveMonthSeedMetricSK).
+		First(&marker))
+
+	// Today's actors have ActivityActorDay markers so a same-day reactivation
+	// after the recount does not double count.
+	var m models.ActivityActorDay
+	require.NoError(t, db.WithContext(ctx).Model(&models.ActivityActorDay{}).
+		Where("PK", "=", "ACTIVITY_ACTOR#https://example.com/users/user-0").
+		Where("SK", "=", "DAY#"+models.DayFormat(now)).
+		First(&m))
+
+	// Reads serve the recounted rollup.
+	repo := NewTrendingRepository(db, zap.NewNop(), nil)
+	count, err := repo.GetActiveUserCount(ctx, 30)
+	require.NoError(t, err)
+	require.Equal(t, 5, count)
+}
+
+// TestInstanceCounts_Recount_ActiveMonth_WritePathNoDoubleCount pins the
+// interplay between the recount and the write path: after the recount, a
+// same-day re-activation of an already-counted actor must not bump the counter
+// again (marker present), while a new actor's first activity still counts.
+func TestInstanceCounts_Recount_ActiveMonth_WritePathNoDoubleCount(t *testing.T) {
+	ctx := context.Background()
+	db := recountActiveMonthFixtureDB(t)
+
+	_, err := RecountInstanceCounts(ctx, db, zap.NewNop(), true)
+	require.NoError(t, err)
+
+	logger := zap.NewNop()
+	now := time.Now().UTC()
+	today := models.DayFormat(now)
+
+	// Re-activation of an actor counted by the recount: no bump.
+	recordActivityActorDay(ctx, db, logger, "https://example.com/users/user-0", today)
+	// A new actor's first activity: bump.
+	recordActivityActorDay(ctx, db, logger, "https://example.com/users/new-user", today)
+
+	count, err := readActiveMonthCount(ctx, db, logger, 30)
+	require.NoError(t, err)
+	require.Equal(t, 6, count) // 3 (today) + 2 (yesterday) + 1 (new actor)
+}
+
+// TestInstanceCounts_Recount_ActiveMonthScanErrorPropagates pins that a failed
+// active-month projection aborts the recount loudly.
+func TestInstanceCounts_Recount_ActiveMonthScanErrorPropagates(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	// Select arities used by the recount projections: (PK,SK), (PK,SK,Actor),
+	// (PK,SK,Activity,CreatedAt).
+	mockQuery.On("Select", mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("Select", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("Select", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	// The Activity projection fails; the earlier projections succeed empty.
+	mockQuery.On("All", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*[]models.Activity)
+		return ok
+	})).Return(fmt.Errorf("activity scan failed")).Once()
+	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+
+	_, err := RecountInstanceCounts(ctx, mockDB, zap.NewNop(), false)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "activity scan failed")
 }
 
 // TestInstanceCounts_Recount_ScanErrorsPropagate pins error propagation on the

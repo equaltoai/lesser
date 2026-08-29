@@ -25,6 +25,10 @@ type EnhancedModerationPattern struct {
 	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk,omitempty"` // "PATTERN_METRICS#{category}"
 	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk,omitempty"` // "{effectiveness}#{match_count}#{pattern_id}"
 
+	// GSI4 - Global pattern listing (statistics / cleanup scans)
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"gsi4_pk,omitempty"` // "ENHANCED_PATTERNS#ALL"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"gsi4_sk,omitempty"` // "{updated_at}#{pattern_id}"
+
 	// Type marker
 	Type string `theorydb:"attr:type" json:"type"` // "ENHANCED_PATTERN"
 
@@ -115,6 +119,10 @@ func (p *EnhancedModerationPattern) UpdateKeys() error {
 	p.GSI3PK = fmt.Sprintf("PATTERN_METRICS#%s", p.Category)
 	matchCountStr := fmt.Sprintf("%010d", p.MatchCount)
 	p.GSI3SK = fmt.Sprintf("%06.3f#%s#%s", p.Effectiveness, matchCountStr, p.PatternID)
+
+	// GSI4 - Global pattern listing
+	p.GSI4PK = "ENHANCED_PATTERNS#ALL"
+	p.GSI4SK = fmt.Sprintf("%s#%s", p.UpdatedAt.Format(time.RFC3339), p.PatternID)
 
 	// Set type marker
 	p.Type = "ENHANCED_PATTERN"

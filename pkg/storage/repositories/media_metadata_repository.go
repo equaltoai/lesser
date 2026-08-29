@@ -89,17 +89,21 @@ func (r *MediaMetadataRepository) GetMediaMetadataByStatus(ctx context.Context, 
 		zap.String("status", status),
 		zap.Int("limit", limit))
 
+	// Floor the page size (wave #1469): a limit <= 0 previously skipped Limit
+	// entirely — an unbounded keyed gsi1 read.
+	if limit <= 0 {
+		limit = 500
+	}
+
 	// Use BaseRepository's GetDB() for complex GSI queries that BaseRepository doesn't directly support
 	var metadataList []*models.MediaMetadata
 	query := r.GetDB().WithContext(ctx).Model(&models.MediaMetadata{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("STATUS#%s", status))
 
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
+	query = query.Limit(limit)
 
-	err := query.Scan(&metadataList)
+	err := query.All(&metadataList)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMediaMetadataStatusQueryFailed, err)
 	}
@@ -245,7 +249,7 @@ func (r *MediaMetadataRepository) CleanupExpiredMetadata(ctx context.Context) er
 		Where("gsi1PK", "=", "STATUS#failed").
 		Where("gsi1SK", "<", fmt.Sprintf("PROCESSED#%s", cutoffTime.Format(time.RFC3339))).
 		Limit(100). // Process in batches
-		Scan(&expiredMetadata)
+		All(&expiredMetadata)
 
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrExpiredMediaMetadataQueryFailed, err)

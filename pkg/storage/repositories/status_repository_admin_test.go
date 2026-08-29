@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -193,7 +194,12 @@ func TestCountStatusesForAdmin(t *testing.T) {
 				mockQuery.On("Index", "gsi8").Return(mockQuery)
 				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
-				mockQuery.On("Count").Return(int64(100), nil)
+				// Page-capped walk (wave #1469): count = walked rows.
+				mockQuery.On("Limit", 500).Return(mockQuery)
+				mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+					out := args.Get(0).(*[]models.Status)
+					*out = make([]models.Status, 100)
+				}).Return(&core.PaginatedResult{}, nil)
 			},
 			expectedCount: 100,
 		},
@@ -209,7 +215,11 @@ func TestCountStatusesForAdmin(t *testing.T) {
 				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "Flagged", "=", true).Return(mockQuery)
-				mockQuery.On("Count").Return(int64(15), nil)
+				mockQuery.On("Limit", 500).Return(mockQuery)
+				mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+					out := args.Get(0).(*[]models.Status)
+					*out = make([]models.Status, 15)
+				}).Return(&core.PaginatedResult{}, nil)
 			},
 			expectedCount: 15,
 		},
@@ -227,7 +237,11 @@ func TestCountStatusesForAdmin(t *testing.T) {
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "Visibility", "=", "public").Return(mockQuery)
 				mockQuery.On("Filter", "MediaCount", ">", 0).Return(mockQuery)
-				mockQuery.On("Count").Return(int64(42), nil)
+				mockQuery.On("Limit", 500).Return(mockQuery)
+				mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+					out := args.Get(0).(*[]models.Status)
+					*out = make([]models.Status, 42)
+				}).Return(&core.PaginatedResult{}, nil)
 			},
 			expectedCount: 42,
 		},

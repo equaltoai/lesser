@@ -33,7 +33,10 @@ func TestMediaMetadataRepository_GetMediaMetadataByStatus_TracksCost(t *testing.
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaMetadata")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "STATUS#pending").Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
+	// limit=0 previously skipped Limit entirely (degenerate-input class, wave
+	// #1469); the floor now always issues Limit(500).
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{} // Empty result triggers estimatedRU==0 branch.
 	}).Return(nil).Once()
@@ -66,7 +69,7 @@ func TestMediaMetadataRepository_CleanupExpiredMetadata_TracksCost(t *testing.T)
 	mockQuery.On("Where", "gsi1SK", "<", mock.AnythingOfType("string")).Return(mockQuery)
 	mockQuery.On("Limit", 100).Return(mockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaMetadata")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaMetadata)
 		*records = []*models.MediaMetadata{{MediaID: "expired-1", Status: "failed"}}
 	}).Return(nil).Once()

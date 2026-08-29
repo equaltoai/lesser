@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -166,10 +167,10 @@ func TestFederationRepository_GetDomainHealthScore_NoRecentDataReturnsNeutral(t 
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationAnalyticsTimeSeries")).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.FederationAnalyticsTimeSeries")).Run(func(args mock.Arguments) {
 		target := args.Get(0).(*[]models.FederationAnalyticsTimeSeries)
 		*target = []models.FederationAnalyticsTimeSeries{}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
@@ -186,10 +187,10 @@ func TestFederationRepository_AggregateFederationMetrics_NoData(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationAnalyticsTimeSeries")).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.FederationAnalyticsTimeSeries")).Run(func(args mock.Arguments) {
 		target := args.Get(0).(*[]models.FederationAnalyticsTimeSeries)
 		*target = []models.FederationAnalyticsTimeSeries{}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
@@ -511,7 +512,7 @@ func TestFederationRepository_GetFederationNodes_ScanError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.Anything).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -526,7 +527,7 @@ func TestFederationRepository_GetFederationStatistics_ScanError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.Anything).Return(ErrTestMockError).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -541,7 +542,7 @@ func TestFederationRepository_GetInstanceStats_ActivityQueryErrorStillReturnsSta
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationCostActivity")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationCostActivity")).Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -621,7 +622,7 @@ func TestFederationRepository_FetchEdgePageWithCursor_CursorAndEmptyResultBranch
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationEdge")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.FederationEdge")).Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.FederationEdge)
 			*target = []models.FederationEdge{}
 		}).Return(nil).Once()
@@ -652,7 +653,7 @@ func TestFederationRepository_GetFederationActivitiesByTimeRange_ErrorOnDayStops
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationCostActivity")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationCostActivity")).Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -682,7 +683,7 @@ func TestFederationRepository_GetAllFederationEdges_EmptyResultStops(t *testing.
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationEdge")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationEdge")).Run(func(args mock.Arguments) {
 		target := args.Get(0).(*[]models.FederationEdge)
 		*target = []models.FederationEdge{}
 	}).Return(nil).Once()
@@ -701,7 +702,7 @@ func TestFederationRepository_GetAllFederationEdges_QueryError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationEdge")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationEdge")).Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -717,7 +718,7 @@ func TestFederationRepository_GetInstanceHealthReport_AdditionalBranches(t *test
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationCostActivity")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.FederationCostActivity")).Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.FederationCostActivity)
 			activities := make([]models.FederationCostActivity, 15)
 			for i := range activities {
@@ -738,7 +739,7 @@ func TestFederationRepository_GetInstanceHealthReport_AdditionalBranches(t *test
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationCostActivity")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.FederationCostActivity")).Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.FederationCostActivity)
 			*target = []models.FederationCostActivity{
 				{Success: true, ResponseTime: 6001},
@@ -757,7 +758,7 @@ func TestFederationRepository_GetInstanceHealthReport_AdditionalBranches(t *test
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationCostActivity")).Return(ErrTestMockError).Once()
+		mockQuery.On("All", mock.AnythingOfType("*[]models.FederationCostActivity")).Return(ErrTestMockError).Once()
 		setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -853,7 +854,7 @@ func TestFederationRepository_ListFailedDeliveries_ScanError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.DeliveryStatus")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.DeliveryStatus")).Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -898,7 +899,7 @@ func TestFederationRepository_GetOutboxItems_ScanError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.OutboxItem")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.OutboxItem")).Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -913,7 +914,7 @@ func TestFederationRepository_GetFederationCostsByUser_ScanError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationCost")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationCost")).Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})
@@ -928,7 +929,7 @@ func TestFederationRepository_GetFederationNodesByHealth_ScanError(t *testing.T)
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	mockQuery.On("Scan", mock.AnythingOfType("*[]models.FederationNode")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.FederationNode")).Return(ErrTestMockError).Once()
 	setupPermissiveFederationRepoMocks(mockDB, mockQuery, baseTime)
 
 	repo := NewFederationRepository(mockDB, "test-table", zap.NewNop(), nil, &appConfig.Config{})

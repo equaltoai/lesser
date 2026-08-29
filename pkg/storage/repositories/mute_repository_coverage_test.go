@@ -7,6 +7,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -173,14 +174,15 @@ func TestMuteRepository_GetMute_Counts(t *testing.T) {
 	_, err = repo.GetMute(ctx, "https://example.com/users/alice", "https://example.com/users/bob")
 	require.Error(t, err)
 
-	// CountMutedUsers error path.
-	mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
+	// CountMutedUsers error path (r.Count walks the keyed partition).
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Mute")).Return(nil, ErrTestMockError).Once()
 	_, err = repo.CountMutedUsers(ctx, "https://example.com/users/alice")
 	require.Error(t, err)
 
-	// CountUsersWhoMuted error path.
+	// CountUsersWhoMuted error path (gsi1 walk).
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
-	mockQuery.On("Count").Return(int64(0), ErrTestMockError).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Mute")).Return(nil, ErrTestMockError).Once()
 	_, err = repo.CountUsersWhoMuted(ctx, "https://example.com/users/bob")
 	require.Error(t, err)
 }
@@ -196,14 +198,21 @@ func TestMuteRepository_Counts_Success(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 
-	mockQuery.On("Count").Return(int64(3), nil).Once()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Mute")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.Mute)
+		*dest = []*models.Mute{{ID: "m1"}, {ID: "m2"}, {ID: "m3"}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	count, err := repo.CountMutedUsers(ctx, "https://example.com/users/alice")
 	require.NoError(t, err)
 	require.Equal(t, 3, count)
 
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 	mockQuery.On("Where", "gsi1PK", "=", "MUTED#bob").Return(mockQuery).Once()
-	mockQuery.On("Count").Return(int64(2), nil).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Mute")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Mute)
+		*dest = []models.Mute{{ID: "m1"}, {ID: "m2"}}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	count, err = repo.CountUsersWhoMuted(ctx, "https://example.com/users/bob")
 	require.NoError(t, err)
 	require.Equal(t, 2, count)

@@ -137,32 +137,3 @@ func TestUserRepository_RecordTrustUpdate_GeneratesEventIDAndStores(t *testing.T
 	assert.NotEmpty(t, update.EventID)
 	assert.False(t, update.Timestamp.IsZero())
 }
-
-func TestUserRepository_GetAllTrustRelationships_ScansAndConverts(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewUserRepository(mockDB, "test-table", zap.NewNop())
-
-	mockDB.On("Model", mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.TrustRelationship)
-		*dest = []*models.TrustRelationship{
-			{
-				ID:         "trust_1",
-				TrusterID:  "a",
-				TrusteeID:  "b",
-				Category:   models.TrustCategoryGeneral,
-				Score:      0.5,
-				Confidence: 0.9,
-				Type:       "RELATIONSHIP",
-			},
-		}
-	}).Return(nil)
-
-	rels, err := repo.GetAllTrustRelationships(context.Background(), 10)
-	assert.NoError(t, err)
-	assert.Len(t, rels, 1)
-	assert.Equal(t, "trust_1", rels[0].ID)
-}

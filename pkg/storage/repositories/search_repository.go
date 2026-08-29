@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"math"
 	"sort"
@@ -20,6 +21,28 @@ import (
 )
 
 // Remove duplicate constants - they are defined in constants.go
+
+// Search page-size clamps (wave #1469 BOUNDED-QUERY class): caller-supplied
+// limits are normalized so the compiled Limit is always > 0 — tabletheory
+// v3.0.6 compiles Limit(n) with n <= 0 to NO limit, an unbounded keyed
+// partition read. The search API sites clamp to default 20 / hard max 100;
+// the internal account-search strategy fetch windows floor 0/negative to the
+// default (a max would narrow the limit+offset pagination window).
+const (
+	searchDefaultLimit = 20
+	searchMaxLimit     = 100
+)
+
+// clampSearchLimit normalizes a caller-supplied search page size.
+func clampSearchLimit(limit int) int {
+	if limit <= 0 {
+		return searchDefaultLimit
+	}
+	if limit > searchMaxLimit {
+		return searchMaxLimit
+	}
+	return limit
+}
 
 // SearchRepositoryDeps interface for dependencies - implemented by the storage adapter
 type SearchRepositoryDeps interface {
@@ -247,11 +270,18 @@ func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query strin
 	prefixKey := query[:2]
 	var prefixMatches []models.Actor
 
+	// Floor the fetch window (wave #1469): a limit+offset <= 0 previously
+	// compiled Limit(<=0) — no limit — an unbounded keyed GSI1 read.
+	fetchWindow := limit + offset
+	if fetchWindow <= 0 {
+		fetchWindow = searchDefaultLimit
+	}
+
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USERNAME_SEARCH#%s", prefixKey)).
 		Where("gsi1SK", "BEGINS_WITH", query).
-		Limit(limit + offset).
+		Limit(fetchWindow).
 		All(&prefixMatches)
 
 	if err != nil {
@@ -291,6 +321,12 @@ func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, 
 
 	displayNameKey := query[:2]
 	var displayNameMatches []models.Actor
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI2 read.
+	if limit <= 0 {
+		limit = searchDefaultLimit
+	}
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("gsi2").
@@ -1239,6 +1275,10 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 		return []*storage.Hashtag{}, nil
 	}
 
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI1 read.
+	limit = clampSearchLimit(limit)
+
 	// Search hashtags using GSI
 	var hashtags []models.Hashtag
 	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
@@ -1304,16 +1344,29 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 	// Query the hashtag search index with cursor-aware pagination
 	var hashtags []models.Hashtag
 
-	// Build query with proper cursor handling
+	// Build query with proper cursor handling. One gsi3SK key condition
+	// (issue #1500): BEGINS_WITH on the first page; with a cursor key the
+	// exclusive `>` bound and demote BEGINS_WITH to a post-read
+	// FilterExpression.
+	//
+	// NO upper sentinel is applied to this cursor page: the gsi3SK block is
+	// the raw lowercased hashtag name (Hashtag.UpdateKeys), whose writer
+	// alphabet is `[\p{L}\p{N}_]+` — Unicode letters and numbers are allowed,
+	// so block members can carry UTF-8 bytes above 0x7E (e.g. "café" sorts
+	// ABOVE the ASCII sentinel "caf~"). No static sentinel can close this key
+	// range without excluding valid block members, so the range stays open
+	// above the cursor and the amplification is bounded by the 2-char
+	// HASHTAG_SEARCH partition itself. See the batch-1505 compile-pin header.
 	hashtagQuery := r.db.WithContext(ctx).Model(&models.Hashtag{}).
 		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("HASHTAG_SEARCH#%s", normalizedQuery[:2])).
-		Where("gsi3SK", "BEGINS_WITH", normalizedQuery).
 		OrderBy("gsi3SK", "ASC")
 
 	// Resume from the last returned GSI value when a cursor is provided
 	if cursorData.LastID != "" {
-		hashtagQuery = hashtagQuery.Where("gsi3SK", ">", cursorData.LastID)
+		hashtagQuery = hashtagQuery.Where("gsi3SK", ">", cursorData.LastID).Filter("gsi3SK", "BEGINS_WITH", normalizedQuery)
+	} else {
+		hashtagQuery = hashtagQuery.Where("gsi3SK", "BEGINS_WITH", normalizedQuery)
 	}
 
 	// Execute query with limit + 1 to check for more results
@@ -1522,6 +1575,10 @@ func (r *SearchRepository) GetSearchSuggestions(ctx context.Context, prefix stri
 	suggestions := make([]*models.SearchSuggestion, 0)
 	seen := make(map[string]bool)
 
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read per type.
+	limit = clampSearchLimit(limit)
+
 	// Search different suggestion types concurrently
 	sugTypes := []string{"username", "hashtag", "display_name"}
 
@@ -1606,41 +1663,6 @@ func (r *SearchRepository) IncrementSuggestionUse(ctx context.Context, suggestio
 	return r.Update(ctx, suggestion)
 }
 
-// PruneOldSuggestions removes suggestions older than the specified time
-func (r *SearchRepository) PruneOldSuggestions(ctx context.Context, olderThan time.Time) error {
-	// Query old suggestions
-	var oldSuggestions []models.SearchSuggestion
-
-	err := r.db.WithContext(ctx).Model(&models.SearchSuggestion{}).
-		Filter("last_used", "<", olderThan).
-		All(&oldSuggestions)
-
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, "search suggestion", "pruning query")
-	}
-
-	// Delete in batches
-	for _, suggestion := range oldSuggestions {
-		err = r.db.WithContext(ctx).Model(&models.SearchSuggestion{}).
-			Where("PK", "=", suggestion.PK).
-			Where("SK", "=", suggestion.SK).
-			Delete()
-
-		if err != nil {
-			r.logger.Error("failed to delete old suggestion",
-				zap.String("pk", suggestion.PK),
-				zap.String("sk", suggestion.SK),
-				zap.Error(err))
-		}
-	}
-
-	r.logger.Info("pruned old search suggestions",
-		zap.Time("older_than", olderThan),
-		zap.Int("count", len(oldSuggestions)))
-
-	return nil
-}
-
 // Status Search Methods
 
 // IndexStatus indexes a status for search
@@ -1666,105 +1688,14 @@ func (r *SearchRepository) IndexStatus(_ context.Context, status *models.Object)
 	return nil
 }
 
-// UnindexStatus removes a status from search indexes
-func (r *SearchRepository) UnindexStatus(ctx context.Context, statusID string) error {
-	r.logger.Debug("removing status from search indexes",
-		zap.String("status_id", statusID))
-
-	// Remove any search embeddings for this status
-	var embeddings []models.SearchEmbedding
-	err := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
-		Where("PK", "=", fmt.Sprintf("EMBEDDING#STATUS#%s", statusID)).
-		All(&embeddings)
-
-	if err != nil && !errors.IsNotFound(err) {
-		return ErrorHandler.HandleQueryError(err, "search embedding", "deletion query")
-	}
-
-	// Delete embeddings in batch if they exist
-	if common.ValidateSliceNotEmpty("embeddings", embeddings) == nil {
-		keys := make([]any, len(embeddings))
-		for i, embedding := range embeddings {
-			keys[i] = &models.SearchEmbedding{
-				PK: embedding.PK,
-				SK: embedding.SK,
-			}
-		}
-
-		err = r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).BatchDelete(keys)
-		if err != nil {
-			return ErrorHandler.HandleDeleteError(err, "search embedding", "batch delete")
-		}
-
-		r.logger.Debug("removed embeddings for status",
-			zap.String("status_id", statusID),
-			zap.Int("embedding_count", len(embeddings)))
-	}
-
-	// Remove from trending if present
-	trendingRecord := &models.TrendingStatus{
-		PK: fmt.Sprintf("TRENDING#STATUS#%s", statusID),
-		SK: "TRENDING",
-	}
-
-	err = r.db.WithContext(ctx).Model(trendingRecord).Delete()
-	if err != nil && !errors.IsNotFound(err) {
-		// Log but don't fail - trending removal is not critical
-		r.logger.Warn("failed to remove status from trending",
-			zap.String("status_id", statusID),
-			zap.Error(err))
-	}
-
-	// Remove from search cache entries that reference this status
-	var cacheEntries []models.SearchCache
-	err = r.db.WithContext(ctx).Model(&models.SearchCache{}).
-		Filter("StatusIDs", "contains", statusID).
-		Limit(50). // Limit cache cleanup
-		All(&cacheEntries)
-
-	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Warn("failed to query search cache for cleanup",
-			zap.String("status_id", statusID),
-			zap.Error(err))
-	} else if common.ValidateSliceNotEmpty("cacheEntries", cacheEntries) == nil {
-		// Update cache entries to remove this status ID
-		for _, cacheEntry := range cacheEntries {
-			// Remove statusID from the Results array
-			if statusIDs, ok := cacheEntry.Results["status_ids"].([]string); ok {
-				updatedIDs := make([]string, 0)
-				for _, id := range statusIDs {
-					if id != statusID {
-						updatedIDs = append(updatedIDs, id)
-					}
-				}
-				cacheEntry.Results["status_ids"] = updatedIDs
-				cacheEntry.Results["updated_at"] = time.Now()
-			}
-
-			// Update the cache entry
-			err = r.db.WithContext(ctx).Model(&cacheEntry).Update()
-			if err != nil {
-				r.logger.Warn("failed to update search cache entry",
-					zap.String("cache_key", cacheEntry.PK),
-					zap.Error(err))
-			}
-		}
-
-		r.logger.Debug("updated search cache entries",
-			zap.String("status_id", statusID),
-			zap.Int("cache_entries", len(cacheEntries)))
-	}
-
-	r.logger.Info("successfully removed status from search indexes",
-		zap.String("status_id", statusID))
-
-	return nil
-}
-
 // SearchStatusesByHashtag searches for statuses containing a specific hashtag using efficient indexing
 func (r *SearchRepository) SearchStatusesByHashtag(ctx context.Context, hashtag string, limit int) ([]*storage.StatusSearchResult, error) {
 	normalizedHashtag := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 	results := make([]*storage.StatusSearchResult, 0)
+
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read.
+	limit = clampSearchLimit(limit)
 
 	// Use the new HashtagStatusIndex for efficient hashtag timeline queries
 	var hashtagIndex []models.HashtagStatusIndex
@@ -1812,6 +1743,10 @@ func (r *SearchRepository) SearchStatusesByHashtag(ctx context.Context, hashtag 
 // SearchStatusesByAuthor searches for statuses by a specific author
 func (r *SearchRepository) SearchStatusesByAuthor(ctx context.Context, authorID string, limit int) ([]*storage.StatusSearchResult, error) {
 	results := make([]*storage.StatusSearchResult, 0)
+
+	// Clamp the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed GSI1 read.
+	limit = clampSearchLimit(limit)
 
 	// Query statuses by author using GSI1 (AUTHOR#{author_id})
 	var statuses []models.Status
@@ -1969,11 +1904,26 @@ func (r *SearchRepository) GetSearchAnalytics(ctx context.Context, startDate, en
 		dateStr := current.Format(common.DateFormat)
 		var dayAnalytics []models.SearchAnalytics
 
-		err := r.db.WithContext(ctx).Model(&models.SearchAnalytics{}).
-			Where("PK", "=", fmt.Sprintf("SEARCH_LOG#%s", dateStr)).
-			All(&dayAnalytics)
+		// Each day is a keyed SEARCH_LOG#<date> partition; the whole partition
+		// must be read, so the read is a bounded page walk (wave #1469):
+		// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+		err := walkKeyedPages(
+			r.db.WithContext(ctx).Model(&models.SearchAnalytics{}).
+				Where("PK", "=", fmt.Sprintf("SEARCH_LOG#%s", dateStr)),
+			500, 100,
+			func(page []models.SearchAnalytics) (bool, error) {
+				dayAnalytics = append(dayAnalytics, page...)
+				return false, nil
+			},
+		)
 
 		if err != nil {
+			// Cap exhaustion must fail closed (wave #1469): never degrade a
+			// truncated partition read into a partial analytics set. Other
+			// (transient) errors keep the skip-this-day behavior.
+			if stdErrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Warn("failed to get analytics for date",
 				zap.String("date", dateStr),
 				zap.Error(err))

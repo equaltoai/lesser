@@ -524,12 +524,23 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 func (r *RelationshipRepository) CountFollowers(ctx context.Context, username string) (int, error) {
 	username = r.canonicalRelationshipIdentifier(username)
 	// Note: This uses GSI and filter, so we keep the custom implementation
-	// BaseRepository doesn't have a method for filtered counts on GSI
-	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
-		Filter("State", "=", models.RelationshipAccepted).
-		Count()
+	// BaseRepository doesn't have a method for filtered counts on GSI — the
+	// whole keyed FOLLOW#<user> gsi1 partition must be read to count every
+	// accepted follower, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The State filter
+	// stays on the chain and applies per page.
+	var relationshipModels []models.RelationshipRecord
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
+			Filter("State", "=", models.RelationshipAccepted),
+		500, 100,
+		func(page []models.RelationshipRecord) (bool, error) {
+			relationshipModels = append(relationshipModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count followers",
@@ -538,18 +549,29 @@ func (r *RelationshipRepository) CountFollowers(ctx context.Context, username st
 		return 0, ErrorHandler.HandleQueryError(err, EntityFollow, "count followers")
 	}
 
-	return int(count), nil
+	return len(relationshipModels), nil
 }
 
 // CountFollowing returns the number of users that a user is following
 func (r *RelationshipRepository) CountFollowing(ctx context.Context, username string) (int, error) {
 	username = r.canonicalRelationshipIdentifier(username)
 	// Note: This uses filter, so we keep the custom implementation
-	// BaseRepository doesn't have a method for filtered counts
-	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
-		Filter("State", "=", models.RelationshipAccepted).
-		Count()
+	// BaseRepository doesn't have a method for filtered counts — the whole keyed
+	// FOLLOW#<user> partition must be read to count every accepted following, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion. The State filter stays on the chain and
+	// applies per page.
+	var relationshipModels []models.RelationshipRecord
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+			Where("PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
+			Filter("State", "=", models.RelationshipAccepted),
+		500, 100,
+		func(page []models.RelationshipRecord) (bool, error) {
+			relationshipModels = append(relationshipModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count following",
@@ -558,7 +580,7 @@ func (r *RelationshipRepository) CountFollowing(ctx context.Context, username st
 		return 0, ErrorHandler.HandleQueryError(err, EntityFollow, "count following")
 	}
 
-	return int(count), nil
+	return len(relationshipModels), nil
 }
 
 // GetFollowerCount returns the number of followers for a user (interface method)
@@ -591,12 +613,24 @@ func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context,
 	followingKey := fmt.Sprintf("FOLLOWING_DOMAIN#%s", domain)
 
 	// Count followers: remote users from this domain following local users
-	// Uses GSI2: FOLLOWER_DOMAIN#{domain} → FOLLOWING#{username}
-	followerCount, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", followerKey).
-		Filter("State", "=", models.RelationshipAccepted).
-		Count()
+	// Uses GSI2: FOLLOWER_DOMAIN#{domain} → FOLLOWING#{username} — the whole
+	// keyed gsi2 partition must be read to count every accepted relationship, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion. The State filter stays on the chain and
+	// applies per page.
+	var followerModels []models.RelationshipRecord
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", followerKey).
+			Filter("State", "=", models.RelationshipAccepted),
+		500, 100,
+		func(page []models.RelationshipRecord) (bool, error) {
+			followerModels = append(followerModels, page...)
+			return false, nil
+		},
+	)
+	followerCount := len(followerModels)
 
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("failed to count followers by domain",
@@ -606,12 +640,24 @@ func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context,
 	}
 
 	// Count following: local users following remote users from this domain
-	// Uses GSI3: FOLLOWING_DOMAIN#{domain} → FOLLOWER#{username}
-	followingCount, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Index("gsi3").
-		Where("gsi3PK", "=", followingKey).
-		Filter("State", "=", models.RelationshipAccepted).
-		Count()
+	// Uses GSI3: FOLLOWING_DOMAIN#{domain} → FOLLOWER#{username} — the whole
+	// keyed gsi3 partition must be read to count every accepted relationship, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion. The State filter stays on the chain and
+	// applies per page.
+	var followingModels []models.RelationshipRecord
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", followingKey).
+			Filter("State", "=", models.RelationshipAccepted),
+		500, 100,
+		func(page []models.RelationshipRecord) (bool, error) {
+			followingModels = append(followingModels, page...)
+			return false, nil
+		},
+	)
+	followingCount := len(followingModels)
 
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("failed to count following by domain",
@@ -622,10 +668,10 @@ func (r *RelationshipRepository) CountRelationshipsByDomain(ctx context.Context,
 
 	r.logger.Info("counted relationships by domain (GSI query)",
 		zap.String("domain", domain),
-		zap.Int("followers", int(followerCount)),
-		zap.Int("following", int(followingCount)))
+		zap.Int("followers", followerCount),
+		zap.Int("following", followingCount))
 
-	return int(followerCount), int(followingCount), nil
+	return followerCount, followingCount, nil
 }
 
 // UpdateRelationship updates relationship settings using enhanced validation and events
@@ -1331,9 +1377,19 @@ func (r *RelationshipRepository) IsInCollection(ctx context.Context, collection,
 
 // CountCollectionItems returns the count of items in a collection
 func (r *RelationshipRepository) CountCollectionItems(ctx context.Context, collection string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.CollectionItem{}).
-		Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)).
-		Count()
+	// The whole keyed COLLECTION#<name> partition must be read to count every
+	// item, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	var itemModels []models.CollectionItem
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.CollectionItem{}).
+			Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)),
+		500, 100,
+		func(page []models.CollectionItem) (bool, error) {
+			itemModels = append(itemModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count collection items",
@@ -1342,7 +1398,7 @@ func (r *RelationshipRepository) CountCollectionItems(ctx context.Context, colle
 		return 0, ErrorHandler.HandleQueryError(err, "collection", "count")
 	}
 
-	return int(count), nil
+	return len(itemModels), nil
 }
 
 // ClearCollection removes all items from a collection

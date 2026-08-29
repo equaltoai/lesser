@@ -482,6 +482,12 @@ func (r *ObjectRepository) DeleteObject(ctx context.Context, objectID string) er
 
 // GetObjectsByActor retrieves objects created by a specific actor
 func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error) {
+	// Clamp the limit (wave #1469): a negative limit previously produced
+	// Limit(limit+1) <= 0, which compiles to NO limit — an unbounded read of
+	// the actor's gsi1 partition. The read is always bounded now (default 20,
+	// hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	var objects []models.Object
 
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
@@ -527,13 +533,23 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 
 // CountObjectReplies counts the number of replies to an object
 func (r *ObjectRepository) CountObjectReplies(ctx context.Context, objectID string) (int, error) {
-	// Query objects that have InReplyTo set to this objectID
+	// Query objects that have InReplyTo set to this objectID — the whole keyed
+	// gsi2 reply partition must be read to count every reply, so the read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion.
 	var objects []models.Object
-	query := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi2"). // Assuming gsi2 is used for reply relationships
-		Where("gsi2PK", "=", fmt.Sprintf("reply#%s", objectID))
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Object{}).
+			Index("gsi2"). // Assuming gsi2 is used for reply relationships
+			Where("gsi2PK", "=", fmt.Sprintf("reply#%s", objectID)),
+		500, 100,
+		func(page []models.Object) (bool, error) {
+			objects = append(objects, page...)
+			return false, nil
+		},
+	)
 
-	if err := query.All(&objects); err != nil {
+	if err != nil {
 		r.logger.Error("failed to count object replies",
 			zap.String("object_id", objectID),
 			zap.Error(err))
@@ -769,10 +785,11 @@ func (r *ObjectRepository) CreateUpdateHistory(ctx context.Context, history *sto
 
 // GetUpdateHistory retrieves update history for an object
 func (r *ObjectRepository) GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*storage.UpdateHistory, error) {
-	// Validate limit
-	if err := common.ValidateQueryLimit(limit, 100, "update history"); err != nil {
-		limit = 10 // default on validation error
-	}
+	// Clamp the limit (wave #1469): ValidateQueryLimit accepts 0, so limit=0
+	// previously compiled to Limit(0) — no limit — an unbounded read of the
+	// OBJECT#<id>#HISTORY partition. The read is always bounded now (default
+	// 10, hard max 100).
+	limit, _, _ = clampLimit(limit, 10, 100)
 
 	// Build the query - query by PK and SK prefix
 	query := r.db.WithContext(ctx).Model(&models.UpdateHistory{}).
@@ -913,9 +930,20 @@ func (r *ObjectRepository) IsInCollection(ctx context.Context, collection, itemI
 
 // CountCollectionItems returns the count of items in a collection
 func (r *ObjectRepository) CountCollectionItems(ctx context.Context, collection string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.CollectionItem{}).
-		Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)).
-		Count()
+	// The whole keyed COLLECTION#<collection> partition must be read to count
+	// every item, so the read is a bounded page walk (wave #1469): Limit(500)/
+	// page, 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var items []models.CollectionItem
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.CollectionItem{}).
+			Where("PK", "=", fmt.Sprintf("COLLECTION#%s", collection)),
+		500, 100,
+		func(page []models.CollectionItem) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count collection items",
@@ -924,16 +952,26 @@ func (r *ObjectRepository) CountCollectionItems(ctx context.Context, collection 
 		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "count_collection")
 	}
 
-	return int(count), nil
+	return len(items), nil
 }
 
 // CountQuotes counts the number of quotes for a specific note
 func (r *ObjectRepository) CountQuotes(ctx context.Context, noteID string) (int, error) {
-	// Query quotes using GSI1 where GSI1PK = QUOTED#<noteID>
-	count, err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
-		Count()
+	// The whole keyed gsi1 QUOTED#<noteID> partition must be read to count every
+	// quote, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var quotes []models.QuoteRelationship
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", noteID)),
+		500, 100,
+		func(page []models.QuoteRelationship) (bool, error) {
+			quotes = append(quotes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count quotes",
@@ -944,41 +982,9 @@ func (r *ObjectRepository) CountQuotes(ctx context.Context, noteID string) (int,
 
 	r.logger.Debug("counted quotes for note",
 		zap.String("note_id", noteID),
-		zap.Int64("count", count))
+		zap.Int("count", len(quotes)))
 
-	return int(count), nil
-}
-
-// CountWithdrawnQuotes counts the number of withdrawn quotes for a specific note
-func (r *ObjectRepository) CountWithdrawnQuotes(ctx context.Context, noteID string) (int, error) {
-	// Count withdrawn quotes by querying all quotes for this note and checking withdrawn status
-	// Since withdrawn quotes have cleared GSI keys, we need to scan by target note ID
-	var quotes []models.QuoteRelationship
-	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("SK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
-		All(&quotes)
-
-	if err != nil {
-		r.logger.Error("failed to get quotes for withdrawn count",
-			zap.String("note_id", noteID),
-			zap.Error(err))
-		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "withdrawn_quotes")
-	}
-
-	// Count only withdrawn quotes
-	withdrawnCount := 0
-	for _, quote := range quotes {
-		if quote.Withdrawn {
-			withdrawnCount++
-		}
-	}
-
-	r.logger.Debug("counted withdrawn quotes for note",
-		zap.String("note_id", noteID),
-		zap.Int("withdrawn_count", withdrawnCount),
-		zap.Int("total_quotes", len(quotes)))
-
-	return withdrawnCount, nil
+	return len(quotes), nil
 }
 
 // CountReplies counts the number of replies to an object using GSI6
@@ -989,11 +995,21 @@ func (r *ObjectRepository) CountReplies(ctx context.Context, objectID string) (i
 		parentID = fmt.Sprintf("%s/objects/%s", r.getDomainURL(), objectID)
 	}
 
-	// Use GSI6 to efficiently count replies
-	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi6").
-		Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)).
-		Count()
+	// The whole keyed gsi6 REPLIES#<parentID> partition must be read to count
+	// every reply, so the read is a bounded page walk (wave #1469): Limit(500)/
+	// page, 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var objects []models.Object
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Object{}).
+			Index("gsi6").
+			Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", parentID)),
+		500, 100,
+		func(page []models.Object) (bool, error) {
+			objects = append(objects, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count replies",
@@ -1006,9 +1022,9 @@ func (r *ObjectRepository) CountReplies(ctx context.Context, objectID string) (i
 	r.logger.Debug("counted replies for object",
 		zap.String("object_id", objectID),
 		zap.String("parent_id", parentID),
-		zap.Int64("count", count))
+		zap.Int("count", len(objects)))
 
-	return int(count), nil
+	return len(objects), nil
 }
 
 // CreateQuoteRelationship creates a new quote relationship between notes
@@ -1163,11 +1179,21 @@ func (r *ObjectRepository) GetStatus(ctx context.Context, statusID string) (any,
 
 // GetUserStatusCount counts the number of statuses by a user
 func (r *ObjectRepository) GetUserStatusCount(ctx context.Context, userID string) (int, error) {
-	// Use GSI1 to query by actor
-	count, err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("actor#%s", userID)).
-		Count()
+	// The whole keyed gsi1 actor#<userID> partition must be read to count every
+	// status, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. A keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var objects []models.Object
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Object{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("actor#%s", userID)),
+		500, 100,
+		func(page []models.Object) (bool, error) {
+			objects = append(objects, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count user statuses",
@@ -1176,7 +1202,7 @@ func (r *ObjectRepository) GetUserStatusCount(ctx context.Context, userID string
 		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "user_statuses")
 	}
 
-	return int(count), nil
+	return len(objects), nil
 }
 
 // GetStatusReplyCount counts replies to a specific status (alias for CountReplies)
@@ -1829,9 +1855,11 @@ func (r *ObjectRepository) IsWithdrawnFromQuotes(ctx context.Context, statusID s
 
 // GetQuotesOfStatus retrieves quotes of a specific status
 func (r *ObjectRepository) GetQuotesOfStatus(ctx context.Context, statusID string, limit int) ([]*storage.StatusSearchResult, error) {
-	if err := common.ValidateQueryLimit(limit, 100, "status quotes"); err != nil {
-		limit = 20 // default on validation error
-	}
+	// Clamp the limit (wave #1469): ValidateQueryLimit accepts 0, so limit=0
+	// previously compiled to Limit(0) — no limit — an unbounded read of the
+	// QUOTED#<statusID> gsi1 partition. The read is always bounded now (default
+	// 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
 
 	// Use GSI1 to find quotes where GSI1PK = QUOTED#<statusID>
 	query := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
@@ -2147,12 +2175,20 @@ func (r *ObjectRepository) buildAncestorChain(ctx context.Context, startID strin
 
 // getDirectReplies gets direct replies to a status
 func (r *ObjectRepository) getDirectReplies(ctx context.Context, statusID string) ([]string, error) {
-	// Use GSI6 to find replies efficiently
+	// Use GSI6 to find replies efficiently — the whole keyed REPLIES#<statusID>
+	// partition must be read, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var objects []models.Object
-	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi6").
-		Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
-		All(&objects)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Object{}).
+			Index("gsi6").
+			Where("gsi6PK", "=", fmt.Sprintf("REPLIES#%s", statusID)),
+		500, 100,
+		func(page []models.Object) (bool, error) {
+			objects = append(objects, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, err
@@ -2172,11 +2208,20 @@ func (r *ObjectRepository) getThreadAncestors(ctx context.Context, rootID, statu
 		return []string{}, nil
 	}
 
-	// Query thread contexts to build ancestor chain
+	// Query thread contexts to build ancestor chain — the whole keyed
+	// THREAD#<rootID> partition must be read, so the read is a bounded page
+	// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion.
 	var contexts []models.ThreadContext
-	err := r.db.WithContext(ctx).Model(&models.ThreadContext{}).
-		Where("PK", "=", fmt.Sprintf("THREAD#%s", rootID)).
-		All(&contexts)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ThreadContext{}).
+			Where("PK", "=", fmt.Sprintf("THREAD#%s", rootID)),
+		500, 100,
+		func(page []models.ThreadContext) (bool, error) {
+			contexts = append(contexts, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, err
@@ -2195,11 +2240,20 @@ func (r *ObjectRepository) getThreadAncestors(ctx context.Context, rootID, statu
 
 // getThreadDescendants gets descendants from thread context
 func (r *ObjectRepository) getThreadDescendants(ctx context.Context, rootID, statusID string) ([]string, error) {
-	// Get all contexts in this thread that are descendants
+	// Get all contexts in this thread that are descendants — the whole keyed
+	// THREAD#<rootID> partition must be read, so the read is a bounded page
+	// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion.
 	var contexts []models.ThreadContext
-	err := r.db.WithContext(ctx).Model(&models.ThreadContext{}).
-		Where("PK", "=", fmt.Sprintf("THREAD#%s", rootID)).
-		All(&contexts)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ThreadContext{}).
+			Where("PK", "=", fmt.Sprintf("THREAD#%s", rootID)),
+		500, 100,
+		func(page []models.ThreadContext) (bool, error) {
+			contexts = append(contexts, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, err
@@ -2286,12 +2340,21 @@ func (r *ObjectRepository) createThreadContext(ctx context.Context, statusID, ac
 
 // withdrawExistingQuotes withdraws all existing quotes of a status
 func (r *ObjectRepository) withdrawExistingQuotes(ctx context.Context, statusID string) error {
-	// Find all quotes of this status using GSI1
+	// Find all quotes of this status using GSI1 — the whole keyed
+	// QUOTED#<statusID> partition must be read, so the read is a bounded page
+	// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion.
 	var quotes []models.QuoteRelationship
-	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
-		All(&quotes)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)),
+		500, 100,
+		func(page []models.QuoteRelationship) (bool, error) {
+			quotes = append(quotes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return ErrorHandler.HandleQueryError(err, EntityObject, "existing_quotes")
@@ -2466,6 +2529,12 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 
 	gsiIndex = strings.ToLower(gsiIndex)
 
+	// Clamp the caller-supplied page size (wave #1469, batch S1): a zero/negative
+	// limit previously skipped the Limit entirely, compiling to an unbounded read;
+	// the clamp (default 50 / hard max 100, shared query-utils clamp) always
+	// issues Limit(n>0).
+	limit = sanitizeQueryLimit(limit)
+
 	query := r.db.WithContext(ctx).Model(&models.Tombstone{}).
 		Where(pkField, "=", pkValue)
 
@@ -2473,11 +2542,14 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 		query = query.Where(skField, ">", cursor)
 	}
 
-	if limit > 0 {
-		query = query.Limit(limit + 1) // Get one extra to determine next cursor
-	}
+	query = query.Limit(limit + 1) // Get one extra to determine next cursor
 
-	err := query.Index(gsiIndex).Scan(&tombstones)
+	// The chain carries a GSI partition-key equality (plus an optional sort-key
+	// range), so the terminal is a keyed Query (wave #1469, batch S1): the old
+	// `.Scan` compiled to a GSI Scan with those predicates as post-read filters;
+	// `.All` compiles to a DynamoDB Query on the same index, selecting the
+	// identical row set (and giving the sort-key cursor a real order).
+	err := query.Index(gsiIndex).All(&tombstones)
 	if err != nil {
 		r.logger.Error("failed to get tombstones",
 			zap.String(logField, logValue),

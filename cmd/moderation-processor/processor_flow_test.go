@@ -342,10 +342,14 @@ func TestModerationProcessor_SendModeratorNotification_AndFallbackAdmins(t *test
 			currentRole = strings.TrimPrefix(value, "ROLE#")
 		}).Return(mockQuery).Maybe()
 
-		mockQuery.On("All", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
+		// ListUsersByRole reads the whole ROLE#<role> partition as a bounded
+		// page walk (wave #1469): Limit(500)/page via AllPaginated, single page.
+		mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.User)
 			*dest = append([]models.User(nil), roleUsers[currentRole]...)
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+		mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 		return repositories.NewUserRepository(mockDB, "test-table", zap.NewNop())
 	}
@@ -434,17 +438,41 @@ func TestModeratorSelector_SelectByWorkload_SortsByPendingCount(t *testing.T) {
 		},
 	}
 
+	// GetPendingModerationCount now reads keyed GSI4 (reports by assignee) and
+	// GSI2 (flags by status) chains (wave part 2 batch E, #1469); capture the
+	// moderator from gsi4PK and the status from the gsi4SK prefix so the
+	// per-moderator workload map drives the populated slices. The Index/Filter
+	// expectations added with that conversion are exact-count enforced via
+	// mockQuery.AssertExpectations(t) below (selectByWorkload calls
+	// GetPendingModerationCount once per moderator: 3 × 2 GSI4 reads + 3 × 1
+	// GSI2 read + 3 × 1 assignee filter).
+	mockQuery.On("Index", "gsi4").Run(func(args mock.Arguments) {
+		currentStatus = ""
+	}).Return(mockQuery).Times(6)
+
+	mockQuery.On("Index", "gsi2").Run(func(args mock.Arguments) {
+		currentStatus = string(storage.FlagStatusPending)
+	}).Return(mockQuery).Times(3)
+
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		field, _ := args.Get(0).(string)
 		switch field {
-		case "AssignedTo":
-			currentModerator, _ = args.Get(2).(string)
-		case "Status":
-			currentStatus, _ = args.Get(2).(string)
+		case "gsi4PK":
+			val, _ := args.Get(2).(string)
+			currentModerator = strings.TrimPrefix(val, "ASSIGNED#")
+		case "gsi4SK":
+			val, _ := args.Get(2).(string)
+			currentStatus = strings.TrimSuffix(val, "#REPORT#")
 		}
 	}).Return(mockQuery).Maybe()
 
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Filter", "AssignedTo", "=", mock.Anything).Return(mockQuery).Times(3)
+
+	// GetPendingModerationCount's branches now iterate via bounded page walks
+	// (wave #1469): each of the 3 moderators × 3 branches issues a clamped
+	// Limit(500) AllPaginated read (not a bare All).
+	mockQuery.On("Limit", 500).Return(mockQuery).Times(9)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		if dest, ok := args.Get(0).(*[]models.Report); ok {
 			count := workload[currentModerator][currentStatus]
 			*dest = make([]models.Report, count)
@@ -453,7 +481,7 @@ func TestModeratorSelector_SelectByWorkload_SortsByPendingCount(t *testing.T) {
 			count := workload[currentModerator][currentStatus]
 			*dest = make([]models.Flag, count)
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Times(9)
 
 	moderationRepo := repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop())
 	selector := NewModeratorSelector(nil, moderationRepo, zap.NewNop())
@@ -469,6 +497,7 @@ func TestModeratorSelector_SelectByWorkload_SortsByPendingCount(t *testing.T) {
 	require.Len(t, selected, 2)
 	require.Equal(t, "mod-2", selected[0].Username)
 	require.Equal(t, "mod-3", selected[1].Username)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestModerationProcessor_TriggerAutomaticActions_HighSeverityBranches(t *testing.T) {
@@ -573,7 +602,10 @@ func TestModerationProcessor_HandleNewEvent_AndContentRemoval(t *testing.T) {
 			currentRole = strings.TrimPrefix(value, "ROLE#")
 		}).Return(userRepoQuery).Maybe()
 
-		userRepoQuery.On("All", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
+		// ListUsersByRole reads the whole ROLE#<role> partition as a bounded
+		// page walk (wave #1469): Limit(500)/page via AllPaginated, single page.
+		userRepoQuery.On("Limit", 500).Return(userRepoQuery).Maybe()
+		userRepoQuery.On("AllPaginated", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.User)
 			if currentRole != "moderator" {
 				*dest = []models.User{}
@@ -583,7 +615,8 @@ func TestModerationProcessor_HandleNewEvent_AndContentRemoval(t *testing.T) {
 				{Username: "mod-1", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-200 * 24 * time.Hour)},
 				{Username: "mod-2", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-100 * 24 * time.Hour)},
 			}
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+		userRepoQuery.On("Cursor", mock.Anything).Return(userRepoQuery).Maybe()
 
 		mp := &ModerationProcessor{
 			logger:           zap.NewNop(),
@@ -669,8 +702,10 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
 	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 
@@ -691,12 +726,14 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 		dest.LastHit = time.Now()
 	}).Return(nil).Maybe()
 
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		dest, ok := args.Get(0).(*[]*models.ModerationPattern)
+	// GetPatterns/LoadActivePatterns are bounded page walks (wave #1469) now —
+	// AllPaginated instead of All; the walk collects value slices.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		dest, ok := args.Get(0).(*[]models.ModerationPattern)
 		if !ok {
 			return
 		}
-		*dest = []*models.ModerationPattern{
+		*dest = []models.ModerationPattern{
 			{
 				PatternID:   "pat-2",
 				Pattern:     "bar",
@@ -708,7 +745,7 @@ func TestPatternRepositoryAdapter_AllMethods(t *testing.T) {
 				Active:      true,
 			},
 		}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	patternRepo := repositories.NewPatternRepository(mockDB, "test-table", zap.NewNop(), nil)
 	adapter := advanced.NewPatternRepositoryAdapter(patternRepo)
@@ -895,6 +932,16 @@ func TestRepositoryStorageAdapter_BasicOperations(t *testing.T) {
 			}
 		}
 	}).Return(nil).Maybe()
+	// Wave #1469 page-capped walks (e.g. GetModerationReviews) iterate with
+	// AllPaginated instead of a bare All; populate the destination and report
+	// no more pages by default.
+	mockQueryModeration.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		if dest, ok := args.Get(0).(*[]models.ModerationReview); ok {
+			*dest = []models.ModerationReview{
+				{Type: "REVIEW", ID: "rev-1", EventID: "evt-1", ReviewerID: "mod-1", Action: "remove", Severity: "high"},
+			}
+		}
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	moderationRepo := repositories.NewModerationRepository(mockDBModeration, "test-table", zap.NewNop())
 
@@ -1028,9 +1075,11 @@ func TestInitAdvancedModerationEngine_CoversBasicModeWithoutAWS(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	db = mockDB
 	patternRepo = repositories.NewPatternRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -1063,9 +1112,11 @@ func TestInitAdvancedModerationEngine_CoversAWSModeBranches(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 	db = mockDB
 	patternRepo = repositories.NewPatternRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -1153,6 +1204,7 @@ func TestInitialize_CoversRepositoryWiring_WithInjectedDependencies(t *testing.T
 	mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 	mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("Scan", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("Create").Return(nil).Maybe()
@@ -1307,6 +1359,7 @@ func TestModeratorSelector_hasHandledCategory_CoversAdminAndHistoryPaths(t *test
 
 		mockModerationDB.On("WithContext", mock.Anything).Return(mockModerationDB).Maybe()
 		mockModerationDB.On("Model", mock.Anything).Return(mockModerationQuery).Maybe()
+		mockModerationQuery.On("Index", mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("Limit", mock.Anything).Return(mockModerationQuery).Maybe()
 		mockModerationQuery.On("All", mock.AnythingOfType("*[]*models.ModerationReview")).Run(func(args mock.Arguments) {
@@ -1396,15 +1449,19 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 			currentRole = strings.TrimPrefix(value, "ROLE#")
 		}).Return(mockQuery).Maybe()
 
-		mockQuery.On("All", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
+		// ListUsersByRole reads the whole ROLE#<role> partition as a bounded
+		// page walk (wave #1469): Limit(500)/page via AllPaginated, single page.
+		mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.User")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.User)
 			*dest = append([]models.User(nil), roleUsers[currentRole]...)
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
+		mockQuery.On("Cursor", mock.Anything).Return(mockQuery).Maybe()
 
 		return repositories.NewUserRepository(mockDB, "test-table", zap.NewNop())
 	}
 
-	createModerationRepo := func(counts map[string]int) *repositories.ModerationRepository {
+	createModerationRepo := func(counts map[string]int) (*repositories.ModerationRepository, *mocks.MockQuery) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
@@ -1412,44 +1469,79 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 
 		currentModerator := ""
+		currentStatus := ""
+		// Exact-count Index/Filter expectations (wave part 2 batch E, #1469):
+		// StrategyWorkloadBased is the only strategy touching the moderation
+		// repo — one GetPendingModerationCount per moderator (m1/m2/m3): 2 GSI4
+		// reads, 1 GSI2 read, 1 assignee filter each. The moderation repo is
+		// never used by the empty-list subtest, so its mock is not asserted
+		// there; the main flow asserts below.
+		mockQuery.On("Index", "gsi4").Run(func(args mock.Arguments) {
+			currentStatus = ""
+		}).Return(mockQuery).Times(6)
+
+		mockQuery.On("Index", "gsi2").Run(func(args mock.Arguments) {
+			currentStatus = string(storage.FlagStatusPending)
+		}).Return(mockQuery).Times(3)
+
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			field, _ := args.Get(0).(string)
-			if field == "AssignedTo" {
-				currentModerator, _ = args.Get(2).(string)
+			switch field {
+			case "gsi4PK":
+				val, _ := args.Get(2).(string)
+				currentModerator = strings.TrimPrefix(val, "ASSIGNED#")
+			case "gsi4SK":
+				val, _ := args.Get(2).(string)
+				currentStatus = strings.TrimSuffix(val, "#REPORT#")
 			}
 		}).Return(mockQuery).Maybe()
 
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		mockQuery.On("Filter", "AssignedTo", "=", mock.Anything).Return(mockQuery).Times(3)
+
+		// GetPendingModerationCount's branches now iterate via bounded page
+		// walks (wave #1469): each of the 3 moderators × 3 branches issues a
+		// clamped Limit(500) AllPaginated read (not a bare All).
+		mockQuery.On("Limit", 500).Return(mockQuery).Times(9)
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 			if dest, ok := args.Get(0).(*[]models.Report); ok {
-				*dest = make([]models.Report, counts[currentModerator])
+				count := 0
+				if currentStatus == string(storage.ReportStatusOpen) {
+					count = counts[currentModerator]
+				}
+				*dest = make([]models.Report, count)
 			}
 			if dest, ok := args.Get(0).(*[]models.Flag); ok {
 				*dest = []models.Flag{}
 			}
-		}).Return(nil).Maybe()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Times(9)
 
-		return repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop())
+		return repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop()), mockQuery
 	}
 
 	t.Run("empty moderator list returns empty selection", func(t *testing.T) {
 		ms := NewModeratorSelector(createUserRepo(map[string][]models.User{
 			"moderator": {},
 			"admin":     {},
-		}), createModerationRepo(nil), zap.NewNop())
+		}), func() *repositories.ModerationRepository {
+			repo, _ := createModerationRepo(nil)
+			return repo
+		}(), zap.NewNop())
 
 		selected, err := ms.SelectModerators(ctx, &moderation.ModerationEvent{ID: "evt"}, StrategyRoundRobin)
 		require.NoError(t, err)
 		require.Empty(t, selected)
 	})
 
-	ms := NewModeratorSelector(createUserRepo(map[string][]models.User{
+	userRepo := createUserRepo(map[string][]models.User{
 		"moderator": {
 			{Username: "m1", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-400 * 24 * time.Hour)},
 			{Username: "m2", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-200 * 24 * time.Hour)},
 			{Username: "m3", Role: "moderator", Approved: true, CreatedAt: time.Now().Add(-100 * 24 * time.Hour)},
 		},
 		"admin": {},
-	}), createModerationRepo(map[string]int{"m1": 3, "m2": 0, "m3": 1}), zap.NewNop())
+	})
+	moderationRepo, moderationQuery := createModerationRepo(map[string]int{"m1": 3, "m2": 0, "m3": 1})
+	ms := NewModeratorSelector(userRepo, moderationRepo, zap.NewNop())
 
 	event := &moderation.ModerationEvent{ID: "evt", Severity: 7, Category: moderation.CategoryNSFW}
 
@@ -1472,6 +1564,11 @@ func TestModeratorSelector_SelectModerators_CoversStrategiesAndEmptyList(t *test
 	selected, err = ms.SelectModerators(ctx, event, ModeratorSelectionStrategy("unknown"))
 	require.NoError(t, err)
 	require.Len(t, selected, 2)
+
+	// Assert the exact GSI4/GSI2/assignee-filter call counts added by the
+	// batch E conversion (wave part 2, #1469); pre-existing Maybe() plumbing
+	// (Where/All/WithContext/Model) is not retrofitted.
+	moderationQuery.AssertExpectations(t)
 }
 
 func TestModerationProcessor_Enforcement_SuccessPaths(t *testing.T) {
@@ -1531,6 +1628,7 @@ func TestModeratorSelector_getModerationHistory_ErrorBranch(t *testing.T) {
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Maybe()
@@ -1566,7 +1664,10 @@ func TestModerationProcessor_AdminMethods_Coverage(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("All", mock.Anything).Return(nil).Maybe()
+		// GetDecisionHistory now reads via a bounded page walk (wave #1469):
+		// the page read is AllPaginated, not a bare All.
+		mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 		moderationRepo := repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop())
 		mp := &ModerationProcessor{
@@ -1585,6 +1686,8 @@ func TestModerationProcessor_AdminMethods_Coverage(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+		// GetDecisionHistory walks at Limit(500); the most-recent-decision
+		// point read uses Limit(1) + All.
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
 
@@ -1601,6 +1704,20 @@ func TestModerationProcessor_AdminMethods_Coverage(t *testing.T) {
 				},
 			}
 		}).Return(nil).Maybe()
+
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.ModerationDecisionResult")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.ModerationDecisionResult)
+			*dest = []models.ModerationDecisionResult{
+				{
+					ID:                "dec-result-1",
+					ContentID:         "obj-1",
+					Action:            "none",
+					Confidence:        1.0,
+					DecidedAt:         time.Now(),
+					EnforcementStatus: "pending",
+				},
+			}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 
 		moderationRepo := repositories.NewModerationRepository(mockDB, "test-table", zap.NewNop())
 		mp := &ModerationProcessor{

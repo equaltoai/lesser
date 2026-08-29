@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -283,8 +284,12 @@ func TestBaseRepository_QueryAndHelpers(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		// Cursor pages demote the SK prefix to a post-read FilterExpression.
+		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("Limit", 2).Return(mockQuery)
+		// Cursor pages close the BETWEEN range and over-fetch one extra item
+		// (limit+2) for the inclusive-cursor drop.
+		mockQuery.On("Limit", 3).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*baseRepoPtrModel)
 			*dest = []*baseRepoPtrModel{
@@ -431,6 +436,13 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+		// Count walks the keyed partition in bounded pages (wave #1469);
+		// Exists still uses the keyed Count() call.
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*baseRepoPtrModel)
+			*dest = []*baseRepoPtrModel{{PK: "PK#1", SK: "SK#1"}, {PK: "PK#1", SK: "SK#2"}}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil)
 		mockQuery.On("Count").Return(int64(2), nil)
 
 		repo := NewBaseRepository[*baseRepoPtrModel](mockDB, "table", zap.NewNop())
@@ -447,6 +459,8 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		mockDBErr.On("WithContext", mock.Anything).Return(mockDBErr)
 		mockDBErr.On("Model", mock.Anything).Return(mockQueryErr)
 		mockQueryErr.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryErr)
+		mockQueryErr.On("Limit", mock.Anything).Return(mockQueryErr)
+		mockQueryErr.On("AllPaginated", mock.Anything).Return(nil, assert.AnError)
 		mockQueryErr.On("Count").Return(int64(0), assert.AnError)
 
 		repoErr := NewBaseRepository[*baseRepoPtrModel](mockDBErr, "table", zap.NewNop())
@@ -456,24 +470,21 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("FindByPK and FindBySK return results", func(t *testing.T) {
+	t.Run("FindByPK returns results", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*baseRepoPtrModel)
 			*dest = []*baseRepoPtrModel{{PK: "PK#1", SK: "SK#1"}}
 		})
 
 		repo := NewBaseRepositoryWithCostTracking[*baseRepoPtrModel](mockDB, "table", zap.NewNop(), newTestCostService(t), "repo")
 		items, err := repo.FindByPK(ctx, "PK#1")
-		require.NoError(t, err)
-		require.Len(t, items, 1)
-
-		items, err = repo.FindBySK(ctx, "SK#1", "GSI1")
 		require.NoError(t, err)
 		require.Len(t, items, 1)
 	})
@@ -534,7 +545,9 @@ func TestBaseRepository_FindFilterRangeAndCount(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", "SK", SortOrderDesc).Return(mockQuery)
-		mockQuery.On("Limit", 2).Return(mockQuery)
+		// Cursor-scoped BETWEEN over-fetches one extra item so the inclusive
+		// cursor row can be dropped without hiding the has-more sentinel.
+		mockQuery.On("Limit", 3).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]*baseRepoPtrModel)
 			*dest = []*baseRepoPtrModel{{PK: "PK#1", SK: "SK#end"}, {PK: "PK#1", SK: "SK#sentinel"}}
@@ -610,6 +623,7 @@ func TestBaseRepository_ConsolidationHelpers(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
@@ -717,106 +731,6 @@ func TestBaseRepository_ConsolidationHelpers(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("QueryHistoryWithDateRange and QueryMetricsByTimeRange return records", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Index", mock.Anything).Return(mockQuery)
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			switch dest := args.Get(0).(type) {
-			case *[]collectionModel:
-				*dest = []collectionModel{{PK: "PK#1", SK: "DATE#2025-01-01"}}
-			case *[]baseRepoValModel:
-				*dest = []baseRepoValModel{{PK: "PK#1", SK: "SK#1"}}
-			default:
-				// No-op
-			}
-		})
-
-		repo := NewBaseRepository[collectionModel](mockDB, "table", zap.NewNop())
-		history, err := QueryHistoryWithDateRange(ctx, repo, HistoryQueryConfig{
-			MetricType: "storage_bytes",
-			IndexName:  "gsi1",
-			PKField:    "gsi1PK",
-			SKField:    "gsi1SK",
-			LogName:    "history",
-			Converter: func(model interface{}) map[string]interface{} {
-				return map[string]interface{}{"ok": true}
-			},
-		}, 0)
-		require.NoError(t, err)
-		require.Len(t, history, 1)
-
-		metrics, err := QueryMetricsByTimeRange(ctx, repo, MetricsQueryConfig{
-			IndexName: "gsi2",
-			PKField:   "gsi2PK",
-			SKField:   "gsi2SK",
-			PKPattern: "SERVICE#%s",
-			LogName:   "metrics",
-		}, "service", time.Now().Add(-time.Hour), time.Now())
-		require.NoError(t, err)
-		require.Len(t, metrics, 1)
-	})
-
-	t.Run("QueryHistoryWithDateRange converter default branch and error path", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Index", mock.Anything).Return(mockQuery)
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]collectionModel)
-			*dest = []collectionModel{{PK: "PK#1", SK: "DATE#2025-01-01"}}
-		}).Once()
-
-		repo := NewBaseRepository[collectionModel](mockDB, "table", zap.NewNop())
-		history, err := QueryHistoryWithDateRange(ctx, repo, HistoryQueryConfig{
-			MetricType: "storage_bytes",
-			IndexName:  "gsi1",
-			PKField:    "gsi1PK",
-			SKField:    "gsi1SK",
-			LogName:    "history",
-			Converter:  nil,
-		}, 0)
-		require.NoError(t, err)
-		require.Len(t, history, 1)
-
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
-		_, err = QueryHistoryWithDateRange(ctx, repo, HistoryQueryConfig{
-			MetricType: "storage_bytes",
-			IndexName:  "gsi1",
-			PKField:    "gsi1PK",
-			SKField:    "gsi1SK",
-			LogName:    "history",
-		}, 1)
-		require.Error(t, err)
-	})
-
-	t.Run("QueryMetricsByTimeRange error path", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Index", mock.Anything).Return(mockQuery)
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
-
-		repo := NewBaseRepository[collectionModel](mockDB, "table", zap.NewNop())
-		_, err := QueryMetricsByTimeRange(ctx, repo, MetricsQueryConfig{
-			IndexName: "gsi2",
-			PKField:   "gsi2PK",
-			SKField:   "gsi2SK",
-			PKPattern: "SERVICE#%s",
-			LogName:   "metrics",
-		}, "service", time.Now().Add(-time.Hour), time.Now())
-		require.Error(t, err)
-	})
-
 	t.Run("ListAggregatedByPeriod paginates via cursor", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
@@ -824,7 +738,9 @@ func TestBaseRepository_ConsolidationHelpers(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", "SK", SortOrderDesc).Return(mockQuery)
-		mockQuery.On("Limit", 2).Return(mockQuery)
+		// Cursor-scoped BETWEEN over-fetches one extra item so the inclusive
+		// cursor row can be dropped without hiding the has-more sentinel.
+		mockQuery.On("Limit", 3).Return(mockQuery)
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]collectionModel)
 			*dest = []collectionModel{
@@ -1139,8 +1055,9 @@ func TestBaseRepository_QueryBetweenPaginated_CursorAsc(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", SortOrderAsc).Return(mockQuery)
-	mockQuery.On("Limit", 2).Return(mockQuery)
-	mockQuery.On("Where", "SK", ">", "SK#cursor").Return(mockQuery).Once()
+	// Cursor-scoped BETWEEN over-fetches one extra item so the inclusive
+	// cursor row can be dropped without hiding the has-more sentinel.
+	mockQuery.On("Limit", 3).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*baseRepoPtrModel)
 		*dest = []*baseRepoPtrModel{{PK: "PK#1", SK: "SK#end"}, {PK: "PK#1", SK: "SK#sentinel"}}
@@ -1159,19 +1076,18 @@ func TestBaseRepository_QueryBetweenPaginated_CursorAsc(t *testing.T) {
 func TestBaseRepository_ErrorPathsMore(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("FindByPK and FindBySK errors are wrapped", func(t *testing.T) {
+	t.Run("FindByPK error is wrapped", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Index", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(assert.AnError)
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError)
 
 		repo := NewBaseRepository[*baseRepoPtrModel](mockDB, "table", zap.NewNop())
 		_, err := repo.FindByPK(ctx, "PK#1")
-		require.Error(t, err)
-		_, err = repo.FindBySK(ctx, "SK#1", "GSI1")
 		require.Error(t, err)
 	})
 

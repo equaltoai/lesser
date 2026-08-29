@@ -1179,6 +1179,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		state.sets[args.String(0)] = nil
 	}).Maybe()
 	mockUpdate.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ConditionExists", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionNotExists", mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
 	// O(1) instance-count maintenance uses ExecuteWithResult for the domain
@@ -2764,6 +2765,9 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 
 	if state.allErrorOnce != nil {
 		mockQuery.On("All", mock.Anything).Return(state.allErrorOnce).Once()
+		// Wave #1469 page-capped walks read via AllPaginated; the injected
+		// error must fail those walks identically.
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, state.allErrorOnce).Once()
 	}
 
 	for typeName, err := range state.allErrorByType {
@@ -2772,10 +2776,12 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		mockQuery.On("All", mock.MatchedBy(func(arg any) bool {
 			return reflect.TypeOf(arg).String() == typeName
 		})).Return(err).Once()
+		mockQuery.On("AllPaginated", mock.MatchedBy(func(arg any) bool {
+			return reflect.TypeOf(arg).String() == typeName
+		})).Return(nil, err).Once()
 	}
 
-	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-		dest := args.Get(0)
+	populateRound10Slice := func(dest any) {
 		switch d := dest.(type) {
 		case *[]*storagemodels.Activity:
 			// New access pattern: ActivityRepository.GetActivity queries GSI2 by activity ID.
@@ -2795,6 +2801,12 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				}
 			}
 			*d = []*storagemodels.Activity{}
+		case *[]storagemodels.FederationInstance:
+			// FederationRepository.GetKnownInstances / GetFederationStatistics
+			// resolve through keyed gsi1 queries (FEDERATION_ACTIVE) after the
+			// #1469 batch F scan elimination — the fake must answer .All, not
+			// .Scan, for these admin federation endpoints.
+			*d = state.federationInstances
 		case *[]*storagemodels.AuthAuditLog:
 			pk, _ := state.whereString("gsi1PK")
 			username := strings.TrimPrefix(pk, "USER#")
@@ -3148,6 +3160,49 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 					UpdatedAt: time.Now().Add(-30 * time.Minute),
 				},
 			}
+		case *[]*storagemodels.Vouch:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			if strings.HasPrefix(pk, "VOUCH#") && sk == storagemodels.SKMetadata {
+				vouchID := strings.TrimPrefix(pk, "VOUCH#")
+				if vouch, ok := state.vouchModelsByID[vouchID]; ok && vouch != nil {
+					*d = []*storagemodels.Vouch{vouch}
+					return
+				}
+				for _, model := range state.vouchModels {
+					if model != nil && model.PK == pk {
+						*d = []*storagemodels.Vouch{model}
+						return
+					}
+				}
+				*d = []*storagemodels.Vouch{}
+				return
+			}
+			if gsi1pk, ok := state.whereString("gsi1PK"); ok && gsi1pk != "" {
+				items := make([]*storagemodels.Vouch, 0)
+				for _, model := range state.vouchModels {
+					if model != nil && model.GSI1PK == gsi1pk {
+						items = append(items, model)
+					}
+				}
+				*d = items
+				return
+			}
+			if gsi2pk, ok := state.whereString("gsi2PK"); ok && gsi2pk != "" {
+				items := make([]*storagemodels.Vouch, 0)
+				for _, model := range state.vouchModels {
+					if model != nil && model.GSI2PK == gsi2pk {
+						items = append(items, model)
+					}
+				}
+				*d = items
+				return
+			}
+			if state.vouchModels != nil {
+				*d = state.vouchModels
+				return
+			}
+			*d = []*storagemodels.Vouch{}
 		case *[]*storagemodels.PushSubscription:
 			username, _ := state.whereString("PK")
 			username = strings.TrimPrefix(username, "PUSH#")
@@ -3565,6 +3620,15 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				rv.Elem().Set(reflect.MakeSlice(rv.Elem().Type(), 0, 0))
 			}
 		}
+	}
+
+	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		populateRound10Slice(args.Get(0))
+	}).Maybe()
+	// Wave #1469 page-capped walks iterate with AllPaginated instead of a bare
+	// All; populate the destination and report no more pages by default.
+	mockQuery.On("AllPaginated", mock.Anything).Return(&dynamormcore.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+		populateRound10Slice(args.Get(0))
 	}).Maybe()
 
 	if state.scanErrorOnce != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	ddbErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -314,19 +315,20 @@ func TestRound07_ConversationRepository_MuteCRUD_ErrorBranchesAndCleanup(t *test
 	_, err = repo.IsConversationMuted(context.Background(), "user-1", "conv-1")
 	require.Error(t, err)
 
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		ptr := args.Get(0).(*[]models.ConversationMute)
 		*ptr = []models.ConversationMute{
 			{Username: "user-1", ConversationID: "expired", ExpiresAt: time.Now().Add(-time.Minute)},
 			{Username: "user-1", ConversationID: "active"},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	mockQuery.On("Delete").Return(nil).Maybe()
 	ids, err := repo.GetMutedConversations(context.Background(), "user-1")
 	require.NoError(t, err)
 	require.Equal(t, []string{"active"}, ids)
 
-	mockQuery.On("All", mock.Anything).Return(stdErrors.New("query-failed")).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, stdErrors.New("query-failed")).Once()
 	_, err = repo.GetMutedConversations(context.Background(), "user-1")
 	require.Error(t, err)
 }

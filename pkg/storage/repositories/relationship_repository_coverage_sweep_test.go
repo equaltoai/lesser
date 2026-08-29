@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -98,10 +99,16 @@ func TestRelationshipRepository_followers_following_and_counts(t *testing.T) {
 		}
 	}).Once()
 
-	// Count followers/following (success and error paths)
-	mockQuery.On("Count").Return(int64(5), nil).Once()
-	mockQuery.On("Count").Return(int64(7), nil).Once()
-	mockQuery.On("Count").Return(int64(0), fmt.Errorf("count boom")).Once()
+	// Count followers/following (success and error paths) — keyed walks (wave #1469).
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.RelationshipRecord)
+		*out = make([]models.RelationshipRecord, 5)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.RelationshipRecord)
+		*out = make([]models.RelationshipRecord, 7)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Return(nil, fmt.Errorf("count boom")).Once()
 
 	// Fallbacks (added after specific expectations)
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
@@ -219,8 +226,14 @@ func TestRelationshipRepository_domain_counts_and_collections(t *testing.T) {
 	_, _, err := repo.CountRelationshipsByDomain(ctx, "")
 	assert.Error(t, err)
 
-	mockQuery.On("Count").Return(int64(3), nil).Once()
-	mockQuery.On("Count").Return(int64(4), nil).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.RelationshipRecord)
+		*out = make([]models.RelationshipRecord, 3)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RelationshipRecord")).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.RelationshipRecord)
+		*out = make([]models.RelationshipRecord, 4)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	followers, following, err := repo.CountRelationshipsByDomain(ctx, "example.org")
 	assert.NoError(t, err)
 	assert.Equal(t, 3, followers)
@@ -251,8 +264,8 @@ func TestRelationshipRepository_domain_counts_and_collections(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, in)
 
-	// CountCollectionItems error handling
-	mockQuery.On("Count").Return(int64(0), errors.New("count failed")).Once()
+	// CountCollectionItems error handling (keyed walk, wave #1469)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.CollectionItem")).Return(nil, errors.New("count failed")).Once()
 	_, err = repo.CountCollectionItems(ctx, "c1")
 	assert.Error(t, err)
 }

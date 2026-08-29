@@ -40,7 +40,9 @@ func TestRound10_RevisionRepository_CRUDAndPagination(t *testing.T) {
 	_, _, err = repo.ListRevisionsPaginated(ctx, "   ", 1, "")
 	require.Error(t, err)
 
-	revisions, next, err := repo.ListRevisionsPaginated(ctx, "object-1", 1, "00000002")
+	// Cursor below both permissive-mock rows ("VERSION#00000000"): the BETWEEN
+	// ["VERSION#", cursor] sentinel page returns both rows, so has-more holds.
+	revisions, next, err := repo.ListRevisionsPaginated(ctx, "object-1", 1, "00000000")
 	require.NoError(t, err)
 	require.Len(t, revisions, 1)
 	require.NotEmpty(t, next)

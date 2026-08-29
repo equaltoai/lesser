@@ -76,6 +76,127 @@ type QueryOptions struct {
 	FilterExpr string
 }
 
+// QueryUtils default and hard-max limits for the conditional-limit builders
+// (wave #1469 BOUNDED-QUERY class): a caller that omits the limit (or passes
+// 0) gets the default page size instead of an unbounded partition read, and
+// anything above the hard max is clamped so no caller can request an
+// unbounded read.
+const (
+	defaultQueryUtilsLimit = 50
+	maxQueryUtilsLimit     = 100
+)
+
+// sanitizeQueryLimit normalizes a requested limit for the query-utils
+// conditional-limit builders (wave #1469): <= 0 becomes the default page size
+// and > maxQueryUtilsLimit is clamped, so the builders always issue a bounded
+// read.
+func sanitizeQueryLimit(limit int) int {
+	if limit <= 0 {
+		return defaultQueryUtilsLimit
+	}
+	if limit > maxQueryUtilsLimit {
+		return maxQueryUtilsLimit
+	}
+	return limit
+}
+
+// errBoundedPageCapExceeded is the fail-closed guard for bounded whole-partition
+// iterations (wave #1469 BOUNDED-QUERY class): a keyed partition read that
+// cannot be exhausted within the sanctioned page cap fails closed with this
+// sentinel instead of reading the partition unboundedly.
+var errBoundedPageCapExceeded = fmt.Errorf("bounded page iteration exceeded the page cap")
+
+// dropSortKeyCursorDuplicate removes the single item whose sort key equals the
+// cursor from an inclusive BETWEEN page. When a cursor-scoped sort-key window
+// is expressed as a single inclusive BETWEEN key condition (issue #1500), the
+// cursor row itself is re-included; the caller over-fetches one extra item so
+// dropping it does not hide the has-more sentinel. The cursor row is always
+// present unless it was deleted between pages, in which case nothing is
+// dropped and the over-fetched item simply surfaces as the next page head.
+func dropSortKeyCursorDuplicate[T any](items []T, cursor string, sortKey func(T) string) []T {
+	if cursor == "" || len(items) == 0 {
+		return items
+	}
+	filtered := items[:0]
+	for _, item := range items {
+		if sortKey(item) != cursor {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// gsi1BetweenCursorScope builds a keyed gsi1 query whose sort-key window is
+// EXACTLY ONE BETWEEN key condition (issue #1500): [startSK, endSK] on the
+// first page; with a cursor the high bound becomes the cursor (all callers are
+// DESC order) — clamped to endSK so a stale/foreign cursor sorting above the
+// window cannot widen the read past the requested range — and BETWEEN being
+// inclusive, the cursor row is re-included and dropped post-read by the caller
+// (one extra item is over-fetched so the has-more detection stays exact).
+// Returns the query and the effective fetch limit.
+func gsi1BetweenCursorScope(ctx context.Context, db core.DB, model any, gsi1pk, startSK, endSK, cursor string, fetchLimit int) (core.Query, int) {
+	if cursor == "" {
+		return db.WithContext(ctx).Model(model).
+			Index("gsi1").
+			Where("gsi1PK", "=", gsi1pk).
+			Where("gsi1SK", "BETWEEN", []any{startSK, endSK}), fetchLimit
+	}
+	// Clamp the high bound to the window end (DESC callers): a stale/foreign
+	// cursor sorting above endSK must not widen the BETWEEN window past endSK —
+	// the same min(end, cursor) clamp the other DESC cursor helpers use (L1,
+	// #1505).
+	if endSK != "" && cursor > endSK {
+		cursor = endSK
+	}
+	return db.WithContext(ctx).Model(model).
+		Index("gsi1").
+		Where("gsi1PK", "=", gsi1pk).
+		Where("gsi1SK", "BETWEEN", []any{startSK, cursor}), fetchLimit + 1
+}
+
+// walkKeyedPages iterates a keyed TableTheory query in bounded pages with an
+// explicit page cap (wave #1469). Each page carries pageSize items; iteration
+// stops when the query reports no more pages (HasMore false or no cursor),
+// when consume returns stop=true, or when the page cap is exhausted — in which
+// case the read fails closed with errBoundedPageCapExceeded. Page order follows
+// the query's sort order via ExclusiveStartKey cursors, so ordering, window,
+// and filter semantics of the underlying query are preserved.
+func walkKeyedPages[T any](query core.Query, pageSize, maxPages int, consume func(page []T) (stop bool, err error)) error {
+	if pageSize <= 0 {
+		pageSize = 500
+	}
+	if maxPages <= 0 {
+		maxPages = 100
+	}
+	query = query.Limit(pageSize)
+	var cursor string
+	for page := 0; ; page++ {
+		if page >= maxPages {
+			return fmt.Errorf("%w: exhausted %d pages of %d", errBoundedPageCapExceeded, maxPages, pageSize)
+		}
+		paged := query
+		if cursor != "" {
+			paged = paged.Cursor(cursor)
+		}
+		var items []T
+		res, err := paged.AllPaginated(&items)
+		if err != nil {
+			return err
+		}
+		stop, err := consume(items)
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+		if res == nil || !res.HasMore || res.NextCursor == "" {
+			return nil
+		}
+		cursor = res.NextCursor
+	}
+}
+
 // UserRelationshipQuery performs a common pattern for querying user relationships
 func (q *QueryUtils) UserRelationshipQuery(ctx context.Context, username, relationshipType string, opts *QueryOptions) (*QueryResult[map[string]interface{}], error) {
 	if opts == nil {
@@ -85,14 +206,15 @@ func (q *QueryUtils) UserRelationshipQuery(ctx context.Context, username, relati
 	pk := Utils.Keys.UserKey(username)
 	skPrefix := fmt.Sprintf("%s#", relationshipType)
 
+	// Clamp the requested limit (wave #1469): the read is always bounded — a
+	// 0/omitted limit gets the default page size and oversized limits are cut.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
 	var results []map[string]interface{}
 	query := q.db.WithContext(ctx).Model(&results).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", skPrefix)
-
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1) // +1 to check for more results
-	}
+		Where("SK", "BEGINS_WITH", skPrefix).
+		Limit(opts.Limit + 1) // +1 to check for more results
 
 	if opts.IndexName != "" {
 		query = query.Index(opts.IndexName)
@@ -123,17 +245,23 @@ func (q *QueryUtils) TimeRangeQuery(ctx context.Context, pk string, startTime, e
 	query := q.db.WithContext(ctx).Model(&results).
 		Where("PK", "=", pk)
 
-	// Add time range conditions
-	if startTime > 0 {
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
+	// Add time range conditions. The SK window is AT MOST ONE key condition:
+	// BETWEEN when both bounds are given (the old `>=` + `<=` pair compiled to
+	// two conditions on one sort key and was rejected by DynamoDB, issue #1500),
+	// otherwise the single bound alone.
+	switch {
+	case startTime > 0 && endTime > 0:
+		query = query.Where("SK", "BETWEEN", []any{fmt.Sprintf("TIME#%d", startTime), fmt.Sprintf("TIME#%d", endTime)})
+	case startTime > 0:
 		query = query.Where("SK", ">=", fmt.Sprintf("TIME#%d", startTime))
-	}
-	if endTime > 0 {
+	case endTime > 0:
 		query = query.Where("SK", "<=", fmt.Sprintf("TIME#%d", endTime))
 	}
 
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+	query = query.Limit(opts.Limit + 1) // +1 to check for more results
 
 	if opts.IndexName != "" {
 		query = query.Index(opts.IndexName)
@@ -163,13 +291,13 @@ func (q *QueryUtils) GSIStatusQuery(ctx context.Context, indexName, status strin
 	var results []map[string]interface{}
 	gsiPK := Utils.GSI.StatusIndexKey(status)
 
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
 	query := q.db.WithContext(ctx).Model(&results).
 		Index(indexName).
-		Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK)
-
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+		Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK).
+		Limit(opts.Limit + 1) // +1 to check for more results
 
 	err := query.All(&results)
 	if err != nil {
@@ -186,7 +314,11 @@ func (q *QueryUtils) GSIStatusQuery(ctx context.Context, indexName, status strin
 	}, nil
 }
 
-// CountQuery performs count operations with consistent error handling
+// CountQuery performs count operations with consistent error handling.
+// The whole keyed partition must be read to count every row, so the read is a
+// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+// on exhaustion. A keyed Count() would be unbounded by construction
+// (tabletheory strips Limit from Count).
 func (q *QueryUtils) CountQuery(ctx context.Context, pk string, indexName string) (int, error) {
 	var model map[string]interface{}
 	query := q.db.WithContext(ctx).Model(&model).
@@ -196,15 +328,25 @@ func (q *QueryUtils) CountQuery(ctx context.Context, pk string, indexName string
 		query = query.Index(indexName)
 	}
 
-	count, err := query.Count()
+	var items []map[string]interface{}
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []map[string]interface{}) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "count", pk)
 	}
 
-	return int(count), nil
+	return len(items), nil
 }
 
-// ExistsQuery checks if an item exists with consistent error handling
+// ExistsQuery checks if an item exists with consistent error handling. The
+// PK+SK equality read is a point read (at most one row by key semantics), so
+// the Count() form is bounded by construction — no walk needed (wave #1469).
 func (q *QueryUtils) ExistsQuery(ctx context.Context, pk, sk string) (bool, error) {
 	count, err := q.db.WithContext(ctx).Model(&map[string]interface{}{}).
 		Where("PK", "=", pk).
@@ -353,13 +495,14 @@ func (q *QueryUtils) QueryByGSI(ctx context.Context, indexName, gsiPK, gsiSK str
 		Index(indexName).
 		Where(fmt.Sprintf("%sPK", strings.ToLower(indexName)), "=", gsiPK)
 
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
 	if gsiSK != "" {
 		query = query.Where(fmt.Sprintf("%sSK", strings.ToLower(indexName)), "=", gsiSK)
 	}
 
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+	query = query.Limit(opts.Limit + 1) // +1 to check for more results
 
 	err := query.All(&results)
 	if err != nil {
@@ -387,9 +530,10 @@ func (q *QueryUtils) QueryWithPrefix(ctx context.Context, pk, skPrefix string, o
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix)
 
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
+	query = query.Limit(opts.Limit + 1) // +1 to check for more results
 
 	if opts.IndexName != "" {
 		query = query.Index(opts.IndexName)
@@ -453,9 +597,10 @@ func GenericList[T any](ctx context.Context, q *QueryUtils, pk, skPrefix string,
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", skPrefix)
 
-	if opts.Limit > 0 {
-		query = query.Limit(opts.Limit + 1)
-	}
+	// Clamp the requested limit (wave #1469): the read is always bounded.
+	opts.Limit = sanitizeQueryLimit(opts.Limit)
+
+	query = query.Limit(opts.Limit + 1) // +1 to check for more results
 
 	if opts.IndexName != "" {
 		query = query.Index(opts.IndexName)
@@ -567,6 +712,10 @@ func (qb *QueryBuilder[T]) WithLimit(limit int) *QueryBuilder[T] {
 
 // Execute runs the query and returns paginated results
 func (qb *QueryBuilder[T]) Execute() (*QueryResult[T], error) {
+	// Clamp the requested limit (wave #1469): the read is always bounded —
+	// WithLimit(0) (or an omitted limit) gets the default page size.
+	limit := sanitizeQueryLimit(qb.limit)
+
 	var results []T
 	query := qb.q.db.WithContext(qb.ctx).Model(&results)
 
@@ -584,9 +733,7 @@ func (qb *QueryBuilder[T]) Execute() (*QueryResult[T], error) {
 		query = query.Where("SK", "BEGINS_WITH", qb.skPrefix)
 	}
 
-	if qb.limit > 0 {
-		query = query.Limit(qb.limit + 1)
-	}
+	query = query.Limit(limit + 1) // +1 to check for more results
 
 	err := query.All(&results)
 	if err != nil {
@@ -595,7 +742,7 @@ func (qb *QueryBuilder[T]) Execute() (*QueryResult[T], error) {
 
 	// For generic types, we need a type-specific key extractor
 	// This is a simplified version - could be improved with interfaces
-	opts := &QueryOptions{Limit: qb.limit}
+	opts := &QueryOptions{Limit: limit}
 	items, nextCursor, hasMore := paginateResults(results, opts, nil)
 
 	return &QueryResult[T]{
@@ -705,31 +852,37 @@ func QueryAndConvert[M any, S any](
 }
 
 // QueryWithPKAndSKPrefix eliminates the PK/SK prefix query duplication pattern
-// This consolidates the common "Where PK = X, Where/Filter SK BEGINS_WITH Y" pattern
+// This consolidates the common "Where PK = X, Where SK BEGINS_WITH Y" pattern.
+// The `useFilter` flag is retained for API compatibility only (batch S1, wave
+// #1469): it previously switched the SK prefix between a post-read
+// Filter("SK","BEGINS_WITH") on a DynamoDB Scan and a Where key condition; the
+// Scan branch is eliminated, so the prefix is always applied as a key condition
+// now. Both shapes select the identical row set (PK partition + SK prefix).
 func QueryWithPKAndSKPrefix[M any, S any](
 	ctx context.Context,
 	q *QueryUtils,
 	modelFactory func() *M,
 	pkValue, skPrefix string,
-	useFilter bool, // true for Filter("SK", "BEGINS_WITH"), false for Where("SK", "BEGINS_WITH")
+	_ bool, // useFilter — retained for API compatibility (see above)
 	convertFunc func(M) S,
 	operationName string,
 	operationParam string,
 ) ([]S, error) {
 	var models []M
-	var err error
 
-	if useFilter {
-		err = q.db.WithContext(ctx).Model(modelFactory()).
+	// The contract returns the full SK-prefix subset of the partition, so the
+	// read is a bounded page walk with an explicit page cap (wave #1469): 500
+	// items/page, 100 pages max, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		q.db.WithContext(ctx).Model(modelFactory()).
 			Where("PK", "=", pkValue).
-			Filter("SK", "BEGINS_WITH", skPrefix).
-			Scan(&models)
-	} else {
-		err = q.db.WithContext(ctx).Model(modelFactory()).
-			Where("PK", "=", pkValue).
-			Where("SK", "BEGINS_WITH", skPrefix).
-			All(&models)
-	}
+			Where("SK", "BEGINS_WITH", skPrefix),
+		500, 100,
+		func(page []M) (bool, error) {
+			models = append(models, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		q.logger.Error(fmt.Sprintf("Failed to %s", operationName),

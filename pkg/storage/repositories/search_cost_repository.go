@@ -159,15 +159,31 @@ func (r *SearchCostRepository) GetSearchCosts(ctx context.Context, userID string
 		dateStr := current.Format(common.DateFormat)
 
 		var dayCosts []models.SearchCostTracking
-		err := r.GetDB().WithContext(ctx).Model(&models.SearchCostTracking{}).
-			Where("PK", "=", fmt.Sprintf("SEARCH_COST#%s#%s", dateStr, userID)).
-			All(&dayCosts)
+		// Each day is a keyed SEARCH_COST#<date>#<user> partition; the whole
+		// partition must be read, so the read is a bounded page walk (wave
+		// #1469): Limit(500)/page, 100-page cap. Cap exhaustion must fail closed
+		// — the pre-existing warn-and-skip swallow would otherwise silently drop
+		// it; other (transient) errors keep the skip-this-day behavior.
+		err := walkKeyedPages(
+			r.GetDB().WithContext(ctx).Model(&models.SearchCostTracking{}).
+				Where("PK", "=", fmt.Sprintf("SEARCH_COST#%s#%s", dateStr, userID)),
+			500, 100,
+			func(page []models.SearchCostTracking) (bool, error) {
+				dayCosts = append(dayCosts, page...)
+				return false, nil
+			},
+		)
 
-		if err != nil && !dynamormErrors.IsNotFound(err) {
-			r.logger.Warn("failed to get search costs for date",
-				zap.String("user_id", userID),
-				zap.String("date", dateStr),
-				zap.Error(err))
+		if err != nil {
+			if errors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
+			if !dynamormErrors.IsNotFound(err) {
+				r.logger.Warn("failed to get search costs for date",
+					zap.String("user_id", userID),
+					zap.String("date", dateStr),
+					zap.Error(err))
+			}
 		} else {
 			for i := range dayCosts {
 				costs = append(costs, &dayCosts[i])
@@ -207,99 +223,6 @@ func (r *SearchCostRepository) GetSearchCostSummary(ctx context.Context, userID 
 	}
 
 	return r.calculateSummary(costs), nil
-}
-
-// GetPopularQueries retrieves the most popular search queries
-func (r *SearchCostRepository) GetPopularQueries(ctx context.Context, limit int, period string) ([]*models.SearchQueryStats, error) {
-	var stats []models.SearchQueryStats
-
-	// Get current period date
-	// var periodDate string
-	// now := time.Now()
-	// switch period {
-	// case "daily":
-	// 	periodDate = now.Format(common.DateFormat)
-	// case "weekly":
-	// 	year, week := now.ISOWeek()
-	// 	periodDate = fmt.Sprintf("%d-W%d", year, week)
-	// case "monthly":
-	// 	periodDate = now.Format(common.MonthFormat)
-	// default:
-	// 	periodDate = now.Format(common.DateFormat)
-	// }
-	// Note: periodDate could be used for more specific queries in the future
-
-	// Query all query stats for the period
-	err := r.GetDB().WithContext(ctx).Model(&models.SearchQueryStats{}).
-		Filter("SK", "=", fmt.Sprintf("STATS#%s", period)).
-		Limit(limit * 2). // Get more to filter and sort
-		All(&stats)
-
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntitySearchMetric, "popular queries")
-	}
-
-	// Sort by query count
-	sort.Slice(stats, func(i, j int) bool {
-		return stats[i].QueryCount > stats[j].QueryCount
-	})
-
-	// Apply limit
-	if len(stats) > limit {
-		stats = stats[:limit]
-	}
-
-	// Convert to pointers
-	result := make([]*models.SearchQueryStats, len(stats))
-	for i := range stats {
-		result[i] = &stats[i]
-	}
-
-	return result, nil
-}
-
-// ResetBudgets resets daily budgets (called by scheduled job)
-func (r *SearchCostRepository) ResetBudgets(ctx context.Context, period string) error {
-	// This would typically be called by a scheduled Lambda
-	// For now, implement basic logic to reset expired budgets
-
-	var budgets []models.SearchBudget
-	periodDate := time.Now().Format(common.DateFormat)
-
-	// Scan for budgets that need resetting
-	err := r.GetDB().WithContext(ctx).Model(&models.SearchBudget{}).
-		Filter("SK", "=", fmt.Sprintf("PERIOD#%s", periodDate)).
-		All(&budgets)
-
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, EntitySearchBudget, "reset query")
-	}
-
-	for _, budget := range budgets {
-		// Reset usage counters
-		budget.UsedBudgetMicros = 0
-		budget.SearchUsedMicros = 0
-		budget.SemanticUsedMicros = 0
-		budget.IndexingUsedMicros = 0
-		budget.CurrentRequests = 0
-		budget.CurrentSemanticRequests = 0
-		budget.BudgetExceeded = false
-		budget.LastResetTime = time.Now()
-		budget.UpdatedAt = time.Now()
-
-		err = r.GetDB().WithContext(ctx).Model(&budget).Update()
-		if err != nil {
-			r.logger.Error("failed to reset budget",
-				zap.String("user_id", budget.UserID),
-				zap.Error(err))
-		}
-	}
-
-	r.logger.Info("reset budgets completed",
-		zap.String("period", period),
-		zap.Int("budgets_reset", len(budgets)))
-
-	return nil
 }
 
 // Helper methods

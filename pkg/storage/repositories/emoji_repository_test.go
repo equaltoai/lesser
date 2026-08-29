@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -107,7 +108,8 @@ func TestEmojiRepository_GetCustomEmojis_GracefulDegradationOnMissingGSI(t *test
 	mockDB.On("Model", mock.AnythingOfType("*models.EmojiModel")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.EmojiModel")).Return(dynamormerrors.ErrItemNotFound)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.EmojiModel")).Return(nil, dynamormerrors.ErrItemNotFound)
 
 	emojis, err := repo.GetCustomEmojis(context.Background())
 	require.NoError(t, err)
@@ -123,7 +125,8 @@ func TestEmojiRepository_GetCustomEmojis_GracefulDegradationOnNotFoundString(t *
 	mockDB.On("Model", mock.AnythingOfType("*models.EmojiModel")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.EmojiModel")).Return(errors.New("index not found"))
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.EmojiModel")).Return(nil, errors.New("index not found"))
 
 	emojis, err := repo.GetCustomEmojis(context.Background())
 	require.NoError(t, err)
@@ -139,14 +142,15 @@ func TestEmojiRepository_GetCustomEmojis_FiltersDisabledLocalKeepsDisabledRemote
 	mockDB.On("Model", mock.AnythingOfType("*models.EmojiModel")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.EmojiModel")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.EmojiModel)
-		*dest = []*models.EmojiModel{
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.EmojiModel")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.EmojiModel)
+		*dest = []models.EmojiModel{
 			{Shortcode: "local_disabled", Disabled: true, Domain: ""},
 			{Shortcode: "remote_disabled", Disabled: true, Domain: "remote.example"},
 			{Shortcode: "enabled", Disabled: false, Domain: ""},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil)
 
 	emojis, err := repo.GetCustomEmojis(context.Background())
 	require.NoError(t, err)
@@ -178,21 +182,21 @@ func TestEmojiRepository_SearchEmojis_PrefixThenBroadSearchAndScore(t *testing.T
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.EmojiModel")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.EmojiModel)
-		*dest = []*models.EmojiModel{
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.EmojiModel")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.EmojiModel)
+		*dest = []models.EmojiModel{
 			{PK: "EMOJI#party", SK: "EMOJI", Shortcode: "party", PopularityScore: 1.0},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.EmojiModel")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.EmojiModel)
-		*dest = []*models.EmojiModel{
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.EmojiModel")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.EmojiModel)
+		*dest = []models.EmojiModel{
 			{PK: "EMOJI#party", SK: "EMOJI", Shortcode: "party", PopularityScore: 1.0},
 			{PK: "EMOJI#partypop", SK: "EMOJI", Shortcode: "partypop", PopularityScore: 0.0, SearchKeywords: []string{"party"}},
 			{PK: "EMOJI#other", SK: "EMOJI", Shortcode: "other", PopularityScore: 10.0},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	results, err := repo.SearchEmojis(context.Background(), "party", 2)
 	require.NoError(t, err)
@@ -442,14 +446,15 @@ func TestEmojiRepository_GetCustomEmojisByCategory_FiltersDisabledLocal(t *testi
 	mockDB.On("Model", mock.AnythingOfType("*models.EmojiModel")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.EmojiModel")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.EmojiModel)
-		*dest = []*models.EmojiModel{
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.EmojiModel")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.EmojiModel)
+		*dest = []models.EmojiModel{
 			{Shortcode: "local_disabled", Disabled: true},
 			{Shortcode: "remote_disabled", Disabled: true, Domain: "remote.example"},
 			{Shortcode: "ok", Disabled: false},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil)
 
 	results, err := repo.GetCustomEmojisByCategory(context.Background(), "fun")
 	require.NoError(t, err)
@@ -467,7 +472,8 @@ func TestEmojiRepository_QueryEmojiGSI_Error(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.EmojiModel")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.EmojiModel")).Return(ErrTestMockError)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.EmojiModel")).Return(nil, ErrTestMockError)
 
 	_, err := repo.queryEmojiGSI(context.Background(), "gsi1", "gsi1PK", "ALL_EMOJIS", 0)
 	assert.Error(t, err)

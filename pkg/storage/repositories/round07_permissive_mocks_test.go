@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 )
 
@@ -28,6 +29,12 @@ func setupPermissiveRound07Mocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuer
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateRound07SliceForCoverage(args.Get(0), baseTime)
 	}).Return(nil).Maybe()
+
+	// Wave #1469 page-capped walks (GetUnreadNotificationCount) iterate with
+	// AllPaginated.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateRound07SliceForCoverage(args.Get(0), baseTime)
+	}).Return(&core.PaginatedResult{}, nil).Maybe()
 
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateRound07SliceForCoverage(args.Get(0), baseTime)

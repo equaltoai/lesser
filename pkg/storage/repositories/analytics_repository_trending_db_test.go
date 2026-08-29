@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -37,13 +38,14 @@ func TestRecordHashtagUsage_Success(t *testing.T) {
 	// Then updateHashtagTrendScore is called
 	mockDB.On("Model", mock.AnythingOfType("*models.HashtagUsage")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.HashtagUsage")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.HashtagUsage")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.HashtagUsage)
 		*records = []models.HashtagUsage{
 			{AuthorID: "author-1", UsedAt: time.Now()},
 			{AuthorID: "author-2", UsedAt: time.Now()},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.HashtagTrend")).Return(mockQuery)
@@ -93,12 +95,13 @@ func TestRecordStatusEngagement_Success(t *testing.T) {
 	// updateStatusTrendScore
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.StatusEngagement")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.StatusEngagement")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.StatusEngagement)
 		*records = []models.StatusEngagement{
 			{UserID: "user-1", EngagementType: "like"},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusTrend")).Return(mockQuery)
@@ -148,12 +151,13 @@ func TestRecordLinkShare_Success(t *testing.T) {
 	// updateLinkTrendScore
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkShare")).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.LinkShare")).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.LinkShare")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.LinkShare)
 		*records = []models.LinkShare{
 			{AuthorID: "author-1", SharedAt: time.Now()},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	// Create trend item
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkTrend")).Return(mockQuery)
@@ -540,85 +544,6 @@ func TestStoreLinkTrend_CallsInternal(t *testing.T) {
 }
 
 // ============================================================================
-// GetRecentHashtags Tests
-// ============================================================================
-
-func TestGetRecentHashtags_Success(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-	ctx := context.Background()
-
-	since := time.Now().Add(-24 * time.Hour)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
-	mockQuery.On("Where", "LastUsed", ">=", since.Format(time.RFC3339)).Return(mockQuery)
-	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
-	mockQuery.On("Limit", 20).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Run(func(args mock.Arguments) {
-		records := args.Get(0).(*[]*models.Hashtag)
-		*records = []*models.Hashtag{
-			{Name: "golang", UsageCount: 100},
-			{Name: "python", UsageCount: 50},
-		}
-	}).Return(nil)
-
-	result, err := repo.GetRecentHashtags(ctx, since, 20)
-	require.NoError(t, err)
-	assert.Len(t, result, 2)
-
-	mockDB.AssertExpectations(t)
-}
-
-func TestGetRecentHashtags_NotFound(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-	ctx := context.Background()
-
-	since := time.Now().Add(-1 * time.Hour)
-
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
-	mockQuery.On("Where", "LastUsed", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
-	mockQuery.On("Limit", 10).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Return(errors.ErrItemNotFound)
-
-	result, err := repo.GetRecentHashtags(ctx, since, 10)
-	require.NoError(t, err)
-	assert.Empty(t, result)
-
-	mockDB.AssertExpectations(t)
-}
-
-func TestGetRecentHashtags_InvalidLimit(t *testing.T) {
-	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
-	repo := NewTrendingRepository(mockDB, zap.NewNop(), nil)
-	ctx := context.Background()
-
-	since := time.Now().Add(-24 * time.Hour)
-
-	// When limit > 100, it should be clamped to default (20)
-	mockDB.On("WithContext", ctx).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.Hashtag")).Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery)
-	mockQuery.On("Where", "LastUsed", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("OrderBy", "LastUsed", "DESC").Return(mockQuery)
-	mockQuery.On("Limit", 20).Return(mockQuery) // Clamped to default
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.Hashtag")).Return(nil)
-
-	_, err := repo.GetRecentHashtags(ctx, since, 200)
-	require.NoError(t, err)
-
-	mockDB.AssertExpectations(t)
-}
-
-// ============================================================================
 // GetRecentStatusesWithEngagement Tests
 // ============================================================================
 
@@ -633,8 +558,10 @@ func TestGetRecentStatusesWithEngagement_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
-	mockQuery.On("Where", "EngagedAt", ">=", since).Return(mockQuery)
-	mockQuery.On("OrderBy", "EngagedAt", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "ENGAGEMENTS#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 30).Return(mockQuery) // 3 * 10 = 30
 	mockQuery.On("All", mock.AnythingOfType("*[]models.StatusEngagement")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.StatusEngagement)
@@ -663,8 +590,10 @@ func TestGetRecentStatusesWithEngagement_NotFound(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.StatusEngagement")).Return(mockQuery)
-	mockQuery.On("Where", "EngagedAt", ">=", since).Return(mockQuery)
-	mockQuery.On("OrderBy", "EngagedAt", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "ENGAGEMENTS#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", mock.AnythingOfType("int")).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.StatusEngagement")).Return(errors.ErrItemNotFound)
 
@@ -690,8 +619,10 @@ func TestGetRecentLinks_Success(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkShare")).Return(mockQuery)
-	mockQuery.On("Where", "SharedAt", ">=", since).Return(mockQuery)
-	mockQuery.On("OrderBy", "SharedAt", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "LINK_SHARES#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 10).Return(mockQuery) // 2 * 5 = 10
 	mockQuery.On("All", mock.AnythingOfType("*[]models.LinkShare")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]models.LinkShare)
@@ -719,8 +650,10 @@ func TestGetRecentLinks_NotFound(t *testing.T) {
 
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.LinkShare")).Return(mockQuery)
-	mockQuery.On("Where", "SharedAt", ">=", since).Return(mockQuery)
-	mockQuery.On("OrderBy", "SharedAt", "DESC").Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "LINK_SHARES#ALL").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", ">=", since.Format(time.RFC3339)).Return(mockQuery)
+	mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", mock.AnythingOfType("int")).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.LinkShare")).Return(errors.ErrItemNotFound)
 

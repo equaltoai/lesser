@@ -347,7 +347,7 @@ func TestRouteOptimizerRepository_Round08_MetricsInRangeAndHelpers(t *testing.T)
 
 			mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 			mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Times(3)
+			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Times(2)
 			mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
 			mockQuery.On("Limit", 10).Return(mockQuery).Once()
 			mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
@@ -377,7 +377,7 @@ func TestRouteOptimizerRepository_Round08_MetricsInRangeAndHelpers(t *testing.T)
 			mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 			mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
-			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Times(3)
+			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Times(2)
 			mockQuery.On("OrderBy", "gsi1SK", "DESC").Return(mockQuery).Once()
 			mockQuery.On("Limit", 5).Return(mockQuery).Once()
 			mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {

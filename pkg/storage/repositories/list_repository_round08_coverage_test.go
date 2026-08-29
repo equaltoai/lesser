@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -65,7 +66,7 @@ func TestListRepository_Round08_SweepHappyPaths(t *testing.T) {
 		}
 	})
 
-	mockQuery.On("Scan", mock.Anything).Return(nil).Maybe().Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Return(nil).Maybe().Run(func(args mock.Arguments) {
 		switch dest := args.Get(0).(type) {
 		case *[]models.List:
 			*dest = []models.List{
@@ -96,6 +97,18 @@ func TestListRepository_Round08_SweepHappyPaths(t *testing.T) {
 		case *[]models.Status:
 			*dest = []models.Status{
 				{StatusID: "s1"},
+			}
+		default:
+		}
+	})
+
+	// Wave #1469 page-capped walks (DeleteList/RemoveAccountFromAllLists read
+	// then delete) iterate with AllPaginated instead of a bare All.
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe().Run(func(args mock.Arguments) {
+		switch dest := args.Get(0).(type) {
+		case *[]models.ListMember:
+			*dest = []models.ListMember{
+				{ListID: "list1", AccountID: "bob", ListUsername: "alice"},
 			}
 		default:
 		}
@@ -245,7 +258,8 @@ func TestListRepository_Round08_ErrorBranches(t *testing.T) {
 		// Scan members -> not found.
 		mockDB.On("Model", mock.Anything).Return(mockQueryScanMembers).Once()
 		mockQueryScanMembers.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScanMembers).Once()
-		mockQueryScanMembers.On("Scan", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		mockQueryScanMembers.On("Limit", mock.Anything).Return(mockQueryScanMembers).Maybe()
+		mockQueryScanMembers.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 		err := repo.DeleteList(ctx, "list1")
@@ -303,7 +317,7 @@ func TestListRepository_Round08_ErrorBranches(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQueryMembers).Once()
 		mockQueryMembers.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryMembers).Once()
 		mockQueryMembers.On("Limit", 100).Return(mockQueryMembers).Once()
-		mockQueryMembers.On("Scan", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		mockQueryMembers.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 		out, err := repo.GetListTimeline(ctx, "list1", interfaces.PaginationOptions{Limit: 10})
@@ -330,7 +344,7 @@ func TestListRepository_Round08_MoreBranches(t *testing.T) {
 			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("Limit", 2).Return(mockQuery).Once()
-			mockQuery.On("Scan", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+			mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 
 			repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 			lists, next, err := repo.GetListsForUserPaginated(ctx, "alice", 1, "")
@@ -352,7 +366,7 @@ func TestListRepository_Round08_MoreBranches(t *testing.T) {
 			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("Limit", 2).Return(mockQuery).Once()
-			mockQuery.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			mockQuery.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*[]models.List)
 				*dest = []models.List{
 					{ID: "l1", Username: "alice", GSI1SK: "SK#1"},
@@ -423,7 +437,8 @@ func TestListRepository_Round08_MoreBranches(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 		repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 		_, err := repo.CountUserLists(ctx, "alice")
@@ -529,7 +544,7 @@ func TestListRepository_Round08_MoreBranches(t *testing.T) {
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", 2).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.ListMember)
 			*dest = []models.ListMember{
 				{ListID: "l1", AccountID: "bob", ListUsername: "alice", GSI1SK: "SK#1"},
@@ -565,7 +580,8 @@ func TestListRepository_Round08_MoreBranches(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQueryMembers).Once()
 		mockQueryMembers.On("Index", "gsi1").Return(mockQueryMembers).Once()
 		mockQueryMembers.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryMembers).Once()
-		mockQueryMembers.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		mockQueryMembers.On("Limit", mock.Anything).Return(mockQueryMembers).Maybe()
+		mockQueryMembers.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once().Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.ListMember)
 			*dest = []models.ListMember{
 				{ListID: "l1", AccountID: "bob", ListUsername: "someone-else"},
@@ -595,7 +611,8 @@ func TestListRepository_Round08_MoreBranches(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
 		mockQueryScan.On("Index", "gsi1").Return(mockQueryScan).Once()
 		mockQueryScan.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScan).Once()
-		mockQueryScan.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		mockQueryScan.On("Limit", mock.Anything).Return(mockQueryScan).Maybe()
+		mockQueryScan.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once().Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.ListMember)
 			*dest = []models.ListMember{
 				{ListID: "l1", AccountID: "bob"},
@@ -736,10 +753,11 @@ func TestListRepository_Round08_FinalBoost(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQueryDeleteList).Once()
 		mockQueryDeleteList.On("Delete").Return(nil).Once()
 
-		// Scan members.
+		// All members.
 		mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
 		mockQueryScan.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScan).Once()
-		mockQueryScan.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		mockQueryScan.On("Limit", mock.Anything).Return(mockQueryScan).Maybe()
+		mockQueryScan.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once().Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.ListMember)
 			*dest = []models.ListMember{
 				{ListID: "list1", AccountID: "bob"},
@@ -777,7 +795,7 @@ func TestListRepository_Round08_FinalBoost(t *testing.T) {
 			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("Limit", 2).Return(mockQuery).Once()
-			mockQuery.On("Scan", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+			mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 
 			repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 			items, next, err := repo.GetAccountListsPaginated(ctx, "bob", 1, "")
@@ -799,7 +817,7 @@ func TestListRepository_Round08_FinalBoost(t *testing.T) {
 			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("Limit", 2).Return(mockQuery).Once()
-			mockQuery.On("Scan", mock.Anything).Return(assert.AnError).Once()
+			mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
 
 			repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 			_, _, err := repo.GetAccountListsPaginated(ctx, "bob", 1, "")
@@ -820,7 +838,7 @@ func TestListRepository_Round08_FinalBoost(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQueryMembers).Once()
 		mockQueryMembers.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryMembers).Once()
 		mockQueryMembers.On("Limit", 1).Return(mockQueryMembers).Once()
-		mockQueryMembers.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		mockQueryMembers.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.ListMember)
 			*dest = []models.ListMember{{ListID: "list1", AccountID: "bob"}}
 		})
@@ -853,7 +871,7 @@ func TestListRepository_Round08_FinalBoost(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQueryMembers).Once()
 		mockQueryMembers.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryMembers).Once()
 		mockQueryMembers.On("Limit", 100).Return(mockQueryMembers).Once()
-		mockQueryMembers.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		mockQueryMembers.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.ListMember)
 			*dest = []models.ListMember{{ListID: "list1", AccountID: "bob"}}
 		})
@@ -901,7 +919,7 @@ func TestListRepository_Round08_FinalBoost(t *testing.T) {
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", 101).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
 
 		repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 		_, err := repo.GetExclusiveLists(ctx, "alice")
@@ -923,7 +941,8 @@ func TestListRepository_Round08_LastMiles(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 		out, err := repo.GetAccountListsForUser(ctx, "bob", "alice")
@@ -942,7 +961,8 @@ func TestListRepository_Round08_LastMiles(t *testing.T) {
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 		repo := NewListRepository(mockDB, "table", zap.NewNop(), nil)
 		require.Error(t, repo.RemoveAccountFromAllLists(ctx, "bob"))

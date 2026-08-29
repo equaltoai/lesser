@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -132,10 +133,12 @@ func TestNotificationCostRepository_CRUDAndQueries_Coverage(t *testing.T) {
 	mockDB.On("Model", mock.Anything).Return(mockUserBudgetsQuery).Once()
 	mockUserBudgetsQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockUserBudgetsQuery).Maybe()
 	mockUserBudgetsQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockUserBudgetsQuery).Once()
-	mockUserBudgetsQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	// Page-capped walk (wave #1469): Limit(500)/page via AllPaginated.
+	mockUserBudgetsQuery.On("Limit", 500).Return(mockUserBudgetsQuery).Once()
+	mockUserBudgetsQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.NotificationBudget)
 		*dest = []*models.NotificationBudget{budget}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{}, nil).Once()
 	userBudgets, err := repo.GetUserBudgets(ctx, "user-1")
 	require.NoError(t, err)
 	require.Len(t, userBudgets, 1)
@@ -276,11 +279,12 @@ func TestNotificationCostRepository_UserSpending_And_DailySpending_Coverage(t *t
 	require.Equal(t, int64(3), summary.TotalNotifications)
 	require.NotEmpty(t, summary.DeliveryMethodBreakdown)
 
-	// Daily spending: not found returns 0, nil
+	// Daily spending: not found returns 0, nil (page-capped walk, wave #1469).
 	mockDailySpendQuery := new(mocks.MockQuery)
 	mockDB.On("Model", mock.Anything).Return(mockDailySpendQuery).Once()
 	mockDailySpendQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockDailySpendQuery).Maybe()
-	mockDailySpendQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockDailySpendQuery.On("Limit", 500).Return(mockDailySpendQuery).Once()
+	mockDailySpendQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormerrors.ErrItemNotFound).Once()
 
 	cost, err := repo.GetDailySpending(ctx, "user-1")
 	require.NoError(t, err)
@@ -290,13 +294,14 @@ func TestNotificationCostRepository_UserSpending_And_DailySpending_Coverage(t *t
 	mockDailySpendQuery2 := new(mocks.MockQuery)
 	mockDB.On("Model", mock.Anything).Return(mockDailySpendQuery2).Once()
 	mockDailySpendQuery2.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockDailySpendQuery2).Maybe()
-	mockDailySpendQuery2.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockDailySpendQuery2.On("Limit", 500).Return(mockDailySpendQuery2).Once()
+	mockDailySpendQuery2.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.NotificationCostTracking)
 		*dest = []models.NotificationCostTracking{
 			{TotalCostMicroCents: 100},
 			{TotalCostMicroCents: 300},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{}, nil).Once()
 
 	cost, err = repo.GetDailySpending(ctx, "user-1")
 	require.NoError(t, err)

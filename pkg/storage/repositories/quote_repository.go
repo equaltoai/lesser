@@ -296,10 +296,22 @@ func (r *QuoteRepository) DeleteQuotePermissions(ctx context.Context, username s
 // GetQuoteCount gets the total number of quotes for a status
 func (r *QuoteRepository) GetQuoteCount(ctx context.Context, statusID string) (int64, error) {
 	db := r.relationshipRepo.GetDB()
-	count, err := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
-		Where("Withdrawn", "=", false).
-		Count()
+
+	// The whole keyed QUOTED#<status> gsi1 partition must be read to count
+	// every quote, so the read is a bounded page walk (wave #1469): Limit(500)/
+	// page, 100-page cap, fail-closed on exhaustion. The Withdrawn condition
+	// stays on the chain and applies per page.
+	var quoteModels []models.QuoteRelationship
+	err := walkKeyedPages(
+		db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+			Where("gsi1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
+			Where("Withdrawn", "=", false),
+		500, 100,
+		func(page []models.QuoteRelationship) (bool, error) {
+			quoteModels = append(quoteModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get quote count",
@@ -308,7 +320,7 @@ func (r *QuoteRepository) GetQuoteCount(ctx context.Context, statusID string) (i
 		return 0, fmt.Errorf("%w: %w", ErrQuoteCountQueryFailed, err)
 	}
 
-	return count, nil
+	return int64(len(quoteModels)), nil
 }
 
 // IncrementQuoteCount increments the quote count for a status
@@ -325,13 +337,23 @@ func (r *QuoteRepository) IncrementQuoteCount(_ context.Context, statusID string
 func (r *QuoteRepository) WithdrawQuotes(ctx context.Context, noteID, userID string) (int, error) {
 	db := r.relationshipRepo.GetDB()
 
-	// Query all quotes by this user on this note
+	// Query all quotes by this user on this note — the whole keyed QUOTER#<user>
+	// gsi2 partition must be read before any quote is withdrawn, so the read is
+	// a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion (never a silent partial withdrawal). The
+	// TargetNoteID/Withdrawn filters stay on the chain and apply per page.
 	var quotes []models.QuoteRelationship
-	err := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("gsi2PK", "=", fmt.Sprintf("QUOTER#%s", userID)).
-		Filter("TargetNoteID", "=", noteID).
-		Filter("Withdrawn", "=", false).
-		All(&quotes)
+	err := walkKeyedPages(
+		db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+			Where("gsi2PK", "=", fmt.Sprintf("QUOTER#%s", userID)).
+			Filter("TargetNoteID", "=", noteID).
+			Filter("Withdrawn", "=", false),
+		500, 100,
+		func(page []models.QuoteRelationship) (bool, error) {
+			quotes = append(quotes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to query quotes for withdrawal",

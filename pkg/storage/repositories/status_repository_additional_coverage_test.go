@@ -142,6 +142,11 @@ func setupPermissiveStatusRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQ
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateStatusRepositorySliceForCoverage(args.Get(0))
 	}).Return(nil).Maybe()
+	// Wave #1469 page-capped walks iterate with AllPaginated instead of a bare
+	// All; populate the destination and report no more pages by default.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateStatusRepositorySliceForCoverage(args.Get(0))
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateStatusRepositorySliceForCoverage(args.Get(0))
 	}).Return(nil).Maybe()
@@ -396,7 +401,10 @@ func TestStatusRepository_url_queries(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 
 		url := "https://example.com/status/1"
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		// GetStatusByURL now iterates the GSI7 URL partition via a bounded page
+		// walk (wave #1469): a clamped Limit(500) page read via AllPaginated.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
 				{
@@ -408,7 +416,7 @@ func TestStatusRepository_url_queries(t *testing.T) {
 					URLs:     []string{url},
 				},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 
@@ -580,12 +588,15 @@ func TestStatusRepository_engagements_bookmarks_and_helpers(t *testing.T) {
 
 	assert.NoError(t, repo.LikeStatus(ctx, "user1", "s1"))
 
-	mockQuery.On("All", mock.AnythingOfType("*[]models.StatusEngagement")).Run(func(args mock.Arguments) {
+	// removeEngagement now finds the (user, type) row via a bounded page walk
+	// (wave #1469): the page read is AllPaginated, not a bare All.
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.StatusEngagement")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.StatusEngagement)
 		*dest = []models.StatusEngagement{
 			{PK: "STATUS_ENGAGEMENT#s1", SK: "like#1#user1"},
 		}
-	}).Return(nil).Once()
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 	assert.NoError(t, repo.UnlikeStatus(ctx, "user1", "s1"))
 
 	assert.NoError(t, repo.BookmarkStatus(ctx, "user1", "s1"))
@@ -1060,12 +1071,15 @@ func TestStatusRepository_more_error_branches_and_helpers(t *testing.T) {
 
 		url := "https://example.com/status/1"
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		// GetStatusByURL now iterates the GSI7 URL partition via a bounded page
+		// walk (wave #1469): the page read is AllPaginated, not a bare All.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
 				{StatusID: "url-match", URLs: []string{url}},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -1076,12 +1090,13 @@ func TestStatusRepository_more_error_branches_and_helpers(t *testing.T) {
 
 		mockDB2 := new(mocks.MockDB)
 		mockQuery2 := new(mocks.MockQuery)
-		mockQuery2.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		mockQuery2.On("Limit", 500).Return(mockQuery2).Once()
+		mockQuery2.On("AllPaginated", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
 				{StatusID: "nope", URLs: []string{"https://example.com/other"}},
 			}
-		}).Return(nil).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 		setupPermissiveStatusRepoMocks(mockDB2, mockQuery2, nil)
 
 		repo2 := NewStatusRepository(mockDB2, "test-table", zap.NewNop(), nil)
@@ -1153,7 +1168,10 @@ func TestStatusRepository_more_error_paths(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("All", mock.AnythingOfType("*[]models.StatusEngagement")).Return(assert.AnError).Once()
+		// removeEngagement now reads via a bounded page walk (wave #1469): the
+		// page read is AllPaginated, not a bare All.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.StatusEngagement")).Return(nil, assert.AnError).Once()
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -1191,7 +1209,9 @@ func TestStatusRepository_more_branch_errors_for_counts_and_bookmarks(t *testing
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		// Page-capped walk (wave #1469): the walk error propagates.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -1203,7 +1223,8 @@ func TestStatusRepository_more_branch_errors_for_counts_and_bookmarks(t *testing
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)

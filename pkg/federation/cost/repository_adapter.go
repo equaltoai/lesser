@@ -316,8 +316,14 @@ func (r *repositoryAdapter) GetInstanceConfig(ctx context.Context, domain string
 // ListInstanceConfigs returns all instance configurations
 func (r *repositoryAdapter) ListInstanceConfigs(ctx context.Context) ([]*InstanceConfig, error) {
 	var configModels []models.FederationInstanceConfigTracking
+	// All configs resolve through the GSI3 global listing
+	// (INSTANCE_CONFIGS#ALL / INSTANCE#<domain>) maintained by
+	// FederationInstanceConfigTracking.UpdateKeys — the single writer is
+	// SaveInstanceConfig (wave part 2 batch E, #1469). The previous
+	// Type=InstanceConfig filter compiled to a full table scan.
 	err := r.db.WithContext(ctx).Model(&models.FederationInstanceConfigTracking{}).
-		Where("Type", "=", "InstanceConfig").
+		Index("gsi3").
+		Where("gsi3PK", "=", "INSTANCE_CONFIGS#ALL").
 		All(&configModels)
 
 	if err != nil {

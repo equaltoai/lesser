@@ -49,6 +49,10 @@ type TrustRelationship struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"` // DOMAIN#domain
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"` // TRUST#category#score
 
+	// GSI3 - for global listing (admin visualization)
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty"` // TRUST_RELATIONSHIPS
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty"` // TRUST#trusterID#category#TRUSTEE#trusteeID
+
 	// Business fields
 	ID         string          `theorydb:"attr:id" json:"id"`
 	TrusterID  string          `theorydb:"attr:trusterID" json:"truster_id"`
@@ -84,6 +88,10 @@ func (tr *TrustRelationship) UpdateKeys() error {
 	domain := getDomainFromActorID(tr.TrusteeID)
 	tr.GSI2PK = fmt.Sprintf("DOMAIN#%s", domain)
 	tr.GSI2SK = fmt.Sprintf("TRUST#%s#%f", tr.Category, tr.Score)
+
+	// GSI3 keys for the global trust relationship listing
+	tr.GSI3PK = "TRUST_RELATIONSHIPS"
+	tr.GSI3SK = fmt.Sprintf("TRUST#%s#%s#TRUSTEE#%s", tr.TrusterID, tr.Category, tr.TrusteeID)
 
 	// Set type
 	tr.Type = "RELATIONSHIP"

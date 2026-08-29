@@ -56,3 +56,30 @@ func TestRound08_RateLimitRepository_FederationAndLoginAttemptBranches(t *testin
 		require.NoError(t, repo.CheckFederationRateLimit(ctx, "example.com", "endpoint", 10, time.Minute))
 	})
 }
+
+func TestRound08_RateLimitRepository_FederationPenaltyPath(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Now().UTC()
+
+	t.Run("new window resets, increments, and applies escalating penalty", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		// No active lockout: the fast-path check clears.
+		mockQuery.On("First", mock.AnythingOfType("*models.RateLimitLockout")).Return(dynamormerrors.ErrItemNotFound).Once()
+		// Stale window from a previous window: forces the reset branch, then
+		// Count++ pushes the record over the (zero) limit into the penalty path.
+		mockQuery.On("First", mock.AnythingOfType("*models.APIRateLimit")).Run(func(args mock.Arguments) {
+			rl := args.Get(0).(*models.APIRateLimit)
+			rl.Domain = "example.com"
+			rl.Endpoint = "endpoint"
+			rl.Window = time.Now().Add(-48 * time.Hour)
+			rl.Count = 0
+			rl.Blocked = false
+		}).Return(nil).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)
+		err := repo.CheckFederationRateLimit(ctx, "example.com", "endpoint", 0, time.Minute)
+		require.Error(t, err)
+	})
+}

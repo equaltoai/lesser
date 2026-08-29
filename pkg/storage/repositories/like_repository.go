@@ -159,14 +159,24 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 
 // CountActorLikes returns the total number of likes by an actor
 func (r *LikeRepository) CountActorLikes(ctx context.Context, actorID string) (int64, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.Like{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("actor#%s#likes", actorID)).
-		Count()
+	// The whole keyed actor#<id>#likes gsi1 partition must be read to count
+	// every like, so the read is a bounded page walk (wave #1469): Limit(500)/
+	// page, 100-page cap, fail-closed on exhaustion.
+	var likeModels []models.Like
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Like{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("actor#%s#likes", actorID)),
+		500, 100,
+		func(page []models.Like) (bool, error) {
+			likeModels = append(likeModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "like", fmt.Sprintf("actor %s count", actorID))
 	}
-	return count, nil
+	return int64(len(likeModels)), nil
 }
 
 // HasLiked checks if an actor has liked an object
@@ -352,10 +362,20 @@ func (r *LikeRepository) GetBoostCount(ctx context.Context, statusID string) (in
 	// Query announces with PK pattern: OBJECT#{statusID}#ANNOUNCES
 	pk := fmt.Sprintf("OBJECT#%s#ANNOUNCES", statusID)
 
-	// Use direct DynamORM call since we're working with Announce model, not Like
-	count, err := r.db.WithContext(ctx).Model(&models.Announce{}).
-		Where("PK", "=", pk).
-		Count()
+	// Use direct DynamORM call since we're working with Announce model, not Like.
+	// The whole keyed OBJECT#<status>#ANNOUNCES partition must be read to count
+	// every boost, so the read is a bounded page walk (wave #1469): Limit(500)/
+	// page, 100-page cap, fail-closed on exhaustion.
+	var announceModels []models.Announce
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Announce{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.Announce) (bool, error) {
+			announceModels = append(announceModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count boosts",
@@ -364,7 +384,7 @@ func (r *LikeRepository) GetBoostCount(ctx context.Context, statusID string) (in
 		return 0, ErrorHandler.HandleQueryError(err, "boost", fmt.Sprintf("status %s count", statusID))
 	}
 
-	return count, nil
+	return int64(len(announceModels)), nil
 }
 
 // IncrementReblogCount increments the reblog count on a status

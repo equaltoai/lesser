@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -34,7 +35,11 @@ func (r *AccountRepository) SearchActors(ctx context.Context, query string, limi
 
 	// If following filter is enabled, search only among followed accounts
 	if following && username != "" {
-		actors = r.searchFollowedActors(ctx, username, query, limit, offset)
+		var err error
+		actors, err = r.searchFollowedActors(ctx, username, query, limit, offset)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		// Search all actors
 		actors = r.searchAllActors(ctx, query, limit, offset)
@@ -54,6 +59,14 @@ func (r *AccountRepository) searchAllActors(ctx context.Context, query string, l
 
 	// Then search by partial match using GSI
 	var actorModels []models.Actor
+
+	// Clamp the caller-supplied page size in the wave's search-repo style
+	// (default 20 / hard max 100): a zero/negative limit previously compiled to
+	// NO limit (tabletheory issues Limit only when limit > 0), so a 0/0 call
+	// read the whole gsi3 DOMAIN partition unboundedly. The limit+offset paging
+	// contract is preserved — the read window is clamp(limit)+offset rows, and
+	// the in-memory offset/limit selection below runs over them unchanged.
+	limit = clampSearchLimit(limit)
 
 	// Search local actors
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
@@ -94,22 +107,37 @@ func (r *AccountRepository) searchAllActors(ctx context.Context, query string, l
 }
 
 // searchFollowedActors searches only among actors the user follows
-func (r *AccountRepository) searchFollowedActors(ctx context.Context, username, query string, limit int, offset int) []*activitypub.Actor {
+func (r *AccountRepository) searchFollowedActors(ctx context.Context, username, query string, limit int, offset int) ([]*activitypub.Actor, error) {
 	var actors []*activitypub.Actor
 
-	// Get all following relationships
+	// Get all following relationships. The keyed partition read is a bounded
+	// page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion (the in-memory offset/limit selection runs over the collected
+	// rows, unchanged).
 	var follows []models.Follow
 
-	err := r.db.WithContext(ctx).Model(&models.Follow{}).
-		Where("PK", "=", fmt.Sprintf("FOLLOWER#%s", username)).
-		Where("SK", "BEGINS_WITH", "FOLLOWS#").
-		All(&follows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Follow{}).
+			Where("PK", "=", fmt.Sprintf("FOLLOWER#%s", username)).
+			Where("SK", "BEGINS_WITH", "FOLLOWS#"),
+		500, 100,
+		func(page []models.Follow) (bool, error) {
+			follows = append(follows, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		// Cap exhaustion fails the search closed instead of degrading to a
+		// partial/empty follow graph as success — only other errors keep the
+		// pre-existing log-and-return-partial swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		r.logger.Error("failed to get following for search",
 			zap.String("username", username),
 			zap.Error(err))
-		return actors
+		return actors, nil
 	}
 
 	// Search among followed actors
@@ -143,7 +171,7 @@ func (r *AccountRepository) searchFollowedActors(ctx context.Context, username, 
 		}
 	}
 
-	return actors
+	return actors, nil
 }
 
 // GetAccountSuggestions returns suggested accounts for a user to follow
@@ -151,7 +179,10 @@ func (r *AccountRepository) GetAccountSuggestions(ctx context.Context, username 
 	suggestions := make([]*storage.AccountSuggestion, 0)
 
 	// Get user's existing follows to exclude
-	following := r.getFollowingUsernames(ctx, username)
+	following, err := r.getFollowingUsernames(ctx, username)
+	if err != nil {
+		return nil, err
+	}
 	followingSet := make(map[string]bool)
 	for _, f := range following {
 		followingSet[f] = true
@@ -162,7 +193,10 @@ func (r *AccountRepository) GetAccountSuggestions(ctx context.Context, username 
 	suggestions = append(suggestions, popularSuggestions...)
 
 	// Strategy 2: Accounts followed by people you follow
-	friendOfFriendSuggestions := r.getFriendOfFriendSuggestions(ctx, username, followingSet, limit/2)
+	friendOfFriendSuggestions, err := r.getFriendOfFriendSuggestions(ctx, username, followingSet, limit/2)
+	if err != nil {
+		return nil, err
+	}
 	suggestions = append(suggestions, friendOfFriendSuggestions...)
 
 	// Deduplicate and limit
@@ -219,13 +253,16 @@ func (r *AccountRepository) getPopularAccountSuggestions(ctx context.Context, us
 }
 
 // getFriendOfFriendSuggestions returns accounts followed by people you follow
-func (r *AccountRepository) getFriendOfFriendSuggestions(ctx context.Context, username string, excludeSet map[string]bool, limit int) []*storage.AccountSuggestion {
+func (r *AccountRepository) getFriendOfFriendSuggestions(ctx context.Context, username string, excludeSet map[string]bool, limit int) ([]*storage.AccountSuggestion, error) {
 	suggestions := make([]*storage.AccountSuggestion, 0)
 
 	// Get people the user follows
-	following := r.getFollowingUsernames(ctx, username)
+	following, err := r.getFollowingUsernames(ctx, username)
+	if err != nil {
+		return nil, err
+	}
 	if err := common.ValidateSliceNotEmpty("following", following); err != nil {
-		return suggestions
+		return suggestions, nil
 	}
 
 	// Count how many of your follows follow each account
@@ -233,7 +270,10 @@ func (r *AccountRepository) getFriendOfFriendSuggestions(ctx context.Context, us
 
 	for _, followedUsername := range following {
 		// Get who they follow
-		theirFollowing := r.getFollowingUsernames(ctx, followedUsername)
+		theirFollowing, err := r.getFollowingUsernames(ctx, followedUsername)
+		if err != nil {
+			return nil, err
+		}
 		for _, theirFollow := range theirFollowing {
 			if !excludeSet[theirFollow] && theirFollow != username {
 				followCounts[theirFollow]++
@@ -264,7 +304,7 @@ func (r *AccountRepository) getFriendOfFriendSuggestions(ctx context.Context, us
 		})
 	}
 
-	return suggestions
+	return suggestions, nil
 }
 
 // GetTrendingActors returns actors that are currently trending
@@ -455,20 +495,34 @@ func (r *AccountRepository) GetInactiveUsers(ctx context.Context, inactiveSince 
 // Helper methods
 
 // getFollowingUsernames returns list of usernames that a user follows
-func (r *AccountRepository) getFollowingUsernames(ctx context.Context, username string) []string {
+func (r *AccountRepository) getFollowingUsernames(ctx context.Context, username string) ([]string, error) {
 	var follows []models.Follow
 	usernames := make([]string, 0)
 
-	err := r.db.WithContext(ctx).Model(&models.Follow{}).
-		Where("PK", "=", fmt.Sprintf("FOLLOWER#%s", username)).
-		Where("SK", "BEGINS_WITH", "FOLLOWS#").
-		All(&follows)
+	// The keyed partition read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Follow{}).
+			Where("PK", "=", fmt.Sprintf("FOLLOWER#%s", username)).
+			Where("SK", "BEGINS_WITH", "FOLLOWS#"),
+		500, 100,
+		func(page []models.Follow) (bool, error) {
+			follows = append(follows, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of degrading to an
+		// empty/partial following list as success — only other errors keep the
+		// pre-existing log-and-return-partial swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		r.logger.Error("failed to get following usernames",
 			zap.String("username", username),
 			zap.Error(err))
-		return usernames
+		return usernames, nil
 	}
 
 	for _, follow := range follows {
@@ -477,7 +531,7 @@ func (r *AccountRepository) getFollowingUsernames(ctx context.Context, username 
 		}
 	}
 
-	return usernames
+	return usernames, nil
 }
 
 // extractDomainFromActorID extracts domain from an actor ID URL

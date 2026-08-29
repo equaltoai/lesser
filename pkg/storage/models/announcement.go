@@ -160,6 +160,10 @@ type AnnouncementDismissal struct {
 	PK string `theorydb:"pk,attr:PK" json:"-"`
 	SK string `theorydb:"sk,attr:SK" json:"-"`
 
+	// GSI1 - dismissal cleanup by announcement
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // ANN_DISMISSED#{announcementID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // USER#{username}
+
 	// Dismissal fields
 	Username       string    `theorydb:"attr:username" json:"username"`
 	AnnouncementID string    `theorydb:"attr:announcementID" json:"announcement_id"`
@@ -175,6 +179,8 @@ func (AnnouncementDismissal) TableName() string {
 func (d *AnnouncementDismissal) UpdateKeys() error {
 	d.PK = fmt.Sprintf(KeyPatternUser, d.Username)
 	d.SK = fmt.Sprintf("ANNOUNCEMENT_DISMISSED#%s", d.AnnouncementID)
+	d.GSI1PK = fmt.Sprintf("ANN_DISMISSED#%s", d.AnnouncementID)
+	d.GSI1SK = fmt.Sprintf(KeyPatternUser, d.Username)
 	return nil
 }
 

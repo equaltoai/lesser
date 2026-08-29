@@ -248,8 +248,8 @@ func TestTrustRepository_GetAllTrustRelationshipsAndUpdates(t *testing.T) {
 		logger:                 zap.NewNop(),
 	}
 
-	// GetAllTrustRelationships scan success
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	// GetAllTrustRelationships gsi3 query success
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.TrustRelationship")).Run(func(args mock.Arguments) {
 		if rels, ok := args.Get(0).(*[]*models.TrustRelationship); ok {
 			*rels = []*models.TrustRelationship{{ID: "rel-1", TrusterID: "a", TrusteeID: "b", Category: trust.TrustCategoryGeneral}}
 		}

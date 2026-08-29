@@ -360,7 +360,9 @@ func TestWebSocketCostRepository_UpdateBudgetUsage_BudgetQueryErrorIsNonFatal(t 
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 
-	// GetUserBudgets -> queryBudgetsByGSI -> query.All returns error
+	// queryBudgetsByGSI now always issues Limit(500) (wave #1469 floor); the
+	// All error is what UpdateBudgetUsage treats as non-fatal.
+	mockQuery.On("Limit", 500).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.WebSocketCostBudget")).Return(errors.New("query failed")).Once()
 
 	repo := NewWebSocketCostRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -377,6 +379,8 @@ func TestWebSocketCostRepository_CheckBudgetLimits_BudgetQueryError(t *testing.T
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
+	// queryBudgetsByGSI now always issues Limit(500) (wave #1469 floor).
+	mockQuery.On("Limit", 500).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.WebSocketCostBudget")).Return(errors.New("query failed")).Once()
 
 	repo := NewWebSocketCostRepository(mockDB, "test-table", zap.NewNop(), nil)

@@ -105,43 +105,6 @@ func (r *FilterRepository) UpdateFilter(_ context.Context, filter *models.Filter
 	return nil
 }
 
-// DeleteFilter deletes a filter and all its associated keywords and statuses
-func (r *FilterRepository) DeleteFilter(_ context.Context, filterID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	filter, exists := r.filtersByID[filterID]
-	if !exists {
-		return storage.ErrNotFound
-	}
-
-	// Delete keywords
-	for _, keyword := range r.keywordsByFilter[filterID] {
-		delete(r.keywordsByID, keyword.ID)
-	}
-	delete(r.keywordsByFilter, filterID)
-
-	// Delete statuses
-	for _, status := range r.statusesByFilter[filterID] {
-		delete(r.statusesByID, status.ID)
-	}
-	delete(r.statusesByFilter, filterID)
-
-	// Delete from user's list
-	var newFilters []*models.Filter
-	for _, f := range r.filtersByUser[filter.Username] {
-		if f.ID != filterID {
-			newFilters = append(newFilters, f)
-		}
-	}
-	r.filtersByUser[filter.Username] = newFilters
-
-	// Delete filter
-	delete(r.filtersByID, filterID)
-
-	return nil
-}
-
 // ===== Filter Query Operations =====
 
 // GetUserFilters retrieves all filters for a user
@@ -212,29 +175,6 @@ func (r *FilterRepository) AddFilterKeyword(_ context.Context, keyword *models.F
 	return nil
 }
 
-// RemoveFilterKeyword removes a filter keyword
-func (r *FilterRepository) RemoveFilterKeyword(_ context.Context, keywordID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	keyword, exists := r.keywordsByID[keywordID]
-	if !exists {
-		return storage.ErrNotFound
-	}
-
-	// Remove from filter's list
-	var newKeywords []*models.FilterKeyword
-	for _, k := range r.keywordsByFilter[keyword.FilterID] {
-		if k.ID != keywordID {
-			newKeywords = append(newKeywords, k)
-		}
-	}
-	r.keywordsByFilter[keyword.FilterID] = newKeywords
-
-	delete(r.keywordsByID, keywordID)
-	return nil
-}
-
 // GetFilterKeywords retrieves all keywords for a filter
 func (r *FilterRepository) GetFilterKeywords(_ context.Context, filterID string) ([]*models.FilterKeyword, error) {
 	r.mu.RLock()
@@ -261,29 +201,6 @@ func (r *FilterRepository) AddFilterStatus(_ context.Context, filterStatus *mode
 	r.statusesByID[filterStatus.ID] = filterStatus
 	r.statusesByFilter[filterStatus.FilterID] = append(r.statusesByFilter[filterStatus.FilterID], filterStatus)
 
-	return nil
-}
-
-// RemoveFilterStatus removes a filter status by its ID
-func (r *FilterRepository) RemoveFilterStatus(_ context.Context, filterStatusID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	status, exists := r.statusesByID[filterStatusID]
-	if !exists {
-		return storage.ErrNotFound
-	}
-
-	// Remove from filter's list
-	var newStatuses []*models.FilterStatus
-	for _, s := range r.statusesByFilter[status.FilterID] {
-		if s.ID != filterStatusID {
-			newStatuses = append(newStatuses, s)
-		}
-	}
-	r.statusesByFilter[status.FilterID] = newStatuses
-
-	delete(r.statusesByID, filterStatusID)
 	return nil
 }
 

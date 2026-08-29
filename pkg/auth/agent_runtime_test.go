@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -288,7 +289,10 @@ func TestListAgentRuntimeSessions(t *testing.T) {
 	repo, _, query := newAgentRuntimeAccountRepo()
 
 	allCalls := 0
-	query.On("All", mock.Anything).Return(nil).Times(2).Run(func(args mock.Arguments) {
+	// Wave #1469 batch N4: the runtime refresh-token reads are bounded page
+	// walks (ListRefreshTokensByUserClientGeneric/FamilyGeneric) — AllPaginated
+	// instead of All.
+	query.On("AllPaginated", mock.AnythingOfType("*[]models.RefreshToken")).Return(&core.PaginatedResult{HasMore: false}, nil).Times(2).Run(func(args mock.Arguments) {
 		allCalls++
 		switch target := args.Get(0).(type) {
 		case *[]models.RefreshToken:
@@ -318,7 +322,7 @@ func TestListAgentRuntimeSessions(t *testing.T) {
 	require.Equal(t, "desktop", sessions[1].DeviceLabel)
 
 	repoErr, _, queryErr := newAgentRuntimeAccountRepo()
-	queryErr.On("All", mock.Anything).Return(errors.New("boom")).Once()
+	queryErr.On("AllPaginated", mock.AnythingOfType("*[]models.RefreshToken")).Return(nil, errors.New("boom")).Once()
 
 	_, err = ListAgentRuntimeSessions(context.Background(), agentRuntimeRepos{account: repoErr}, "alice")
 	require.Error(t, err)
@@ -339,7 +343,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		})
 
 		listCalls := 0
-		query.On("All", mock.Anything).Return(nil).Twice().Run(func(args mock.Arguments) {
+		query.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Twice().Run(func(args mock.Arguments) {
 			listCalls++
 			target := args.Get(0).(*[]models.RefreshToken)
 			if listCalls == 1 {
@@ -380,7 +384,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 			}
 		})
 
-		query.On("All", mock.Anything).Return(nil).Twice().Run(func(args mock.Arguments) {
+		query.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Twice().Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.RefreshToken)
 			*target = []models.RefreshToken{
 				{Token: "rt-active", FamilyID: "fam-1", Username: "alice", ClientID: "lesser-agent-delegation", Revoked: false, Version: 1},
@@ -412,13 +416,13 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 
 	t.Run("family errors and pre-marked reuse", func(t *testing.T) {
 		repoErr, _, queryErr := newAgentRuntimeAccountRepo()
-		queryErr.On("All", mock.Anything).Return(errors.New("list failed")).Twice()
+		queryErr.On("AllPaginated", mock.Anything).Return(nil, errors.New("list failed")).Twice()
 
 		err := RevokeAgentRuntimeFamily(context.Background(), agentRuntimeRepos{account: repoErr}, &storage.RefreshToken{FamilyID: "fam-err"}, "manual", "", "")
 		require.Error(t, err)
 
 		repoSkip, _, querySkip := newAgentRuntimeAccountRepo()
-		querySkip.On("All", mock.Anything).Return(nil).Twice().Run(func(args mock.Arguments) {
+		querySkip.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Twice().Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.RefreshToken)
 			*target = []models.RefreshToken{
 				{
@@ -441,7 +445,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		repo, _, query := newAgentRuntimeAccountRepo()
 
 		allCalls := 0
-		query.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
+		query.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Times(4).Run(func(args mock.Arguments) {
 			allCalls++
 			switch target := args.Get(0).(type) {
 			case *[]models.RefreshToken:
@@ -465,7 +469,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		require.NoError(t, err)
 
 		repoMissing, _, queryMissing := newAgentRuntimeAccountRepo()
-		queryMissing.On("All", mock.Anything).Return(nil).Times(2).Run(func(args mock.Arguments) {
+		queryMissing.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Times(2).Run(func(args mock.Arguments) {
 			switch target := args.Get(0).(type) {
 			case *[]models.RefreshToken:
 				*target = []models.RefreshToken{}
@@ -478,7 +482,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 
 	t.Run("session list errors propagate", func(t *testing.T) {
 		repoErr, _, queryErr := newAgentRuntimeAccountRepo()
-		queryErr.On("All", mock.Anything).Return(errors.New("list failed")).Once()
+		queryErr.On("AllPaginated", mock.Anything).Return(nil, errors.New("list failed")).Once()
 
 		err := RevokeAgentRuntimeSession(context.Background(), agentRuntimeRepos{account: repoErr}, "alice", "sid-1", "manual", "", "")
 		require.Error(t, err)
@@ -488,7 +492,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		repo, _, query := newAgentRuntimeAccountRepo()
 
 		allCalls := 0
-		query.On("All", mock.Anything).Return(nil).Times(6).Run(func(args mock.Arguments) {
+		query.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Times(6).Run(func(args mock.Arguments) {
 			allCalls++
 			switch target := args.Get(0).(type) {
 			case *[]models.RefreshToken:
@@ -521,7 +525,7 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 	t.Run("revoke all surfaces family failures", func(t *testing.T) {
 		repoErr, _, queryErr := newAgentRuntimeAccountRepo()
 		allCalls := 0
-		queryErr.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
+		queryErr.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Times(4).Run(func(args mock.Arguments) {
 			allCalls++
 			switch target := args.Get(0).(type) {
 			case *[]models.RefreshToken:
@@ -591,14 +595,14 @@ func TestAgentRuntimeAuthDiagnostics(t *testing.T) {
 			}
 		})
 
-		query.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		query.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once().Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.RefreshToken)
 			*target = []models.RefreshToken{
 				{Token: "rt-1", FamilyID: "fam-1", Version: 1},
 				{Token: "rt-2", FamilyID: "fam-1", Version: 1},
 			}
 		})
-		query.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		query.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once().Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.RefreshToken)
 			*target = []models.RefreshToken{
 				{Token: "rt-session", SessionID: "sid-1", Version: 1},

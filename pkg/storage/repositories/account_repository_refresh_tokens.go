@@ -248,12 +248,21 @@ func (r *AccountRepository) RevokeAdvancedUserTokens(ctx context.Context, userID
 
 // GetAdvancedTokensByUser retrieves all tokens for a user
 func (r *AccountRepository) GetAdvancedTokensByUser(ctx context.Context, userID string) ([]models.AuthRefreshToken, error) {
+	// The whole keyed gsi1 partition must be read to return every token, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
 	var tokens []models.AuthRefreshToken
 
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		All(&tokens)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("USER#%s", userID)),
+		500, 100,
+		func(page []models.AuthRefreshToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get tokens by user",
@@ -267,12 +276,21 @@ func (r *AccountRepository) GetAdvancedTokensByUser(ctx context.Context, userID 
 
 // GetAdvancedTokensByFamily retrieves all tokens in a family
 func (r *AccountRepository) GetAdvancedTokensByFamily(ctx context.Context, family string) ([]models.AuthRefreshToken, error) {
+	// The whole keyed gsi2 partition must be read to return every token, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
 	var tokens []models.AuthRefreshToken
 
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", fmt.Sprintf("FAMILY#%s", family)).
-		All(&tokens)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("FAMILY#%s", family)),
+		500, 100,
+		func(page []models.AuthRefreshToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get tokens by family",
@@ -335,48 +353,6 @@ func (r *AccountRepository) UpdateAdvancedTokenLastUsed(ctx context.Context, tok
 	}
 
 	return nil
-}
-
-// CleanupExpiredAdvancedTokens removes expired tokens (maintenance task)
-func (r *AccountRepository) CleanupExpiredAdvancedTokens(ctx context.Context) (int, error) {
-	// Note: In production, this would use a more efficient scan or be handled by DynamoDB TTL
-	// For now, we'll implement a basic cleanup
-
-	var allTokens []models.AuthRefreshToken
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Where("SK", "=", "TOKEN").
-		All(&allTokens)
-
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "cleanup scan")
-	}
-
-	now := time.Now().Unix()
-	var deletedCount int
-
-	for _, token := range allTokens {
-		if token.ExpiresAt < now {
-			deleteErr := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-				Where("PK", "=", token.Token).
-				Where("SK", "=", "TOKEN").
-				Delete()
-
-			if deleteErr != nil {
-				r.logger.Error("failed to delete expired token during cleanup",
-					zap.String("token", token.Token[:8]+"..."),
-					zap.Error(deleteErr))
-			} else {
-				deletedCount++
-			}
-		}
-	}
-
-	if deletedCount > 0 {
-		r.logger.Info("cleaned up expired refresh tokens",
-			zap.Int("deletedCount", deletedCount))
-	}
-
-	return deletedCount, nil
 }
 
 // GetAdvancedTokenStats returns statistics about tokens for monitoring

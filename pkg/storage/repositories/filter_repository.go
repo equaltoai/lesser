@@ -150,70 +150,35 @@ func (r *FilterRepository) UpdateFilter(ctx context.Context, filter *models.Filt
 	return nil
 }
 
-// DeleteFilter deletes a filter and all its associated keywords and statuses
-func (r *FilterRepository) DeleteFilter(ctx context.Context, filterID string) error {
-	// First get the filter to find the username
-	filter, err := r.GetFilter(ctx, filterID)
-	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityFilter, filterID)
-	}
-
-	// Delete all keywords first
-	keywords, err := r.GetFilterKeywords(ctx, filterID)
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, EntityFilterKeyword, "deletion")
-	}
-	for _, keyword := range keywords {
-		if err := r.RemoveFilterKeyword(ctx, keyword.ID); err != nil {
-			r.logger.Error("Failed to delete filter keyword during filter deletion",
-				zap.Error(err),
-				zap.String("keyword_id", keyword.ID))
-			// Continue with other deletions
-		}
-	}
-
-	// Delete all statuses
-	statuses, err := r.GetFilterStatuses(ctx, filterID)
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, EntityFilterStatus, "deletion")
-	}
-	for _, status := range statuses {
-		if err := r.RemoveFilterStatus(ctx, status.ID); err != nil {
-			r.logger.Error("Failed to delete filter status during filter deletion",
-				zap.Error(err),
-				zap.String("status_id", status.ID))
-			// Continue with other deletions
-		}
-	}
-
-	// Delete the filter itself
-	if err := r.Delete(ctx, filter.PK, filter.SK); err != nil {
-		r.logger.Error("Failed to delete filter",
-			zap.Error(err),
-			zap.String("filter_id", filterID),
-			zap.String("username", filter.Username))
-		return ErrorHandler.HandleDeleteError(err, EntityFilter, filterID)
-	}
-
-	r.logger.Debug("Deleted filter",
-		zap.String("filter_id", filterID),
-		zap.String("username", filter.Username))
-
-	return nil
-}
-
 // GetUserFilters retrieves all filters for a user
 func (r *FilterRepository) GetUserFilters(ctx context.Context, username string) ([]*models.Filter, error) {
-	var filters []*models.Filter
-
-	err := r.db.WithContext(ctx).Model(&models.Filter{}).
-		Where("PK", "=", fmt.Sprintf(models.KeyPatternUser, username)).
-		Where("SK", ">=", "FILTER#").
-		Where("SK", "<", "FILTER~"). // Use ~ as upper bound since it's after # in ASCII
-		All(&filters)
+	// The whole keyed USER#<username> partition must be read to return every
+	// filter, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	var filterModels []models.Filter
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Filter{}).
+			Where("PK", "=", fmt.Sprintf(models.KeyPatternUser, username)).
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= FILTER# AND < FILTER~` becomes BETWEEN [FILTER#, FILTER~]
+			// (inclusive of the `~` sentinel, which no real filter SK can
+			// equal). Two range conditions on one sort key are rejected by
+			// DynamoDB (issue #1500).
+			Where("SK", "BETWEEN", []any{"FILTER#", "FILTER~"}),
+		500, 100,
+		func(page []models.Filter) (bool, error) {
+			filterModels = append(filterModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilter, "user filters")
+	}
+
+	filters := make([]*models.Filter, len(filterModels))
+	for i := range filterModels {
+		filters[i] = &filterModels[i]
 	}
 
 	return filters, nil
@@ -299,108 +264,34 @@ func (r *FilterRepository) AddFilterKeyword(ctx context.Context, keyword *models
 	return r.createFilterItem(ctx, keyword, adapter, EntityFilterKeyword, logFields)
 }
 
-// FilterItemDeletable defines the common interface for deletable filter items
-type FilterItemDeletable interface {
-	GetPK() string
-	GetSK() string
-	GetFilterID() string
-	GetItemID() string
-}
-
-// filterKeywordDeletable adapter
-type filterKeywordDeletable struct {
-	*models.FilterKeyword
-}
-
-func (a *filterKeywordDeletable) GetPK() string       { return a.PK }
-func (a *filterKeywordDeletable) GetSK() string       { return a.SK }
-func (a *filterKeywordDeletable) GetFilterID() string { return a.FilterID }
-func (a *filterKeywordDeletable) GetItemID() string   { return a.ID }
-
-// filterStatusDeletable adapter
-type filterStatusDeletable struct {
-	*models.FilterStatus
-}
-
-func (a *filterStatusDeletable) GetPK() string       { return a.PK }
-func (a *filterStatusDeletable) GetSK() string       { return a.SK }
-func (a *filterStatusDeletable) GetFilterID() string { return a.FilterID }
-func (a *filterStatusDeletable) GetItemID() string   { return a.ID }
-
-// removeFilterItem is a helper for removing filter items (keywords, statuses)
-func (r *FilterRepository) removeFilterItem(ctx context.Context, itemID, skPattern, entityType string, model interface{}, findItemFunc func(interface{}) (FilterItemDeletable, bool)) error {
-	// First find the item
-	var items interface{}
-	switch model.(type) {
-	case *models.FilterKeyword:
-		var keywords []*models.FilterKeyword
-		items = &keywords
-	case *models.FilterStatus:
-		var statuses []*models.FilterStatus
-		items = &statuses
-	}
-
-	err := r.db.WithContext(ctx).Model(model).
-		Where("SK", "=", fmt.Sprintf(skPattern, itemID)).
-		Limit(10).
-		All(items)
-
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, entityType, "deletion")
-	}
-
-	// Find the target item using the provided function
-	targetItem, found := findItemFunc(items)
-	if !found {
-		return ErrorHandler.HandleGetError(storage.ErrNotFound, entityType, itemID)
-	}
-
-	// Delete the item
-	err = r.db.WithContext(ctx).Model(model).
-		Where("PK", "=", targetItem.GetPK()).
-		Where("SK", "=", targetItem.GetSK()).
-		Delete()
-
-	if err != nil {
-		r.logger.Error("Failed to delete "+entityType,
-			zap.Error(err),
-			zap.String("item_id", itemID))
-		return ErrorHandler.HandleDeleteError(err, entityType, itemID)
-	}
-
-	r.logger.Debug("Deleted "+entityType,
-		zap.String("item_id", itemID),
-		zap.String("filter_id", targetItem.GetFilterID()))
-
-	return nil
-}
-
-// RemoveFilterKeyword removes a filter keyword
-func (r *FilterRepository) RemoveFilterKeyword(ctx context.Context, keywordID string) error {
-	return r.removeFilterItem(ctx, keywordID, "KEYWORD#%s", EntityFilterKeyword, &models.FilterKeyword{},
-		func(items interface{}) (FilterItemDeletable, bool) {
-			keywords := items.(*[]*models.FilterKeyword)
-			for _, keyword := range *keywords {
-				if keyword.ID == keywordID {
-					return &filterKeywordDeletable{FilterKeyword: keyword}, true
-				}
-			}
-			return nil, false
-		})
-}
-
 // GetFilterKeywords retrieves all keywords for a filter
 func (r *FilterRepository) GetFilterKeywords(ctx context.Context, filterID string) ([]*models.FilterKeyword, error) {
-	var keywords []*models.FilterKeyword
-
-	err := r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
-		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Where("SK", ">=", "KEYWORD#").
-		Where("SK", "<", "KEYWORD~").
-		All(&keywords)
+	// The whole keyed FILTER#<id> partition must be read to return every
+	// keyword, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	var keywordModels []models.FilterKeyword
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
+			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= KEYWORD# AND < KEYWORD~` (inclusive `~` sentinel bound; see
+			// GetUserFilters). Two range conditions on one sort key are
+			// rejected by DynamoDB (issue #1500).
+			Where("SK", "BETWEEN", []any{"KEYWORD#", "KEYWORD~"}),
+		500, 100,
+		func(page []models.FilterKeyword) (bool, error) {
+			keywordModels = append(keywordModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilterKeyword, "query")
+	}
+
+	keywords := make([]*models.FilterKeyword, len(keywordModels))
+	for i := range keywordModels {
+		keywords[i] = &keywordModels[i]
 	}
 
 	return keywords, nil
@@ -417,32 +308,34 @@ func (r *FilterRepository) AddFilterStatus(ctx context.Context, filterStatus *mo
 	return r.createFilterItem(ctx, filterStatus, adapter, EntityFilterStatus, logFields)
 }
 
-// RemoveFilterStatus removes a filter status by its ID
-func (r *FilterRepository) RemoveFilterStatus(ctx context.Context, filterStatusID string) error {
-	return r.removeFilterItem(ctx, filterStatusID, "STATUS#%s", EntityFilterStatus, &models.FilterStatus{},
-		func(items interface{}) (FilterItemDeletable, bool) {
-			statuses := items.(*[]*models.FilterStatus)
-			for _, status := range *statuses {
-				if status.StatusID == filterStatusID {
-					return &filterStatusDeletable{FilterStatus: status}, true
-				}
-			}
-			return nil, false
-		})
-}
-
 // GetFilterStatuses retrieves all statuses for a filter
 func (r *FilterRepository) GetFilterStatuses(ctx context.Context, filterID string) ([]*models.FilterStatus, error) {
-	var statuses []*models.FilterStatus
-
-	err := r.db.WithContext(ctx).Model(&models.FilterStatus{}).
-		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Where("SK", ">=", "STATUS#").
-		Where("SK", "<", "STATUS~").
-		All(&statuses)
+	// The whole keyed FILTER#<id> partition must be read to return every
+	// status, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
+	var statusModels []models.FilterStatus
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.FilterStatus{}).
+			Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+			// One BETWEEN key condition on SK — the prefix window
+			// `>= STATUS# AND < STATUS~` (inclusive `~` sentinel bound; see
+			// GetUserFilters). Two range conditions on one sort key are
+			// rejected by DynamoDB (issue #1500).
+			Where("SK", "BETWEEN", []any{"STATUS#", "STATUS~"}),
+		500, 100,
+		func(page []models.FilterStatus) (bool, error) {
+			statusModels = append(statusModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilterStatus, "query")
+	}
+
+	statuses := make([]*models.FilterStatus, len(statusModels))
+	for i := range statusModels {
+		statuses[i] = &statusModels[i]
 	}
 
 	return statuses, nil

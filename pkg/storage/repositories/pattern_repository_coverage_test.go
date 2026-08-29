@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -221,14 +222,16 @@ func TestPatternRepository_CrudAndQueries(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Where", "SK", "=", models.SKMetadata).Return(mockQuery).Once()
+		mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+		mockQuery.On("Where", "gsi3PK", "=", "MODERATION_PATTERNS#ALL").Return(mockQuery).Once()
 		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.ModerationPattern)
-			*dest = []*models.ModerationPattern{
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.ModerationPattern)
+			*dest = []models.ModerationPattern{
 				{PatternID: "p1", Category: "spam", Active: true},
 			}
-		}).Once()
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		repo := NewPatternRepository(mockDB, "table", zap.NewNop(), nil)
 		patterns, err := repo.GetPatterns(ctx, "spam", true)
@@ -247,11 +250,13 @@ func TestPatternRepository_CrudAndQueries(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Where", "SK", "=", models.SKMetadata).Return(mockQuery).Once()
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.ModerationPattern)
-			*dest = []*models.ModerationPattern{}
-		}).Once()
+		mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+		mockQuery.On("Where", "gsi3PK", "=", "MODERATION_PATTERNS#ALL").Return(mockQuery).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.ModerationPattern)
+			*dest = []models.ModerationPattern{}
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		repo := NewPatternRepository(mockDB, "table", zap.NewNop(), newTestCostService(t))
 		_, err := repo.GetPatterns(ctx, "", false)
@@ -267,8 +272,10 @@ func TestPatternRepository_CrudAndQueries(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Where", "SK", "=", models.SKMetadata).Return(mockQuery).Once()
-		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+		mockQuery.On("Where", "gsi3PK", "=", "MODERATION_PATTERNS#ALL").Return(mockQuery).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, assert.AnError).Once()
 
 		repo := NewPatternRepository(mockDB, "table", zap.NewNop(), nil)
 		_, err := repo.GetPatterns(ctx, "", false)
@@ -323,11 +330,13 @@ func TestPatternRepository_CrudAndQueries(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Where", "SK", "=", models.SKMetadata).Return(mockQuery).Once()
+		mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+		mockQuery.On("Where", "gsi3PK", "=", "MODERATION_PATTERNS#ALL").Return(mockQuery).Once()
 		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.ModerationPattern)
-			*dest = []*models.ModerationPattern{}
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.ModerationPattern)
+			*dest = []models.ModerationPattern{}
 		}).Once()
 
 		repo := NewPatternRepository(mockDB, "table", zap.NewNop(), nil)

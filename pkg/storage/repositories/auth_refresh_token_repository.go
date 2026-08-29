@@ -240,12 +240,21 @@ func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userI
 		zap.String("user_id", userID),
 		zap.String("reason", reason))
 
-	// Get all tokens for the user (both active and inactive for complete revocation)
+	// Get all tokens for the user (both active and inactive for complete
+	// revocation). The whole keyed gsi1 partition must be read, so the read is
+	// a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var tokens []models.AuthRefreshToken
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "USER#"+userID).
-		All(&tokens)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", "USER#"+userID),
+		500, 100,
+		func(page []models.AuthRefreshToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -302,10 +311,16 @@ func (r *AuthRefreshTokenRepository) GetTokensByUser(ctx context.Context, userID
 		zap.String("user_id", userID))
 
 	var tokens []models.AuthRefreshToken
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", "USER#"+userID).
-		All(&tokens)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", "USER#"+userID),
+		500, 100,
+		func(page []models.AuthRefreshToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -336,10 +351,16 @@ func (r *AuthRefreshTokenRepository) GetTokensByFamily(ctx context.Context, fami
 		zap.String("family", family))
 
 	var tokens []models.AuthRefreshToken
-	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
-		Index("gsi2").
-		Where("gsi2PK", "=", "FAMILY#"+family).
-		All(&tokens)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", "FAMILY#"+family),
+		500, 100,
+		func(page []models.AuthRefreshToken) (bool, error) {
+			tokens = append(tokens, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {

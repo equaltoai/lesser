@@ -1217,28 +1217,10 @@ func TestRound12CMS_ArticlesSeriesCategoriesPublications(t *testing.T) {
 }
 
 func TestRound12CMS_MyPublicationsDoesNotSelfHealFallbackRows(t *testing.T) {
+	// The scan fallback was removed: MyPublications must resolve memberships
+	// solely through ListMembershipsForUserPaginated (GSI1). Any DB access at
+	// all (an un-mocked WithContext panics) fails this test.
 	mockDB := new(dynamormmocks.MockDB)
-	mockQuery := new(dynamormmocks.MockQuery)
-
-	fallbackMember := models.PublicationMember{
-		PublicationID: "pub-1",
-		UserID:        "alice",
-		Role:          "owner",
-		// Deliberately blank GSI keys model pre-M12 rows that need repair outside
-		// of read resolvers.
-		GSI1PK: "",
-		GSI1SK: "",
-	}
-
-	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Where", "SK", "=", "USER#alice").Return(mockQuery).Once()
-	mockQuery.On("Limit", 1000).Return(mockQuery).Once()
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		members, ok := args.Get(0).(*[]models.PublicationMember)
-		require.True(t, ok)
-		*members = []models.PublicationMember{fallbackMember}
-	}).Return(nil).Once()
 
 	pubRepo := inmemory.NewPublicationRepository()
 	now := time.Now().UTC()
@@ -1272,8 +1254,7 @@ func TestRound12CMS_MyPublicationsDoesNotSelfHealFallbackRows(t *testing.T) {
 
 	publications, err := resolver.Query().MyPublications(round12AuthContext("alice"))
 	require.NoError(t, err)
-	require.Len(t, publications, 1)
-	require.Equal(t, "pub-1", publications[0].ID)
+	require.Empty(t, publications, "legacy membership rows without GSI1 keys are not listed until backfilled")
 	require.Zero(t, memberRepo.updates, "read resolvers must not self-heal publication member rows")
 }
 

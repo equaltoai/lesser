@@ -278,12 +278,22 @@ func (r *AgentAccessLeaseRepository) ListLeases(ctx context.Context, username st
 		return nil, storage.ErrInvalidInput
 	}
 
+	// The whole keyed AGENT_ACCESS_LEASE#<username> partition must be read to
+	// return every lease, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var leases []models.AgentAccessLease
-	if err := r.db.WithContext(ctx).
-		Model(&models.AgentAccessLease{}).
-		Where("PK", "=", fmt.Sprintf("AGENT_ACCESS_LEASE#%s", username)).
-		Where("SK", "BEGINS_WITH", "LEASE#").
-		All(&leases); err != nil {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).
+			Model(&models.AgentAccessLease{}).
+			Where("PK", "=", fmt.Sprintf("AGENT_ACCESS_LEASE#%s", username)).
+			Where("SK", "BEGINS_WITH", "LEASE#"),
+		500, 100,
+		func(page []models.AgentAccessLease) (bool, error) {
+			leases = append(leases, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		r.logger.Warn("failed to list agent access leases",
 			zap.String("username", username),
 			zap.Error(err))

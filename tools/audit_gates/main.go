@@ -30,6 +30,7 @@ type baseline struct {
 	GoDynamoDBQueryScan  map[string]int `yaml:"goDynamoDBQueryScan"`
 	GoDynamoDBBadPKWhere map[string]int `yaml:"goDynamoDBBadPKWhere"`
 	GoDynamoDBAllNoKey   map[string]int `yaml:"goDynamoDBAllNoKey"`
+	GoDynamoDBCountNoKey map[string]int `yaml:"goDynamoDBCountNoKey"`
 
 	InfraCdkCspUnsafeInline map[string]int `yaml:"infraCdkCspUnsafeInline"`
 	InfraCdkCspUnsafeEval   map[string]int `yaml:"infraCdkCspUnsafeEval"`
@@ -100,6 +101,10 @@ func run(opts options) error {
 	}
 
 	if err := checkGoDynamoDBAllNoKey(b); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if err := checkGoDynamoDBCountNoKey(b); err != nil {
 		problems = append(problems, err.Error())
 	}
 
@@ -219,6 +224,14 @@ func dumpDynamoDBBaseline() error {
 		return err
 	}
 
+	countNoKeyCounts, err := countGoUnkeyedCountCalls([]string{"cmd", "pkg", "graph"}, scanOptions{
+		IncludeTests: false,
+		Skips:        skips,
+	})
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("goDynamoDBQueryScan:")
 	printYAMLCountMap(scanCounts)
 	fmt.Println()
@@ -227,6 +240,9 @@ func dumpDynamoDBBaseline() error {
 	fmt.Println()
 	fmt.Println("goDynamoDBAllNoKey:")
 	printYAMLCountMap(allNoKeyCounts)
+	fmt.Println()
+	fmt.Println("goDynamoDBCountNoKey:")
+	printYAMLCountMap(countNoKeyCounts)
 	return nil
 }
 
@@ -431,9 +447,12 @@ func checkGoDynamoDBBadPKWhere(b baseline) error {
 }
 
 // checkGoDynamoDBAllNoKey catches key-less TableTheory All(...) calls — All
-// without a preceding Where key condition — which compile to DynamoDB Scans.
-// These are the seed-once migration scans and offline maintenance tools; they
-// are baselined in baseline.yml with the deliberate one-time justification in
+// chains with no partition-key equality condition — which compile to DynamoDB
+// Scans. Any Where(...) filter that does not bind a partition key (sort-key
+// ranges, non-key attribute predicates, partition-key operators other than
+// "=") is still a Scan and is counted (gate gap closed 2026-08-26, umbrella
+// #1469). The remaining sites are baselined in baseline.yml with the
+// deliberate one-time justification in
 // docs/architecture/dynamodb-scan-inventory.md.
 func checkGoDynamoDBAllNoKey(b baseline) error {
 	skips := defaultSkips()
@@ -450,12 +469,35 @@ func checkGoDynamoDBAllNoKey(b baseline) error {
 	return compareCounts("key-less TableTheory All(...) occurrences", actual, b.GoDynamoDBAllNoKey)
 }
 
+// checkGoDynamoDBCountNoKey catches key-less TableTheory Count(...) chains —
+// fresh Model(...)/WithContext(...) chains with no partition-key equality
+// condition. Count() shares All()'s compile path (tabletheory v3.0.6
+// pkg/query/query_execution.go:80-111: Compile() decides Query vs Scan, then
+// ExecuteScan runs Select=COUNT), so a key-less Count is a counted full-table
+// scan the All-only gate could not see. The same key-condition and
+// indeterminate rules as checkGoDynamoDBAllNoKey apply.
+func checkGoDynamoDBCountNoKey(b baseline) error {
+	skips := defaultSkips()
+	skips["tools"] = struct{}{} // allowlist cmd/tools one-time backfills
+
+	actual, err := countGoUnkeyedCountCalls([]string{"cmd", "pkg", "graph"}, scanOptions{
+		IncludeTests: false,
+		Skips:        skips,
+	})
+	if err != nil {
+		return err
+	}
+
+	return compareCounts("key-less TableTheory Count(...) occurrences", actual, b.GoDynamoDBCountNoKey)
+}
+
 // countGoUnkeyedAllCalls counts All(...) calls on freshly-built query chains
-// that contain no Where(...) call — i.e. queries compiled to a DynamoDB Scan
-// with no key condition. All(...) chained onto a pre-built query variable
-// (query.Limit(n).All(...)) or a field receiver is statically indeterminate
-// and is deliberately NOT flagged; the gate targets new inline key-less scan
-// callsites like the instance-count seed scans.
+// that contain no partition-key equality condition — i.e. queries compiled to
+// a DynamoDB Scan with no key condition. All(...) chained onto a pre-built
+// query variable (query.Limit(n).All(...)) or a field receiver is statically
+// indeterminate and is deliberately NOT flagged; the gate targets inline
+// key-less scan callsites like the instance-count recount reads (offline
+// tooling only).
 func countGoUnkeyedAllCalls(roots []string, opts scanOptions) (map[string]int, error) {
 	counts := make(map[string]int)
 	for _, root := range roots {
@@ -475,7 +517,35 @@ func countGoUnkeyedAllCalls(roots []string, opts scanOptions) (map[string]int, e
 	return counts, nil
 }
 
+// countGoUnkeyedCountCalls is the Count() sibling of countGoUnkeyedAllCalls.
+func countGoUnkeyedCountCalls(roots []string, opts scanOptions) (map[string]int, error) {
+	counts := make(map[string]int)
+	for _, root := range roots {
+		if err := walkGoFiles(root, opts, func(path string) error {
+			n, err := countGoUnkeyedCountCallsInFile(path)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				counts[normalizePath(path)] = n
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return counts, nil
+}
+
 func countGoUnkeyedAllCallsInFile(path string) (int, error) {
+	return countGoUnkeyedTerminalInFile(path, "All")
+}
+
+func countGoUnkeyedCountCallsInFile(path string) (int, error) {
+	return countGoUnkeyedTerminalInFile(path, "Count")
+}
+
+func countGoUnkeyedTerminalInFile(path string, terminal string) (int, error) {
 	content, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
 	if err != nil {
 		return 0, err
@@ -494,7 +564,7 @@ func countGoUnkeyedAllCallsInFile(path string) (int, error) {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel == nil || sel.Sel.Name != "All" {
+		if !ok || sel.Sel == nil || sel.Sel.Name != terminal {
 			return true
 		}
 		if isUnkeyedFreshChain(sel.X) {
@@ -505,12 +575,26 @@ func countGoUnkeyedAllCallsInFile(path string) (int, error) {
 	return n, nil
 }
 
-// isUnkeyedFreshChain reports whether the All receiver is a freshly-built query
+// isUnkeyedFreshChain reports whether the receiver is a freshly-built query
 // chain: it contains a Model(...) or WithContext(...) construction call and no
-// Where(...) call anywhere in the chain, so it compiles to an unkeyed Scan.
+// key-bounding condition, so it compiles to an unkeyed Scan (for All(...)) or
+// a counted full-table Scan (for Count(...)). A chain is key-bounded only when
+// a Where(...) call constrains a partition key (PK, gsiNPK, or oauthClientsPK)
+// with equality — the one shape TableTheory compiles to a DynamoDB Query
+// (partitionConditionsForKeys demotes a partition key with any other operator
+// to a filter). Non-key Where(...) filters (sort-key ranges, attribute
+// predicates) and Filter(...) expressions never bound the query and therefore
+// do NOT make the chain keyed. The walk continues past a statically
+// indeterminate Where(...) (a field or operator that is not a string literal)
+// so the chain's construct is still observed; the indeterminate flag then
+// forces the conservative not-flagged outcome — such a call could be a
+// partition-key equality built from a variable, and the same conservative rule
+// already applies to All(...)/Count(...) chained onto pre-built query
+// variables (whose receiver carries no construct at all).
 func isUnkeyedFreshChain(receiver ast.Expr) bool {
 	hasConstruct := false
-	hasWhere := false
+	hasKeyCondition := false
+	indeterminate := false
 	ast.Inspect(receiver, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
@@ -524,12 +608,47 @@ func isUnkeyedFreshChain(receiver ast.Expr) bool {
 		case "Model", "WithContext":
 			hasConstruct = true
 		case "Where":
-			hasWhere = true
-			return false
+			bounded, determinate := keyConditionOfWhere(call)
+			switch {
+			case determinate && bounded:
+				hasKeyCondition = true
+				return false // chain is keyed; no need to keep walking
+			case !determinate:
+				// Statically indeterminate — could be a partition-key equality
+				// built from a variable. Keep walking (a provable key condition
+				// elsewhere still bounds the chain) and force the conservative
+				// not-flagged outcome via the indeterminate flag.
+				indeterminate = true
+			}
 		}
 		return true
 	})
-	return hasConstruct && !hasWhere
+	return hasConstruct && !hasKeyCondition && !indeterminate
+}
+
+// keyConditionOfWhere reports whether a TableTheory Where(...) call constrains
+// a partition key with equality (Where("PK"/"gsiNPK", "=", value)) — the only
+// Where shape TableTheory compiles into a DynamoDB Query (its
+// partitionConditionsForKeys demotes a partition key with any operator other
+// than "=" to a filter condition, which still scans). Sort-key conditions
+// (SK/gsiNSK) and non-key attribute predicates never bound the query on their
+// own and are not key conditions. determinate is false when the field or the
+// operator is not a string literal, because the call could be a partition-key
+// equality expressed through a variable.
+func keyConditionOfWhere(call *ast.CallExpr) (bounded bool, determinate bool) {
+	if len(call.Args) < 2 {
+		return false, true
+	}
+	field, ok := goStringLiteral(call.Args[0])
+	if !ok {
+		return false, false
+	}
+	op, ok := goStringLiteral(call.Args[1])
+	if !ok {
+		return false, false
+	}
+	bounded = isPartitionKeyField(field) && strings.ToUpper(strings.TrimSpace(op)) == "="
+	return bounded, true
 }
 
 func checkInfraCdkCspUnsafe(b baseline) error {
@@ -1024,7 +1143,7 @@ func goStringLiteral(expr ast.Expr) (string, bool) {
 }
 
 func isPartitionKeyField(field string) bool {
-	if field == "PK" {
+	if field == "PK" || field == "oauthClientsPK" {
 		return true
 	}
 

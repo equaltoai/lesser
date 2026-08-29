@@ -23,15 +23,10 @@ import (
 )
 
 type trendingRepository interface {
-	GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error)
 	GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error)
 	GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error)
-	StoreHashtagTrend(ctx context.Context, trend any) error
 	StoreStatusTrend(ctx context.Context, trend any) error
 	StoreLinkTrend(ctx context.Context, trend any) error
-	DeleteOldHashtagTrends(ctx context.Context, before time.Time) error
-	DeleteOldStatusTrends(ctx context.Context, before time.Time) error
-	DeleteOldLinkTrends(ctx context.Context, before time.Time) error
 }
 
 // TrendAggregatorHandler runs scheduled trend aggregation.
@@ -74,22 +69,7 @@ func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *apptheory.EventContex
 	// Process different types of trends
 	processedCount := 0
 
-	// 1. Aggregate hashtag trends
-	hashtagCount, err := h.aggregateHashtagTrends(runCtx, since)
-	if err != nil {
-		h.logger.Error("error aggregating hashtag trends",
-			zap.String("request_id", requestID),
-			zap.Error(err),
-		)
-	} else {
-		processedCount += hashtagCount
-		h.logger.Info("aggregated hashtag trends",
-			zap.String("request_id", requestID),
-			zap.Int("count", hashtagCount),
-		)
-	}
-
-	// 2. Aggregate status trends
+	// 1. Aggregate status trends
 	statusCount, err := h.aggregateStatusTrends(runCtx, since)
 	if err != nil {
 		h.logger.Error("error aggregating status trends",
@@ -104,7 +84,7 @@ func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *apptheory.EventContex
 		)
 	}
 
-	// 3. Aggregate link trends
+	// 2. Aggregate link trends
 	linkCount, err := h.aggregateLinkTrends(runCtx, since)
 	if err != nil {
 		h.logger.Error("error aggregating link trends",
@@ -131,89 +111,6 @@ func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *apptheory.EventContex
 	)
 
 	return nil, nil
-}
-
-// aggregateHashtagTrends processes hashtag usage and updates trending scores
-func (h *TrendAggregatorHandler) aggregateHashtagTrends(ctx context.Context, since time.Time) (int, error) {
-	// 1. Get recent hashtag usage from repository
-	hashtags, err := h.trendingRepo.GetRecentHashtags(ctx, since, 1000)
-	if err != nil {
-		return 0, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get recent hashtags")
-	}
-
-	h.logger.Debug("retrieved recent hashtags for aggregation",
-		zap.Int("hashtag_count", len(hashtags)),
-		zap.Time("since", since),
-	)
-
-	// 2. Count unique users and total usage
-	hashtagStats := make(map[string]*HashtagTrendData)
-	for _, hashtag := range hashtags {
-		// Extract user ID from hashtag data (assuming it's in the struct)
-		userID := hashtag.UserID // This field might need adjustment based on actual struct
-		if err := common.ValidateRequiredParam("userID", userID); err != nil {
-			continue // Skip if no user ID
-		}
-
-		if stats, exists := hashtagStats[hashtag.Name]; exists {
-			stats.TotalUses++
-			stats.UniqueUsers[userID] = true
-		} else {
-			hashtagStats[hashtag.Name] = &HashtagTrendData{
-				Name:        hashtag.Name,
-				TotalUses:   1,
-				UniqueUsers: map[string]bool{userID: true},
-				FirstSeen:   hashtag.FirstSeen,
-				LastSeen:    hashtag.LastUsed,
-			}
-		}
-		if hashtag.LastUsed.After(hashtagStats[hashtag.Name].LastSeen) {
-			hashtagStats[hashtag.Name].LastSeen = hashtag.LastUsed
-		}
-	}
-
-	// 3. Calculate trend scores and store trending hashtags
-	trendingCount := 0
-	for name, stats := range hashtagStats {
-		// Calculate trend score based on velocity and engagement
-		uniqueUserCount := len(stats.UniqueUsers)
-		timeSpan := stats.LastSeen.Sub(stats.FirstSeen).Hours()
-		if timeSpan == 0 {
-			timeSpan = 1 // Prevent division by zero
-		}
-		velocity := float64(stats.TotalUses) / timeSpan
-		trendScore := velocity * float64(uniqueUserCount) * 100
-
-		// Only store if meets minimum threshold
-		if trendScore > 10.0 && stats.TotalUses > 3 {
-			// Create trend record using storage interface format for compatibility
-			trend := &HashtagTrendStorage{
-				Name:          name,
-				UsageCount:    int64(stats.TotalUses),
-				UniqueUsers:   int64(uniqueUserCount),
-				FirstSeen:     stats.FirstSeen,
-				LastUsed:      stats.LastSeen,
-				TrendingScore: trendScore,
-				Velocity:      velocity,
-			}
-
-			if err := h.trendingRepo.StoreHashtagTrend(ctx, trend); err != nil {
-				h.logger.Error("failed to store hashtag trend",
-					zap.String("hashtag", name),
-					zap.Error(err),
-				)
-			} else {
-				trendingCount++
-			}
-		}
-	}
-
-	h.logger.Debug("processed hashtag trends",
-		zap.Int("total_hashtags", len(hashtagStats)),
-		zap.Int("trending_count", trendingCount),
-	)
-
-	return trendingCount, nil
 }
 
 // aggregateStatusTrends processes status engagement and updates trending scores
@@ -380,15 +277,6 @@ func (h *TrendAggregatorHandler) cleanupOldTrends(_ context.Context) {
 	)
 }
 
-// HashtagTrendData holds hashtag trending information
-type HashtagTrendData struct {
-	Name        string
-	TotalUses   int
-	UniqueUsers map[string]bool
-	FirstSeen   time.Time
-	LastSeen    time.Time
-}
-
 // LinkTrendData holds link trending information
 type LinkTrendData struct {
 	URL           string
@@ -398,17 +286,6 @@ type LinkTrendData struct {
 	UniqueSharers map[string]bool
 	FirstShared   time.Time
 	LastShared    time.Time
-}
-
-// HashtagTrendStorage represents trending hashtag data for storage
-type HashtagTrendStorage struct {
-	Name          string
-	UsageCount    int64
-	UniqueUsers   int64
-	FirstSeen     time.Time
-	LastUsed      time.Time
-	TrendingScore float64
-	Velocity      float64
 }
 
 // StatusTrendStorage represents trending status data for storage

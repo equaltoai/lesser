@@ -2,11 +2,10 @@ package repositories
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
-	"math"
 	"net/url"
 	"reflect"
-	"sort"
 	"strings"
 	"time"
 
@@ -108,14 +107,13 @@ func (r *TrendingRepository) RecordHashtagUsage(ctx context.Context, hashtag str
 // RecordStatusEngagement records engagement on a status (like, boost, reply)
 func (r *TrendingRepository) RecordStatusEngagement(ctx context.Context, statusID string, engagementType string, userID string) error {
 	engagement := &models.StatusEngagement{
-		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
-		SK:             fmt.Sprintf("%s#%s#%s", engagementType, time.Now().Format("20060102150405"), userID),
 		StatusID:       statusID,
 		EngagementType: engagementType,
 		UserID:         userID,
 		EngagedAt:      time.Now(),
 		TTL:            time.Now().Add(7 * 24 * time.Hour).Unix(),
 	}
+	_ = engagement.UpdateKeys() // sets PK/SK + GSI1 global listing (wave batch E)
 
 	err := r.db.WithContext(ctx).Model(engagement).Create()
 	if err != nil {
@@ -133,14 +131,13 @@ func (r *TrendingRepository) RecordStatusEngagement(ctx context.Context, statusI
 // RecordLinkShare records when a link is shared in a status
 func (r *TrendingRepository) RecordLinkShare(ctx context.Context, linkURL string, statusID string, authorID string) error {
 	share := &models.LinkShare{
-		PK:       fmt.Sprintf("LINK_SHARE#%s", linkURL),
-		SK:       fmt.Sprintf("STATUS#%s", statusID),
 		URL:      linkURL,
 		StatusID: statusID,
 		AuthorID: authorID,
 		SharedAt: time.Now(),
 		TTL:      time.Now().Add(7 * 24 * time.Hour).Unix(),
 	}
+	_ = share.UpdateKeys() // sets PK/SK + GSI1 global listing (wave batch E)
 
 	err := r.db.WithContext(ctx).Model(share).Create()
 	if err != nil {
@@ -174,6 +171,11 @@ func (r *TrendingRepository) GetTrendingLinks(ctx context.Context, _ time.Time, 
 
 // getTrendingItemsGeneric is a generic function to fetch trending items
 func (r *TrendingRepository) getTrendingItemsGeneric(ctx context.Context, trendType string, limit int, modelInstance interface{}, converter func(interface{}) interface{}) (interface{}, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(0) — no limit — an unbounded read of the whole TREND_TYPE#<type>#<date>
+	// gsi8 partition. The read is always bounded now (default 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	timeBucket := time.Now().Format(common.DateFormat)
 	pk := fmt.Sprintf("TREND_TYPE#%s#%s", trendType, timeBucket)
 
@@ -255,6 +257,11 @@ func (r *TrendingRepository) getTrendingStatusesInternal(ctx context.Context, tr
 
 // getTrendingLinksInternal handles the actual link trend fetching
 func (r *TrendingRepository) getTrendingLinksInternal(ctx context.Context, trendType string, limit int) ([]*storage.TrendingLink, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(0) — no limit — an unbounded read of the whole TREND_TYPE#<type>#<date>
+	// gsi8 partition. The read is always bounded now (default 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	timeBucket := time.Now().Format(common.DateFormat)
 	pk := fmt.Sprintf("TREND_TYPE#%s#%s", trendType, timeBucket)
 
@@ -405,12 +412,20 @@ func (r *TrendingRepository) updateHashtagTrendScore(ctx context.Context, hashta
 	// Use the correct key pattern from the existing model
 	pk := fmt.Sprintf("HASHTAG#%s", strings.ToLower(strings.TrimPrefix(hashtag, "#")))
 
+	// The whole keyed HASHTAG#<name> partition must be read to aggregate unique
+	// users and the 24h usage window, so the read is a bounded page walk (wave
+	// #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var usageRecords []models.HashtagUsage
-	err := r.db.WithContext(ctx).Model(&models.HashtagUsage{}).
-		Where("PK", "=", pk).
-		All(&usageRecords)
-
-	if err != nil && !errors.IsNotFound(err) {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.HashtagUsage{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.HashtagUsage) (bool, error) {
+			usageRecords = append(usageRecords, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		r.logger.Error("failed to query hashtag usage", zap.String("hashtag", hashtag), zap.Error(err))
 		return err
 	}
@@ -466,12 +481,20 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 
 	pk := fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)
 
+	// The whole keyed STATUS_ENGAGEMENT#<id> partition must be read to count
+	// engagement types and unique engagers, so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var engagements []models.StatusEngagement
-	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("PK", "=", pk).
-		All(&engagements)
-
-	if err != nil && !errors.IsNotFound(err) {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.StatusEngagement) (bool, error) {
+			engagements = append(engagements, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		r.logger.Error("failed to query status engagement", zap.String("statusID", statusID), zap.Error(err))
 		return err
 	}
@@ -529,15 +552,23 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 }
 
 func (r *TrendingRepository) updateLinkTrendScore(ctx context.Context, linkURL string) error {
-	// Query recent link shares
+	// Query recent link shares — the whole keyed LINK_SHARE#<url> partition
+	// must be read to count unique sharers and the 24h share window, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	pk := fmt.Sprintf("LINK_SHARE#%s", linkURL)
 
 	var shares []models.LinkShare
-	err := r.db.WithContext(ctx).Model(&models.LinkShare{}).
-		Where("PK", "=", pk).
-		All(&shares)
-
-	if err != nil && !errors.IsNotFound(err) {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.LinkShare{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.LinkShare) (bool, error) {
+			shares = append(shares, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		r.logger.Error("failed to query link shares", zap.String("url", linkURL), zap.Error(err))
 		return err
 	}
@@ -620,55 +651,27 @@ func extractDomainFromURL(rawURL string) string {
 	return domain
 }
 
-// GetRecentHashtags returns recent hashtags since the given time (no trending calculation)
-func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	// Validate limit using centralized validation
-	if err := common.ValidateQueryLimit(limit, 100, "analytics"); err != nil {
-		limit = 20
-	}
-
-	// Since DynamoDB doesn't allow direct queries on non-key attributes like UsedAt,
-	// we'll use the existing hashtag metadata approach which tracks LastUsed
-	var hashtagModels []*models.Hashtag
-	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Where("SK", "=", "METADATA").
-		Where("LastUsed", ">=", since.Format(time.RFC3339)).
-		OrderBy("LastUsed", "DESC"). // Recent first
-		Limit(limit).
-		All(&hashtagModels)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("no recent hashtags found", zap.Time("since", since))
-			return []*storage.TrendingHashtag{}, nil
-		}
-		r.logger.Error("failed to query recent hashtags", zap.Error(err))
-		return nil, err
-	}
-
-	// Convert to storage TrendingHashtag format
-	hashtags := make([]*storage.TrendingHashtag, len(hashtagModels))
-	for i, hashtag := range hashtagModels {
-		hashtags[i] = &storage.TrendingHashtag{
-			Name:        hashtag.Name,
-			URL:         hashtag.URL,
-			UsageCount:  hashtag.UsageCount,
-			UniqueUsers: 0, // Not calculated in this query for performance
-			LastUsed:    hashtag.LastUsed,
-			FirstSeen:   hashtag.FirstSeen,
-		}
-	}
-
-	return hashtags, nil
-}
-
 // GetRecentStatusesWithEngagement returns recent statuses with engagement since the given time
 func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingStatus, error) {
-	// Query recent status engagements
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(limit*10) = Limit(0) — no limit — an unbounded read of the whole
+	// ENGAGEMENTS#ALL gsi1 partition. The read is always bounded now (default
+	// 20; hard max 1000 — the trend aggregator's full-set request of 1000
+	// statuses passes through unchanged).
+	limit, _, _ = clampLimit(limit, 20, 1000)
+
+	// Recent status engagements resolve through the GSI1 global listing
+	// (ENGAGEMENTS#ALL / <EngagedAt RFC3339>#<statusID>#<userID>) maintained
+	// by StatusEngagement.UpdateKeys (wave part 2 batch E, #1469); the since
+	// window is a keyed sort-key range. Legacy engagement rows written before
+	// the GSI1 shape carry no index keys and are not returned until next
+	// written (engagements are TTL-transient, 7d).
 	var engagements []models.StatusEngagement
 	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("EngagedAt", ">=", since).
-		OrderBy("EngagedAt", "DESC").
+		Index("gsi1").
+		Where("gsi1PK", "=", "ENGAGEMENTS#ALL").
+		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit * 10). // Get more to aggregate by status
 		All(&engagements)
 
@@ -730,11 +733,25 @@ func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context
 
 // GetRecentLinks returns recent links since the given time (no trending calculation)
 func (r *TrendingRepository) GetRecentLinks(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingLink, error) {
-	// Query recent link shares
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(limit*5) = Limit(0) — no limit — an unbounded read of the whole
+	// LINK_SHARES#ALL gsi1 partition. The read is always bounded now (default
+	// 20; hard max 1000 — the trend aggregator's full-set request of 1000 links
+	// passes through unchanged).
+	limit, _, _ = clampLimit(limit, 20, 1000)
+
+	// Recent link shares resolve through the GSI1 global listing
+	// (LINK_SHARES#ALL / <SharedAt RFC3339>#<url>#<statusID>) maintained by
+	// LinkShare.UpdateKeys (wave part 2 batch E, #1469); the since window is a
+	// keyed sort-key range. Legacy share rows written before the GSI1 shape
+	// carry no index keys and are not returned until next written (shares are
+	// TTL-transient, 7d).
 	var shares []models.LinkShare
 	err := r.db.WithContext(ctx).Model(&models.LinkShare{}).
-		Where("SharedAt", ">=", since).
-		OrderBy("SharedAt", "DESC").
+		Index("gsi1").
+		Where("gsi1PK", "=", "LINK_SHARES#ALL").
+		Where("gsi1SK", ">=", since.Format(time.RFC3339)).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit * 5). // Get more to aggregate by URL
 		All(&shares)
 
@@ -960,111 +977,6 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 	return nil
 }
 
-// GetPopularSearchQueries retrieves the most popular search queries
-func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit int, timeWindow time.Duration) ([]storage.SearchQueryStats, error) {
-	// Calculate time cutoff
-	cutoff := time.Now().Add(-timeWindow)
-
-	// Query recent search queries
-	var queries []models.SearchQuery
-	err := r.db.WithContext(ctx).Model(&models.SearchQuery{}).
-		Where("SearchedAt", ">=", cutoff).
-		OrderBy("SearchedAt", "DESC").
-		Limit(1000). // Get more to aggregate
-		Scan(&queries)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return []storage.SearchQueryStats{}, nil
-		}
-		r.logger.Error("failed to query search queries", zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "search query", "popular queries")
-	}
-
-	// Aggregate by query
-	queryMap := make(map[string]*storage.SearchQueryStats)
-	userMap := make(map[string]map[string]bool) // query -> set of users
-
-	for _, q := range queries {
-		if stats, exists := queryMap[q.Query]; exists {
-			stats.Count++
-			stats.AvgResults = (stats.AvgResults*float64(stats.Count-1) + float64(q.ResultCount)) / float64(stats.Count)
-			if q.SearchedAt.After(stats.LastUsed) {
-				stats.LastUsed = q.SearchedAt
-			}
-		} else {
-			queryMap[q.Query] = &storage.SearchQueryStats{
-				Query:      q.Query,
-				Count:      1,
-				AvgResults: float64(q.ResultCount),
-				LastUsed:   q.SearchedAt,
-			}
-			userMap[q.Query] = make(map[string]bool)
-		}
-
-		// Track unique users
-		userMap[q.Query][q.UserID] = true
-	}
-
-	// Calculate unique user counts and convert to slice
-	results := make([]storage.SearchQueryStats, 0, len(queryMap))
-	for query, stats := range queryMap {
-		stats.UserCount = len(userMap[query])
-		results = append(results, *stats)
-	}
-
-	// Sort by count (most popular first)
-	for i := 0; i < len(results)-1; i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[i].Count < results[j].Count {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
-
-	// Apply limit
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	return results, nil
-}
-
-// GetUserSearchHistory retrieves a user's search history
-func (r *TrendingRepository) GetUserSearchHistory(ctx context.Context, userID string, limit int) ([]storage.SearchHistoryEntry, error) {
-	var queries []models.SearchQuery
-
-	err := r.db.WithContext(ctx).Model(&models.SearchQuery{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Filter("SK", "BEGINS_WITH", "SEARCH#").
-		OrderBy("SK", "DESC"). // Most recent first
-		Limit(limit).
-		Scan(&queries)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return []storage.SearchHistoryEntry{}, nil
-		}
-		r.logger.Error("failed to query user search history",
-			zap.String("userID", userID),
-			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "search query", "user history")
-	}
-
-	// Convert to storage type
-	entries := make([]storage.SearchHistoryEntry, len(queries))
-	for i, q := range queries {
-		entries[i] = storage.SearchHistoryEntry{
-			UserID:      q.UserID,
-			Query:       q.Query,
-			ResultCount: q.ResultCount,
-			SearchedAt:  q.SearchedAt,
-		}
-	}
-
-	return entries, nil
-}
-
 // updatePopularQueries increments the count for a search query using atomic operations
 func (r *TrendingRepository) updatePopularQueries(ctx context.Context, query string) {
 	// Implement atomic counter updates as requested in the audit
@@ -1219,141 +1131,6 @@ func (r *TrendingRepository) IndexByEngagement(ctx context.Context, statusID str
 	return nil
 }
 
-// GenerateSearchSuggestions generates search suggestions based on user history and popular queries
-func (r *TrendingRepository) GenerateSearchSuggestions(ctx context.Context, userID, partialQuery string, limit int) ([]string, error) {
-	normalizedQuery := strings.ToLower(strings.TrimSpace(partialQuery))
-	if err := common.ValidateRequiredParam("normalizedQuery", normalizedQuery); err != nil {
-		return []string{}, nil
-	}
-
-	suggestions := make(map[string]float64) // suggestion -> score
-
-	// Score suggestions from different sources
-	r.scoreUserHistory(ctx, userID, normalizedQuery, suggestions)
-	r.scorePopularQueries(ctx, normalizedQuery, suggestions)
-	r.scoreHashtagSuggestions(ctx, normalizedQuery, suggestions)
-
-	// Sort and return top suggestions
-	return r.extractTopSuggestions(suggestions, limit), nil
-}
-
-// scoreUserHistory scores suggestions from user's search history
-func (r *TrendingRepository) scoreUserHistory(ctx context.Context, userID, normalizedQuery string, suggestions map[string]float64) {
-	userHistory, err := r.GetUserSearchHistory(ctx, userID, 50)
-	if err != nil {
-		return
-	}
-
-	for _, entry := range userHistory {
-		if !strings.HasPrefix(strings.ToLower(entry.Query), normalizedQuery) {
-			continue
-		}
-
-		score := r.calculateUserHistoryScore(entry.SearchedAt)
-		suggestions[entry.Query] += score
-	}
-}
-
-// calculateUserHistoryScore calculates score based on recency
-func (r *TrendingRepository) calculateUserHistoryScore(searchedAt time.Time) float64 {
-	age := time.Since(searchedAt)
-	recencyScore := 1.0 / (1 + age.Hours()/24) // Decay over days
-	return recencyScore * 2                    // User history weighted 2x
-}
-
-// scorePopularQueries scores suggestions from popular queries
-func (r *TrendingRepository) scorePopularQueries(ctx context.Context, normalizedQuery string, suggestions map[string]float64) {
-	popularQueries, err := r.GetPopularSearchQueries(ctx, 100, 7*24*time.Hour) // Last 7 days
-	if err != nil {
-		return
-	}
-
-	for _, stat := range popularQueries {
-		if !strings.HasPrefix(strings.ToLower(stat.Query), normalizedQuery) {
-			continue
-		}
-
-		score := r.calculatePopularQueryScore(stat.LastUsed, stat.Count)
-		suggestions[stat.Query] += score
-	}
-}
-
-// calculatePopularQueryScore calculates score based on popularity and recency
-func (r *TrendingRepository) calculatePopularQueryScore(lastUsed time.Time, count int) float64 {
-	age := time.Since(lastUsed)
-	recencyScore := 1.0 / (1 + age.Hours()/168)   // Decay over weeks
-	popularityScore := math.Log1p(float64(count)) // Logarithmic scaling
-	return recencyScore * popularityScore
-}
-
-// scoreHashtagSuggestions scores suggestions from trending hashtags
-func (r *TrendingRepository) scoreHashtagSuggestions(ctx context.Context, normalizedQuery string, suggestions map[string]float64) {
-	if !r.shouldIncludeHashtags(normalizedQuery) {
-		return
-	}
-
-	hashtags, err := r.GetRecentHashtags(ctx, time.Now().Add(-7*24*time.Hour), 20)
-	if err != nil {
-		return
-	}
-
-	for _, hashtag := range hashtags {
-		if !r.hashtagMatchesQuery(hashtag.Name, normalizedQuery) {
-			continue
-		}
-
-		suggestion := r.formatHashtagSuggestion(hashtag.Name)
-		score := float64(hashtag.UsageCount) / 100
-		suggestions[suggestion] += score
-	}
-}
-
-// shouldIncludeHashtags checks if hashtag suggestions should be included
-func (r *TrendingRepository) shouldIncludeHashtags(normalizedQuery string) bool {
-	return strings.HasPrefix(normalizedQuery, "#") || len(normalizedQuery) >= 2
-}
-
-// hashtagMatchesQuery checks if a hashtag matches the query
-func (r *TrendingRepository) hashtagMatchesQuery(hashtagName, normalizedQuery string) bool {
-	tagName := strings.ToLower(hashtagName)
-	return strings.Contains(tagName, normalizedQuery) || strings.Contains(normalizedQuery, "#")
-}
-
-// formatHashtagSuggestion formats a hashtag for suggestion
-func (r *TrendingRepository) formatHashtagSuggestion(hashtagName string) string {
-	if !strings.HasPrefix(hashtagName, "#") {
-		return "#" + hashtagName
-	}
-	return hashtagName
-}
-
-// extractTopSuggestions extracts the top suggestions from scored map
-func (r *TrendingRepository) extractTopSuggestions(suggestions map[string]float64, limit int) []string {
-	// Convert to slice
-	type scoredSuggestion struct {
-		query string
-		score float64
-	}
-
-	scoredList := make([]scoredSuggestion, 0, len(suggestions))
-	for query, score := range suggestions {
-		scoredList = append(scoredList, scoredSuggestion{query, score})
-	}
-
-	// Sort by score descending
-	sort.Slice(scoredList, func(i, j int) bool {
-		return scoredList[i].score > scoredList[j].score
-	})
-
-	// Extract top suggestions
-	result := make([]string, 0, limit)
-	for i := 0; i < len(scoredList) && i < limit; i++ {
-		result = append(result, scoredList[i].query)
-	}
-
-	return result
-}
-
 // ========== EngagementMetrics Methods ==========
 
 // RecordEngagement records engagement metrics for content
@@ -1423,6 +1200,12 @@ func (r *TrendingRepository) GetEngagementMetricsData(ctx context.Context, metri
 
 // GetEngagementByDateRange retrieves engagement metrics within a date range
 func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metricType string, startDate, endDate string, limit int) ([]*storage.EngagementMetricsSummary, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously skipped
+	// Limit entirely (the `if limit > 0` gate) and read each day's keyed
+	// partition unboundedly. The read is always bounded now (default 20,
+	// hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	start, err := time.Parse(common.DateFormat, startDate)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid startDate %q", ErrFailedGetEngagementByDate, startDate)
@@ -1490,6 +1273,12 @@ func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metri
 
 // GetTopEngagedContent retrieves the most engaged content
 func (r *TrendingRepository) GetTopEngagedContent(ctx context.Context, metricType string, date string, limit int) ([]*storage.EngagementRanking, error) {
+	// Clamp the limit (wave #1469): a non-positive limit previously compiled to
+	// Limit(limit*2) = Limit(0) — no limit — an unbounded read of the whole
+	// METRICS#<type>#<date> partition. The read is always bounded now (default
+	// 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
+
 	pk := fmt.Sprintf("METRICS#%s#%s", metricType, date)
 
 	var metricsRecords []models.EngagementMetrics
@@ -1561,12 +1350,26 @@ func (r *TrendingRepository) AggregateEngagementMetrics(ctx context.Context, met
 	for _, date := range dates {
 		pk := fmt.Sprintf("METRICS#%s#%s", metricType, date)
 
+		// The whole keyed METRICS#<type>#<date> partition must be read to
+		// aggregate every record, so the read is a bounded page walk (wave
+		// #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 		var metricsRecords []models.EngagementMetrics
-		err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
-			Where("PK", "=", pk).
-			All(&metricsRecords)
-
-		if err != nil && !errors.IsNotFound(err) {
+		err := walkKeyedPages(
+			r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
+				Where("PK", "=", pk),
+			500, 100,
+			func(page []models.EngagementMetrics) (bool, error) {
+				metricsRecords = append(metricsRecords, page...)
+				return false, nil
+			},
+		)
+		if err != nil {
+			// Cap exhaustion fails the aggregation closed instead of silently
+			// truncating a date's records; transient errors keep the original
+			// skip-this-date degrade.
+			if stderrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Error("failed to aggregate engagement metrics",
 				zap.String("metricType", metricType),
 				zap.String("date", date),
@@ -1960,18 +1763,25 @@ func (r *TrendingRepository) RecordMediaEvent(ctx context.Context, eventType, me
 func (r *TrendingRepository) getMediaAnalyticsStatsGeneric(ctx context.Context, pkPrefix, identifier, startDate, endDate string) (map[string]int64, error) {
 	stats := make(map[string]int64)
 
-	// Query media analytics records
+	// Query media analytics records — the whole keyed
+	// <MANIFEST|MEDIA_EVENT>#<identifier> partition must be read (the Date
+	// bounds are non-key attributes, applied as post-read filters), so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var analytics []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "=", fmt.Sprintf("%s#%s", pkPrefix, identifier)).
-		Where("Date", ">=", startDate).
-		Where("Date", "<=", endDate).
-		All(&analytics)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("PK", "=", fmt.Sprintf("%s#%s", pkPrefix, identifier)).
+			Where("Date", ">=", startDate).
+			Where("Date", "<=", endDate),
+		500, 100,
+		func(page []models.MediaAnalytics) (bool, error) {
+			analytics = append(analytics, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return stats, nil
-		}
 		r.logger.Error(fmt.Sprintf("failed to get %s stats", strings.ToLower(pkPrefix)),
 			zap.String("identifier", identifier),
 			zap.String("startDate", startDate),
@@ -2014,13 +1824,21 @@ func (r *TrendingRepository) initializeAnalyticsData(mediaID string) *storage.St
 
 // querySessionEvents retrieves session start events for analysis
 func (r *TrendingRepository) querySessionEvents(ctx context.Context, last7Days time.Time) ([]models.MediaAnalytics, error) {
+	// The whole keyed MEDIA_EVENT#session_start partition (SK prefix range) is
+	// read, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion.
 	var sessionEvents []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "=", "MEDIA_EVENT#session_start").
-		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
-		All(&sessionEvents)
-
-	if err != nil && !errors.IsNotFound(err) {
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("PK", "=", "MEDIA_EVENT#session_start").
+			Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())),
+		500, 100,
+		func(page []models.MediaAnalytics) (bool, error) {
+			sessionEvents = append(sessionEvents, page...)
+			return false, nil
+		},
+	)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrFailedQuerySessionEvents, err)
 	}
 
@@ -2133,12 +1951,23 @@ func (r *TrendingRepository) finalizeBasicMetrics(
 
 // queryBufferingEvents retrieves and counts buffering events
 func (r *TrendingRepository) queryBufferingEvents(ctx context.Context, mediaID string, last7Days time.Time) (int, error) {
+	// The whole keyed MEDIA_EVENT#rebuffer_start partition (SK prefix range) is
+	// read, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap. Errors — including cap exhaustion — keep the original
+	// degrade-to-zero contract: the sole caller GetStreamingAnalytics discards
+	// this error (`bufferingEvents, _ := r.queryBufferingEvents(...)` at
+	// analytics_repository.go) and treats 0 as "no buffering events".
 	var bufferingEvents []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "=", "MEDIA_EVENT#rebuffer_start").
-		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
-		All(&bufferingEvents)
-
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Where("PK", "=", "MEDIA_EVENT#rebuffer_start").
+			Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())),
+		500, 100,
+		func(page []models.MediaAnalytics) (bool, error) {
+			bufferingEvents = append(bufferingEvents, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, nil // Ignore errors for buffering events
 	}
@@ -2189,24 +2018,31 @@ func (r *TrendingRepository) addRecentMetrics(
 
 // queryQualityChangeEvents retrieves and counts quality change events
 func (r *TrendingRepository) queryQualityChangeEvents(ctx context.Context, mediaID string, last7Days time.Time) (int, error) {
+	// Resolve quality-change rows per media through GSI3 instead of scanning
+	// the whole table by PK prefix. The whole keyed MEDIA_QUALITY#<mediaID>
+	// partition (gsi3SK >= TS#<unix>) is read, so the read is a bounded page
+	// walk (wave #1469): Limit(500)/page, 100-page cap. Errors — including cap
+	// exhaustion — keep the original degrade-to-zero contract: the sole caller
+	// GetStreamingAnalytics discards this error (`qualityChanges, _ :=
+	// r.queryQualityChangeEvents(...)` at analytics_repository.go) and treats
+	// 0 as "no quality changes".
 	var qualityChangeEvents []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "begins_with", "QUALITY_CHANGE#").
-		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
-		All(&qualityChangeEvents)
-
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+			Index("gsi3").
+			Where("gsi3PK", "=", fmt.Sprintf("MEDIA_QUALITY#%s", mediaID)).
+			Where("gsi3SK", ">=", fmt.Sprintf("TS#%d", last7Days.Unix())),
+		500, 100,
+		func(page []models.MediaAnalytics) (bool, error) {
+			qualityChangeEvents = append(qualityChangeEvents, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, nil // Ignore errors for quality change events
 	}
 
-	qualityChanges := 0
-	for _, event := range qualityChangeEvents {
-		if event.MediaID == mediaID {
-			qualityChanges++
-		}
-	}
-
-	return qualityChanges, nil
+	return len(qualityChangeEvents), nil
 }
 
 // GetStreamingAnalytics retrieves comprehensive streaming analytics for a media item
@@ -2386,13 +2222,27 @@ func (r *TrendingRepository) GetModeratorStats(ctx context.Context, moderatorID 
 		date := now.AddDate(0, 0, -i).Format(common.DateFormat)
 		pk := fmt.Sprintf("MOD_ANALYTICS#%s", date)
 
-		// Query all report types for this date
+		// Query all report types for this date — the whole keyed
+		// MOD_ANALYTICS#<date> partition must be read to aggregate every
+		// moderator's actions, so the read is a bounded page walk (wave #1469):
+		// Limit(500)/page, 100-page cap.
 		var analyticsRecords []models.ModerationAnalytics
-		err := r.db.WithContext(ctx).Model(&models.ModerationAnalytics{}).
-			Where("PK", "=", pk).
-			All(&analyticsRecords)
-
-		if err != nil && !errors.IsNotFound(err) {
+		err := walkKeyedPages(
+			r.db.WithContext(ctx).Model(&models.ModerationAnalytics{}).
+				Where("PK", "=", pk),
+			500, 100,
+			func(page []models.ModerationAnalytics) (bool, error) {
+				analyticsRecords = append(analyticsRecords, page...)
+				return false, nil
+			},
+		)
+		if err != nil {
+			// Cap exhaustion fails the stats closed instead of silently
+			// truncating a date's records; transient errors keep the original
+			// skip-this-date degrade.
+			if stderrors.Is(err, errBoundedPageCapExceeded) {
+				return nil, err
+			}
 			r.logger.Warn("failed to get moderation analytics for date",
 				zap.String("date", date),
 				zap.Error(err))
@@ -2479,21 +2329,23 @@ func (r *TrendingRepository) GetReportTrends(ctx context.Context, reportTypes []
 // O(1) read: sums the maintained per-UTC-day distinct-actor counters over the
 // window (see instance_counts.go). The sum is an upper bound on the true
 // window-distinct count — an actor active on multiple days is counted once per
-// day — documented as acceptable for the public instance stats surface. The
-// per-day rollup is maintained by the activity write path and seeded lazily
-// once from a bounded scan on first read.
+// day — documented as acceptable for the public instance stats surface. Every
+// read is a point read of a maintained day counter; missing days sum as zero,
+// and the read NEVER scans. The rollup is populated off the request path
+// (activity write path + the offline recount).
 func (r *TrendingRepository) GetActiveUserCount(ctx context.Context, days int) (int, error) {
 	return readActiveMonthCount(ctx, r.db, r.logger, days)
 }
 
 // GetTotalUserCount returns the total number of users.
 //
-// O(1) read: returns the maintained TOTAL_USERS counter, seeded lazily once
-// from a one-time scan and kept current by the user/account write paths. While
-// a failed seed is in its backoff window the last known value is served and
-// the scan is never re-armed (see instance_counts.go).
+// O(1) read: returns the maintained TOTAL_USERS counter (point read; an
+// unseeded counter reads as the documented default 0), kept current by the
+// user/account write paths and seeded off the request path by the offline
+// `lesser recount-instance-counts` tool. No scan ever runs here (see
+// instance_counts.go).
 func (r *TrendingRepository) GetTotalUserCount(ctx context.Context) (int, error) {
-	count, err := ensureTotalUsersSeeded(ctx, r.db, r.logger)
+	count, err := readTotalUsersCount(ctx, r.db, r.logger)
 	if err != nil {
 		return 0, err
 	}
@@ -2515,12 +2367,13 @@ func (r *TrendingRepository) GetTotalStatusCount(ctx context.Context) (*int, err
 
 // GetTotalDomainCount returns the total number of known domains.
 //
-// O(1) read: returns the maintained TOTAL_DOMAINS counter, seeded lazily once
-// from a one-time scan and kept current by the actor/account write paths. While
-// a failed seed is in its backoff window the last known value is served and
-// the scan is never re-armed (see instance_counts.go).
+// O(1) read: returns the maintained TOTAL_DOMAINS counter (point read; an
+// unseeded counter reads as the documented default 0), kept current by the
+// actor/account write paths and seeded off the request path by the offline
+// `lesser recount-instance-counts` tool. No scan ever runs here (see
+// instance_counts.go).
 func (r *TrendingRepository) GetTotalDomainCount(ctx context.Context) (int, error) {
-	count, err := ensureTotalDomainsSeeded(ctx, r.db, r.logger)
+	count, err := readTotalDomainsCount(ctx, r.db, r.logger)
 	if err != nil {
 		return 0, err
 	}
@@ -2595,10 +2448,11 @@ func (r *TrendingRepository) GetQueryCount(ctx context.Context, query string) (i
 
 // GetTopQueries retrieves the most popular queries within a time range
 func (r *TrendingRepository) GetTopQueries(ctx context.Context, limit int, timeRange time.Duration) ([]storage.SearchQueryStats, error) {
-	// Validate limit using centralized validation
-	if err := common.ValidateQueryLimit(limit, 100, "analytics"); err != nil {
-		limit = 20
-	}
+	// Clamp the limit (wave #1469): ValidateQueryLimit accepts 0, so limit=0
+	// previously compiled to Limit(0) — no limit — an unbounded read of the
+	// whole POPULAR#<bucket>#<date> gsi8 partition. The read is always bounded
+	// now (default 20, hard max 100).
+	limit, _, _ = clampLimit(limit, 20, 100)
 
 	// Determine time bucket based on range
 	bucket := models.PeriodDaily
@@ -2720,63 +2574,4 @@ func (r *TrendingRepository) hashQuery(query string) string {
 		h = h[:32] // Limit length
 	}
 	return h
-}
-
-// GetActorInteraction retrieves the timestamp of the last interaction between two actors
-// This looks for the most recent engagement (like, boost, reply) between the actors
-func (r *TrendingRepository) GetActorInteraction(ctx context.Context, actor1, actor2 string) (*time.Time, error) {
-	// Query for any engagement activities involving both actors
-	// We'll look for engagement records where either actor engaged with the other's content
-
-	var engagements []models.StatusEngagement
-
-	// Create a search pattern that would match engagements between these actors
-	// Since StatusEngagement has PK=STATUS_ENGAGEMENT#statusID and SK=engagementType#timestamp#userID,
-	// we need to search by user engagement patterns
-
-	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("SK", "begins_with", "like#").
-		Where("UserID", "=", actor1).
-		Limit(50). // Limit to recent engagements for performance
-		All(&engagements)
-
-	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Error("failed to query actor interactions",
-			zap.String("actor1", actor1),
-			zap.String("actor2", actor2),
-			zap.Error(err))
-		return nil, err
-	}
-
-	// Look for interactions in the reverse direction as well
-	var reverseEngagements []models.StatusEngagement
-	err = r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("SK", "begins_with", "like#").
-		Where("UserID", "=", actor2).
-		Limit(50).
-		All(&reverseEngagements)
-
-	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Error("failed to query reverse actor interactions",
-			zap.String("actor1", actor1),
-			zap.String("actor2", actor2),
-			zap.Error(err))
-		return nil, err
-	}
-
-	// Combine and find the most recent interaction
-	allEngagements := append(engagements, reverseEngagements...)
-
-	if err := common.ValidateSliceNotEmpty("allEngagements", allEngagements); err != nil {
-		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "actor interaction", fmt.Sprintf("%s<->%s", actor1, actor2))
-	}
-
-	// Sort by engagement time to find the most recent
-	sort.Slice(allEngagements, func(i, j int) bool {
-		return allEngagements[i].EngagedAt.After(allEngagements[j].EngagedAt)
-	})
-
-	// Return the most recent interaction timestamp
-	mostRecent := allEngagements[0].EngagedAt
-	return &mostRecent, nil
 }

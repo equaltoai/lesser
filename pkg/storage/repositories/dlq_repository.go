@@ -626,22 +626,6 @@ func (r *DLQRepository) CleanupExpiredMessages(_ context.Context, before time.Ti
 	return 0, nil
 }
 
-// GetSimilarMessages finds messages with the same similarity hash (DLQ-specific similarity analysis)
-func (r *DLQRepository) GetSimilarMessages(ctx context.Context, similarityHash string, limit int) ([]*models.DLQMessage, error) {
-	var messages []*models.DLQMessage
-	err := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
-		Filter("SimilarityHash", "=", similarityHash).
-		OrderBy("FirstSeenAt", "DESC").
-		Limit(limit).
-		All(&messages)
-
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, "dlq", "similar messages")
-	}
-
-	return messages, nil
-}
-
 // ================= DLQ-SPECIFIC BUSINESS LOGIC METHODS =================
 
 // SendToDeadLetterQueue creates and stores a DLQ message with proper error categorization

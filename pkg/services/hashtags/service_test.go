@@ -58,15 +58,7 @@ func (m *mockHashtagRepository) GetHashtagTimelineAdvanced(ctx context.Context, 
 	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
 }
 
-func (m *mockHashtagRepository) GetSuggestedHashtags(context.Context, string, int) ([]*storage.HashtagSearchResult, error) {
-	return nil, nil
-}
-
 func (m *mockHashtagRepository) GetTrendingHashtags(context.Context, time.Time, int) ([]*storage.TrendingHashtag, error) {
-	return nil, nil
-}
-
-func (m *mockHashtagRepository) GetRecentHashtags(context.Context, time.Time, int) ([]*storage.TrendingHashtag, error) {
 	return nil, nil
 }
 

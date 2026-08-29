@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -106,6 +107,49 @@ func TestSocialRepository_Round08_SweepHappyPaths(t *testing.T) {
 			*dest = []models.Announce{
 				{Actor: "alice", Object: "s1", ID: "a1", SK: "ACTOR#alice", GSI4SK: "SK#1"},
 				{Actor: "bob", Object: "s1", ID: "a2", SK: "ACTOR#bob", GSI4SK: "SK#2"},
+			}
+		case *[]models.AccountPin:
+			*dest = []models.AccountPin{
+				{Username: "alice", PinnedActorID: "acct:bob", PinnedUsername: "bob", SK: "PIN#acct:bob"},
+				{Username: "alice", PinnedActorID: "acct:carl", PinnedUsername: "carl", SK: "PIN#acct:carl"},
+			}
+		case *[]models.StatusPin:
+			*dest = []models.StatusPin{
+				{Username: "alice", StatusID: "s1", CreatedAt: time.Now().Add(-time.Hour), SK: "STATUS#s1"},
+				{Username: "alice", StatusID: "s2", CreatedAt: time.Now().Add(-time.Minute), SK: "STATUS#s2"},
+			}
+		default:
+		}
+	})
+
+	// Wave #1469 page-capped walks (GetAnnounces/GetAccountPins/GetStatusPins
+	// and count walks) iterate with AllPaginated instead of a bare All.
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe().Run(func(args mock.Arguments) {
+		switch dest := args.Get(0).(type) {
+		case *[]models.Block:
+			*dest = []models.Block{
+				{Actor: "https://example.com/users/alice", Object: "https://example.com/users/bob", ID: "b1", SK: "BLOCKED#bob"},
+				{Actor: "https://example.com/users/alice", Object: "https://example.com/users/carl", ID: "b2", SK: "BLOCKED#carl", GSI5SK: "SK#2"},
+			}
+		case *[]models.Mute:
+			*dest = []models.Mute{
+				{Actor: "alice", Object: "bob", ID: "m1", SK: "MUTED#bob"},
+				{Actor: "alice", Object: "carl", ID: "m2", SK: "MUTED#carl"},
+			}
+		case *[]models.Announce:
+			*dest = []models.Announce{
+				{Actor: "alice", Object: "s1", ID: "a1", SK: "ACTOR#alice", GSI4SK: "SK#1"},
+				{Actor: "bob", Object: "s1", ID: "a2", SK: "ACTOR#bob", GSI4SK: "SK#2"},
+			}
+		case *[]models.AccountPin:
+			*dest = []models.AccountPin{
+				{Username: "alice", PinnedActorID: "acct:bob", PinnedUsername: "bob", SK: "PIN#acct:bob"},
+				{Username: "alice", PinnedActorID: "acct:carl", PinnedUsername: "carl", SK: "PIN#acct:carl"},
+			}
+		case *[]models.StatusPin:
+			*dest = []models.StatusPin{
+				{Username: "alice", StatusID: "s1", CreatedAt: time.Now().Add(-time.Hour), SK: "STATUS#s1"},
+				{Username: "alice", StatusID: "s2", CreatedAt: time.Now().Add(-time.Minute), SK: "STATUS#s2"},
 			}
 		default:
 		}
@@ -351,7 +395,11 @@ func TestSocialRepository_Round08_ErrorBranches(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQueryCount).Once()
 		mockQueryCount.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryCount).Once()
-		mockQueryCount.On("Count").Return(int64(5), nil).Once()
+		mockQueryCount.On("Limit", mock.Anything).Return(mockQueryCount).Maybe()
+		mockQueryCount.On("AllPaginated", mock.AnythingOfType("*[]models.StatusPin")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.StatusPin)
+			*dest = make([]models.StatusPin, 5)
+		}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 		repo := NewSocialRepository(mockDB, "table", zap.NewNop(), nil)
 		disableSocialEnhancedServices(repo)
@@ -387,13 +435,13 @@ func TestSocialRepository_Round08_ErrorBranches(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		// GetStatusPins -> Scan.
+		// GetStatusPins -> All.
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Twice()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Twice()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", 11).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.StatusPin)
 			*dest = []models.StatusPin{
 				{Username: "alice", StatusID: "s1", SK: "STATUS#s1"},
@@ -401,11 +449,11 @@ func TestSocialRepository_Round08_ErrorBranches(t *testing.T) {
 			}
 		})
 
-		// Second call (empty list): Scan again.
+		// Second call (empty list): All again.
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", 11).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.StatusPin)
 			*dest = []models.StatusPin{
 				{Username: "alice", StatusID: "s1", SK: "STATUS#s1"},
@@ -557,7 +605,8 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Announce")).Return(nil, assert.AnError).Once()
 
 		repo := NewSocialRepository(mockDB, "table", zap.NewNop(), nil)
 		disableSocialEnhancedServices(repo)
@@ -569,15 +618,16 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 		mockQuery.AssertExpectations(t)
 	})
 
-	t.Run("CascadeDeleteAnnounces maps scan errors and tolerates delete errors", func(t *testing.T) {
-		t.Run("scan error", func(t *testing.T) {
+	t.Run("CascadeDeleteAnnounces maps walk errors and tolerates delete errors", func(t *testing.T) {
+		t.Run("walk error", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
 
 			mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 			mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-			mockQuery.On("Scan", mock.Anything).Return(assert.AnError).Once()
+			mockQuery.On("Limit", 500).Return(mockQuery).Once()
+			mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.Announce")).Return(nil, assert.AnError).Once()
 
 			repo := NewSocialRepository(mockDB, "table", zap.NewNop(), nil)
 			disableSocialEnhancedServices(repo)
@@ -598,7 +648,8 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 
 			mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScan).Once()
-			mockQueryScan.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			mockQueryScan.On("Limit", 500).Return(mockQueryScan).Once()
+			mockQueryScan.On("AllPaginated", mock.AnythingOfType("*[]models.Announce")).Return(&core.PaginatedResult{HasMore: false}, nil).Once().Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*[]models.Announce)
 				*dest = []models.Announce{
 					{PK: "OBJECT#s1#ANNOUNCES", SK: "ACTOR#alice", Actor: "alice", Object: "s1"},
@@ -675,7 +726,7 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", 2).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
 
 		repo := NewSocialRepository(mockDB, "table", zap.NewNop(), nil)
 		disableSocialEnhancedServices(repo)
@@ -734,7 +785,8 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 			mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 			mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
 			mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
-			mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+			mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+			mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.StatusPin")).Return(nil, assert.AnError).Once()
 
 			repo := NewSocialRepository(mockDB, "table", zap.NewNop(), nil)
 			disableSocialEnhancedServices(repo)
@@ -754,7 +806,8 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 
 			mockDB.On("Model", mock.Anything).Return(mockQueryCount).Once()
 			mockQueryCount.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryCount).Once()
-			mockQueryCount.On("Count").Return(int64(0), nil).Once()
+			mockQueryCount.On("Limit", mock.Anything).Return(mockQueryCount).Maybe()
+			mockQueryCount.On("AllPaginated", mock.AnythingOfType("*[]models.StatusPin")).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 			mockDB.On("Model", mock.Anything).Return(mockQueryCreate).Once()
 			mockQueryCreate.On("Create").Return(dynamormerrors.ErrConditionFailed).Once()
@@ -779,7 +832,7 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Once()
 		mockQuery.On("Limit", 2).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(assert.AnError).Once()
+		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
 
 		repo := NewSocialRepository(mockDB, "table", zap.NewNop(), nil)
 		disableSocialEnhancedServices(repo)
@@ -818,12 +871,12 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 
 			mockDB.On("WithContext", mock.Anything).Return(mockDB).Twice()
 
-			// GetStatusPins -> Scan.
+			// GetStatusPins -> All.
 			mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("OrderBy", mock.Anything, mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("Limit", 11).Return(mockQueryScan).Once()
-			mockQueryScan.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			mockQueryScan.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*[]models.StatusPin)
 				*dest = []models.StatusPin{{Username: "alice", StatusID: "s1", SK: "STATUS#s1"}}
 			})
@@ -851,12 +904,12 @@ func TestSocialRepository_Round08_MoreBranches(t *testing.T) {
 
 			mockDB.On("WithContext", mock.Anything).Return(mockDB).Times(3)
 
-			// GetStatusPins -> Scan.
+			// GetStatusPins -> All.
 			mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("OrderBy", mock.Anything, mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("Limit", 11).Return(mockQueryScan).Once()
-			mockQueryScan.On("Scan", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			mockQueryScan.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*[]models.StatusPin)
 				*dest = []models.StatusPin{{Username: "alice", StatusID: "s1", SK: "STATUS#s1"}}
 			})

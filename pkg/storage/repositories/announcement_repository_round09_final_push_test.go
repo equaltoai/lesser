@@ -40,7 +40,10 @@ func TestAnnouncementRepository_Round09_FinalPush(t *testing.T) {
 	t.Run("GetDismissedAnnouncements not found", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		// Bounded page walk (wave #1469): NotFound from the walk's AllPaginated
+		// is still treated as an empty result.
+		mockQuery.On("Limit", 500).Return(mockQuery).Once()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, dynamormErrors.ErrItemNotFound).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 		repo := NewAnnouncementRepository(mockDB, "test-table", zap.NewNop())
 		ids, err := repo.GetDismissedAnnouncements(ctx, "u")

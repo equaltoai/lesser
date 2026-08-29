@@ -158,19 +158,29 @@ func TestListByPKSKPrefixPaginated_CursorTrimming(t *testing.T) {
 			skPrefix := "ITEM#"
 			limit := 10
 
-			// Set up base mock expectations
+			// Set up base mock expectations. One SK key condition (issue #1500):
+			// BEGINS_WITH on the first page; cursor pages close the key range
+			// with BETWEEN [cursor, skPrefix+"~"] (the `~` sentinel) and demote
+			// BEGINS_WITH to a post-read FilterExpression, over-fetching one
+			// extra item (limit+2) for the inclusive-cursor drop.
 			mockDB.On("WithContext", ctx).Return(mockDB)
 			mockDB.On("Model", mock.Anything).Return(mockQuery)
 			mockQuery.On("Where", "PK", "=", pk).Return(mockQuery)
-			mockQuery.On("Where", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
 			mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery)
 
-			// Only expect cursor filter if cursor is non-empty after trimming
+			// Only expect the cursor-scoped shape if cursor is non-empty after trimming
 			if tt.expectCursor {
-				mockQuery.On("Where", "SK", ">", tt.expectedCursor).Return(mockQuery)
+				mockQuery.On("Where", "SK", "BETWEEN", []any{tt.expectedCursor, skPrefix + "~"}).Return(mockQuery)
+				mockQuery.On("Filter", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
+			} else {
+				mockQuery.On("Where", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
 			}
 
-			mockQuery.On("Limit", limit+1).Return(mockQuery)
+			if tt.expectCursor {
+				mockQuery.On("Limit", limit+2).Return(mockQuery)
+			} else {
+				mockQuery.On("Limit", limit+1).Return(mockQuery)
+			}
 			mockQuery.On("All", mock.AnythingOfType("*[]repositories.testPaginatedItem")).Run(func(args mock.Arguments) {
 				items := args.Get(0).(*[]testPaginatedItem)
 				*items = []testPaginatedItem{}
@@ -204,12 +214,15 @@ func TestListByPKSKPrefixPaginated_QueryShape(t *testing.T) {
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 
-	// Verify exact query chain
+	// Verify exact query chain: a cursor page closes the key range with
+	// BETWEEN [cursor, skPrefix+"~"] (the `~` sentinel, one SK key condition,
+	// issue #1500) and demotes BEGINS_WITH to a post-read FilterExpression,
+	// over-fetching one extra item (limit+2) for the inclusive-cursor drop.
 	mockQuery.On("Where", "PK", "=", pk).Return(mockQuery)
-	mockQuery.On("Where", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery)
-	mockQuery.On("Where", "SK", ">", cursor).Return(mockQuery)
-	mockQuery.On("Limit", limit+1).Return(mockQuery) // limit + 1 for pagination detection
+	mockQuery.On("Where", "SK", "BETWEEN", []any{cursor, skPrefix + "~"}).Return(mockQuery)
+	mockQuery.On("Filter", "SK", "BEGINS_WITH", skPrefix).Return(mockQuery)
+	mockQuery.On("Limit", limit+2).Return(mockQuery) // limit + 2: +1 pagination detection, +1 inclusive-cursor drop
 	mockQuery.On("All", mock.AnythingOfType("*[]repositories.testPaginatedItem")).Run(func(args mock.Arguments) {
 		items := args.Get(0).(*[]testPaginatedItem)
 		*items = []testPaginatedItem{

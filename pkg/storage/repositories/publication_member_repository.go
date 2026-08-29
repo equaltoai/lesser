@@ -61,10 +61,19 @@ func (r *PublicationMemberRepository) ListMembers(ctx context.Context, publicati
 	var members []models.PublicationMember
 	pk := fmt.Sprintf("PUBLICATION#%s#MEMBER", publicationID)
 
-	err := r.db.WithContext(ctx).Model(&models.PublicationMember{}).
-		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", "USER#").
-		All(&members)
+	// The whole keyed PUBLICATION#<id>#MEMBER partition must be read to return
+	// every member, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.PublicationMember{}).
+			Where("PK", "=", pk).
+			Where("SK", "BEGINS_WITH", "USER#"),
+		500, 100,
+		func(page []models.PublicationMember) (bool, error) {
+			members = append(members, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, err

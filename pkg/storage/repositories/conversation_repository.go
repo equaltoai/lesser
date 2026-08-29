@@ -722,10 +722,20 @@ func (r *ConversationRepository) IsConversationMuted(ctx context.Context, userna
 
 // GetMutedConversations retrieves all muted conversations for a user (KEEP - Complex mute retrieval with expiration cleanup)
 func (r *ConversationRepository) GetMutedConversations(ctx context.Context, username string) ([]string, error) {
+	// The whole keyed USER#<username> partition must be read to return every
+	// mute, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. The expiry filter below runs
+	// post-read over the collected rows.
 	var mutes []models.ConversationMute
-	err := r.GetDB().Model(&models.ConversationMute{}).WithContext(ctx).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		All(&mutes)
+	err := walkKeyedPages(
+		r.GetDB().Model(&models.ConversationMute{}).WithContext(ctx).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)),
+		500, 100,
+		func(page []models.ConversationMute) (bool, error) {
+			mutes = append(mutes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "muted")

@@ -52,6 +52,11 @@ type FederationInstanceConfigTracking struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"`
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"`
 
+	// GSI3 - global config listing for ListInstanceConfigs (wave part 2 batch E,
+	// #1469). Partition: "INSTANCE_CONFIGS#ALL"; sort key "INSTANCE#{domain}".
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"`
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"`
+
 	// Instance identification
 	Domain string `theorydb:"attr:domain" json:"domain"` // Remote instance domain
 
@@ -125,6 +130,11 @@ func (f *FederationInstanceConfigTracking) UpdateKeys() {
 		f.GSI2PK = ""
 		f.GSI2SK = ""
 	}
+
+	// GSI3 - global config listing (ListInstanceConfigs). The single writer is
+	// SaveInstanceConfig, which calls UpdateKeys.
+	f.GSI3PK = "INSTANCE_CONFIGS#ALL"
+	f.GSI3SK = fmt.Sprintf("INSTANCE#%s", f.Domain)
 }
 
 // BeforeCreate is called before creating the record

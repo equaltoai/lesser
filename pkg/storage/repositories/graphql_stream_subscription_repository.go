@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -97,12 +98,27 @@ func (r *GraphQLStreamSubscriptionRepository) ListByStream(ctx context.Context, 
 		return nil, storage.ErrInvalidInput
 	}
 
+	// The whole keyed GQLSUB#<stream> partition must be read to return every
+	// registered subscription, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var items []models.GraphQLStreamSubscription
 	pk := fmt.Sprintf("GQLSUB#%s", stream)
-	err := r.db.WithContext(ctx).Model(&models.GraphQLStreamSubscription{}).
-		Where("PK", "=", pk).
-		All(&items)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.GraphQLStreamSubscription{}).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []models.GraphQLStreamSubscription) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
+		// Cap exhaustion fails the read closed instead of silently answering
+		// "no subscriptions"; only IsNotFound keeps its pre-existing empty-list
+		// swallow.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		if errors.IsNotFound(err) {
 			return []models.GraphQLStreamSubscription{}, nil
 		}
@@ -136,13 +152,27 @@ func (r *GraphQLStreamSubscriptionRepository) DeleteSubscription(ctx context.Con
 		return storage.ErrInvalidInput
 	}
 
+	// The whole keyed gsi1 CONN#<id> partition (SK prefix) must be read to
+	// delete every matching registration, so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var items []models.GraphQLStreamSubscription
-	err := r.db.WithContext(ctx).Model(&models.GraphQLStreamSubscription{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
-		Where("gsi1SK", "begins_with", fmt.Sprintf("SUB#%s#", subscriptionID)).
-		All(&items)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.GraphQLStreamSubscription{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
+			Where("gsi1SK", "begins_with", fmt.Sprintf("SUB#%s#", subscriptionID)),
+		500, 100,
+		func(page []models.GraphQLStreamSubscription) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
+		// Cap exhaustion fails the whole delete closed instead of deleting a
+		// partial subset; only IsNotFound keeps its pre-existing tolerance.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return err
+		}
 		if errors.IsNotFound(err) {
 			return nil
 		}
@@ -172,12 +202,26 @@ func (r *GraphQLStreamSubscriptionRepository) DeleteAllForConnection(ctx context
 		return storage.ErrInvalidInput
 	}
 
+	// The whole keyed gsi1 CONN#<id> partition must be read to delete every
+	// registration, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	var items []models.GraphQLStreamSubscription
-	err := r.db.WithContext(ctx).Model(&models.GraphQLStreamSubscription{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
-		All(&items)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.GraphQLStreamSubscription{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("CONN#%s", connectionID)),
+		500, 100,
+		func(page []models.GraphQLStreamSubscription) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
+		// Cap exhaustion fails the whole delete closed instead of deleting a
+		// partial subset; only IsNotFound keeps its pre-existing tolerance.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return err
+		}
 		if errors.IsNotFound(err) {
 			return nil
 		}

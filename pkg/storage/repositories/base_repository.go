@@ -727,19 +727,30 @@ func (r *BaseRepository[T]) QueryWithSKPrefixPaginated(ctx context.Context, pk, 
 
 	var results []T
 
+	// One SK key condition (issue #1500): BEGINS_WITH on the first page; with
+	// a cursor, BETWEEN closes the key range at the block boundary — DESC
+	// pages are bounded below by the prefix itself, ASC pages above by the
+	// `~` sentinel (0x7E sorts above every ASCII block member) — so the final
+	// page can never keep reading the partition tail. BEGINS_WITH is demoted
+	// to a post-read FilterExpression; BETWEEN is inclusive, so the cursor row
+	// is re-included and dropped post-read (one extra item is over-fetched so
+	// the has-more detection stays exact).
 	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", skPrefix).
-		OrderBy("SK", order).
-		Limit(safeLimit + 1)
+		OrderBy("SK", order)
 
+	fetchLimit := safeLimit + 1
 	if opts.Cursor != "" {
 		if order == SortOrderDesc {
-			query = query.Where("SK", "<", opts.Cursor)
+			query = query.Where("SK", "BETWEEN", []any{skPrefix, opts.Cursor}).Filter("SK", "BEGINS_WITH", skPrefix)
 		} else {
-			query = query.Where("SK", ">", opts.Cursor)
+			query = query.Where("SK", "BETWEEN", []any{opts.Cursor, skPrefix + "~"}).Filter("SK", "BEGINS_WITH", skPrefix)
 		}
+		fetchLimit++
+	} else {
+		query = query.Where("SK", "BEGINS_WITH", skPrefix)
 	}
+	query = query.Limit(fetchLimit)
 
 	if err := query.All(&results); err != nil {
 		r.logger.Error("failed to query items with SK prefix",
@@ -748,6 +759,9 @@ func (r *BaseRepository[T]) QueryWithSKPrefixPaginated(ctx context.Context, pk, 
 			zap.String("skPrefix", skPrefix),
 			zap.Int("limit", safeLimit))
 		return nil, ErrorHandler.HandleQueryError(err, "base entity", "prefix query")
+	}
+	if opts.Cursor != "" {
+		results = dropSortKeyCursorDuplicate(results, opts.Cursor, func(item T) string { return item.GetSK() })
 	}
 
 	hasMore := len(results) > safeLimit
@@ -910,9 +924,21 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 
 // Count returns the number of items for a given partition key
 func (r *BaseRepository[T]) Count(ctx context.Context, pk string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk).
-		Count()
+	// A keyed Count() would be uncapped by construction (tabletheory strips
+	// Limit from Count — query_execution.go:95), so the count is a bounded page
+	// walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion. This choke point covers every r.Count(ctx, pk) caller
+	// (block/mute/like/list/hashtag/timeline/feature/enhanced-base counts).
+	var items []T
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []T) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to count items",
@@ -921,7 +947,7 @@ func (r *BaseRepository[T]) Count(ctx context.Context, pk string) (int, error) {
 		return 0, ErrorHandler.HandleQueryError(err, "base entity", "count query")
 	}
 
-	return int(count), nil
+	return len(items), nil
 }
 
 // Exists checks if an item exists
@@ -1046,6 +1072,34 @@ type GSIQueryConfig struct {
 	OrderBy   string // Sort order (SortOrderAsc or SortOrderDesc)
 }
 
+// collectionMainTableQuery builds the main-table SK-window query for
+// QueryCollectionWithConversion with EXACTLY ONE key condition (issue #1500):
+// BEGINS_WITH on the first page; with a cursor key the exclusive `>` bound and
+// demote BEGINS_WITH to a post-read FilterExpression.
+func collectionMainTableQuery[M BaseModel](ctx context.Context, r *BaseRepository[M], pkValue, skPattern, cursor string, safeLimit int) core.Query {
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
+		Where("PK", "=", pkValue)
+
+	if cursor != "" {
+		// BETWEEN [cursor, skPattern+"~"] closes the key range at the top of
+		// the block (the `~` sentinel sorts above every ASCII block member) so
+		// the final page can never keep reading the partition tail; BEGINS_WITH
+		// is demoted to a post-read FilterExpression. The caller over-fetches
+		// one extra item and drops the re-included cursor row.
+		query = query.Where("SK", "BETWEEN", []any{cursor, skPattern + "~"}).
+			Limit(safeLimit + 2)
+		if skPattern != "" {
+			query = query.Filter("SK", "BEGINS_WITH", skPattern)
+		}
+	} else {
+		query = query.Limit(safeLimit + 1)
+		if skPattern != "" {
+			query = query.Where("SK", "BEGINS_WITH", skPattern)
+		}
+	}
+	return query
+}
+
 // QueryCollectionWithConversion performs paginated collection queries with type conversion
 // This eliminates duplication in social relationship queries (likes, blocks, follows, etc.)
 func QueryCollectionWithConversion[M BaseModel, R any](
@@ -1110,19 +1164,12 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 		pkValue := fmt.Sprintf("%s#%s", config.PKKey, entityID)
 		skPattern := config.SKKey
 
-		query := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
-			Where("PK", "=", pkValue).
-			Limit(safeLimit + 1)
-
-		if skPattern != "" {
-			query = query.Where("SK", "BEGINS_WITH", skPattern)
-		}
-
-		if cursor != "" {
-			query = query.Where("SK", ">", cursor)
-		}
-
+		query := collectionMainTableQuery(ctx, r, pkValue, skPattern, cursor, safeLimit)
 		err = query.All(&models)
+		if err == nil && cursor != "" && skPattern != "" {
+			// BETWEEN re-includes the cursor row; drop it post-read.
+			models = dropSortKeyCursorDuplicate(models, cursor, func(m M) string { return m.GetSK() })
+		}
 	}
 	if err != nil {
 		r.logger.Error(fmt.Sprintf("failed to %s", config.ErrorPrefix),
@@ -1200,113 +1247,6 @@ func DeleteEntityWithLogging[M BaseModel](
 	r.logger.Info(fmt.Sprintf("deleted %s", entityType), logFields...)
 
 	return nil
-}
-
-// HistoryQueryConfig configures behavior for history/metrics query operations
-type HistoryQueryConfig struct {
-	MetricType  string                                   // The metric type (e.g., "storage_bytes", "user_count")
-	IndexName   string                                   // GSI index name
-	PKField     string                                   // GSI PK field name
-	SKField     string                                   // GSI SK field name
-	LogName     string                                   // Name for logging
-	ErrorPrefix string                                   // Error message prefix
-	Converter   func(interface{}) map[string]interface{} // Custom field converter
-}
-
-// QueryHistoryWithDateRange performs time-range queries for metrics/history data
-// This eliminates duplication in GetStorageHistory, GetUserGrowthHistory, etc.
-func QueryHistoryWithDateRange[M BaseModel](
-	ctx context.Context,
-	r *BaseRepository[M],
-	config HistoryQueryConfig,
-	days int,
-) ([]any, error) {
-	// Validate and default days parameter
-	if err := common.ValidateIntRange("days", days, 1, 365); err != nil {
-		days = 30 // Default to 30 days
-	}
-
-	// Calculate date range
-	startDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
-	endDate := time.Now().Format("2006-01-02")
-
-	// Query using GSI
-	var models []M
-	err := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
-		Index(config.IndexName).
-		Where(config.PKField, "=", fmt.Sprintf("METRIC#%s", config.MetricType)).
-		Where(config.SKField, ">=", fmt.Sprintf("DATE#%s", startDate)).
-		Where(config.SKField, "<=", fmt.Sprintf("DATE#%s", endDate)).
-		All(&models)
-
-	if err != nil {
-		r.logger.Error(fmt.Sprintf("Failed to get %s", config.LogName),
-			zap.Error(err),
-			zap.Int("days", days))
-		return nil, ErrorHandler.HandleQueryError(err, "history entity", config.LogName)
-	}
-
-	// Convert to expected format
-	result := make([]any, len(models))
-	for i, model := range models {
-		if config.Converter != nil {
-			result[i] = config.Converter(model)
-		} else {
-			// Default conversion - this would need to be customized per use case
-			result[i] = model
-		}
-	}
-
-	r.logger.Info(fmt.Sprintf("Retrieved %s", config.LogName),
-		zap.Int("days", days),
-		zap.Int("records", len(result)))
-
-	return result, nil
-}
-
-// MetricsQueryConfig configures behavior for metrics query operations
-type MetricsQueryConfig struct {
-	IndexName   string // GSI index name
-	PKField     string // GSI PK field name
-	SKField     string // GSI SK field name
-	PKPattern   string // PK value pattern (e.g., "SERVICE#%s", "METRIC_TYPE#%s")
-	LogName     string // Name for logging
-	ErrorPrefix string // Error message prefix
-}
-
-// QueryMetricsByTimeRange performs time-range queries for metric records
-// This eliminates duplication in GetMetricsByService, GetMetricsByType, GetMetricsByAggregationLevel
-func QueryMetricsByTimeRange[M BaseModel](
-	ctx context.Context,
-	r *BaseRepository[M],
-	config MetricsQueryConfig,
-	entityName string,
-	startTime, endTime time.Time,
-) ([]M, error) {
-	var records []M
-
-	pkValue := fmt.Sprintf(config.PKPattern, entityName)
-	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
-	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
-
-	err := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
-		Index(config.IndexName).
-		Where(config.PKField, "=", pkValue).
-		Where(config.SKField, ">=", startSK).
-		Where(config.SKField, "<=", endSK).
-		OrderBy(config.SKField, SortOrderDesc).
-		All(&records)
-
-	if err != nil {
-		r.logger.Error(fmt.Sprintf("failed to get %s", config.LogName),
-			zap.Error(err),
-			zap.String("entity", entityName),
-			zap.Time("startTime", startTime),
-			zap.Time("endTime", endTime))
-		return nil, ErrorHandler.HandleQueryError(err, "metrics entity", config.LogName)
-	}
-
-	return records, nil
 }
 
 // ReportConversionConfig configures report model to storage type conversion
@@ -1417,21 +1357,39 @@ func ListAggregatedByPeriod[T BaseModel](
 	startSK := fmt.Sprintf("window#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
 
-	// Execute query with time range filtering
-	query := db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
-		OrderBy("SK", SortOrderDesc).
-		Limit(safeLimit + 1)
-
-	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
-	}
-
-	err := query.All(&aggregatedList)
-	if err != nil {
-		return nil, "", MapErrorWithContext(err, config.ErrorPrefix)
+	// Execute query with time range filtering. The SK window is EXACTLY ONE key
+	// condition (issue #1500): BETWEEN [start, end] on the first page; with a
+	// cursor (DESC order) the upper bound is clamped to the cursor — BETWEEN is
+	// inclusive, so the cursor row is re-included and dropped post-read (one
+	// extra item is over-fetched so the has-more detection stays exact).
+	fetchLimit := safeLimit + 1
+	if cursor == "" {
+		query := db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+			Where("PK", "=", pk).
+			Where("SK", "BETWEEN", []any{startSK, endSK}).
+			OrderBy("SK", SortOrderDesc).
+			Limit(fetchLimit)
+		err := query.All(&aggregatedList)
+		if err != nil {
+			return nil, "", MapErrorWithContext(err, config.ErrorPrefix)
+		}
+	} else {
+		// Clamp the upper bound to min(window end, cursor): a stale/foreign
+		// cursor sorting above the window end must not widen the window.
+		hi := cursor
+		if endSK < hi {
+			hi = endSK
+		}
+		query := db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+			Where("PK", "=", pk).
+			Where("SK", "BETWEEN", []any{startSK, hi}).
+			OrderBy("SK", SortOrderDesc).
+			Limit(fetchLimit + 1)
+		err := query.All(&aggregatedList)
+		if err != nil {
+			return nil, "", MapErrorWithContext(err, config.ErrorPrefix)
+		}
+		aggregatedList = dropSortKeyCursorDuplicate(aggregatedList, cursor, func(item T) string { return item.GetSK() })
 	}
 
 	hasMore := len(aggregatedList) > safeLimit
@@ -1465,11 +1423,20 @@ type BasePaginatedResult[T BaseModel] struct {
 
 // FindByPK retrieves all items with a specific partition key
 func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error) {
+	// The whole keyed partition must be read to return every item, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var results []T
 
-	err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk).
-		All(&results)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+			Where("PK", "=", pk),
+		500, 100,
+		func(page []T) (bool, error) {
+			results = append(results, page...)
+			return false, nil
+		},
+	)
 
 	// Track cost if cost service is available
 	if r.costService != nil {
@@ -1502,54 +1469,6 @@ func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error
 			zap.Error(err),
 			zap.String("pk", pk))
 		return nil, ErrorHandler.HandleQueryError(err, "base entity", "find by PK")
-	}
-
-	return results, nil
-}
-
-// FindBySK retrieves all items with a specific sort key (across all partitions)
-// Note: This requires a GSI with SK as the partition key
-func (r *BaseRepository[T]) FindBySK(ctx context.Context, sk string, gsiName string) ([]T, error) {
-	var results []T
-
-	attrPrefix := strings.ToLower(gsiName)
-	err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Index(gsiName).
-		Where(fmt.Sprintf("%sPK", attrPrefix), "=", sk).
-		All(&results)
-
-	// Track cost if cost service is available
-	if r.costService != nil {
-		itemCount := int64(len(results))
-		estimatedRU := itemCount
-		if estimatedRU == 0 {
-			estimatedRU = 1
-		}
-
-		operation := cost.DynamoOperation{
-			Type:               "Query",
-			TableName:          r.tableName,
-			ConsumedReadUnits:  estimatedRU,
-			ConsumedWriteUnits: 0,
-			ItemCount:          itemCount,
-			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("%s_findBySK_%d", r.repoName, time.Now().UnixNano()),
-		}
-
-		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
-			r.logger.Warn("failed to track DynamoDB findBySK operation cost",
-				zap.String("repository", r.repoName),
-				zap.String("sk", sk),
-				zap.Error(trackErr))
-		}
-	}
-
-	if err != nil {
-		r.logger.Error("failed to find items by SK",
-			zap.Error(err),
-			zap.String("sk", sk),
-			zap.String("gsi", gsiName))
-		return nil, ErrorHandler.HandleQueryError(err, "base entity", fmt.Sprintf("find by SK on %s", gsiName))
 	}
 
 	return results, nil
@@ -1888,28 +1807,57 @@ func (r *BaseRepository[T]) QueryBetweenPaginated(ctx context.Context, pk, start
 
 	var results []T
 
-	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
-		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
-		OrderBy("SK", order).
-		Limit(safeLimit + 1)
-
-	if opts.Cursor != "" {
-		if order == SortOrderDesc {
-			query = query.Where("SK", "<", opts.Cursor)
-		} else {
-			query = query.Where("SK", ">", opts.Cursor)
+	// The SK window is EXACTLY ONE key condition (issue #1500): BETWEEN
+	// [startSK, endSK] on the first page; with a cursor the near bound is
+	// clamped to the cursor — BETWEEN is inclusive, so the cursor row is
+	// re-included and dropped post-read (one extra item is over-fetched so the
+	// has-more detection stays exact).
+	fetchLimit := safeLimit + 1
+	if opts.Cursor == "" {
+		query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+			Where("PK", "=", pk).
+			Where("SK", "BETWEEN", []any{startSK, endSK}).
+			OrderBy("SK", order).
+			Limit(fetchLimit)
+		if err := query.All(&results); err != nil {
+			r.logger.Error("failed to query between range",
+				zap.Error(err),
+				zap.String("pk", pk),
+				zap.String("startSK", startSK),
+				zap.String("endSK", endSK))
+			return nil, ErrorHandler.HandleQueryError(err, "base entity", "range query")
 		}
-	}
-
-	if err := query.All(&results); err != nil {
-		r.logger.Error("failed to query between range",
-			zap.Error(err),
-			zap.String("pk", pk),
-			zap.String("startSK", startSK),
-			zap.String("endSK", endSK))
-		return nil, ErrorHandler.HandleQueryError(err, "base entity", "range query")
+	} else {
+		var lo, hi string
+		if order == SortOrderDesc {
+			lo, hi = startSK, opts.Cursor
+			// Clamp the upper bound to min(window end, cursor): a stale/foreign
+			// cursor sorting above the window end must not widen the window.
+			if hi > endSK {
+				hi = endSK
+			}
+		} else {
+			lo, hi = opts.Cursor, endSK
+			// Clamp the lower bound to max(window start, cursor): a stale/foreign
+			// cursor sorting below the window start must not widen the window.
+			if lo < startSK {
+				lo = startSK
+			}
+		}
+		query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
+			Where("PK", "=", pk).
+			Where("SK", "BETWEEN", []any{lo, hi}).
+			OrderBy("SK", order).
+			Limit(fetchLimit + 1)
+		if err := query.All(&results); err != nil {
+			r.logger.Error("failed to query between range",
+				zap.Error(err),
+				zap.String("pk", pk),
+				zap.String("startSK", startSK),
+				zap.String("endSK", endSK))
+			return nil, ErrorHandler.HandleQueryError(err, "base entity", "range query")
+		}
+		results = dropSortKeyCursorDuplicate(results, opts.Cursor, func(item T) string { return item.GetSK() })
 	}
 
 	hasMore := len(results) > safeLimit

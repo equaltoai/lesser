@@ -285,6 +285,8 @@ type FederationEdge struct {
 	SK     string `theorydb:"sk,attr:SK"`
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty"`
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty"`
 	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"`
 	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"`
 
@@ -313,6 +315,14 @@ func (f *FederationEdge) UpdateKeys() {
 	// GSI2 for connection queries
 	f.GSI2PK = fmt.Sprintf("INSTANCE#%s#CONNECTIONS#%s", f.SourceDomain, f.ConnectionType)
 	f.GSI2SK = fmt.Sprintf("%d#%s", f.LastActivity.Unix(), f.TargetDomain)
+
+	// GSI3 for the global all-edges listing (no index scans) — additive
+	// partition on the pre-existing gsi3 slot. Maintained on every write via
+	// UpdateKeys (single write entry: UpdateFederationEdge). Legacy edge rows
+	// written before this key shape existed are not listed by the global view
+	// until the edge is next written.
+	f.GSI3PK = "FED_EDGES#ALL"
+	f.GSI3SK = fmt.Sprintf("SRC#%s#TGT#%s", f.SourceDomain, f.TargetDomain)
 
 	// GSI8 for global strongest-by-type queries (no index scans).
 	// Sort order: strength desc, last activity desc (via Query OrderBy DESC).

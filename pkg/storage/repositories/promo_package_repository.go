@@ -433,11 +433,22 @@ func (r *PromoPackageRepository) ListActivePromoReviewGrants(ctx context.Context
 
 // ListPromoReviewGrants returns all grant records for one package.
 func (r *PromoPackageRepository) ListPromoReviewGrants(ctx context.Context, ownerID, packageID string) ([]*models.PromoReviewGrant, error) {
+	// The whole keyed USER#<owner>#PROMO#REVIEW partition must be read to return
+	// every grant, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The OrderBy ASC
+	// is preserved across pages via cursors.
 	var rows []models.PromoReviewGrant
-	err := r.db.WithContext(ctx).Model(&models.PromoReviewGrant{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#PROMO#REVIEW", ownerID)).
-		Where("SK", "begins_with", fmt.Sprintf("GRANT#%s#", packageID)).
-		OrderBy("SK", "ASC").All(&rows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.PromoReviewGrant{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s#PROMO#REVIEW", ownerID)).
+			Where("SK", "begins_with", fmt.Sprintf("GRANT#%s#", packageID)).
+			OrderBy("SK", "ASC"),
+		500, 100,
+		func(page []models.PromoReviewGrant) (bool, error) {
+			rows = append(rows, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -451,17 +462,29 @@ func (r *PromoPackageRepository) ListPromoReviewGrants(ctx context.Context, owne
 // ListPromoReviewGrantsByOwner returns every review assignment created by one
 // package owner. Callers apply active-state filtering before pagination so
 // revoked grants cannot shrink pages.
+//
+//nolint:dupl // the promo reviewer queue mirrors the draft reviewer queue (M4 issue #1446); N4 walk shape
 func (r *PromoPackageRepository) ListPromoReviewGrantsByOwner(ctx context.Context, ownerID string) ([]*models.PromoReviewGrant, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if err := common.ValidateRequiredParam("ownerID", ownerID); err != nil {
 		return nil, err
 	}
+	// The whole keyed USER#<owner>#PROMO#REVIEW partition must be read to return
+	// every review assignment, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The OrderBy ASC
+	// is preserved across pages via cursors.
 	var rows []models.PromoReviewGrant
-	err := r.db.WithContext(ctx).Model(&models.PromoReviewGrant{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#PROMO#REVIEW", ownerID)).
-		Where("SK", "begins_with", "GRANT#").
-		OrderBy("SK", "ASC").
-		All(&rows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.PromoReviewGrant{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s#PROMO#REVIEW", ownerID)).
+			Where("SK", "begins_with", "GRANT#").
+			OrderBy("SK", "ASC"),
+		500, 100,
+		func(page []models.PromoReviewGrant) (bool, error) {
+			rows = append(rows, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -482,11 +505,22 @@ func (r *PromoPackageRepository) CreatePromoReviewVerdict(ctx context.Context, v
 
 // ListPromoReviewVerdicts returns ordered verdict history for one package.
 func (r *PromoPackageRepository) ListPromoReviewVerdicts(ctx context.Context, ownerID, packageID string) ([]*models.PromoReviewVerdict, error) {
+	// The whole keyed USER#<owner>#PROMO#REVIEW partition must be read to return
+	// the full verdict history, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion. The OrderBy ASC
+	// is preserved across pages via cursors.
 	var rows []models.PromoReviewVerdict
-	err := r.db.WithContext(ctx).Model(&models.PromoReviewVerdict{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s#PROMO#REVIEW", ownerID)).
-		Where("SK", "begins_with", fmt.Sprintf("VERDICT#%s#", packageID)).
-		OrderBy("SK", "ASC").All(&rows)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.PromoReviewVerdict{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s#PROMO#REVIEW", ownerID)).
+			Where("SK", "begins_with", fmt.Sprintf("VERDICT#%s#", packageID)).
+			OrderBy("SK", "ASC"),
+		500, 100,
+		func(page []models.PromoReviewVerdict) (bool, error) {
+			rows = append(rows, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

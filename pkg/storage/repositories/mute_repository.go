@@ -244,10 +244,20 @@ func (r *MuteRepository) CountMutedUsers(ctx context.Context, muterActor string)
 func (r *MuteRepository) CountUsersWhoMuted(ctx context.Context, mutedActor string) (int, error) {
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
-	count, err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", Utils.Keys.MutedSK(mutedUsername)).
-		Count()
+	// The whole keyed gsi1 partition of accounts that muted this actor must be
+	// read to count every muter, so the read is a bounded page walk (wave
+	// #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var muteModels []models.Mute
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Mute{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", Utils.Keys.MutedSK(mutedUsername)),
+		500, 100,
+		func(page []models.Mute) (bool, error) {
+			muteModels = append(muteModels, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error("failed to count users who muted actor",
 			zap.String("muted_actor", mutedActor),
@@ -255,5 +265,5 @@ func (r *MuteRepository) CountUsersWhoMuted(ctx context.Context, mutedActor stri
 		return 0, ErrorHandler.HandleQueryError(err, EntityMute, fmt.Sprintf("count users who muted %s", mutedActor))
 	}
 
-	return int(count), nil
+	return len(muteModels), nil
 }

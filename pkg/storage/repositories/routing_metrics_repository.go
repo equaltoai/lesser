@@ -75,6 +75,12 @@ func (r *RoutingMetricsRepository) getMetricsWindows(ctx context.Context, repo i
 	pk := fmt.Sprintf("METRICS#%s#%s", metricsType, id)
 	sinceKey := fmt.Sprintf("WINDOW#%d", since.Unix())
 
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed partition read.
+	if limit <= 0 {
+		limit = 20
+	}
+
 	err := repo.GetDB().WithContext(ctx).Model(model).
 		Where("PK", "=", pk).
 		Where("SK", ">", sinceKey).
@@ -130,6 +136,12 @@ func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, 
 	var windows []*models.GlobalMetricsWindow
 
 	sinceKey := fmt.Sprintf("%d", since.Unix())
+
+	// Floor the page size (wave #1469): a limit <= 0 previously compiled
+	// Limit(0) — no limit — an unbounded keyed gsi1 read.
+	if limit <= 0 {
+		limit = 20
+	}
 
 	err := r.globalMetricsRepo.GetDB().WithContext(ctx).Model(&models.GlobalMetricsWindow{}).
 		Index("gsi1").

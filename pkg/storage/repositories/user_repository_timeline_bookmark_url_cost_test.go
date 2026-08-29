@@ -104,7 +104,8 @@ func TestUserRepository_GetVouchesForActor_NoActiveFilter(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Vouch")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(nil)
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	_, err := repo.GetVouchesForActor(context.Background(), "bob", false)
 	assert.NoError(t, err)
@@ -262,7 +263,8 @@ func TestUserRepository_ListUsersByRole_NotFoundReturnsEmpty(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(dynamormerrors.ErrItemNotFound)
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, dynamormerrors.ErrItemNotFound).Once()
 
 	users, err := repo.ListUsersByRole(context.Background(), "admin")
 	assert.NoError(t, err)
@@ -482,13 +484,14 @@ func TestUserRepository_ListUsersByRole_SuccessConvertsUsers(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.User)
 		*dest = []models.User{
 			{Username: "alice", Email: "alice@example.com", Role: "admin"},
 			{Username: "bob", Email: "bob@example.com", Role: "admin"},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	users, err := repo.ListUsersByRole(context.Background(), "admin")
 	assert.NoError(t, err)

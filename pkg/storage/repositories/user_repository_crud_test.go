@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
@@ -348,14 +349,15 @@ func TestUserRepository_GetActiveUserCount_Success(t *testing.T) {
 	mockQuery.On("Index", "gsi3").Return(mockQuery)
 	mockQuery.On("Where", "gsi3PK", "=", "ACTIVITY").Return(mockQuery)
 	mockQuery.On("Where", "gsi3SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.User)
 		*out = []models.User{
 			{Username: "user1"},
 			{Username: "user2"},
 			{Username: "user3"},
 		}
-	}).Return(nil)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Once()
 
 	count, err := repo.GetActiveUserCount(ctx, 30)
 
@@ -376,7 +378,8 @@ func TestUserRepository_GetActiveUserCount_Error(t *testing.T) {
 	mockQuery.On("Index", "gsi3").Return(mockQuery)
 	mockQuery.On("Where", "gsi3PK", "=", "ACTIVITY").Return(mockQuery)
 	mockQuery.On("Where", "gsi3SK", ">=", mock.AnythingOfType("string")).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, ErrTestMockError).Once()
 
 	count, err := repo.GetActiveUserCount(ctx, 30)
 
@@ -400,7 +403,13 @@ func TestUserRepository_GetTotalUserCount_Success(t *testing.T) {
 	mockDB.On("Model", &models.User{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "USERS").Return(mockQuery)
-	mockQuery.On("Count").Return(int64(42), nil)
+	// GetTotalUserCount is now a page-capped walk (wave #1469): count = walked
+	// rows.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.User)
+		*out = make([]models.User, 42)
+	}).Return(&core.PaginatedResult{}, nil)
 
 	count, err := repo.GetTotalUserCount(ctx)
 
@@ -420,7 +429,9 @@ func TestUserRepository_GetTotalUserCount_Error(t *testing.T) {
 	mockDB.On("Model", &models.User{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "USERS").Return(mockQuery)
-	mockQuery.On("Count").Return(int64(0), ErrTestMockError)
+	// Page-capped walk (wave #1469): the walk error propagates.
+	mockQuery.On("Limit", 500).Return(mockQuery)
+	mockQuery.On("AllPaginated", mock.Anything).Return(nil, ErrTestMockError)
 
 	count, err := repo.GetTotalUserCount(ctx)
 

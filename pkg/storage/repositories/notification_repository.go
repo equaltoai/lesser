@@ -609,15 +609,27 @@ func (r *NotificationRepository) ConsolidateNotifications(ctx context.Context, g
 func (r *NotificationRepository) GetUnreadNotificationCount(ctx context.Context, userID string) (int64, error) {
 	pk := "USER#" + userID
 
-	count, err := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		Filter("IsRead", "=", false).
-		Count()
+	// The whole keyed USER#<user> partition must be read to count the unread
+	// rows, so the read is a bounded page walk (wave #1469): Limit(500)/page,
+	// 100-page cap, fail-closed on exhaustion. The IsRead=false filter stays on
+	// the query chain so it applies per page; a keyed Count() would be
+	// unbounded by construction (tabletheory strips Limit from Count).
+	var notifications []models.Notification
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.Notification{}).
+			Where("PK", "=", pk).
+			Filter("IsRead", "=", false),
+		500, 100,
+		func(page []models.Notification) (bool, error) {
+			notifications = append(notifications, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityNotification, "unread count")
 	}
 
-	return count, nil
+	return int64(len(notifications)), nil
 }
 
 // GetNotificationCountsByType returns notification counts by type
@@ -754,13 +766,30 @@ func (r *NotificationRepository) DeleteNotificationsByType(ctx context.Context, 
 func (r *NotificationRepository) DeleteNotificationsByObject(ctx context.Context, objectID string) error {
 	const deleteBatchLimit = 100
 	totalDeleted := 0
+	lastSK := ""
 
+	// Notifications about an object resolve through the GSI5 object listing
+	// (NOTIF_OBJECT#<targetID> / <created_at>#<userID>#<id>) maintained by
+	// Notification.setupGSIKeys on every create (wave part 2 batch E, #1469);
+	// the delete cascade pages the partition with a keyed query. The previous
+	// ObjectID attribute filter compiled to a full table scan AND matched
+	// nothing — the Notification model references objects via TargetID, so the
+	// filter on a nonexistent "ObjectID" attribute always returned zero rows.
+	// The cascade now keys on TargetID (the model's object reference), so it
+	// deletes the notifications the inbox cascade intends. Notifications
+	// written before the GSI5 shape carry no index keys and are not cascaded
+	// until next written (notifications are TTL-transient, 30d).
 	for {
 		var notifications []models.Notification
-		err := r.db.WithContext(ctx).Model(&models.Notification{}).
-			Where("ObjectID", "=", objectID).
-			Limit(deleteBatchLimit).
-			All(&notifications)
+		query := r.db.WithContext(ctx).Model(&models.Notification{}).
+			Index("gsi5").
+			Where("gsi5PK", "=", fmt.Sprintf("NOTIF_OBJECT#%s", objectID)).
+			Limit(deleteBatchLimit + 1) // Fetch one extra to detect more pages
+		if lastSK != "" {
+			query = query.Where("gsi5SK", ">", lastSK)
+		}
+
+		err := query.All(&notifications)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				break
@@ -772,12 +801,18 @@ func (r *NotificationRepository) DeleteNotificationsByObject(ctx context.Context
 			break
 		}
 
+		hasMore := len(notifications) > deleteBatchLimit
+		if hasMore {
+			notifications = notifications[:deleteBatchLimit]
+		}
+
 		keys := make([]any, len(notifications))
 		for i := range notifications {
 			keys[i] = &models.Notification{
 				PK: notifications[i].PK,
 				SK: notifications[i].SK,
 			}
+			lastSK = notifications[i].GSI5SK
 		}
 
 		if err := r.db.WithContext(ctx).Model(&models.Notification{}).BatchDelete(keys); err != nil {
@@ -786,7 +821,7 @@ func (r *NotificationRepository) DeleteNotificationsByObject(ctx context.Context
 
 		totalDeleted += len(notifications)
 
-		if len(notifications) < deleteBatchLimit {
+		if !hasMore {
 			break
 		}
 	}

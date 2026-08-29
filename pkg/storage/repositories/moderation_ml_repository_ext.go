@@ -96,6 +96,14 @@ func (r *ModerationMLRepository) CreatePrediction(ctx context.Context, predictio
 func (r *ModerationMLRepository) GetPredictionsByModelVersion(ctx context.Context, modelVersion string, startTime, endTime time.Time, limit int) ([]*models.MLPrediction, error) {
 	var predictions []*models.MLPrediction
 
+	// Floor the page size (wave #1469, batch S2): a limit <= 0 previously
+	// compiled Limit(0) — no limit — an unbounded read. No max is applied: the
+	// internal caller (pkg/services/moderationml computeEffectiveness) passes
+	// 1000 and expects the full reviewed-prediction set for the period.
+	if limit <= 0 {
+		limit = 100
+	}
+
 	gsi1pk := fmt.Sprintf("MODEL#%s", modelVersion)
 	startSK := fmt.Sprintf("TIME#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("TIME#%s", endTime.Format(time.RFC3339))
@@ -104,12 +112,21 @@ func (r *ModerationMLRepository) GetPredictionsByModelVersion(ctx context.Contex
 	query := r.db.WithContext(ctx).
 		Model(&pred).
 		Where("gsi1PK", "=", gsi1pk).
-		Where("gsi1SK", ">=", startSK).
-		Where("gsi1SK", "<=", endSK).
+		Where("gsi1SK", "BETWEEN", []any{startSK, endSK}).
 		Index("gsi1").
 		Limit(limit)
 
-	if err := query.Scan(&predictions); err != nil {
+	// Keyed GSI read (wave #1469, batch S2): the chain carries the gsi1
+	// partition-key equality plus the gsi1SK time window as ONE BETWEEN key
+	// condition (inclusive of both bounds, exactly the old >= / <= filter
+	// bounds). Two range conditions on the same sort key would both be compiled
+	// into the KeyConditionExpression and rejected by DynamoDB ("only one
+	// condition per key"); tabletheory v3.0.6 expresses the pair as a single
+	// `.Where("gsi1SK", "BETWEEN", []any{lo, hi})`. The old `.Scan` compiled to
+	// a GSI Scan with the bounds as post-read filters; `.All` compiles to a
+	// DynamoDB Query on the same index, selecting the identical row set with
+	// the sort-key window applied as a key condition.
+	if err := query.All(&predictions); err != nil {
 		r.logger.Error("failed to get predictions by model version",
 			zap.String("model_version", modelVersion),
 			zap.String("start_time", startTime.Format(time.RFC3339)),
@@ -131,6 +148,13 @@ func (r *ModerationMLRepository) GetPredictionsByModelVersion(ctx context.Contex
 func (r *ModerationMLRepository) GetPredictionsByReviewStatus(ctx context.Context, reviewed bool, startTime, endTime time.Time, limit int) ([]*models.MLPrediction, error) {
 	var predictions []*models.MLPrediction
 
+	// Floor the page size (wave #1469, batch S2): a limit <= 0 previously
+	// compiled Limit(0) — no limit — an unbounded read. No max is applied:
+	// positive limits pass through unchanged (see GetPredictionsByModelVersion).
+	if limit <= 0 {
+		limit = 100
+	}
+
 	reviewStatus := ReviewedFalse
 	if reviewed {
 		reviewStatus = ReviewedTrue
@@ -144,12 +168,16 @@ func (r *ModerationMLRepository) GetPredictionsByReviewStatus(ctx context.Contex
 	query := r.db.WithContext(ctx).
 		Model(&pred).
 		Where("gsi2PK", "=", gsi2pk).
-		Where("gsi2SK", ">=", startSK).
-		Where("gsi2SK", "<=", endSK).
+		Where("gsi2SK", "BETWEEN", []any{startSK, endSK}).
 		Index("gsi2").
 		Limit(limit)
 
-	if err := query.Scan(&predictions); err != nil {
+	// Keyed GSI read (wave #1469, batch S2): see GetPredictionsByModelVersion —
+	// the gsi2SK time window is a single BETWEEN key condition (inclusive both
+	// ends); the old `.Scan` compiled to a GSI Scan; `.All` compiles to a
+	// DynamoDB Query on the same REVIEW# partition with the sort-key window as
+	// a key condition, selecting the identical row set.
+	if err := query.All(&predictions); err != nil {
 		r.logger.Error("failed to get predictions by review status",
 			zap.Bool("reviewed", reviewed),
 			zap.String("start_time", startTime.Format(time.RFC3339)),

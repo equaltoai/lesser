@@ -185,17 +185,33 @@ func (r *ExportRepository) CreateExportCostTracking(_ context.Context, costTrack
 
 // GetExportCostTracking retrieves export cost tracking records for an export
 func (r *ExportRepository) GetExportCostTracking(_ context.Context, exportID string) ([]*models.ExportCostTracking, error) {
-	var costTrackingRecords []*models.ExportCostTracking
+	// The whole keyed EXPORT_COST#<exportID> partition must be read to return
+	// every cost record, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	var items []models.ExportCostTracking
 
 	query := r.db.Model(&models.ExportCostTracking{}).
 		Where("PK", "=", fmt.Sprintf("EXPORT_COST#%s", exportID))
 
-	err := query.All(&costTrackingRecords)
+	err := walkKeyedPages(
+		query,
+		500, 100,
+		func(page []models.ExportCostTracking) (bool, error) {
+			items = append(items, page...)
+			return false, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error("failed to get export cost tracking",
 			zap.String("export_id", exportID),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, EntityExportCostTracking, "by export ID")
+	}
+
+	// Convert to pointer slice (callers read fields only; pointer addresses differ)
+	costTrackingRecords := make([]*models.ExportCostTracking, len(items))
+	for i := range items {
+		costTrackingRecords[i] = &items[i]
 	}
 
 	return costTrackingRecords, nil

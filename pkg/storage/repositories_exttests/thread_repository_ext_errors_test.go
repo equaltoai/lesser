@@ -62,7 +62,8 @@ func TestThreadRepository_ext_error_branches(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Scan", mock.Anything).Return(fmt.Errorf("scan failed")).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("query failed")).Once()
 
 		repo := repositories.NewThreadRepository(mockDB, zap.NewNop())
 		_, err := repo.GetThreadNodes(ctx, "root")
@@ -105,7 +106,8 @@ func TestThreadRepository_ext_error_branches(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Scan", mock.Anything).Return(fmt.Errorf("scan failed")).Once()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("query failed")).Once()
 
 		repo := repositories.NewThreadRepository(mockDB, zap.NewNop())
 		_, err := repo.GetMissingReplies(ctx, "root")

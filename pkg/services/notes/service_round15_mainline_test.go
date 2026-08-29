@@ -104,6 +104,11 @@ func setupPermissiveDynamormMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQue
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateSlice(args.Get(0), state)
 	}).Return(nil).Maybe()
+	// Wave #1469 page-capped walks iterate with AllPaginated instead of a bare
+	// All; populate the destination and report no more pages by default.
+	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
+		populateSlice(args.Get(0), state)
+	}).Return(&core.PaginatedResult{HasMore: false}, nil).Maybe()
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
 		populateSlice(args.Get(0), state)
 	}).Return(nil).Maybe()
@@ -2920,7 +2925,12 @@ func TestService_round15_wrapper_error_branches(t *testing.T) {
 		mockQuery := new(mocks.MockQuery)
 		mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 
+		// CountNotesByAuthor/CountReplies are page-capped walks (wave #1469) —
+		// their error must propagate through AllPaginated; GetBoostCount/
+		// GetLikeCount still Count().
 		mockQuery.On("Count").Return(int64(0), fmt.Errorf("boom")).Maybe()
+		mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+		mockQuery.On("AllPaginated", mock.Anything).Return(nil, fmt.Errorf("boom")).Maybe()
 		setupPermissiveDynamormMocks(mockDB, mockQuery, mockUpdateBuilder, &permissiveQueryState{})
 
 		service := newNotesServiceHarnessWithDB(t, transactionalMockDB{MockDB: mockDB})

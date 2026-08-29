@@ -24,76 +24,267 @@ goInsecureSkipVerify:
 
 # Exact occurrences of TableTheory `Query.Scan(...)` in non-test Go code (tracked by count per file).
 # This gate exists to prevent adding new DynamoDB scans to production code paths.
+#
+# Wave part 2 (batch A, umbrella #1469, 2026-08-27) eliminated 36 request-adjacent
+# `.Scan` sites: account_repository_auth.go (ClearLoginAttempts/GetLoginAttemptCount →
+# keyed All), auth_repository.go (GetWalletByAddress fallback scan removed),
+# import_export_simple_helpers.go (non-key Username filter → GSI1 query),
+# list_repository.go (6 keyed scans → All), media_popularity_repository.go,
+# media_repository.go (11 keyed scans → All + default-limit clamp),
+# social_repository.go (2 pin scans → All), status_repository.go (GetStatusByURL → All),
+# thread_repository.go (2 → All), trust_repository.go (GetAllTrustRelationships →
+# GSI3 global listing), user_repository.go (6 → All / category-enumerated queries),
+# account_repository.go (GetAccountPreferences → All).
+# Wave part 2 (batch closer, umbrella #1469, issue #1494, 2026-08-28) eliminated
+# the last request-path baselined site: status_repository.go SearchStatuses is
+# now a bounded recency-window walk over the GSI2 PUBLIC_TIMELINE partition
+# (newest-first, per-page Content CONTAINS + Deleted filters, Limit(500)/page,
+# 100-page cap, fail-closed errBoundedPageCapExceeded on exhaustion; one-page
+# contract preserved). GSI7 reachability finding recorded in the inventory doc:
+# GSI7 IS populated with materialized remote Notes' object IDs (URLs = [note.ID]
+# from BuildCanonicalRemoteStatus, persisted via CreateStatus/UpdateStatus on the
+# inbound Create/Update paths), never with content links extracted from status
+# text — an exact keyed GSI7 lookup still cannot answer the LinkTimeline
+# content-link case, so the parity resolver stays on the recency walk
+# (disposition UNCHANGED). No unkeyed full-text-search .Scan sites remain
+# baselined — scoped to that class only: the keyed-filter .Scan leftovers stay
+# baselined until their batches land (S1: query_utils.go QueryWithPKAndSKPrefix,
+# severance_repository.go GetSeveredRelationship/GetReconnectionAttempts,
+# social_repository.go CascadeDeleteAnnounces, object_repository.go
+# getTombstonesByGSI; S2: moderation_repository.go/moderation_ml_repository*;
+# S3: analytics_repository.go/hashtag_repository.go — both closed by batch S3
+# below).
+# Wave part 2 (batch S1, umbrella #1469, issue #1496, 2026-08-28) eliminated
+# the keyed-filter .Scan class (the 5 entries this comment sits above are gone):
+# query_utils.go QueryWithPKAndSKPrefix — the useFilter branch now walks the
+# Where SK key condition (Limit(500)/page via AllPaginated, 100-page cap,
+# fail-closed errBoundedPageCapExceeded; the flag is retained for API
+# compatibility only); severance_repository.go GetSeveredRelationship (keyed
+# walk, stops at the first ID match, cap exhaustion fails closed instead of
+# degrading to NotFound) + GetReconnectionAttempts (keyed walk, OrderBy("SK",
+# "DESC") preserved via cursors, sentinel split before the IsNotFound→empty
+# swallow); social_repository.go CascadeDeleteAnnounces (keyed walk, cap
+# exhaustion fails the cascade closed — never a silent partial delete);
+# object_repository.go getTombstonesByGSI (.Scan → keyed .All on the GSI with
+# the sort-key cursor range kept as a key condition, zero-limit floored to the
+# query-utils default 50 so Limit(n>0) is always issued). The S3
+# (analytics/search) keyed .Scan leftovers remain baselined below.
+# Wave part 2 (batch S2, umbrella #1469, issue #1498, 2026-08-28) eliminated
+# the moderation/ML keyed-filter .Scan class (all 8 of the 9 entries this batch
+# carried) plus the key-less GetFlag All: moderation_repository.go GetAuditLogs
+# and getAuditLogsByGSI (.Scan → keyed .All on the AUDIT_LOG partition / the
+# GSI with the SK > cursor range kept as a key condition, both with the
+# query-utils limit clamp — default 50 / hard max 100 — so Limit(n>0) is always
+# issued), moderation_ml_repository.go ListSamplesByLabel/ListSamplesByReviewer/
+# ListEffectivenessMetricsByPattern/ListEffectivenessMetricsByPeriod (.Scan →
+# keyed .All, existing <=0 floors preserved), moderation_ml_repository_ext.go
+# GetPredictionsByModelVersion/GetPredictionsByReviewStatus (.Scan → keyed .All
+# with the gsi1/gsi2 SK time-range kept as key conditions, added a <=0 floor of
+# 100 with NO max clamp — the internal caller pkg/services/moderationml
+# computeEffectiveness passes 1000 and expects the full reviewed-prediction set
+# for the period, the GetActiveBudgets precedent), and moderation_repository.go
+# GetFlag (key-less SK LIKE + Limit(10) All → exact keyed point read on the new
+# additive Flag GSI3 listing key FLAGS#ALL/ID#<flag id> — pre-existing gsi3
+# slot, batch-F precedent; legacy flag rows written before the key shape are
+# not findable until next written, documented fail-closed change).
+# Wave part 2 (batch F, umbrella #1469, 2026-08-27) eliminated all 22
+# federation_repository.go sites: 21 keyed partition/GSI queries converted
+# `.Scan` → `.All` (instances, costs, health, nodes, clusters, connections,
+# deliveries, inbox/outbox, timeseries, follows, user costs), and the one
+# key-less site (GetAllFederationEdges pagination) rerouted to a new additive
+# GSI3 listing key on FederationEdge (FED_EDGES#ALL, pre-existing slot).
+# Wave part 2 (batch E, umbrella #1469, 2026-08-27) eliminated the
+# event-path class: relationship_tracker.go (4 keyed .Scan → .All),
+# media_analytics_repository.go (5 keyed .Scan → .All),
+# media_metadata_repository.go (2 keyed .Scan → .All). analytics_repository.go
+# GetPopularSearchQueries was first delegated to the keyed GSI8
+# PopularQueryCounter path and then REVERTED to this baselined scan in the
+# batch E rework (2026-08-27): the counter's GSI8 partition key re-points on
+# every increment, so only today's partition is populated and it cannot answer
+# the caller's 7-day window (scorePopularQueries) — the raw-row aggregation is
+# the only source with that semantics. Request-path leftovers remain baselined:
+# moderation_repository.go GetAuditLogs/getAuditLogsByGSI (2 keyed .Scan
+# admin reads, own batch) and analytics_repository.go GetUserSearchHistory
+# (keyed .Scan, own batch).
+# Wave part 2 (batch L, umbrella #1469, 2026-08-27) eliminated 10 LATENT-class
+# `.Scan` sites: account_repository.go GetSuggestedAccounts/GetFeaturedAccounts/
+# GetLoginHistory/GetAccountsCount (keyed-but-.Scan → keyed .All; GetFeaturedAccounts
+# enumerates the two ROLE gsi3 partitions since IN cannot be a key condition;
+# GetAccountsCount page-caps the keyed GSI1 iteration), account_repository_oauth.go
+# DeleteRefreshTokensByUsernameAndClientID (deleted — unkeyed non-key scan, zero
+# callers), ai_cost_repository.go GetAICostsByOperationType/GetTopCostlyOperations
+# (keyed-but-.Scan → keyed .All + clamped Limit); GetAggregatedCosts (keyed GSI → .All +
+# clamp but a no-op: AIAggregatedCost.GSI1PK derives gsI1PK — no attr tag — while the
+# query binds gsi1PK, so it can never match; frozen this wave, zero callers, post-wave model fix),
+# hashtag_trending_calculator.go GetTrendingAnalytics (deleted — zero callers),
+# pkg/moderation/advanced/reputation.go GetActorsByReputation (deleted — zero callers).
+# Wave part 2 (batch S3, umbrella #1469, issue #1501, 2026-08-28) eliminated
+# the hashtag_repository.go keyed .Scan leftover and, on the orchestrator's
+# decision, the stop-and-reported analytics chain: queryHashtagMetadataByDateRange
+# DELETED with its whole dead read family (GetSuggestedHashtags,
+# HashtagRepository.GetRecentHashtags, GetHashtagsByTimeRange); the
+# analytics_repository.go:2 entries — GetUserSearchHistory + GetPopularSearchQueries —
+# DELETED with their zero-production-caller chain (GenerateSearchSuggestions ->
+# scoreUserHistory/scorePopularQueries); and the last key-less metadata member,
+# TrendingRepository.GetRecentHashtags, DELETED with its only caller, the
+# trend-aggregator's permanent-no-op aggregateHashtagTrends step, and the
+# now-orphaned IndexHashtag writer. All three scan sites are gone from this
+# baseline (batch-L zero-caller precedent; the SEARCH_LOG per-day walk stays the
+# documented design if a live caller ever needs popular-queries aggregation —
+# see docs/architecture/dynamodb-scan-inventory.md).
 goDynamoDBQueryScan:
-  cmd/lesser/migrate_direct_message_state.go: 2
   cmd/lesser/migrate_conversation_metadata.go: 1
   cmd/lesser/migrate_conversation_participant_snapshots.go: 1
   cmd/lesser/migrate_conversations.go: 1
+  cmd/lesser/migrate_direct_message_state.go: 2
   cmd/lesser/migrate_mcp_auth_cutover.go: 1
   cmd/lesser/migrate_notification_gsi4.go: 1
   cmd/lesser/migrate_numeric_ids.go: 1
   cmd/lesser/migrate_security_findings_hashtags.go: 1
   cmd/lesser/migrate_user_keys.go: 1
   pkg/cost/dynamorm_tracker.go: 1
-  pkg/federation/relationship_tracker.go: 4
-  pkg/moderation/advanced/reputation.go: 1
-  pkg/storage/repositories/account_repository.go: 5
-  pkg/storage/repositories/account_repository_auth.go: 2
-  pkg/storage/repositories/account_repository_oauth.go: 1
-  pkg/storage/repositories/ai_cost_repository.go: 3
-  pkg/storage/repositories/analytics_repository.go: 2
-  pkg/storage/repositories/auth_repository.go: 1
-  pkg/storage/repositories/federation_repository.go: 22
-  pkg/storage/repositories/hashtag_repository.go: 1
-  pkg/storage/repositories/hashtag_trending_calculator.go: 1
-  pkg/storage/repositories/import_export_simple_helpers.go: 2
-  pkg/storage/repositories/list_repository.go: 6
-  pkg/storage/repositories/media_analytics_repository.go: 5
-  pkg/storage/repositories/media_metadata_repository.go: 2
-  pkg/storage/repositories/media_popularity_repository.go: 1
-  pkg/storage/repositories/media_repository.go: 11
-  pkg/storage/repositories/moderation_ml_repository.go: 4
-  pkg/storage/repositories/moderation_ml_repository_ext.go: 2
-  pkg/storage/repositories/moderation_repository.go: 2
-  pkg/storage/repositories/object_repository.go: 1
-  pkg/storage/repositories/query_utils.go: 1
-  pkg/storage/repositories/severance_repository.go: 2
-  pkg/storage/repositories/social_repository.go: 3
-  pkg/storage/repositories/status_repository.go: 2
-  pkg/storage/repositories/thread_repository.go: 2
-  pkg/storage/repositories/trust_repository.go: 1
-  pkg/storage/repositories/user_repository.go: 6
 
 # Exact occurrences of partition-key prefix/range predicates in `.Where(...)` (tracked by count per file).
 # Partition keys must be queried by equality; prefix/range predicates force scans.
+# Wave part 2 (batch A, #1469): the last baselined site — analytics_repository.go
+# queryQualityChangeEvents (`Where("PK","begins_with","QUALITY_CHANGE#")`) — was
+# eliminated (GSI3 media-keyed query), so this gate is back to zero.
 goDynamoDBBadPKWhere:
-  pkg/storage/repositories/analytics_repository.go: 1
+  {}
 
 # Key-less TableTheory `All(...)` on freshly-built query chains (a Model(...)/
-# WithContext(...) chain with no Where(...)), which compiles to a DynamoDB Scan
-# with no key condition (tracked by count per file).
-# This gate exists to prevent adding new unkeyed scan callsites to production
-# code paths. All(...) chained onto a pre-built query variable is statically
+# WithContext(...) chain with no partition-key equality condition), which
+# compiles to a DynamoDB Scan with no key condition (tracked by count per
+# file). A Where(...) filter that does not bind a partition key (sort-key
+# ranges, non-key attribute predicates, partition-key operators other than
+# "=") does NOT bound the query and is still counted — the gate gap where any
+# Where suppressed detection was closed 2026-08-26 under umbrella #1469
+# (wave part 1). All(...) chained onto a pre-built query variable, or a chain
+# whose Where(...) field/operator is not a string literal, is statically
 # indeterminate and deliberately not flagged.
 #
+# Model-blind key trust (disclosed 2026-08-26, wave part 1 rework): the
+# detector treats a literal Where("PK"/"gsiNPK"/"oauthClientsPK", "=", ...) as
+# a bound without checking the model declares the index — ~250 unflagged sites
+# rely on the uniform lowercase naming convention the models actually write.
+# Indeterminate sites (non-literal field/operator) are never flagged; of the 5
+# inspected during closure, 2 are runtime GSI partition-key queries
+# (alert_repository.go:181, metrics_repository.go:591 — callers pass matching
+# index/field config) and 3 were production-unused helpers
+# (base_repository.go QueryHistoryWithDateRange / QueryMetricsByTimeRange /
+# FindBySK) deleted in this PR. See docs/architecture/dynamodb-scan-inventory.md.
+#
 # Dispositions (see docs/architecture/dynamodb-scan-inventory.md):
-# - pkg/storage/repositories/instance_counts.go: 6 — DELIBERATE one-time
-#   migration paths (3 lazy seed scans: TOTAL_USERS, TOTAL_DOMAINS,
-#   active_month) + 3 bounded offline recount reads (key-only projections of
-#   the recount tool). Seed scans are marker-gated on success and backoff-gated
-#   on failure; the recount is invoked manually offline. Tracked under umbrella
-#   issue "Eliminate baselined unbounded scans — operator doctrine 2026-08-25".
-# - The other 9 calls are pre-existing unkeyed scans baselined for tracking,
-#   scheduled for elimination under the same umbrella issue.
+# - pkg/storage/repositories/instance_counts.go: 5 — DELIBERATE offline-only
+#   tooling: the 5 bounded recount reads (key-only projections of the offline
+#   `lesser recount-instance-counts` tool: users, actors, domain counters,
+#   activities, existing day counters). The 3 request-adjacent lazy seed scans
+#   (TOTAL_USERS, TOTAL_DOMAINS, active_month) were REMOVED in PR #1476 — no
+#   scan may run on any request path, marker-gated or not (operator doctrine
+#   2026-08-26).
+# - Wave part 2 (batch A, umbrella #1469, 2026-08-27) eliminated 13 request-
+#   adjacent key-less All sites: graph/query_resolvers_cms.go (2 fallback scans
+#   deleted), activity_repository.go (dead GetWeeklyActivity deleted),
+#   analytics_repository.go (queryQualityChangeEvents → GSI3),
+#   announcement_repository.go (dismissal cleanup → GSI1),
+#   enhanced_pattern_repository.go (GetPatternStatistics → GSI4),
+#   moderation_repository.go (5: GetReviewerStats → GSI1, filter keyword/entity
+#   CRUD → filterID point ops, GetModerationPatterns → GSI3),
+#   rate_limit_repository.go (ClearAPIRateLimitsForUser → GSI1),
+#   scheduled_status_repository.go (GetScheduledStatus → GSI2).
+# - Wave part 2 (batch E, umbrella #1469, 2026-08-27) eliminated 10 more
+#   event-path key-less All sites: moderation_repository.go GetPendingModerationCount
+#   (3: reports by assignee → new GSI4 assignee key on Report, flags → keyed
+#   GSI2 FLAG_STATUS#pending preserving the never-matching assignee filter),
+#   analytics_repository.go GetRecentStatusesWithEngagement / GetRecentLinks
+#   (2 → new GSI1 global listing keys on StatusEngagement / LinkShare),
+#   federation_activity_repository.go GetRecentActivities
+#   (→ new GSI3 global listing key on FederationActivity),
+#   cost/repository_adapter.go ListInstanceConfigs (→ new GSI3 global listing
+#   key on FederationInstanceConfigTracking), threat_intel_repository.go
+#   LoadActiveThreats (→ existing GSI2 THREATS key),
+#   instance_health_repository.go GetUnhealthyInstances (→ new GSI1
+#   HEALTH_SUMMARY#1h key on InstanceHealthSummary), notification_repository.go
+#   DeleteNotificationsByObject (→ new GSI5 NOTIF_OBJECT#<targetID> key on
+#   Notification; the previous ObjectID filter matched nothing — Notification
+#   references objects via TargetID, so the cascade now performs the intended
+#   delete). GetRecentHashtags / getCandidateHashtags were first rerouted to a
+#   new Hashtag GSI1 HASHTAGS#ALL key and then REVERTED to these baselined
+#   scans in the batch E rework (2026-08-27): Hashtag metadata rows are only
+#   written by HashtagRepository.IndexHashtag, which has zero production
+#   callers, so no live writer would populate the index — the reads stay on
+#   SK = METADATA scans with a no-live-writer disposition.
+# - Wave part 2 (batch L, umbrella #1469, 2026-08-27) eliminated 10 LATENT-class
+#   key-less All sites: analytics_repository.go GetActorInteraction (2, deleted —
+#   zero callers; analytics_repository.go drops 3 → 1, leaving GetRecentHashtags
+#   with the batch E no-live-writer disposition), account_repository_auth.go
+#   GetUserByRecoveryCode (deleted — zero callers), account_repository_refresh_tokens.go
+#   CleanupExpiredAdvancedTokens (deleted — zero callers), activity_repository.go
+#   GetHashtagActivity (bounded — page-capped AllPaginated iteration, Limit 500/page,
+#   max 100 pages), dlq_repository.go GetSimilarMessages (deleted — zero callers;
+#   interface/mock/inmemory dropped), enhanced_pattern_repository.go
+#   CleanupExpiredPatterns (deleted — zero callers), media_repository.go
+#   GetTotalStorageUsage (bounded — page-capped AllPaginated iteration, Limit
+#   500/page, max 100 pages; the two media sites invisible to this gate,
+#   GetUnusedMedia/GetModerationPendingMedia, are clamped in place), search_cost_repository.go
+#   GetPopularQueries + ResetBudgets (deleted — zero callers), search_repository.go
+#   PruneOldSuggestions + UnindexStatus (deleted — zero callers; wrapper forwards
+#   dropped).
+# - moderation_repository.go GetFlag (1) was eliminated in wave part 2 batch S2
+#   (umbrella #1469, issue #1498, 2026-08-28): the key-less SK LIKE + Limit(10)
+#   All — reached from the event path via DeleteFlag ← cmd/activity-processor
+#   (flag-undo handling) — is now an exact keyed point read on the additive
+#   Flag GSI3 listing key (FLAGS#ALL / ID#<flag id>, pre-existing gsi3 slot,
+#   batch-F FED_EDGES#ALL precedent, populated by Flag.UpdateKeys on every
+#   write). Legacy flag rows written before the key shape existed are not
+#   findable by GetFlag until the flag is next written (documented fail-closed
+#   change; see docs/architecture/dynamodb-scan-inventory.md).
+# - The other 8 calls are pre-existing unkeyed scans baselined for tracking,
+#   scheduled for elimination under the same umbrella issue (disposition:
+#   "elimination pending — wave #1469", NOT sanctioned).
+# - Wave part 2 (batch S3, umbrella #1469, issue #1501, 2026-08-28) resolved
+#   three more key-less All sites by DELETING the zero-production-caller read
+#   paths (batch-L precedent; mechanism per site in
+#   docs/architecture/dynamodb-scan-inventory.md): filter_repository.go
+#   removeFilterItem + RemoveFilterKeyword + RemoveFilterStatus + DeleteFilter
+#   (the live filter deletes go through ModerationRepository filterID point
+#   reads — batch-A precedent), hashtag_trending_engine.go getCandidateHashtags
+#   + the entire dead enhanced TrendingEngine + HashtagRepository
+#   GetTrendingHashtags + GetTrendingHashtagsAdvanced (zero production callers),
+#   object_repository.go CountWithdrawnQuotes (zero production callers; grounded
+#   note: withdrawn quotes retain gsi1 keys in practice, so a keyed walk-count
+#   would have been possible — deletion preferred over converting dead code),
+#   and analytics_repository.go GetRecentHashtags — DELETED with its only
+#   caller, the trend-aggregator's permanent-no-op aggregateHashtagTrends step
+#   (STOP-AND-REPORT in issue #1501 resolved by the orchestrator's decision to
+#   delete: the scheduled Lambda read metadata rows no live writer maintains, a
+#   keyed read on the never-populated index would have silently returned
+#   nothing, and the step was a no-op every run), together with the now-orphaned
+#   IndexHashtag writer. The analytics_repository.go entry is gone from this
+#   baseline.
 goDynamoDBAllNoKey:
-  pkg/storage/repositories/announcement_repository.go: 1
-  pkg/storage/repositories/dlq_repository.go: 1
-  pkg/storage/repositories/instance_counts.go: 6
-  pkg/storage/repositories/media_repository.go: 1
-  pkg/storage/repositories/moderation_repository.go: 1
-  pkg/storage/repositories/rate_limit_repository.go: 1
-  pkg/storage/repositories/search_cost_repository.go: 2
-  pkg/storage/repositories/search_repository.go: 2
+  pkg/storage/repositories/instance_counts.go: 5
+
+# Key-less TableTheory `Count(...)` on freshly-built query chains, which
+# compiles to a DynamoDB Scan with Select=COUNT — a counted full-table/index
+# scan the All-only gate could not see. Count() shares All()'s compile path
+# (tabletheory v3.0.6 pkg/query/query_execution.go:80-111: Compile() decides
+# Query vs Scan, then ExecuteScan runs the count). The same key-condition,
+# indeterminate, and model-blind-trust rules as goDynamoDBAllNoKey apply
+# (tracked by count per file). Gate added 2026-08-26 (wave part 1 rework).
+#
+# Wave part 2 (batch S4, umbrella #1469, issue #1503, 2026-08-28) closed this
+# gate: the sole baselined site — pkg/storage/theorydb/patterns/soft_delete.go
+# SoftDeleteRepository.GetSoftDeleteStats (key-less Count() on fresh chains at
+# :323 and :330) — was DELETED as zero-caller code (mechanism: batch-L/S3
+# zero-caller deletion; the only Go-code reference was `soft_delete_test.go`
+# (the package README's stale Statistics section was removed in the same
+# batch), verified by caller sweep of GetSoftDeleteStats/SoftDeleteStats/
+# GetDeletionPercentage across pkg/ cmd/ graph/). The method, the
+# SoftDeleteStats type, its String/GetDeletionPercentage helpers, and their
+# tests were removed together; no baselined CountNoKey entries remain.
+goDynamoDBCountNoKey:
+  {}
 
 # Exact occurrences of unsafe CSP directives in CloudFront/CDK code (tracked by count per file).
 infraCdkCspUnsafeInline:

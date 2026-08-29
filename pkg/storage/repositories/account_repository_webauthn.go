@@ -96,12 +96,21 @@ func lookupWebAuthnCredentialModel(ctx context.Context, db core.DB, credentialID
 }
 
 func listWebAuthnCredentialModels(ctx context.Context, db core.DB, userID string) ([]models.WebAuthnCredential, error) {
+	// The whole keyed partition must be read to return every credential, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var credentials []models.WebAuthnCredential
 
-	err := db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("SK", "BEGINS_WITH", "WEBAUTHN_CRED#").
-		All(&credentials)
+	err := walkKeyedPages(
+		db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
+			Where("SK", "BEGINS_WITH", "WEBAUTHN_CRED#"),
+		500, 100,
+		func(page []models.WebAuthnCredential) (bool, error) {
+			credentials = append(credentials, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, err
@@ -621,12 +630,21 @@ func (r *AccountRepository) GetWalletCredential(ctx context.Context, address str
 
 // GetUserWalletCredentials retrieves all wallet credentials for a user
 func (r *AccountRepository) GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error) {
+	// The whole keyed partition must be read to return every credential, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
 	var wallets []models.WalletCredential
 
-	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "BEGINS_WITH", "WALLET#").
-		All(&wallets)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.WalletCredential{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", "BEGINS_WITH", "WALLET#"),
+		500, 100,
+		func(page []models.WalletCredential) (bool, error) {
+			wallets = append(wallets, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get user wallet credentials",
@@ -655,10 +673,19 @@ func (r *AccountRepository) GetUserWalletCredentials(ctx context.Context, userna
 func (r *AccountRepository) GetAllUsersForWallet(ctx context.Context, walletType, address string) ([]string, error) {
 	address = strings.ToLower(address)
 
+	// The whole keyed partition must be read to return every linked user, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
 	var indexes []models.WalletIndex
-	err := r.db.WithContext(ctx).Model(&models.WalletIndex{}).
-		Where("PK", "=", fmt.Sprintf("WALLET#%s#%s", walletType, address)).
-		All(&indexes)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.WalletIndex{}).
+			Where("PK", "=", fmt.Sprintf("WALLET#%s#%s", walletType, address)),
+		500, 100,
+		func(page []models.WalletIndex) (bool, error) {
+			indexes = append(indexes, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {

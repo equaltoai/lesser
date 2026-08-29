@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -124,7 +125,8 @@ func TestUnlinkProviderAccount_Success(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery).Once()
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(nil) // Return empty list
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once() // Return empty list
 
 	// Since no provider accounts found, no delete will be called
 
@@ -149,7 +151,8 @@ func TestGetLinkedProviders_ReturnsEmpty(t *testing.T) {
 	mockDB.On("Model", &models.ProviderAccount{}).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "USER_PROVIDERS#testuser").Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(nil) // Return empty list
+	mockQuery.On("Limit", 500).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Once() // Return empty list
 
 	providers, err := repo.GetLinkedProviders(context.Background(), "testuser")
 

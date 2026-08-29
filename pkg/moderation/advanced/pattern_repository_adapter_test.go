@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -68,11 +69,14 @@ func TestPatternRepositoryAdapter_GetPatterns_AppliesFiltersAndLimit(t *testing.
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "=", models.SKMetadata).Return(mockQuery).Once()
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3PK", "=", "MODERATION_PATTERNS#ALL").Return(mockQuery).Once()
 	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.ModerationPattern)
-		*dest = []*models.ModerationPattern{
+	// Bounded page walk (wave #1469): Limit(500)/page via AllPaginated.
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("AllPaginated", mock.Anything).Return(&core.PaginatedResult{HasMore: false}, nil).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.ModerationPattern)
+		*dest = []models.ModerationPattern{
 			{PatternID: "p1", Type: "keyword", Category: "spam", Severity: 0.1, Active: true},
 			{PatternID: "p2", Type: "regex", Category: "spam", Severity: 0.9, Active: true},
 			{PatternID: "p3", Type: "regex", Category: "spam", Severity: 0.95, Active: true},

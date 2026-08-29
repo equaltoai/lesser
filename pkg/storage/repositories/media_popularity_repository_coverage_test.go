@@ -305,7 +305,7 @@ func TestGetPopularMediaByPeriod_DefaultLimit(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaPopularity")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "PERIOD#WEEK").Return(mockQuery)
 	mockQuery.On("Limit", 11).Return(mockQuery) // 10 + 1 for pagination
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaPopularity")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaPopularity")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaPopularity)
 		*records = []*models.MediaPopularity{}
 	}).Return(nil)
@@ -331,7 +331,7 @@ func TestGetPopularMediaByPeriod_WithCursor(t *testing.T) {
 	mockQuery.On("Where", "gsi1PK", "=", "PERIOD#DAY").Return(mockQuery)
 	mockQuery.On("Limit", 21).Return(mockQuery) // 20 + 1
 	mockQuery.On("Cursor", cursor).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaPopularity")).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaPopularity")).Run(func(args mock.Arguments) {
 		records := args.Get(0).(*[]*models.MediaPopularity)
 		*records = []*models.MediaPopularity{
 			{MediaID: "media-1", Period: "DAY"},
@@ -357,7 +357,7 @@ func TestGetPopularMediaByPeriod_NotFoundReturnsEmptySlice(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaPopularity")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "PERIOD#MONTH").Return(mockQuery)
 	mockQuery.On("Limit", 6).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaPopularity")).Return(errors.ErrItemNotFound)
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaPopularity")).Return(errors.ErrItemNotFound)
 
 	result, err := repo.GetPopularMediaByPeriod(ctx, "MONTH", 5, nil)
 	require.NoError(t, err)
@@ -377,7 +377,7 @@ func TestGetPopularMediaByPeriod_QueryError(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.MediaPopularity")).Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "PERIOD#WEEK").Return(mockQuery)
 	mockQuery.On("Limit", 11).Return(mockQuery)
-	mockQuery.On("Scan", mock.AnythingOfType("*[]*models.MediaPopularity")).Return(ErrTestMockError)
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.MediaPopularity")).Return(ErrTestMockError)
 
 	result, err := repo.GetPopularMediaByPeriod(ctx, "WEEK", 10, nil)
 	require.Error(t, err)

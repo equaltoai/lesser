@@ -116,11 +116,21 @@ func (r *ListRepository) DeleteList(ctx context.Context, listID string) error {
 		return ErrorHandler.HandleDeleteError(err, EntityList, listID)
 	}
 
-	// Query and delete all list memberships
+	// Query and delete all list memberships — the whole keyed LIST_MEMBERS#<id>
+	// partition must be read before any member is deleted, so the read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion (a cap exhaustion must fail the delete, never delete only a
+	// prefix of the memberships).
 	var members []models.ListMember
-	err = r.db.WithContext(ctx).Model(&models.ListMember{}).
-		Where("PK", "=", fmt.Sprintf("LIST_MEMBERS#%s", listID)).
-		Scan(&members)
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ListMember{}).
+			Where("PK", "=", fmt.Sprintf("LIST_MEMBERS#%s", listID)),
+		500, 100,
+		func(page []models.ListMember) (bool, error) {
+			members = append(members, page...)
+			return false, nil
+		},
+	)
 	if err != nil && !dmerrors.IsNotFound(err) {
 		return ErrorHandler.HandleQueryError(err, EntityList, "member deletion")
 	}
@@ -168,7 +178,7 @@ func (r *ListRepository) GetListsForUserPaginated(ctx context.Context, username 
 	query = query.Limit(limit + 1)
 
 	var listModels []models.List
-	err := query.Scan(&listModels)
+	err := query.All(&listModels)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
 			return []*storage.List{}, "", nil
@@ -322,17 +332,27 @@ func (r *ListRepository) GetListsByMember(ctx context.Context, memberUsername st
 // CountUserLists counts the number of lists owned by a user
 func (r *ListRepository) CountUserLists(ctx context.Context, username string) (int, error) {
 	// For GSI counts, we still need to use the direct query approach
-	// BaseRepository.Count works with main table PK only
-	count, err := r.db.WithContext(ctx).Model(&models.List{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
-		Count()
+	// BaseRepository.Count works with main table PK only — the whole keyed
+	// USER_LISTS#<user> gsi1 partition must be read to count every list, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
+	var listModels []models.List
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.List{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)),
+		500, 100,
+		func(page []models.List) (bool, error) {
+			listModels = append(listModels, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityList, "user list counting")
 	}
 
-	return int(count), nil
+	return len(listModels), nil
 }
 
 // AddListMember adds a member to a list
@@ -386,7 +406,7 @@ func (r *ListRepository) GetListMembers(ctx context.Context, listID string, opts
 	}
 
 	var members []models.ListMember
-	err := query.Limit(opts.Limit).Scan(&members)
+	err := query.Limit(opts.Limit).All(&members)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
 			return &interfaces.PaginatedResult[*storage.Account]{
@@ -493,7 +513,7 @@ func (r *ListRepository) GetAccountListsPaginated(ctx context.Context, accountID
 	query = query.Limit(limit + 1)
 
 	var members []models.ListMember
-	err := query.Scan(&members)
+	err := query.All(&members)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
 			return []*storage.List{}, "", nil
@@ -538,12 +558,21 @@ func (r *ListRepository) GetAccountListsPaginated(ctx context.Context, accountID
 
 // GetAccountListsForUser retrieves all lists (for a specific user) that contain an account
 func (r *ListRepository) GetAccountListsForUser(ctx context.Context, accountID, username string) ([]*storage.List, error) {
-	// Query the reverse index
+	// Query the reverse index — the whole keyed ACCOUNT_LISTS#<account> gsi1
+	// partition must be read to find every containing list, so the read is a
+	// bounded page walk (wave #1469): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion.
 	var members []models.ListMember
-	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
-		Scan(&members)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ListMember{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)),
+		500, 100,
+		func(page []models.ListMember) (bool, error) {
+			members = append(members, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
@@ -590,12 +619,21 @@ func (r *ListRepository) CountListMembers(ctx context.Context, listID string) (i
 
 // RemoveAccountFromAllLists removes an account from all lists
 func (r *ListRepository) RemoveAccountFromAllLists(ctx context.Context, accountID string) error {
-	// Query all lists the account is in
+	// Query all lists the account is in — the whole keyed ACCOUNT_LISTS#<account>
+	// gsi1 partition must be read before any membership is removed, so the read
+	// is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion (never a silent partial removal).
 	var members []models.ListMember
-	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)).
-		Scan(&members)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.ListMember{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", accountID)),
+		500, 100,
+		func(page []models.ListMember) (bool, error) {
+			members = append(members, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if dmerrors.IsNotFound(err) {

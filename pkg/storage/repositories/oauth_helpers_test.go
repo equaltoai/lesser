@@ -699,7 +699,8 @@ func TestListRefreshTokensByUserClientGeneric_QueryError(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.RefreshToken")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "RUNTIME_USER#alice#client-1").Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.RefreshToken")).Return(ErrTestMockError)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RefreshToken")).Return(nil, ErrTestMockError)
 
 	tokens, err := helper.ListRefreshTokensByUserClientGeneric(ctx, "alice", "client-1")
 
@@ -723,7 +724,8 @@ func TestListRefreshTokensByFamilyGeneric_QueryError(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.RefreshToken")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "RUNTIME_FAMILY#family-1").Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.RefreshToken")).Return(ErrTestMockError)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RefreshToken")).Return(nil, ErrTestMockError)
 
 	tokens, err := helper.ListRefreshTokensByFamilyGeneric(ctx, "family-1")
 
@@ -747,7 +749,8 @@ func TestListRefreshTokensBySessionGeneric_QueryError(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.RefreshToken")).Return(mockQuery)
 	mockQuery.On("Index", "gsi3").Return(mockQuery)
 	mockQuery.On("Where", "gsi3PK", "=", "RUNTIME_SESSION#session-1").Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.RefreshToken")).Return(ErrTestMockError)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]models.RefreshToken")).Return(nil, ErrTestMockError)
 
 	tokens, err := helper.ListRefreshTokensBySessionGeneric(ctx, "session-1")
 
@@ -955,12 +958,13 @@ func TestListOAuthClientsGeneric_ZeroLimit(t *testing.T) {
 	ownerID := "owner-unlimited"
 	limit := 0 // No limit
 
-	// Set up expectations - when limit is 0, Limit should not be called
+	// Set up expectations - a limit <= 0 is floored to the 500-item page size
+	// (wave #1469) so the keyed gsi1 read stays bounded.
 	mockDB.On("WithContext", ctx).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*[]models.OAuthClient")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "OWNER#owner-unlimited").Return(mockQuery)
-	// Note: Limit is NOT called when limit <= 0
+	mockQuery.On("Limit", 500).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.OAuthClient")).Run(func(args mock.Arguments) {
 		clients := args.Get(0).(*[]models.OAuthClient)
 		*clients = []models.OAuthClient{

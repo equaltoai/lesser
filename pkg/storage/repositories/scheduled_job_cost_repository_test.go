@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/v3/pkg/core"
 	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -290,14 +291,16 @@ func TestScheduledJobCostRepository_GetByID_WarnsAndNotFound(t *testing.T) {
 	mockQuery.On("Index", "gsi1").Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 
-	// First status query fails => warn+continue.
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.ScheduledJobCostRecord")).Return(errors.New("query failed")).Once()
+	// GetByID is now a per-status page-capped walk (wave #1469): Limit(500)/
+	// page via AllPaginated. First status walk fails => warn+continue.
+	mockQuery.On("Limit", 500).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ScheduledJobCostRecord")).Return(nil, errors.New("query failed")).Once()
 
 	// Next few statuses return records without the ID.
-	mockQuery.On("All", mock.AnythingOfType("*[]*models.ScheduledJobCostRecord")).Run(func(args mock.Arguments) {
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.ScheduledJobCostRecord")).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]*models.ScheduledJobCostRecord)
 		*out = []*models.ScheduledJobCostRecord{{ID: "other", Timestamp: baseTime}}
-	}).Return(nil).Maybe()
+	}).Return(&core.PaginatedResult{}, nil).Maybe()
 
 	repo := NewScheduledJobCostRepository(mockDB, "test-table", logger, nil)
 	_, err := repo.GetByID(ctx, "missing-id")
@@ -402,4 +405,29 @@ func TestScheduledJobCostRepository_saveAggregation_CreatePath(t *testing.T) {
 
 	aggregation := repo.initializeAggregation("cleanup-expired-data", "day", baseTime, baseTime.Add(24*time.Hour))
 	require.NoError(t, repo.saveAggregation(ctx, aggregation, "day", "cleanup-expired-data", baseTime))
+}
+
+func TestScheduledJobCostRepository_GetScheduledJobsSummary_FullProcessingPath(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	setupScheduledJobRepoMocks(mockDB, mockQuery, baseTime)
+	repo := NewScheduledJobCostRepository(mockDB, "test-table", zap.NewNop(), nil)
+
+	// Full path through the wrapper: ListByDateRange accumulates a full 10000
+	// record page (4 mocked records/day x 2500 days, the wrapper's hardcoded
+	// limit), so the summary processes records instead of short-circuiting on
+	// zero executions.
+	summary, err := repo.GetScheduledJobsSummary(ctx, baseTime.AddDate(0, 0, -2500), baseTime)
+	require.NoError(t, err)
+	require.NotNil(t, summary)
+	require.Greater(t, summary.TotalExecutions, 0)
+	require.NotEmpty(t, summary.JobBreakdown)
+	require.NotEmpty(t, summary.CategoryBreakdown)
+	require.NotEmpty(t, summary.ScheduleBreakdown)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }

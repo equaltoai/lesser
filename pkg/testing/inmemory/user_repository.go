@@ -821,22 +821,6 @@ func (r *UserRepository) GetTrustedByRelationships(_ context.Context, trusteeID 
 	return result, "", nil
 }
 
-// GetAllTrustRelationships gets all trust relationships
-func (r *UserRepository) GetAllTrustRelationships(_ context.Context, limit int) ([]*storage.TrustRelationship, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	result := make([]*storage.TrustRelationship, 0, len(r.trustRelationships))
-	for _, rel := range r.trustRelationships {
-		relCopy := *rel
-		result = append(result, &relCopy)
-		if limit > 0 && len(result) >= limit {
-			break
-		}
-	}
-	return result, nil
-}
-
 // Trust score operations
 
 // GetTrustScore gets a trust score

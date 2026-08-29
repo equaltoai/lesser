@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"time"
 
@@ -474,14 +475,30 @@ func (r *AnnouncementRepository) DeleteAnnouncement(ctx context.Context, id stri
 
 	// Clean up reactions
 	var reactions []*models.AnnouncementReaction
-	err = r.db.WithContext(ctx).Model(&models.AnnouncementReaction{}).
-		Where("PK", "=", fmt.Sprintf("ANNOUNCEMENT_REACTION#%s", id)).
-		All(&reactions)
+	// The whole keyed ANNOUNCEMENT_REACTION#<id> partition must be read to
+	// clean up every reaction, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap. Cap exhaustion fails the delete closed —
+	// never a silent partial cleanup; other (transient) errors keep the
+	// best-effort warn-and-continue contract.
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AnnouncementReaction{}).
+			Where("PK", "=", fmt.Sprintf("ANNOUNCEMENT_REACTION#%s", id)),
+		500, 100,
+		func(page []*models.AnnouncementReaction) (bool, error) {
+			reactions = append(reactions, page...)
+			return false, nil
+		},
+	)
 
-	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Warn("failed to query reactions for cleanup",
-			zap.String("announcement_id", id),
-			zap.Error(err))
+	if err != nil {
+		if stdErrors.Is(err, errBoundedPageCapExceeded) {
+			return err
+		}
+		if !errors.IsNotFound(err) {
+			r.logger.Warn("failed to query reactions for cleanup",
+				zap.String("announcement_id", id),
+				zap.Error(err))
+		}
 	} else {
 		// Delete each reaction
 		for _, reaction := range reactions {
@@ -494,25 +511,40 @@ func (r *AnnouncementRepository) DeleteAnnouncement(ctx context.Context, id stri
 	}
 
 	// Clean up dismissals
-	// Since dismissals are stored under user keys, we need to query them differently
-	// Note: This is inefficient without a proper GSI
+	// Dismissals are stored under user keys; GSI1 resolves them by announcement.
 	var dismissals []*models.AnnouncementDismissal
-	err = r.db.WithContext(ctx).Model(&models.AnnouncementDismissal{}).
-		All(&dismissals)
+	// The whole keyed gsi1 ANN_DISMISSED#<id> partition must be read to clean
+	// up every dismissal, so the read is a bounded page walk (wave #1469):
+	// Limit(500)/page, 100-page cap. Cap exhaustion fails the delete closed —
+	// never a silent partial cleanup; other (transient) errors keep the
+	// best-effort warn-and-continue contract.
+	err = walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AnnouncementDismissal{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf("ANN_DISMISSED#%s", id)),
+		500, 100,
+		func(page []*models.AnnouncementDismissal) (bool, error) {
+			dismissals = append(dismissals, page...)
+			return false, nil
+		},
+	)
 
-	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Warn("failed to scan dismissals for cleanup",
-			zap.String("announcement_id", id),
-			zap.Error(err))
+	if err != nil {
+		if stdErrors.Is(err, errBoundedPageCapExceeded) {
+			return err
+		}
+		if !errors.IsNotFound(err) {
+			r.logger.Warn("failed to query dismissals for cleanup",
+				zap.String("announcement_id", id),
+				zap.Error(err))
+		}
 	} else {
-		// Delete each dismissal that matches this announcement
+		// Delete each dismissal for this announcement
 		for _, dismissal := range dismissals {
-			if dismissal.AnnouncementID == id {
-				if delErr := r.db.WithContext(ctx).Model(dismissal).Delete(); delErr != nil {
-					r.logger.Warn("failed to delete dismissal during cleanup",
-						zap.String("announcement_id", id),
-						zap.Error(delErr))
-				}
+			if delErr := r.db.WithContext(ctx).Model(dismissal).Delete(); delErr != nil {
+				r.logger.Warn("failed to delete dismissal during cleanup",
+					zap.String("announcement_id", id),
+					zap.Error(delErr))
 			}
 		}
 	}
@@ -563,10 +595,19 @@ func (r *AnnouncementRepository) IsDismissed(ctx context.Context, username, anno
 // GetDismissedAnnouncements gets all announcement IDs dismissed by a user
 func (r *AnnouncementRepository) GetDismissedAnnouncements(ctx context.Context, username string) ([]string, error) {
 	var dismissals []*models.AnnouncementDismissal
-	err := r.db.WithContext(ctx).Model(&models.AnnouncementDismissal{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "begins_with", "ANNOUNCEMENT_DISMISSED#").
-		All(&dismissals)
+	// The whole keyed USER#<username> partition (SK prefix
+	// ANNOUNCEMENT_DISMISSED#) must be read, so the read is a bounded page walk
+	// (wave #1469): Limit(500)/page, 100-page cap, fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AnnouncementDismissal{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", "begins_with", "ANNOUNCEMENT_DISMISSED#"),
+		500, 100,
+		func(page []*models.AnnouncementDismissal) (bool, error) {
+			dismissals = append(dismissals, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -632,9 +673,18 @@ func (r *AnnouncementRepository) RemoveAnnouncementReaction(ctx context.Context,
 // GetAnnouncementReactions gets all reactions for an announcement
 func (r *AnnouncementRepository) GetAnnouncementReactions(ctx context.Context, announcementID string) (map[string][]string, error) {
 	var reactions []*models.AnnouncementReaction
-	err := r.db.WithContext(ctx).Model(&models.AnnouncementReaction{}).
-		Where("PK", "=", fmt.Sprintf("ANNOUNCEMENT_REACTION#%s", announcementID)).
-		All(&reactions)
+	// The whole keyed ANNOUNCEMENT_REACTION#<id> partition must be read, so the
+	// read is a bounded page walk (wave #1469): Limit(500)/page, 100-page cap,
+	// fail-closed on exhaustion.
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.AnnouncementReaction{}).
+			Where("PK", "=", fmt.Sprintf("ANNOUNCEMENT_REACTION#%s", announcementID)),
+		500, 100,
+		func(page []*models.AnnouncementReaction) (bool, error) {
+			reactions = append(reactions, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		if errors.IsNotFound(err) {

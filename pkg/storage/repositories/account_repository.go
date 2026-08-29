@@ -2403,32 +2403,58 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	prefixKey := fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)
 
 	var users []models.User
+	// The gsi5SK window is EXACTLY ONE key condition (issue #1500). The first
+	// page keys BEGINS_WITH; a cursor page closes the key range at the top of
+	// the block with the `~` sentinel (0x7E sorts above every ASCII username
+	// block member) via BETWEEN — the cursor row is re-included and dropped
+	// post-read (one extra item is over-fetched so the has-more detection stays
+	// exact), and the final page can never keep reading the partition tail.
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("gsi5").
 		Where("gsi5PK", "=", prefixKey).
-		Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
-		OrderBy("gsi5SK", "ASC").
-		Limit(searchLimit + 1)
+		OrderBy("gsi5SK", "ASC")
 
+	fetchLimit := searchLimit + 1
+	var skCursor string
 	if opts.Cursor != "" {
-		pkCursor, skCursor, err := Utils.Pagination.DecodeCursor(opts.Cursor)
-		if err != nil {
+		pkCursor, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
+		switch {
+		case err != nil:
 			r.logger.Warn("invalid search cursor provided",
 				zap.String("cursor", opts.Cursor),
 				zap.Error(err))
-		} else if skCursor != "" {
-			if pkCursor != "" && pkCursor != prefixKey {
-				r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
-					zap.String("expected_prefix", prefixKey),
-					zap.String("cursor_prefix", pkCursor))
-			} else {
-				queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
-			}
+			// Clean restart: re-key BEGINS_WITH. The query must NEVER degrade to
+			// a PK-only unfiltered read of the whole 2-char handle-prefix
+			// partition (the nextCursor would also be derived from wrong rows).
+			queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		case sk == "":
+			// Empty SK in the cursor: same clean restart.
+			queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		case pkCursor != "" && pkCursor != prefixKey:
+			r.logger.Info("search cursor prefix mismatch - resetting to new prefix",
+				zap.String("expected_prefix", prefixKey),
+				zap.String("cursor_prefix", pkCursor))
+			// Normal client behavior when the query text changes between pages:
+			// restart the walk under the NEW prefix partition, keyed on
+			// BEGINS_WITH (never an unfiltered PK-only read).
+			queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		default:
+			skCursor = sk
+			queryBuilder = queryBuilder.Where("gsi5SK", "BETWEEN", []any{sk, normalizedQuery + "~"}).
+				Filter("gsi5SK", "BEGINS_WITH", normalizedQuery)
+			fetchLimit++
 		}
+	} else {
+		// First page: key BEGINS_WITH on the prefix block.
+		queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
 	}
+	queryBuilder = queryBuilder.Limit(fetchLimit)
 
 	if err := queryBuilder.All(&users); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "search")
+	}
+	if skCursor != "" {
+		users = dropSortKeyCursorDuplicate(users, skCursor, func(u models.User) string { return u.GSI5SK })
 	}
 
 	hasMore := len(users) > searchLimit
@@ -2500,19 +2526,33 @@ func (r *AccountRepository) decodeShortHandleSearchCursor(prefixKeys []string, c
 
 func (r *AccountRepository) queryShortHandlePrefixPartition(ctx context.Context, prefixKey, normalizedQuery string, searchLimit int, skCursor string) ([]models.User, error) {
 	var users []models.User
+	// One gsi5SK key condition (issue #1500): BEGINS_WITH on the first page;
+	// with a cursor, BETWEEN [cursor, query+"~"] closes the key range at the
+	// top of the block (the `~` sentinel sorts above every ASCII username
+	// block member) and demotes BEGINS_WITH to a post-read FilterExpression —
+	// the final page can never keep reading the partition tail.
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("gsi5").
 		Where("gsi5PK", "=", prefixKey).
-		Where("gsi5SK", "BEGINS_WITH", normalizedQuery).
-		OrderBy("gsi5SK", "ASC").
-		Limit(searchLimit + 1)
+		OrderBy("gsi5SK", "ASC")
 
+	fetchLimit := searchLimit + 1
 	if skCursor != "" {
-		queryBuilder = queryBuilder.Where("gsi5SK", ">", skCursor)
+		queryBuilder = queryBuilder.Where("gsi5SK", "BETWEEN", []any{skCursor, normalizedQuery + "~"}).
+			Filter("gsi5SK", "BEGINS_WITH", normalizedQuery)
+		fetchLimit++
+	} else {
+		// First page (or reset cursor): key BEGINS_WITH on the prefix block —
+		// never a PK-only unfiltered read of the whole partition.
+		queryBuilder = queryBuilder.Where("gsi5SK", "BEGINS_WITH", normalizedQuery)
 	}
+	queryBuilder = queryBuilder.Limit(fetchLimit)
 
 	if err := queryBuilder.All(&users); err != nil {
 		return nil, err
+	}
+	if skCursor != "" {
+		users = dropSortKeyCursorDuplicate(users, skCursor, func(u models.User) string { return u.GSI5SK })
 	}
 	return users, nil
 }
@@ -2632,7 +2672,10 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 		}
 	}
 
-	err := queryBuilder.Scan(&users)
+	// Keyed GSI1 query (gsi1PK = USERS, gsi1SK > cursor, Limit clamped above) —
+	// .All compiles to a DynamoDB Query instead of the previous .Scan, which
+	// applied the gsi1PK condition as a post-limit FilterExpression.
+	err := queryBuilder.All(&users)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "suggestions")
 	}
@@ -2673,27 +2716,37 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 // GetFeaturedAccounts retrieves featured accounts
 func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
 	// Featured accounts are typically admins and moderators
-	var users []models.User
-	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index(models.IndexGSI3).
-		Where("gsi3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
-
 	limit := opts.Limit
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
-	queryBuilder = queryBuilder.Limit(limit + 1)
 
+	// gsi3PK IN (admin, moderator) cannot be a single keyed DynamoDB Query
+	// (partition keys must be matched by equality), so enumerate the two role
+	// partitions and merge the bounded page from each (batch A pattern).
+	var cursorSK string
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
-		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("gsi3SK", ">", sk)
+		if err == nil {
+			cursorSK = sk
 		}
 	}
 
-	err := queryBuilder.Scan(&users)
+	users, err := r.queryFeaturedRoleUsers(ctx, "ROLE#admin", cursorSK, limit+1)
 	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "featured")
+		return nil, err
+	}
+	moderators, err := r.queryFeaturedRoleUsers(ctx, "ROLE#moderator", cursorSK, limit+1)
+	if err != nil {
+		return nil, err
+	}
+
+	// Merge and sort by gsi3SK descending so cursor pagination stays
+	// deterministic across the two enumerated partitions.
+	users = append(users, moderators...)
+	sort.Slice(users, func(i, j int) bool { return users[i].GSI3SK > users[j].GSI3SK })
+	if len(users) > limit+1 {
+		users = users[:limit+1]
 	}
 
 	// Convert to accounts
@@ -2726,6 +2779,26 @@ func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interf
 		HasMore:    hasMore,
 		Total:      -1,
 	}, nil
+}
+
+// queryFeaturedRoleUsers runs one keyed GSI3 query over a single role
+// partition with a bounded page size and the optional cursor SK lower bound.
+func (r *AccountRepository) queryFeaturedRoleUsers(ctx context.Context, rolePK, cursorSK string, pageSize int) ([]models.User, error) {
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index(models.IndexGSI3).
+		Where("gsi3PK", "=", rolePK).
+		OrderBy("gsi3SK", "DESC").
+		Limit(pageSize)
+
+	if cursorSK != "" {
+		queryBuilder = queryBuilder.Where("gsi3SK", ">", cursorSK)
+	}
+
+	var users []models.User
+	if err := queryBuilder.All(&users); err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "featured")
+	}
+	return users, nil
 }
 
 // ===== Account Preferences Operations =====
@@ -2786,11 +2859,20 @@ func (r *AccountRepository) UpdateAccountPreferences(ctx context.Context, userna
 
 // GetAccountPreferences retrieves all preferences for an account
 func (r *AccountRepository) GetAccountPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+	// The whole keyed partition must be read to collect every preference, so
+	// the read is a bounded page walk (wave #1469): Limit(500)/page, 100-page
+	// cap, fail-closed on exhaustion.
 	var preferences []models.UserPreference
-	err := r.db.WithContext(ctx).Model(&models.UserPreference{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "begins_with", "PREFERENCE#").
-		Scan(&preferences)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.UserPreference{}).
+			Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", "begins_with", "PREFERENCE#"),
+		500, 100,
+		func(page []models.UserPreference) (bool, error) {
+			preferences = append(preferences, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "preferences")
@@ -2986,32 +3068,78 @@ func (r *AccountRepository) RecordLogin(ctx context.Context, attempt *storage.Lo
 	return nil
 }
 
+// loginHistorySKPrefix is the SK block prefix for login attempts.
+const loginHistorySKPrefix = "LOGIN#"
+
+// loginHistoryCursorInRange reports whether a decoded login-history cursor is
+// a sort key inside the LOGIN# block. It mirrors notificationCursorInSortKeyRange:
+// only a cursor that is a real block member may key the BETWEEN window's upper
+// bound; anything else falls back to the keyed begins_with bound (never a
+// PK-only walk).
+func loginHistoryCursorInRange(sk string) bool {
+	return strings.HasPrefix(sk, loginHistorySKPrefix) && sk > loginHistorySKPrefix
+}
+
 // GetLoginHistory retrieves login history for a user
 func (r *AccountRepository) GetLoginHistory(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.LoginAttempt], error) {
 	var logins []models.UserLogin
+	// One SK key condition (issue #1500): begins_with on the first page; with
+	// a cursor (DESC order) key BETWEEN ["LOGIN#", sk] — closing the range at
+	// the block bottom — and demote begins_with to a post-read
+	// FilterExpression.
 	queryBuilder := r.db.WithContext(ctx).Model(&models.UserLogin{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "begins_with", "LOGIN#")
+		OrderBy("SK", "DESC")
 
 	limit := opts.Limit
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	queryBuilder = queryBuilder.Limit(limit + 1)
 
+	fetchLimit := limit + 1
+	cursorSK := ""
 	if opts.Cursor != "" {
 		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
-		if err == nil && sk != "" {
-			queryBuilder = queryBuilder.Where("SK", "<", sk) // Reverse order for recent first
+		if err != nil {
+			r.logger.Warn("invalid login history cursor provided",
+				zap.String("cursor", opts.Cursor),
+				zap.Error(err))
 		}
+		if err == nil && loginHistoryCursorInRange(sk) {
+			// Cursor page (DESC): BETWEEN ["LOGIN#", sk] closes the key range at
+			// the bottom of the block — the final page can never keep reading the
+			// partition head. BETWEEN is inclusive, so the cursor row is
+			// re-included and dropped post-read (one extra item is over-fetched
+			// so the has-more detection stays exact).
+			cursorSK = sk
+			queryBuilder = queryBuilder.Where("SK", "BETWEEN", []any{loginHistorySKPrefix, sk}).
+				Filter("SK", "begins_with", "LOGIN#") // Reverse order for recent first
+			fetchLimit++
+		} else {
+			// Decode failure, empty SK, or a cursor outside the LOGIN# block:
+			// validation-gated fallback (mirrors applyNotificationSortKeyScope)
+			// — the query NEVER degrades to a PK-only unfiltered walk of the
+			// whole USER# partition; it re-keys begins_with on the first page.
+			queryBuilder = queryBuilder.Where("SK", "begins_with", "LOGIN#")
+		}
+	} else {
+		queryBuilder = queryBuilder.Where("SK", "begins_with", "LOGIN#")
 	}
+	queryBuilder = queryBuilder.Limit(fetchLimit)
 
 	// Sort by SK descending to get most recent first
 	queryBuilder = queryBuilder.OrderBy("SK", "DESC")
 
-	err := queryBuilder.Scan(&logins)
+	// Keyed PK query (USER#username, SK BEGINS_WITH LOGIN# on the first page /
+	// BETWEEN ["LOGIN#", cursor] + begins_with filter on cursor pages, Limit
+	// clamped above) — .All compiles to a DynamoDB Query instead of the
+	// previous .Scan.
+	err := queryBuilder.All(&logins)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "login_history")
+	}
+	if cursorSK != "" {
+		logins = dropSortKeyCursorDuplicate(logins, cursorSK, func(l models.UserLogin) string { return l.SK })
 	}
 
 	// Convert to storage type
@@ -3083,18 +3211,38 @@ func (r *AccountRepository) GetAccountsByUsernames(ctx context.Context, username
 
 // GetAccountsCount retrieves the total number of accounts
 func (r *AccountRepository) GetAccountsCount(ctx context.Context) (int64, error) {
-	// Count users using GSI1 (user listing index)
-	var users []models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
+	// Count users using GSI1 (user listing index). The contract requires the
+	// full user base, so the read is a keyed GSI1 query iterated in bounded
+	// pages with an explicit page cap (wave #1469: no unbounded partition
+	// read). Each page carries a clamped Limit; iteration stops at maxPages.
+	const countPageSize = 500
+	const maxCountPages = 100
+
+	baseQuery := r.db.WithContext(ctx).Model(&models.User{}).
 		Index(models.IndexGSI1).
 		Where("gsi1PK", "=", "USERS").
-		Scan(&users)
+		Limit(countPageSize)
 
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count")
+	var total int64
+	cursor := ""
+	for page := 0; page < maxCountPages; page++ {
+		var pageUsers []models.User
+		query := baseQuery
+		if cursor != "" {
+			query = query.Cursor(cursor)
+		}
+		res, err := query.AllPaginated(&pageUsers)
+		if err != nil {
+			return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count")
+		}
+		total += int64(len(pageUsers))
+		if res == nil || !res.HasMore || res.NextCursor == "" || len(pageUsers) < countPageSize {
+			break
+		}
+		cursor = res.NextCursor
 	}
 
-	return int64(len(users)), nil
+	return total, nil
 }
 
 // Note: This is the core file. Additional methods will be organized into:

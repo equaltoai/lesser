@@ -695,7 +695,8 @@ func TestCountTimelineEntries_Parameters(t *testing.T) {
 
 	// Set up expectations
 	mockQuery.On("Where", "PK", "=", "TIMELINE#HOME#alice").Return(mockQuery)
-	mockQuery.On("Count").Return(int64(0), ErrTestMockError)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("AllPaginated", mock.AnythingOfType("*[]*models.Timeline")).Return(nil, ErrTestMockError)
 
 	_, err := repo.CountTimelineEntries(context.Background(), "HOME", "alice")
 
@@ -720,8 +721,7 @@ func TestGetTimelineEntriesInRange_Parameters(t *testing.T) {
 
 	// Set up expectations
 	mockQuery.On("Where", "PK", "=", "TIMELINE#PUBLIC#FEDERATED").Return(mockQuery)
-	mockQuery.On("Where", "SK", ">=", mock.Anything).Return(mockQuery)
-	mockQuery.On("Where", "SK", "<=", mock.Anything).Return(mockQuery)
+	mockQuery.On("Where", "SK", "BETWEEN", mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 21).Return(mockQuery)
 	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)

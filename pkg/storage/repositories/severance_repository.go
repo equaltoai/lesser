@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -80,15 +81,30 @@ func (r *SeveranceRepository) GetSeveredRelationship(ctx context.Context, id str
 	localInstance := parts[0]
 	remoteInstance := parts[1]
 
-	// Query by PK and SK prefix
+	// Query by PK and SK prefix.
 	pk := fmt.Sprintf("SEVERED#%s", localInstance)
 	skPrefix := fmt.Sprintf("INSTANCE#%s#", remoteInstance)
 
-	var severances []*models.SeveredRelationship
-	err := r.db.WithContext(ctx).Model(&models.SeveredRelationship{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", skPrefix).
-		Scan(&severances)
+	// The keyed chain (PK partition + SK prefix) is read as a bounded page walk
+	// (wave #1469, batch S1): Limit(500)/page, 100-page cap, fail-closed on
+	// exhaustion. The consume callback stops at the first row whose ID matches,
+	// preserving the old Scan's in-memory selection (first match wins).
+	var found *models.SeveredRelationship
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.SeveredRelationship{}).
+			Where("PK", "=", pk).
+			Where("SK", "begins_with", skPrefix),
+		500, 100,
+		func(page []*models.SeveredRelationship) (bool, error) {
+			for _, s := range page {
+				if s.ID == id {
+					found = s
+					return true, nil
+				}
+			}
+			return false, nil
+		},
+	)
 
 	if err != nil {
 		r.logger.Error("failed to get severed relationship",
@@ -98,10 +114,8 @@ func (r *SeveranceRepository) GetSeveredRelationship(ctx context.Context, id str
 	}
 
 	// Find the matching ID
-	for _, s := range severances {
-		if s.ID == id {
-			return s, nil
-		}
+	if found != nil {
+		return found, nil
 	}
 
 	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntitySeveredRelationship, id)
@@ -394,14 +408,29 @@ func (r *SeveranceRepository) GetReconnectionAttempt(ctx context.Context, severa
 func (r *SeveranceRepository) GetReconnectionAttempts(ctx context.Context, severanceID string) ([]*models.SeveranceReconnectionAttempt, error) {
 	pk := fmt.Sprintf("SEVERED#%s", severanceID)
 
+	// The keyed chain (PK partition + RECONNECT# SK prefix) is read as a bounded
+	// page walk (wave #1469, batch S1): Limit(500)/page, 100-page cap, fail-closed
+	// on exhaustion. OrderBy("SK","DESC") is preserved via cursor handoff, so the
+	// accumulated page order matches the chain's declared ordering.
 	var attempts []*models.SeveranceReconnectionAttempt
-	err := r.db.WithContext(ctx).Model(&models.SeveranceReconnectionAttempt{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "RECONNECT#").
-		OrderBy("SK", "DESC").
-		Scan(&attempts)
+	err := walkKeyedPages(
+		r.db.WithContext(ctx).Model(&models.SeveranceReconnectionAttempt{}).
+			Where("PK", "=", pk).
+			Where("SK", "begins_with", "RECONNECT#").
+			OrderBy("SK", "DESC"),
+		500, 100,
+		func(page []*models.SeveranceReconnectionAttempt) (bool, error) {
+			attempts = append(attempts, page...)
+			return false, nil
+		},
+	)
 
 	if err != nil {
+		// Cap exhaustion fails the read closed BEFORE the pre-existing
+		// not-found swallow — never an empty result on a capped walk.
+		if stderrors.Is(err, errBoundedPageCapExceeded) {
+			return nil, err
+		}
 		if errors.IsNotFound(err) {
 			return []*models.SeveranceReconnectionAttempt{}, nil
 		}
