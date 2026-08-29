@@ -166,8 +166,10 @@ func TestBatch1505_QueryCache_PrefixQuery_CompiledSingleKeyCondition(t *testing.
 	// Production invalidateCachePrefix cursor page (see the file header): the
 	// `~` sentinel (0x7E) closes the key range at the top of the block so the
 	// final page can never keep reading the partition tail; begins_with is
-	// demoted to a post-read FilterExpression and one extra item is
-	// over-fetched (pageLimit+2) so the inclusive cursor row can be dropped.
+	// demoted to a post-read FilterExpression. The fetch limit is pageLimit+2:
+	// the first +1 lets len(entries) > pageLimit detect a next page; the second
+	// +1 (cursor pages only) covers the inclusive cursor row, which
+	// dropSortKeyCursorDuplicate removes before the hasMore check.
 	compiled := compileB1505(t, mainSchema, func(q core.Query) core.Query {
 		return q.Where("PK", "=", "CACHE#ns").
 			OrderBy("SK", "ASC").
