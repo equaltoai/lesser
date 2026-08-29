@@ -22,9 +22,11 @@ package repositories
 //     Model(&[]map[string]interface{}) — a slice-of-maps model tabletheory
 //     refuses to register, so the seam cannot capture or compile the query;
 //     the mirror below pins the intended chain.
-//   - QueryCache_PrefixQuery: no production function builds this chain — the
-//     real cache-invalidation site (invalidateCachePrefix) keys BETWEEN
-//     [cursor, prefix~]; the mirror is retained as a pure contract pin.
+//   - QueryCache_PrefixQuery: the seam cannot drive invalidateCachePrefix's
+//     cursor page (the BETWEEN window is built only after the first page
+//     returns rows), so the mirror pins the production cursor-page chain —
+//     SK BETWEEN [cursor, prefix~] with begins_with demoted to a post-read
+//     filter — at the compile level.
 
 import (
 	"regexp"
@@ -161,12 +163,17 @@ func TestBatch1505_QueryUtils_TimeRangeQuery_CompiledSingleBetweenKeyCondition(t
 }
 
 func TestBatch1505_QueryCache_PrefixQuery_CompiledSingleKeyCondition(t *testing.T) {
+	// Production invalidateCachePrefix cursor page (see the file header): the
+	// `~` sentinel (0x7E) closes the key range at the top of the block so the
+	// final page can never keep reading the partition tail; begins_with is
+	// demoted to a post-read FilterExpression and one extra item is
+	// over-fetched (pageLimit+2) so the inclusive cursor row can be dropped.
 	compiled := compileB1505(t, mainSchema, func(q core.Query) core.Query {
 		return q.Where("PK", "=", "CACHE#ns").
 			OrderBy("SK", "ASC").
-			Where("SK", ">", "KEY#x").
+			Where("SK", "BETWEEN", []any{"KEY#x", "KEY#pre~"}).
 			Filter("SK", "begins_with", "KEY#pre").
-			Limit(201)
+			Limit(202)
 	})
-	assertSingleKeyCondition(t, compiled, "SK", "", ">", []string{"KEY#x"}, "begins_with")
+	assertSingleKeyCondition(t, compiled, "SK", "", "BETWEEN", []string{"KEY#x", "KEY#pre~"}, "begins_with")
 }

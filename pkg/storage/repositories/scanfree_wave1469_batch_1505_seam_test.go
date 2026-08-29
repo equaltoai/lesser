@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -45,6 +46,13 @@ import (
 
 type queryCapture struct {
 	queries []*core.CompiledQuery
+	// feedCacheEntries makes the terminal All fill a *[]models.QueryCacheEntry
+	// destination with pageLimit+1 synthetic rows. Result-driven loops whose
+	// cursor page is built only after a first page returns rows (notably
+	// invalidateCachePrefix) otherwise break after the first capture; with the
+	// feed they over-fetch, build, and capture their cursor-page query too.
+	// Opt-in: the plain seam behavior (empty results) is unchanged.
+	feedCacheEntries bool
 }
 
 // captureDB wraps a real tabletheory DB; Model() returns a captureQuery that
@@ -175,6 +183,13 @@ func (q *captureQuery) ParallelScan(segment int32, totalSegments int32) core.Que
 
 func (q *captureQuery) All(dest any) error {
 	q.record()
+	if q.capture.feedCacheEntries {
+		if dst, ok := dest.(*[]models.QueryCacheEntry); ok {
+			for i := 1; i <= 201; i++ {
+				*dst = append(*dst, models.QueryCacheEntry{PK: "CACHE#pre", SK: fmt.Sprintf("KEY#pre:item-%04d", i)})
+			}
+		}
+	}
 	return nil
 }
 
@@ -1220,4 +1235,78 @@ func TestBatch1505Seam_Draft_ListScheduledDraftsDuePaginated_RealChain(t *testin
 		require.NoError(t, err)
 		assertSeamLast(t, db.capture, "gsi4SK", "gsi4", "BETWEEN", []string{cursor, cutoff}, "")
 	})
+}
+
+// ============================================================================
+// QueryCache — invalidateCachePrefix (L2, #1505): the cursor page closes the
+// key range at the block top with the `~` sentinel. The seam captures both
+// pages of the real production chain (the feed below advances the loop past a
+// first page); the row-set case seeds past one page so the BETWEEN cursor page
+// actually executes and proves the next-prefix sentinel and unrelated-prefix
+// rows are never selected.
+// ============================================================================
+
+func TestBatch1505Seam_QueryCache_InvalidateCachePrefix_RealChain(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("first page keys begins_with on the primary table", func(t *testing.T) {
+		db := newSeamDB(t)
+		repo := NewQueryCacheRepository(db, "test-table", zap.NewNop(), nil, nil, nil)
+		require.NoError(t, repo.InvalidateCachePattern(ctx, "pre:*"))
+		// Pattern "pre:*" → prefix "pre:" → SK block KEY#pre:; the cache table
+		// is the primary table (no GSI), one SK key condition, no >=/<= pair.
+		assertSeamLast(t, db.capture, "SK", "", "begins_with(", []string{"KEY#pre:"}, "")
+	})
+
+	t.Run("cursor page closes the range at the block top with the sentinel", func(t *testing.T) {
+		db := newSeamDB(t)
+		db.capture.feedCacheEntries = true
+		repo := NewQueryCacheRepository(db, "test-table", zap.NewNop(), nil, nil, nil)
+		require.NoError(t, repo.InvalidateCachePattern(ctx, "pre:*"))
+		// The fed first page over-fetches 201 rows, so the loop advances with a
+		// cursor of KEY#pre:item-0200 and the second captured query must be the
+		// production cursor page: BETWEEN [cursor, KEY#pre:~] (the `~` sentinel
+		// closes the key range at the top of the block) with begins_with demoted
+		// to a post-read FilterExpression.
+		require.Len(t, db.capture.queries, 2, "fed loop must build and capture the cursor page")
+		assertSingleKeyCondition(t, db.capture.queries[0], "SK", "", "begins_with(", []string{"KEY#pre:"}, "")
+		assertSeamLast(t, db.capture, "SK", "", "BETWEEN", []string{"KEY#pre:item-0200", "KEY#pre:~"}, "begins_with")
+	})
+}
+
+func TestBatch1505_QueryCache_InvalidateCachePrefix_BoundarySentinelSurvives(t *testing.T) {
+	ctx := context.Background()
+	_, client, inner := newSeamRowDB(t)
+	require.NoError(t, inner.CreateTable(&models.QueryCacheEntry{}))
+
+	// Seed the CACHE#pre partition past one page (pageLimit = 200) so the
+	// cursor page actually executes, plus a next-prefix sentinel row
+	// (SK KEY#pre~:z sorts ABOVE the BETWEEN high bound KEY#pre:~) and an
+	// unrelated-prefix row in its own partition.
+	for i := 1; i <= 201; i++ {
+		e := &models.QueryCacheEntry{CacheKey: fmt.Sprintf("pre:item-%04d", i), ExpiresAt: time.Now().Add(time.Hour)}
+		require.NoError(t, e.UpdateKeys())
+		require.NoError(t, inner.Model(e).Create())
+	}
+	sAV := func(v string) *types.AttributeValueMemberS { return &types.AttributeValueMemberS{Value: v} }
+	require.NoError(t, client.Seed(models.MainTableName,
+		map[string]types.AttributeValue{"PK": sAV("CACHE#pre"), "SK": sAV("KEY#pre~:z"), "cacheKey": sAV("pre~:z")},
+		map[string]types.AttributeValue{"PK": sAV("CACHE#other"), "SK": sAV("KEY#other:a"), "cacheKey": sAV("other:a")},
+	))
+
+	repo := NewQueryCacheRepository(inner, "test-table", zap.NewNop(), nil, nil, nil)
+	require.NoError(t, repo.InvalidateCachePattern(ctx, "pre:*"))
+
+	// All 201 KEY#pre: rows deleted; only the next-prefix sentinel row may
+	// survive in the CACHE#pre partition.
+	var remaining []models.QueryCacheEntry
+	require.NoError(t, inner.Model(&models.QueryCacheEntry{}).Where("PK", "=", "CACHE#pre").All(&remaining))
+	require.Len(t, remaining, 1, "only the next-prefix sentinel row may survive in CACHE#pre")
+	require.Equal(t, "KEY#pre~:z", remaining[0].SK)
+
+	// The unrelated-prefix partition is never touched.
+	var other []models.QueryCacheEntry
+	require.NoError(t, inner.Model(&models.QueryCacheEntry{}).Where("PK", "=", "CACHE#other").All(&other))
+	require.Len(t, other, 1, "unrelated-prefix partition must be untouched")
+	require.Equal(t, "KEY#other:a", other[0].SK)
 }
