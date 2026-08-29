@@ -39,7 +39,6 @@ type uploadGrantPresignCall struct {
 	key           string
 	contentType   string
 	contentSHA256 string
-	kmsKeyID      string
 	expiry        time.Duration
 }
 
@@ -88,7 +87,7 @@ func (f *uploadGrantObjectFake) SimulateUpload(grant *models.UploadGrant, data [
 	return err
 }
 
-func (f *uploadGrantObjectFake) PresignPutObject(_ context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error) {
+func (f *uploadGrantObjectFake) PresignPutObject(_ context.Context, bucket, key, contentType, contentSHA256Hex string, expiry time.Duration) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.presignErr != nil {
@@ -96,7 +95,7 @@ func (f *uploadGrantObjectFake) PresignPutObject(_ context.Context, bucket, key,
 	}
 	f.presigns = append(f.presigns, uploadGrantPresignCall{
 		bucket: bucket, key: key, contentType: contentType, contentSHA256: contentSHA256Hex,
-		kmsKeyID: kmsKeyID, expiry: expiry,
+		expiry: expiry,
 	})
 	return "https://presigned.example.invalid/" + bucket + "/" + key + "?X-Amz-Signature=test", nil
 }
@@ -162,7 +161,6 @@ func newUploadGrantTestService(t *testing.T) (*Service, *inmemory.UploadGrantRep
 	)
 	objectStore := newUploadGrantObjectFake()
 	service.SetS3Service(objectStore)
-	service.SetEditorialKMSKeyID("alias/lesser-test")
 	grantRepo := inmemory.NewUploadGrantRepository()
 	service.SetUploadGrantRepository(grantRepo)
 	return service, grantRepo, objectStore, mediaRepo
@@ -205,8 +203,9 @@ func TestMintUploadGrant(t *testing.T) {
 
 	// The presigned PUT was minted against the grant's exact constraints:
 	// declared content type, the declared sha256 (the object store converts the
-	// hex digest to the base64 x-amz-checksum-sha256 header), SSE-KMS instance
-	// key, and the grant-scoped object key.
+	// hex digest to the base64 x-amz-checksum-sha256 query parameter bound into
+	// the URL), and the grant-scoped object key. The URL signs only host, so no
+	// SSE headers exist for the client to echo.
 	presigns := objectStore.Presigns()
 	require.Len(t, presigns, 1)
 	call := presigns[0]
@@ -214,33 +213,7 @@ func TestMintUploadGrant(t *testing.T) {
 	require.Equal(t, grant.S3Key, call.key)
 	require.Equal(t, "image/png", call.contentType)
 	require.Equal(t, grant.ContentSHA256, call.contentSHA256, "the declared digest must be bound into the presigned PUT")
-	require.Equal(t, "alias/lesser-test", call.kmsKeyID)
 	require.Equal(t, UploadGrantTTL, call.expiry)
-}
-
-func TestService_UploadGrantSSE(t *testing.T) {
-	service, _, _, _ := newUploadGrantTestService(t)
-
-	// The SSE contract is exactly what the minted presigned PUT signs: the
-	// algorithm header value and the instance KMS key id (alias/lesser-test here
-	// matches the key asserted on the recorded PresignPutObject call in
-	// TestMintUploadGrant), so a client echoing these values on the PUT satisfies
-	// the signature.
-	algorithm, keyID := service.UploadGrantSSE()
-	require.Equal(t, UploadGrantSSEAlgorithm, algorithm, "the algorithm must be the constant the presigner signs")
-	require.Equal(t, "aws:kms", algorithm)
-	require.Equal(t, "alias/lesser-test", keyID, "the returned key id must be the exact value passed to PresignPutObject")
-
-	// Header names are part of the contract and fixed.
-	require.Equal(t, "x-amz-server-side-encryption", UploadGrantSSEEncryptionHeader)
-	require.Equal(t, "x-amz-server-side-encryption-aws-kms-key-id", UploadGrantSSEKMSKeyIDHeader)
-
-	// An unconfigured key means no SSE headers are bound; the mint surface fails
-	// closed before minting in that state.
-	service.SetEditorialKMSKeyID("")
-	algorithm, keyID = service.UploadGrantSSE()
-	require.Equal(t, "aws:kms", algorithm)
-	require.Equal(t, "", keyID)
 }
 
 func TestMintUploadGrantValidation(t *testing.T) {
@@ -770,17 +743,10 @@ func TestMintUploadGrantStoreUnavailableFailsClosed(t *testing.T) {
 	require.Len(t, grantRepo.Grants(), 0)
 }
 
-func TestMintUploadGrantFailsClosedOnMissingBucketAndKMS(t *testing.T) {
+func TestMintUploadGrantFailsClosedOnMissingBucket(t *testing.T) {
 	service, _, _, _ := newUploadGrantTestService(t)
 	service.s3Bucket = ""
 	_, _, err := service.MintUploadGrant(context.Background(), MintUploadGrantInput{
-		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: uploadGrantDigest(tinyPNG),
-	})
-	require.Error(t, err)
-
-	service.s3Bucket = "media-private"
-	service.editorialKMSKeyID = ""
-	_, _, err = service.MintUploadGrant(context.Background(), MintUploadGrantInput{
 		Owner: "alice", ContentType: "image/png", MaxSizeBytes: 100, ContentSHA256: uploadGrantDigest(tinyPNG),
 	})
 	require.Error(t, err)

@@ -70,11 +70,11 @@ func (s round12MediaS3Service) UploadInternalFile(
 
 func (round12MediaS3Service) DeleteFile(context.Context, string, string) error { return nil }
 
-func (s round12MediaS3Service) PresignPutObject(_ context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error) {
+func (s round12MediaS3Service) PresignPutObject(_ context.Context, bucket, key, contentType, contentSHA256Hex string, expiry time.Duration) (string, error) {
 	if s.state != nil {
 		s.state.uploadGrantPresigns = append(s.state.uploadGrantPresigns, round12UploadGrantPresign{
 			bucket: bucket, key: key, contentType: contentType, contentSHA256: contentSHA256Hex,
-			kmsKeyID: kmsKeyID, expiry: expiry,
+			expiry: expiry,
 		})
 	}
 	return "https://presigned.example/" + bucket + "/" + key + "?X-Amz-Signature=test", nil
@@ -193,7 +193,6 @@ type round12UploadGrantPresign struct {
 	key           string
 	contentType   string
 	contentSHA256 string
-	kmsKeyID      string
 	expiry        time.Duration
 }
 
