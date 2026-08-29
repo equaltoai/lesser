@@ -922,8 +922,13 @@ func (r *NotificationCostRepository) GetDailySpending(ctx context.Context, usern
 	// window must be read, so the read is a bounded page walk (wave #1469):
 	// Limit(500)/page, 100-page cap, fail-closed on exhaustion.
 	gsi1PK := fmt.Sprintf("USER#%s", username)
-	startSK := fmt.Sprintf("COST#%s", today.Format(time.RFC3339))
-	endSK := fmt.Sprintf("COST#%s", tomorrow.Format(time.RFC3339))
+	// Bounds use the writer's CompactTimeFormat (issue #1506): the model's
+	// UpdateKeys emits gsi1SK as "COST#" + YYYYMMDDHHMMSS, so RFC3339 bounds
+	// sorted ABOVE every written row and the query matched zero rows for every
+	// writer — always. A record with SK exactly endSK (the first second of
+	// tomorrow) is an edge no writer emits.
+	startSK := fmt.Sprintf("COST#%s", today.Format(common.CompactTimeFormat))
+	endSK := fmt.Sprintf("COST#%s", tomorrow.Format(common.CompactTimeFormat))
 
 	var costs []models.NotificationCostTracking
 	err := walkKeyedPages(
@@ -931,7 +936,7 @@ func (r *NotificationCostRepository) GetDailySpending(ctx context.Context, usern
 			Where("gsi1PK", "=", gsi1PK).
 			// One BETWEEN key condition on gsi1SK — the `>= startSK AND < endSK`
 			// window becomes BETWEEN [startSK, endSK] (inclusive `endSK`
-			// bound; a record with SK exactly endSK = the first millisecond of
+			// bound; a record with SK exactly endSK = the first second of
 			// tomorrow would previously be excluded, an edge no writer emits).
 			// Two range conditions on one sort key are rejected by DynamoDB
 			// (issue #1500).
