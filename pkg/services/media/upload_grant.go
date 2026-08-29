@@ -26,26 +26,6 @@ import (
 // bound.
 const UploadGrantTTL = 15 * time.Minute
 
-// Presigned-companion PUT SSE contract. The minted presigned PUT signs these
-// two server-side-encryption headers into the SigV4 signature, so a compliant
-// client MUST echo each header on the PUT with the exact value returned by the
-// grant surface (UploadGrant.signedHeaders). Omitting or altering either makes
-// S3 recompute a different signature and reject the request with
-// 403 SignatureDoesNotMatch — the header values are undiscoverable from the
-// client side, which is why the grant response must carry them.
-const (
-	// UploadGrantSSEAlgorithm is the server-side encryption algorithm bound
-	// into every minted presigned PUT; it is sent as the value of the
-	// x-amz-server-side-encryption header.
-	UploadGrantSSEAlgorithm = "aws:kms"
-	// UploadGrantSSEEncryptionHeader is the HTTP header carrying the SSE
-	// algorithm on the presigned PUT.
-	UploadGrantSSEEncryptionHeader = "x-amz-server-side-encryption"
-	// UploadGrantSSEKMSKeyIDHeader is the HTTP header carrying the instance KMS
-	// key id (alias or key id) on the presigned PUT.
-	UploadGrantSSEKMSKeyIDHeader = "x-amz-server-side-encryption-aws-kms-key-id"
-)
-
 var (
 	// ErrUploadGrantUnavailable reports that the upload grant surface is not
 	// wired (missing repository or object-store capability); it fails closed.
@@ -88,14 +68,13 @@ var (
 // media service's S3 service so existing deployments that lack the capability
 // fail closed.
 type uploadGrantObjectStore interface {
-	// PresignPutObject mints a presigned PUT whose signed headers bind the
-	// content type, the exact sha256 of the intended bytes (S3 validates the
-	// body checksum at upload), and SSE-KMS encryption under the instance key.
-	// The URL signs x-amz-server-side-encryption and
-	// x-amz-server-side-encryption-aws-kms-key-id, so the PUT must echo both
-	// headers with the exact signed values (UploadGrantSSEAlgorithm and the
-	// kmsKeyID passed here) or S3 rejects it with 403 SignatureDoesNotMatch.
-	PresignPutObject(ctx context.Context, bucket, key, contentType, contentSHA256Hex, kmsKeyID string, expiry time.Duration) (string, error)
+	// PresignPutObject mints a presigned PUT whose URL binds the object key and
+	// the exact sha256 of the intended bytes (the digest is hoisted into the URL
+	// as the x-amz-checksum-sha256 query parameter, which S3 validates against
+	// the body on receipt). The signature signs only the host header, so the PUT
+	// needs no headers to echo; the object lands encrypted at rest under the
+	// bucket's default encryption.
+	PresignPutObject(ctx context.Context, bucket, key, contentType, contentSHA256Hex string, expiry time.Duration) (string, error)
 	// HeadFile returns the stored object's ContentLength and ContentType
 	// without downloading, so finalize can reject an oversized object before
 	// any bytes enter memory.
@@ -177,9 +156,6 @@ func (s *Service) MintUploadGrant(ctx context.Context, input MintUploadGrantInpu
 	if bucket == "" {
 		return nil, "", errors.Join(ErrMediaStorageFailed, errors.New("media S3 bucket is unavailable"))
 	}
-	if strings.TrimSpace(s.editorialKMSKeyID) == "" {
-		return nil, "", errors.Join(ErrMediaStorageFailed, errors.New("editorial media KMS key is unavailable"))
-	}
 	store, ok := s.s3Service.(uploadGrantObjectStore)
 	if !ok || store == nil {
 		return nil, "", errors.Join(ErrUploadGrantUnavailable, errors.New("presigned PUT capability is unavailable"))
@@ -214,7 +190,7 @@ func (s *Service) MintUploadGrant(ctx context.Context, input MintUploadGrantInpu
 	if err := s.uploadGrantRepo.CreateUploadGrant(ctx, grant); err != nil {
 		return nil, "", err
 	}
-	url, err := store.PresignPutObject(ctx, bucket, s3Key, contentType, contentSHA256, s.editorialKMSKeyID, UploadGrantTTL)
+	url, err := store.PresignPutObject(ctx, bucket, s3Key, contentType, contentSHA256, UploadGrantTTL)
 	if err != nil {
 		return nil, "", errors.Join(ErrMediaStorageFailed, err)
 	}
@@ -374,7 +350,7 @@ func (s *Service) UploadGrant(ctx context.Context, ownerID, grantID string) (*mo
 	if remaining <= 0 {
 		return grant, "", nil
 	}
-	url, err := store.PresignPutObject(ctx, grant.S3Bucket, grant.S3Key, grant.ContentType, grant.ContentSHA256, s.editorialKMSKeyID, remaining)
+	url, err := store.PresignPutObject(ctx, grant.S3Bucket, grant.S3Key, grant.ContentType, grant.ContentSHA256, remaining)
 	if err != nil {
 		s.logger.Warn("failed to re-presign upload grant PUT",
 			zap.String("grant_id", grantID),

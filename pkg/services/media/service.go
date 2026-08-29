@@ -100,7 +100,9 @@ type S3Presigner interface {
 // PublishedMediaCopier copies the exact original bytes of an internal editorial
 // asset to the durable unsigned serving surface at the publish transition. The
 // destination object is SSE-S3 (the CloudFront origin can serve it) while the
-// source remains SSE-KMS under the instance key.
+// source is SSE-KMS under the instance key for byte-path internal uploads, or
+// bucket-default SSE-S3 for presigned-companion/grant-path uploads (their
+// presigned PUTs sign no SSE parameters).
 type PublishedMediaCopier interface {
 	CopyFileToPublished(ctx context.Context, bucket, sourceKey, destinationKey, contentType string) (string, error)
 }
@@ -199,20 +201,12 @@ func (s *Service) SetOrphanPublishedMintSource(source OrphanedPublishedMintSourc
 }
 
 // SetEditorialKMSKeyID configures the instance key used to keep internal
-// editorial originals outside the unsigned CDN read surface.
+// editorial originals outside the unsigned CDN read surface. The byte-path
+// editorial upload (UploadInternalFile) stores under this key; presigned
+// upload-grant PUTs do not sign SSE parameters and land under the bucket's
+// default encryption instead.
 func (s *Service) SetEditorialKMSKeyID(keyID string) {
 	s.editorialKMSKeyID = strings.TrimSpace(keyID)
-}
-
-// UploadGrantSSE returns the SSE-KMS contract every minted presigned PUT
-// signs: the encryption algorithm (UploadGrantSSEAlgorithm) and the instance
-// KMS key id. The upload grant surface MUST return both as header names and
-// values (see UploadGrantSSE*Header) so clients can echo them on the PUT — the
-// values returned here are exactly what PresignPutObject signs, and echoing
-// them is what makes the PUT succeed. An empty keyID means no SSE headers are
-// bound (the grant surface fails closed before minting in that case).
-func (s *Service) UploadGrantSSE() (algorithm, keyID string) {
-	return UploadGrantSSEAlgorithm, s.editorialKMSKeyID
 }
 
 // SetMaxFileSize sets the maximum allowed file size

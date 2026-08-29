@@ -3652,13 +3652,6 @@ type UploadGrant struct {
 	Status         UploadGrantStatus `json:"status"`
 	// Presigned PUT URL. Populated at mint and refreshed while the grant is minted.
 	PresignedURL *string `json:"presignedUrl,omitempty"`
-	// Headers the presigned PUT signs into its SigV4 signature (SSE-KMS under
-	//   the instance key). Send each as an HTTP header with the exact value on the
-	//   PUT; omitting or altering any yields 403 SignatureDoesNotMatch. Also send
-	//   Content-Type: the declared contentType (finalize rejects a mismatched stored
-	//   type) and the exact declared bytes (S3 validates the checksum hoisted into
-	//   the URL).
-	SignedHeaders []*UploadGrantSignedHeader `json:"signedHeaders"`
 	// Media ID minted with the grant; set once the finalize admits the asset.
 	MediaID   *string `json:"mediaId,omitempty"`
 	GrantedAt Time    `json:"grantedAt"`
@@ -3683,16 +3676,6 @@ type UploadGrantMedia struct {
 	ContentHash string `json:"contentHash"`
 	Status      string `json:"status"`
 	Visibility  string `json:"visibility"`
-}
-
-// One HTTP header the minted presigned PUT signs into its SigV4 signature.
-// The client MUST send it on the PUT with the exact value; omitting or altering
-// any signed header makes S3 reject the request with 403 SignatureDoesNotMatch.
-type UploadGrantSignedHeader struct {
-	// HTTP header name, e.g. x-amz-server-side-encryption.
-	Name string `json:"name"`
-	// Exact header value to send, e.g. aws:kms or the instance KMS key id.
-	Value string `json:"value"`
 }
 
 type UploadMediaInput struct {

@@ -869,41 +869,11 @@ func (r *Resolver) convertCMSDraftReviewGrant(ctx context.Context, grant *models
 	}
 }
 
-// uploadGrantSSEHeaders returns the SSE-KMS headers every minted presigned PUT
-// signs, as HTTP header names and exact values the client must echo on the PUT
-// (see media.UploadGrantSSE*). The values come from the media service because
-// they are exactly the values PresignPutObject signs into the URL. The list is
-// non-nil in every reachable state: the schema declares signedHeaders
-// non-null ([UploadGrantSignedHeader!]!), so an empty instance key must yield
-// an empty list, never nil — mint already fails closed without the key, and
-// this only surfaces on the re-presign uploadGrant(grantId:) query path after
-// the key was unset or removed mid-TTL, where the grant object must still
-// resolve instead of failing the whole response.
-func (r *Resolver) uploadGrantSSEHeaders() []*model.UploadGrantSignedHeader {
-	if r == nil || r.Registry == nil {
-		return []*model.UploadGrantSignedHeader{}
-	}
-	svc := r.Registry.Media()
-	if svc == nil {
-		return []*model.UploadGrantSignedHeader{}
-	}
-	algorithm, keyID := svc.UploadGrantSSE()
-	if strings.TrimSpace(keyID) == "" {
-		return []*model.UploadGrantSignedHeader{}
-	}
-	return []*model.UploadGrantSignedHeader{
-		{Name: media.UploadGrantSSEEncryptionHeader, Value: algorithm},
-		{Name: media.UploadGrantSSEKMSKeyIDHeader, Value: keyID},
-	}
-}
-
 // convertCMSUploadGrant maps a storage upload grant onto its inspectable
 // GraphQL surface. The status query recomputes EXPIRED at read time from the
 // bounded expiry; presignedURL is populated only while the grant is minted.
-// SignedHeaders carries the SSE-KMS headers the minted presigned PUT signs
-// (see uploadGrantSSEHeaders) — an empty list when the instance key is unset,
-// never nil, since the schema declares the list non-null — so clients can echo
-// them on the PUT even on the re-presigned uploadGrant(grantId:) query path.
+// The presigned PUT signs only host (no SSE headers), so the grant carries no
+// header contract for the client to echo.
 func (r *Resolver) convertCMSUploadGrant(grant *models.UploadGrant, presignedURL string) *model.UploadGrant {
 	if grant == nil {
 		return nil
@@ -927,7 +897,6 @@ func (r *Resolver) convertCMSUploadGrant(grant *models.UploadGrant, presignedURL
 		Status:         status,
 		GrantedAt:      model.Time(grant.GrantedAt),
 		ExpiresAt:      model.Time(grant.ExpiresAt),
-		SignedHeaders:  r.uploadGrantSSEHeaders(),
 	}
 	if presignedURL != "" {
 		out.PresignedURL = &presignedURL

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"io"
 	"net/http"
@@ -18,7 +19,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	mediasvc "github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,8 +32,8 @@ const (
 	// s3PresignUnsignedPayload is the SigV4 payload-hash sentinel the SDK's S3
 	// presigner binds into presigned PUT URLs (UNSIGNED-PAYLOAD): the signed URL
 	// does not commit to a body hash (S3 validates the actual bytes separately
-	// via x-amz-checksum-sha256), so the server-side recomputation must use the
-	// same sentinel or every request would mismatch.
+	// via the hoisted x-amz-checksum-sha256 query parameter), so the server-side
+	// recomputation must use the same sentinel or every request would mismatch.
 	s3PresignUnsignedPayload = "UNSIGNED-PAYLOAD"
 )
 
@@ -49,7 +49,7 @@ const (
 // saw it — only the signed headers, with the client's echoed values) and
 // compares it to the URL's X-Amz-Signature. Presence alone is not enough: a
 // client that echoes the right header names with wrong values is rejected
-// exactly like production, which is what the acceptance test below proves.
+// exactly like production.
 type s3PresignTestServer struct {
 	server       *httptest.Server
 	mu           sync.Mutex
@@ -162,7 +162,16 @@ func parseAmzSignedHeaders(value string) []string {
 	return strings.Split(value, ";")
 }
 
-func TestMediaS3PresignedPut_SSESignedHeadersRequireEcho(t *testing.T) {
+// TestMediaS3PresignedPut_SignsOnlyHost pins the fixed presigned-companion PUT
+// contract (issue #1509): the minted URL signs only the host header, carries no
+// SSE query parameters, and still binds the declared sha256 as the hoisted
+// X-Amz-Checksum-Sha256 query parameter. A client holding nothing but the URL
+// completes the PUT with Content-Type plus the declared bytes — no SSE headers
+// to echo — and the signature contract accepts it. The SSE-KMS headers that the
+// old presign signed are undiscoverable by clients (the KMS key ARN is never
+// disclosed), which made every client PUT fail 403 SignatureDoesNotMatch; this
+// pin asserts the regression cannot silently return.
+func TestMediaS3PresignedPut_SignsOnlyHost(t *testing.T) {
 	srv := newS3PresignTestServer(t)
 
 	// A real SDK v2 S3 client + presigner pointed at the emulation, exactly as
@@ -180,77 +189,68 @@ func TestMediaS3PresignedPut_SSESignedHeadersRequireEcho(t *testing.T) {
 	body := []byte("presigned-companion acceptance bytes")
 	sum := sha256.Sum256(body)
 	declaredSHA256 := hex.EncodeToString(sum[:])
-	const kmsKeyID = "alias/theory-acceptance-encryption"
 
-	// Mint the presigned PUT the editorial lane mints (SSE-KMS headers signed
-	// into the signature): the old signed-header shape is unchanged by the fix,
-	// and the URL must declare both SSE headers as signed.
+	// Mint the presigned PUT the editorial lane mints: no SSE parameters.
 	presignedURL, err := store.PresignPutObject(
-		context.Background(), "lesser-media-bucket", "media/2026/08/26/acceptance.png",
-		"image/png", declaredSHA256, kmsKeyID, 15*time.Minute,
+		context.Background(), "lesser-media-bucket", "media/2026/08/29/acceptance.png",
+		"image/png", declaredSHA256, 15*time.Minute,
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, presignedURL)
 
 	parsed, err := url.Parse(presignedURL)
 	require.NoError(t, err)
-	signedHeaders := parseAmzSignedHeaders(parsed.Query().Get("X-Amz-SignedHeaders"))
-	require.Contains(t, signedHeaders, mediasvc.UploadGrantSSEEncryptionHeader,
-		"the minted PUT must sign x-amz-server-side-encryption (SSE-KMS enforcement)")
-	require.Contains(t, signedHeaders, mediasvc.UploadGrantSSEKMSKeyIDHeader,
-		"the minted PUT must sign x-amz-server-side-encryption-aws-kms-key-id (SSE-KMS enforcement)")
+	query := parsed.Query()
 
-	// The naive client PUTs the exact declared bytes with only Content-Type —
-	// no SSE headers — exactly what production clients did. S3 rejects it with
-	// 403 SignatureDoesNotMatch: reproduce the production failure.
-	naiveReq, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(body))
-	require.NoError(t, err)
-	naiveReq.Header.Set("Content-Type", "image/png")
-	naiveResp, err := http.DefaultClient.Do(naiveReq)
-	require.NoError(t, err)
-	defer naiveResp.Body.Close()
-	naiveBody, err := io.ReadAll(naiveResp.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusForbidden, naiveResp.StatusCode,
-		"a PUT omitting the signed SSE headers must fail closed like production (403 SignatureDoesNotMatch)")
-	require.Contains(t, string(naiveBody), "SignatureDoesNotMatch")
+	// Regression pin: the URL signs exactly the host header. Any other signed
+	// header would force clients to echo an undiscoverable value.
+	require.Equal(t, "host", query.Get("X-Amz-SignedHeaders"),
+		"the minted PUT must sign exactly the host header (X-Amz-SignedHeaders=host)")
+	// The URL must carry no SSE query parameters: neither the algorithm nor the
+	// KMS key id headers may re-enter the signed surface in any casing.
+	for key := range query {
+		require.NotContains(t, strings.ToLower(key), "server-side-encryption",
+			"the minted PUT must carry no SSE query parameters (key %q)", key)
+	}
 
-	// The compliant client echoes the grant contract: the two signed headers
-	// with the exact values the grant response carries (media.UploadGrantSSEAlgorithm
-	// for the algorithm and the instance KMS key id for the key). The PUT lands.
-	echoReq, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(body))
-	require.NoError(t, err)
-	echoReq.Header.Set("Content-Type", "image/png")
-	echoReq.Header.Set(mediasvc.UploadGrantSSEEncryptionHeader, mediasvc.UploadGrantSSEAlgorithm)
-	echoReq.Header.Set(mediasvc.UploadGrantSSEKMSKeyIDHeader, kmsKeyID)
-	echoResp, err := http.DefaultClient.Do(echoReq)
-	require.NoError(t, err)
-	defer echoResp.Body.Close()
-	require.Equal(t, http.StatusOK, echoResp.StatusCode,
-		"a PUT echoing the signed SSE headers with the exact grant values must succeed")
+	// The integrity binding survives: the declared sha256 is hoisted into the
+	// URL as the base64 x-amz-checksum-sha256 query parameter, so S3 validates
+	// the body on receipt (and finalize recomputes the digest over the stored
+	// bytes as defense-in-depth).
+	expectedChecksum := base64.StdEncoding.EncodeToString(sum[:])
+	require.Equal(t, expectedChecksum, query.Get("X-Amz-Checksum-Sha256"),
+		"the declared sha256 must remain bound into the URL as X-Amz-Checksum-Sha256")
 
-	// The value-drift control: the client echoes the right header NAMES but
-	// wrong VALUES (a wrong algorithm and an attacker-chosen key id). Presence
-	// is not enough — S3 recomputes the signature over the exact values and
-	// rejects with 403 SignatureDoesNotMatch. This is the regression the
-	// strengthened emulation exists to catch (algorithm constant change, wrong
-	// key surfaced).
-	wrongValueReq, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(body))
+	// A client holding nothing but the URL completes the PUT: Content-Type plus
+	// the exact declared bytes, no SSE headers. The signature contract accepts
+	// it — this is the flow that was impossible before the fix.
+	plainReq, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(body))
 	require.NoError(t, err)
-	wrongValueReq.Header.Set("Content-Type", "image/png")
-	wrongValueReq.Header.Set(mediasvc.UploadGrantSSEEncryptionHeader, "AES256")
-	wrongValueReq.Header.Set(mediasvc.UploadGrantSSEKMSKeyIDHeader, "alias/attacker-chosen-key")
-	wrongValueResp, err := http.DefaultClient.Do(wrongValueReq)
+	plainReq.Header.Set("Content-Type", "image/png")
+	plainResp, err := http.DefaultClient.Do(plainReq)
 	require.NoError(t, err)
-	defer wrongValueResp.Body.Close()
-	wrongValueBody, err := io.ReadAll(wrongValueResp.Body)
+	defer plainResp.Body.Close()
+	plainBody, err := io.ReadAll(plainResp.Body)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusForbidden, wrongValueResp.StatusCode,
-		"a PUT echoing the signed SSE header names with wrong values must fail like production (403 SignatureDoesNotMatch)")
-	require.Contains(t, string(wrongValueBody), "SignatureDoesNotMatch")
+	require.Equal(t, http.StatusOK, plainResp.StatusCode,
+		"a PUT with only Content-Type and the declared bytes must succeed against the signature contract")
+	require.NotContains(t, string(plainBody), "SignatureDoesNotMatch")
 
-	// The naive and wrong-value requests must not have been accepted; the echo
-	// request must have been.
-	require.Equal(t, 2, srv.forbidden, "exactly two PUTs rejected (naive omission + wrong-value echo)")
-	require.Equal(t, 1, srv.accepted, "exactly one compliant PUT accepted")
+	// Client-added unsigned headers (Cache-Control, x-amz-meta-*) must not
+	// invalidate the signature: the URL signs only host, so extra headers are
+	// outside the canonical signed surface.
+	extraReq, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(body))
+	require.NoError(t, err)
+	extraReq.Header.Set("Content-Type", "image/png")
+	extraReq.Header.Set("Cache-Control", "max-age=0")
+	extraReq.Header.Set("X-Amz-Meta-Client", "acceptance")
+	extraResp, err := http.DefaultClient.Do(extraReq)
+	require.NoError(t, err)
+	defer extraResp.Body.Close()
+	require.Equal(t, http.StatusOK, extraResp.StatusCode,
+		"client-added unsigned headers must not invalidate the host-only signature")
+
+	// Every PUT landed; nothing was rejected.
+	require.Equal(t, 0, srv.forbidden, "no PUT may be rejected: the URL is self-sufficient")
+	require.Equal(t, 2, srv.accepted, "both compliant PUTs accepted")
 }
