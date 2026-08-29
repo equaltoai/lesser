@@ -301,7 +301,12 @@ func (s *DraftService) SetEditorialMedia(ctx context.Context, authorID, draftID 
 	return draft, nil
 }
 
-// PreviewDraft renders a draft through the same Article publication renderer used for ActivityPub and public HTML.
+// PreviewDraft renders a draft through the same Article publication renderer
+// used for ActivityPub and public HTML. It does not compose editorial media:
+// draft-time media URLs are caller-authorized short-lived servings minted by
+// the exact-asset access lane, so callers that need composed preview HTML must
+// pass descriptors through RenderDraftPreviewWithMedia (GraphQL preview reads
+// compose at the resolver with the opted-in minted URLs).
 func (s *DraftService) PreviewDraft(ctx context.Context, authorID, draftID string) (cmsrender.RenderedArticleContent, error) {
 	draft, err := s.draftRepo.GetDraft(ctx, authorID, draftID)
 	if err != nil {
