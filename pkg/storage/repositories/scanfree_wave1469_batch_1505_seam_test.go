@@ -1018,6 +1018,23 @@ func TestBatch1505Seam_CostTracking_GetRelayCostsByURL_RealChain(t *testing.T) {
 	assertSeamLast(t, db.capture, "gsi1SK", "gsi1", "BETWEEN", []string{wantStart, wantEnd}, "attr:operationType")
 }
 
+func TestBatch1505Seam_CostTracking_GetRelayCostsByURL_StaleCursorClamped_RealChain(t *testing.T) {
+	ctx := context.Background()
+	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
+	wantStart := "TS#" + start.Format(common.CompactTimeFormat)
+	wantEnd := "TS#" + end.Format(common.CompactTimeFormat)
+	// A stale/foreign cursor sorting ABOVE the window end (DESC order) must be
+	// clamped to endSK: the emitted BETWEEN is [startSK, endSK] — low <= high,
+	// never a window widened past the requested range (R2, #1505).
+	staleCursor := "TS#" + end.Add(24*time.Hour).Format(common.CompactTimeFormat)
+
+	repo, db := newSeamTrackingRepo(t)
+	_, _, err := repo.GetRelayCostsByURL(ctx, "relay.example", start, end, 10, staleCursor, "deliver")
+	require.NoError(t, err)
+	assertSeamLast(t, db.capture, "gsi1SK", "gsi1", "BETWEEN", []string{wantStart, wantEnd}, "attr:operationType")
+}
+
 func TestBatch1505Seam_CostTracking_GetRelayMetricsHistory_RealChain(t *testing.T) {
 	ctx := context.Background()
 	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)

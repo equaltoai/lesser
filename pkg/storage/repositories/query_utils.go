@@ -128,16 +128,25 @@ func dropSortKeyCursorDuplicate[T any](items []T, cursor string, sortKey func(T)
 
 // gsi1BetweenCursorScope builds a keyed gsi1 query whose sort-key window is
 // EXACTLY ONE BETWEEN key condition (issue #1500): [startSK, endSK] on the
-// first page; with a cursor (DESC order) the upper bound is clamped to the
-// cursor — BETWEEN is inclusive, so the cursor row is re-included and dropped
-// post-read by the caller (one extra item is over-fetched so the has-more
-// detection stays exact). Returns the query and the effective fetch limit.
+// first page; with a cursor the high bound becomes the cursor (all callers are
+// DESC order) — clamped to endSK so a stale/foreign cursor sorting above the
+// window cannot widen the read past the requested range — and BETWEEN being
+// inclusive, the cursor row is re-included and dropped post-read by the caller
+// (one extra item is over-fetched so the has-more detection stays exact).
+// Returns the query and the effective fetch limit.
 func gsi1BetweenCursorScope(ctx context.Context, db core.DB, model any, gsi1pk, startSK, endSK, cursor string, fetchLimit int) (core.Query, int) {
 	if cursor == "" {
 		return db.WithContext(ctx).Model(model).
 			Index("gsi1").
 			Where("gsi1PK", "=", gsi1pk).
 			Where("gsi1SK", "BETWEEN", []any{startSK, endSK}), fetchLimit
+	}
+	// Clamp the high bound to the window end (DESC callers): a stale/foreign
+	// cursor sorting above endSK must not widen the BETWEEN window past endSK —
+	// the same min(end, cursor) clamp the other DESC cursor helpers use (L1,
+	// #1505).
+	if endSK != "" && cursor > endSK {
+		cursor = endSK
 	}
 	return db.WithContext(ctx).Model(model).
 		Index("gsi1").
