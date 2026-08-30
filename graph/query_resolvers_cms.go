@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/cms"
@@ -367,8 +368,18 @@ func (r *queryResolver) DraftPreview(ctx context.Context, id string, includeAcce
 		return nil, err
 	}
 
-	rendered, renderErr := cms.RenderDraftPreview(draft)
-	return r.convertCMSDraftPreview(ctx, draft, bindings, rendered, renderErr, cmsIncludeAccessUrls(includeAccessUrls))
+	includeAccess := cmsIncludeAccessUrls(includeAccessUrls)
+	// Access-URL minting stays strictly opt-in; the composed renderedHtml uses
+	// the same minted URLs as the structured editorialMedia surface.
+	var rendered cmsrender.RenderedArticleContent
+	var renderErr error
+	if includeAccess {
+		editorialMedia := r.convertCMSEditorialMediaBindingsWithAccess(ctx, bindings)
+		rendered, renderErr = cms.RenderDraftPreviewWithMedia(draft, cmsGraphRenderMediaFromUsages(editorialMedia))
+		return r.convertCMSDraftPreview(ctx, draft, bindings, rendered, renderErr, editorialMedia)
+	}
+	rendered, renderErr = cms.RenderDraftPreview(draft)
+	return r.convertCMSDraftPreview(ctx, draft, bindings, rendered, renderErr, r.convertCMSEditorialMediaBindings(ctx, bindings, false))
 }
 
 // DraftEditorialMediaAccess is the resolver for the draftEditorialMediaAccess field.

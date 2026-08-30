@@ -1,6 +1,8 @@
 package model
 
 import (
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+
 	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
@@ -84,6 +86,10 @@ type Article struct {
 	// RawContentFormat preserves the storage declaration for the canonical renderer.
 	// It is internal resolver state and is never serialized as a GraphQL field.
 	RawContentFormat string `json:"-"`
+	// RawEditorialMedia preserves the article's persisted editorial bindings for
+	// the canonical renderer's composition step. It is internal resolver state
+	// and is never serialized as a GraphQL field.
+	RawEditorialMedia []storageModels.ArticleEditorialMedia `json:"-"`
 
 	FeaturedImage   *Media      `json:"featuredImage"`
 	TableOfContents []*TOCEntry `json:"tableOfContents"`
