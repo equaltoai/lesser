@@ -31,7 +31,7 @@ func enrichArticleContent(article *models.Article) {
 
 	article.WordCount = cmsCountWords(content, format)
 	article.ReadingTimeMinutes = cmsEstimateReadingMinutes(article.WordCount)
-	article.TableOfContents = cmsExtractTOC(content, format)
+	article.TableOfContents = cmsExtractTOC(content, format, article.RenderMediaList())
 }
 
 func cmsEstimateReadingMinutes(wordCount int) int {
@@ -121,13 +121,13 @@ func cmsMarkdownFence(trimmedLine string) (string, bool) {
 	return "", false
 }
 
-func cmsExtractTOC(content string, format string) []models.TOCEntry {
+func cmsExtractTOC(content string, format string, media []cmsrender.ArticleMedia) []models.TOCEntry {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return []models.TOCEntry{}
 	}
 
-	if rendered, err := cmsrender.RenderArticleContent(content, format); err == nil {
+	if rendered, err := cmsrender.RenderArticleContentWithMedia(content, format, media); err == nil {
 		return cmsExtractTOCFromHTML(rendered.HTML)
 	}
 

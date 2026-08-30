@@ -108,12 +108,12 @@ func cmsDraftReviewVerdict(value string) *model.DraftReviewVerdict {
 }
 
 func (r *Resolver) convertCMSDraftPreview(
-	ctx context.Context,
+	_ context.Context,
 	draft *models.Draft,
-	bindings []cms.DraftEditorialMediaBinding,
+	_ []cms.DraftEditorialMediaBinding,
 	rendered cmsrender.RenderedArticleContent,
 	renderErr error,
-	includeAccessUrls bool,
+	editorialMedia []*model.EditorialMediaUsage,
 ) (*model.DraftPreview, error) {
 	if draft == nil {
 		return nil, nil
@@ -141,16 +141,9 @@ func (r *Resolver) convertCMSDraftPreview(
 		sourceFormat = cmsrender.FormatMarkdown
 	}
 
-	// URL minting is scoped: ordinary preview reads do not mint a short-lived
-	// S3 URL per bound asset; only callers that explicitly request
-	// includeAccessUrls (or use the exact-asset draftEditorialMediaAccess lane)
-	// pay the mint cost.
-	var editorialMedia []*model.EditorialMediaUsage
-	if includeAccessUrls {
-		editorialMedia = r.convertCMSEditorialMediaBindingsWithAccess(ctx, bindings)
-	} else {
-		editorialMedia = r.convertCMSEditorialMediaBindings(ctx, bindings, false)
-	}
+	// The caller passes the already-converted editorialMedia list so access-URL
+	// minting happens exactly once per request: the same minted URLs that feed
+	// the structured surface also compose the rendered HTML.
 	return &model.DraftPreview{
 		DraftID:        draft.ID,
 		Success:        renderErr == nil,
@@ -281,6 +274,54 @@ func (r *Resolver) convertCMSEditorialMediaBinding(
 		out.AccessExpiresAt = &expiresAt
 	}
 	return out
+}
+
+// cmsGraphRenderMediaFromUsages maps an access-bearing EditorialMediaUsage list
+// onto the canonical renderer's media descriptors so the preview's renderedHtml
+// composes the bound images. The usages carry the caller-authorized short-lived
+// access URLs minted exactly once by the opt-in conversion; usages without a
+// minted URL (missing, rejected, or non-opted-in reads) cannot compose and are
+// skipped — the structured editorialMedia surface still reports their state.
+func cmsGraphRenderMediaFromUsages(usages []*model.EditorialMediaUsage) []cmsrender.ArticleMedia {
+	if len(usages) == 0 {
+		return nil
+	}
+	out := make([]cmsrender.ArticleMedia, 0, len(usages))
+	for _, usage := range usages {
+		if usage == nil || usage.AccessURL == nil || strings.TrimSpace(*usage.AccessURL) == "" {
+			continue
+		}
+		position := 0
+		if usage.InlinePosition != nil && *usage.InlinePosition > 0 {
+			position = *usage.InlinePosition
+		}
+		out = append(out, cmsrender.ArticleMedia{
+			Role:           cmsrender.ArticleMediaRole(strings.ToLower(strings.TrimSpace(string(usage.Role)))),
+			InlinePosition: position,
+			URL:            strings.TrimSpace(*usage.AccessURL),
+			AltText:        cmsStringOrEmpty(usage.EffectiveAltText),
+			Caption:        cmsStringOrEmpty(usage.Caption),
+			CreditLine:     cmsStringOrEmpty(usage.CreditLine),
+			Width:          cmsIntOrZero(usage.Width),
+			Height:         cmsIntOrZero(usage.Height),
+			ContentType:    cmsStringOrEmpty(usage.MimeType),
+		})
+	}
+	return out
+}
+
+func cmsStringOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func cmsIntOrZero(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 // cmsEditorialLifecycleReason maps an internal asset's explicit editorial
@@ -492,9 +533,10 @@ func (r *Resolver) convertCMSArticle(ctx context.Context, article *models.Articl
 		Subtitle: cmsOptionalString(strings.TrimSpace(article.Subtitle)),
 		Excerpt:  cmsOptionalString(strings.TrimSpace(article.Excerpt)),
 
-		Content:          article.Content,
-		ContentFormat:    cmsContentFormatFromStorage(article.ContentFormat),
-		RawContentFormat: article.ContentFormat,
+		Content:           article.Content,
+		ContentFormat:     cmsContentFormatFromStorage(article.ContentFormat),
+		RawContentFormat:  article.ContentFormat,
+		RawEditorialMedia: append([]models.ArticleEditorialMedia(nil), article.EditorialMedia...),
 
 		FeaturedImage:   r.convertMediaToGraphQL(article.FeaturedImage),
 		TableOfContents: toc,
@@ -762,7 +804,18 @@ func (r *Resolver) buildCMSDraftReview(
 	if service == nil {
 		return nil, errors.New("draft service is not available")
 	}
-	rendered, renderErr := cms.RenderDraftPreview(draft)
+	mediaBindings := r.resolveCMSEditorialMediaBindings(ctx, draft)
+	editorialMedia := r.convertCMSEditorialMediaBindings(ctx, mediaBindings, false)
+	// Rendered-HTML media composition requires the short-lived access URLs,
+	// whose minting stays strictly opt-in: a default review never mints bearer
+	// URLs. When the caller opts in, the same minted URLs feed both the
+	// structured surface and the composed renderedHtml (single mint pass).
+	var previewMedia []cmsrender.ArticleMedia
+	if includeMediaAccess {
+		editorialMedia = r.convertCMSEditorialMediaBindingsWithAccess(ctx, mediaBindings)
+		previewMedia = cmsGraphRenderMediaFromUsages(editorialMedia)
+	}
+	rendered, renderErr := cms.RenderDraftPreviewWithMedia(draft, previewMedia)
 	var renderedHTML *string
 	renderErrors := make([]string, 0, 1)
 	if renderErr != nil {
@@ -784,11 +837,6 @@ func (r *Resolver) buildCMSDraftReview(
 		reviewGrant = r.convertCMSDraftReviewGrant(ctx, grant)
 	}
 	viewer := strings.TrimSpace(getUsernameFromContext(ctx))
-	mediaBindings := r.resolveCMSEditorialMediaBindings(ctx, draft)
-	editorialMedia := r.convertCMSEditorialMediaBindings(ctx, mediaBindings, false)
-	if includeMediaAccess {
-		editorialMedia = r.convertCMSEditorialMediaBindingsWithAccess(ctx, mediaBindings)
-	}
 	grants := make([]*model.DraftReviewGrant, 0, len(state.Grants))
 	activeReviewerIDs := make([]string, 0, len(state.Grants))
 	viewerIsOwner := strings.EqualFold(viewer, draft.AuthorID)

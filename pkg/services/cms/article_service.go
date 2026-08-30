@@ -228,7 +228,7 @@ func validateArticleRenderable(article *models.Article) error {
 		return errors.New("article is required")
 	}
 
-	rendered, err := cmsrender.RenderArticleContent(article.Content, article.ContentFormat)
+	rendered, err := cmsrender.RenderArticleContentWithMedia(article.Content, article.ContentFormat, article.RenderMediaList())
 	if err != nil {
 		return err
 	}
@@ -589,6 +589,7 @@ func cloneArticleForFederation(article *models.Article) *models.Article {
 	clone.BCC = append([]string(nil), article.BCC...)
 	clone.TableOfContents = append([]models.TOCEntry(nil), article.TableOfContents...)
 	clone.CategoryIDs = append([]string(nil), article.CategoryIDs...)
+	clone.EditorialMedia = append([]models.ArticleEditorialMedia(nil), article.EditorialMedia...)
 
 	if article.InReplyTo != nil {
 		inReplyTo := *article.InReplyTo

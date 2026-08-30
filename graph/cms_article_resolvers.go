@@ -6,11 +6,14 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/cmsrender"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 type articleResolver struct{ *Resolver }
 
-// RenderedHTML returns the canonical sanitized presentation form of the stored Article source.
+// RenderedHTML returns the canonical sanitized presentation form of the stored
+// Article source, composing the article's persisted editorial media through
+// the shared RenderArticleMedia mapping.
 func (r *articleResolver) RenderedHTML(ctx context.Context, obj *model.Article) (*string, error) {
 	if obj == nil {
 		return nil, nil
@@ -23,7 +26,7 @@ func (r *articleResolver) RenderedHTML(ctx context.Context, obj *model.Article) 
 	if strings.TrimSpace(format) == "" {
 		format = string(obj.ContentFormat)
 	}
-	rendered, err := cmsrender.RenderArticleContent(obj.Content, format)
+	rendered, err := cmsrender.RenderArticleContentWithMedia(obj.Content, format, storageModels.RenderArticleMedia(obj.RawEditorialMedia))
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/cmsrender"
 )
 
 // EditorialLifecycle is the editorial lifecycle of an internal asset, distinct
@@ -116,6 +118,73 @@ type DraftMediaUsage struct {
 	CreditLine     string             `json:"credit_line,omitempty"`
 	AltText        string             `json:"alt_text,omitempty"`
 	Focus          string             `json:"focus,omitempty"`
+}
+
+// ArticleEditorialMedia is the durable published form of one editorial binding:
+// the modeled usage plus the minted public serving composed into article HTML.
+// The publish transition writes it onto the Article from the digest-verified
+// minted bytes; a missing or unpublished asset never composes.
+type ArticleEditorialMedia struct {
+	MediaID        string             `json:"media_id"`
+	Role           EditorialMediaRole `json:"role"`
+	InlinePosition *int               `json:"inline_position,omitempty"`
+	Caption        string             `json:"caption,omitempty"`
+	CreditLine     string             `json:"credit_line,omitempty"`
+	AltText        string             `json:"alt_text,omitempty"`
+	Focus          string             `json:"focus,omitempty"`
+	// URL is the durable published serving minted at the publish transition.
+	URL         string `json:"url"`
+	ContentType string `json:"content_type,omitempty"`
+	ContentHash string `json:"content_hash,omitempty"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
+}
+
+// RenderMedia maps the published binding onto the canonical renderer's media
+// descriptor so every article read path composes the minted serving.
+func (m ArticleEditorialMedia) RenderMedia() cmsrender.ArticleMedia {
+	position := 0
+	if m.InlinePosition != nil && *m.InlinePosition > 0 {
+		position = *m.InlinePosition
+	}
+	return cmsrender.ArticleMedia{
+		Role:           cmsrender.ArticleMediaRole(strings.ToLower(strings.TrimSpace(string(m.Role)))),
+		InlinePosition: position,
+		URL:            strings.TrimSpace(m.URL),
+		AltText:        strings.TrimSpace(m.AltText),
+		Caption:        strings.TrimSpace(m.Caption),
+		CreditLine:     strings.TrimSpace(m.CreditLine),
+		Width:          m.Width,
+		Height:         m.Height,
+		ContentType:    strings.TrimSpace(m.ContentType),
+	}
+}
+
+// RenderArticleMedia maps persisted editorial bindings onto the canonical
+// renderer's media descriptors so every published article read path composes
+// the minted serving. It is the single home for the inline-only filter shared
+// by Article.RenderMediaList and the GraphQL article read. Only inline media
+// composes into published article HTML: the hero is the article's leading
+// image in draft previews only and otherwise lives on Article.featuredImage,
+// and social-card media never composes into the body. A binding without a
+// minted URL is skipped: the publish gate only mints digest-verified assets,
+// so an empty URL here is a fail-closed skip, never a placeholder.
+func RenderArticleMedia(media []ArticleEditorialMedia) []cmsrender.ArticleMedia {
+	if len(media) == 0 {
+		return nil
+	}
+	out := make([]cmsrender.ArticleMedia, 0, len(media))
+	for _, m := range media {
+		if m.Role != EditorialMediaRoleInline {
+			continue
+		}
+		render := m.RenderMedia()
+		if strings.TrimSpace(render.URL) == "" {
+			continue
+		}
+		out = append(out, render)
+	}
+	return out
 }
 
 // Normalize validates and canonicalizes a provenance record while binding it

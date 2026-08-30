@@ -1,6 +1,6 @@
 # Editorial media model
 
-Status: M2 contract for issues #1444 (M1) and #1445 (M2)
+Status: M2 contract for issues #1444 (M1) and #1445 (M2); M3 composition for issue #1512/#1513.
 
 This contract adds first-class media to unpublished CMS drafts. It builds on
 M0's exact-byte S3 upload and canonical `sha256:<hex>` digest. M1 models the
@@ -135,7 +135,9 @@ preview preserves association order and returns:
 - a conspicuous state: `MISSING`, `PROCESSING`, `READY`, or `REJECTED`.
 
 `HERO` is the preview representation of the future featured image. `INLINE`
-positions remain structured instead of being synthesized into raw draft source.
+positions remain structured on the draft (M1/M2 contract) and compose into the
+preview's `renderedHtml` from M3 on, using caller-authorized short-lived access
+URLs when the read opts into URL minting.
 
 ## M2: byte-bound revision integrity
 
@@ -182,11 +184,80 @@ unsigned CloudFront origin can serve them, records `publishedS3Key`,
 verifies the minted digest equals the digest bound into the approved revision
 hash — the exact bytes hashed at review are the bytes served at publish. The
 published article's hero binding flows into `Article.featuredImage` (a durable
-serving snapshot) and the social card into `Article.ogImage`; inline positions
-remain structured while their assets are durably served at the media-record
-level. Published article history cannot silently change from an external URL
-swap because the URLs are minted once from the approved bytes. Pre-publish,
-internal assets still expose no unsigned URL through the application contract.
+serving snapshot) and the social card into `Article.ogImage`. Published article
+history cannot silently change from an external URL swap because the URLs are
+minted once from the approved bytes. Pre-publish, internal assets still expose
+no unsigned URL through the application contract.
+
+### M3: composition and Article persistence
+
+M3 (issue #1512/#1513) composes the bound media into rendered article HTML and
+persists the bindings on the Article so the images survive the draft deletion
+that follows publish.
+
+**Canonical renderer composition.** `pkg/cmsrender` composes media descriptors
+(URL, alt, caption, credit, dimensions, role, inline position) into the
+sanitized article body:
+
+- INLINE usages render as `<figure><img ...></figure>` (alt from the binding's
+  `altText`, optional caption and reader-facing credit in the `figcaption`) at
+  their bound `inlinePosition` — a zero-based insertion point before the Nth
+  top-level block of the rendered article; positions at or past the block count
+  append at the end.
+- HERO composes as the article's leading image **in draft previews only**;
+  published article HTML never duplicates the hero (it lives on
+  `Article.featuredImage`).
+- SOCIAL_CARD media never composes into the body.
+- The renderer stays pure: it accepts descriptors and never resolves, mints, or
+  authorizes URLs. All composed HTML passes through the canonical sanitizer, so
+  only minted published URLs (or caller-authorized short-lived preview URLs)
+  survive; width/height are emitted within the sanitizer's dimension range and
+  alt/caption/credit are inserted as text.
+
+**Preview composition.** `article_draft_preview` / `draftReview` compose the
+draft's bound media into `renderedHtml` using the caller-authorized short-lived
+access lane (the same `draftEditorialMediaAccess`-style URLs). URL minting stays
+strictly opt-in (`includeAccessUrls` / `includeMediaAccess`): a default read
+never mints bearer URLs and renders content only; an opted-in read mints each
+bound asset exactly once and the same URLs feed both the structured
+`editorialMedia` surface and the composed `renderedHtml`. Missing or
+non-internal assets never compose (the structured surface still reports their
+conspicuous state).
+
+**Publish persistence.** `applyPublishedDraftMedia` additionally writes the full
+bound set — hero, inline, social card — onto the Article as the additive
+`Article.editorialMedia` attribute, in canonical order, each carrying its
+minted public serving (URL, content type, content hash, dimensions) plus the
+usage's caption, credit, alt, focus, and inline position. Because the draft is
+deleted after publish, the article record is the surviving source for composed
+media; a follow-up publish replaces the persisted set (never merges) and a
+revision with no media clears it. A binding without a mint is a fail-closed
+skip — the publish gate requires every required asset to serve the exact
+approved bytes, so an unminted binding cannot occur on a committed article.
+
+**Read paths compose.** Every `RenderArticleContent` read path composes from
+the article's persisted media:
+
+- GraphQL `Article.renderedHtml` composes inline media into the canonical
+  sanitized HTML.
+- ActivityPub article objects (federation Create/Update and object fetch) carry
+  the composed content and attach the minted servings as `Document`
+  attachments. The REST/Mastodon status representation would compose `content`
+  + `media_attachments` only where a status is built from an AP article object;
+  lesser exposes no such REST article route today, so wiring one is a
+  parent-milestone follow-up decision rather than a delivered surface.
+- The CMS validation, enrichment/TOC, and object-repository conversions render
+  through the same composition step.
+
+**Schema impact.** Additive TableTheory attribute only: `Article.editorialMedia`
+(a list of the published binding records). No PK, SK, GSI, projection, version,
+TTL, table, or stream-routing changes; no migration or backfill is required.
+Contract impact is additive and backward-compatible: GraphQL `renderedHtml`
+gains composed `<figure>` elements and AP Article objects gain `attachment`
+Documents. A REST/Mastodon status built from an AP article object would also
+compose `content` + `media_attachments`, but no such REST article route exists
+in lesser today — wiring one is a parent-milestone follow-up decision. Articles
+without bound media render exactly as before.
 
 ### Bounded grant expiry
 
@@ -200,13 +271,17 @@ rows cannot authorize indefinitely.
 
 Additive TableTheory attributes only: `Media.editorialState`,
 `Media.supersededByMediaID`, `Media.publishedS3Key`, `Media.publishedURL`,
-`Media.publishedAt`, and `DraftReviewGrant.expiresAt`. No PK, SK, GSI,
-projection, version, TTL, table, or stream-routing changes; no migration or
-backfill is required. GraphQL changes are additive (new lifecycle enum, state
-values, `publishedUrl`/`publishedAt`/`expiresAt` fields, and the
-`updateEditorialMediaLifecycle` mutation). Mastodon REST, OpenAPI, ActivityPub
-actor and object shapes, JSON-LD, WebFinger, federation signing, and streaming
-contracts are unchanged.
+`Media.publishedAt`, `DraftReviewGrant.expiresAt`, and (M3)
+`Article.editorialMedia`. No PK, SK, GSI, projection, version, TTL, table, or
+stream-routing changes; no migration or backfill is required. GraphQL changes
+are additive (new lifecycle enum, state values, `publishedUrl`/`publishedAt`/
+`expiresAt` fields, and the `updateEditorialMediaLifecycle` mutation).
+Mastodon REST, OpenAPI, ActivityPub actor and object shapes, JSON-LD, WebFinger,
+federation signing, and streaming contracts are unchanged; M3's composed
+`renderedHtml` and AP `attachment` Documents are additive and backward-
+compatible. REST `media_attachments` would follow only where a status is built
+from an AP article object, which no lesser REST route does today (a
+parent-milestone follow-up decision).
 
 ## GraphQL exercise
 
@@ -256,6 +331,7 @@ This is an additive TableTheory model change:
 
 - existing `Media` rows gain optional `visibility` and `provenance` attributes;
 - existing `Draft` rows gain optional `editorialMedia`;
+- existing `Article` rows gain optional `editorialMedia` (M3);
 - no PK, SK, GSI, projection, version, TTL, table, or stream routing changes;
 - missing visibility on historical media continues to mean the existing public
   posture, so no migration or backfill is required.
@@ -263,7 +339,9 @@ This is an additive TableTheory model change:
 The GraphQL changes are additive. Mastodon REST, OpenAPI, ActivityPub actor and
 object shapes, JSON-LD, WebFinger, federation signing, and streaming contracts
 are unchanged. lesser-body will consume this draft association in M3 rather
-than reimplementing authorization or provenance storage.
+than reimplementing authorization or provenance storage; for composed preview
+`renderedHtml`, the MCP preview read should request `includeAccessUrls: true`
+so the caller-authorized short-lived media URLs are minted for composition.
 
 AppTheory v3.3.0 and TableTheory v3.0.6 remain pinned. The design uses their
 existing Lambda/KMS roles and additive TableTheory attributes; no framework
