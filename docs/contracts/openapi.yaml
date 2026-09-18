@@ -10150,6 +10150,103 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - write
+    /api/v1/accounts/avatar:
+        post:
+            operationId: post_api_v1_accounts_avatar
+            tags:
+                - accounts
+            security:
+                - bearerAuth: []
+            requestBody:
+                required: true
+                content:
+                    multipart/form-data:
+                        schema:
+                            type: object
+                            properties:
+                                avatar:
+                                    type: string
+                                    format: binary
+                                file:
+                                    type: string
+                                    format: binary
+                            required:
+                                - file
+                            additionalProperties: false
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Account'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "413":
+                    description: Avatar upload exceeds the 512 KiB avatar size cap
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleUploadAvatarLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+        delete:
+            operationId: delete_api_v1_accounts_avatar
+            tags:
+                - accounts
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Account'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleClearAvatarLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/accounts/lookup:
         get:
             operationId: get_api_v1_accounts_lookup
@@ -14523,6 +14620,64 @@ paths:
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleFinishWebAuthnSignupLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/avatars/{id}:
+        get:
+            operationId: get_api_v1_avatars_by_id
+            tags:
+                - avatars
+            security: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Stored avatar bytes
+                    content:
+                        image/gif:
+                            schema:
+                                type: string
+                                format: binary
+                        image/jpeg:
+                            schema:
+                                type: string
+                                format: binary
+                        image/png:
+                            schema:
+                                type: string
+                                format: binary
+                        image/webp:
+                            schema:
+                                type: string
+                                format: binary
+                    headers:
+                        Cache-Control:
+                            description: Immutable-cache directive; the object key embeds a fresh id per upload.
+                            schema:
+                                type: string
+                        Content-Length:
+                            description: Stored object size in bytes.
+                            schema:
+                                type: integer
+                                format: int64
+                        X-Content-Type-Options:
+                            description: Always nosniff; the response never redirects or proxies a caller-supplied URL.
+                            schema:
+                                type: string
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
+            x-lesser-handler: HandleGetAvatarLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go

@@ -1,4 +1,5 @@
 route	secure_posture	secure_scopes	pre_classification	legacy_route_auth
+DELETE /api/v1/accounts/avatar	authenticated	write	auth_required	requireWrite
 DELETE /api/v1/admin/custom_emojis/{shortcode}	authenticated		auth_required	requireAuth
 DELETE /api/v1/admin/domain_allows/{id}	authenticated		auth_required	requireAuth
 DELETE /api/v1/admin/domain_blocks/{id}	authenticated		auth_required	requireAuth
@@ -73,6 +74,7 @@ GET /api/v1/agents/{username}/runtime-sessions	authenticated		auth_required	requ
 GET /api/v1/agents/{username}/share	authenticated		auth_required	requireManageAgents
 GET /api/v1/announcements	public		anonymous	none
 GET /api/v1/auth/webauthn/credentials	authenticated		auth_required	requireAuth
+GET /api/v1/avatars/{id}	public		anonymous	none
 GET /api/v1/blocks	authenticated		auth_required	requireBlockRead
 GET /api/v1/bookmarks	authenticated	read	auth_required	requireRead
 GET /api/v1/conversations	authenticated	read	auth_required	requireRead
@@ -181,6 +183,7 @@ PATCH /api/v1/accounts/update_credentials	authenticated	write	auth_required	requ
 PATCH /api/v1/agents/{username}	authenticated		auth_required	requireManageAgents
 PATCH /api/v1/preferences	authenticated	write	auth_required	requireWrite
 POST /api/v1/accounts	public		anonymous	none
+POST /api/v1/accounts/avatar	authenticated	write	auth_required	requireWrite
 POST /api/v1/accounts/{id}/block	authenticated		auth_required	requireBlockWrite
 POST /api/v1/accounts/{id}/follow	authenticated		auth_required	requireFollowWrite
 POST /api/v1/accounts/{id}/mute	authenticated	write	auth_required	requireWrite

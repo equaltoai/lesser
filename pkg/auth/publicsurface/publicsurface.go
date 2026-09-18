@@ -356,6 +356,12 @@ var publicRules = []PublicRule{
 		Description: "public community-note reads",
 	},
 	{
+		Methods:     []string{http.MethodGet, http.MethodHead},
+		Path:        "/api/v1/avatars/",
+		Match:       RuleMatchSingleSegment,
+		Description: "stored avatar object bytes; handler serves only lesser-stored avatar objects keyed by validated opaque id",
+	},
+	{
 		Methods:     []string{http.MethodPost},
 		Path:        "/register",
 		Match:       RuleMatchExact,

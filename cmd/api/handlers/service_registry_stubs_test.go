@@ -103,6 +103,7 @@ func (s *QuotesServiceStub) UpdateQuotePermissions(ctx context.Context, permissi
 }
 
 type AccountsServiceStub struct {
+	ClearAvatarFunc             func(ctx context.Context, cmd *accounts.ClearAvatarCommand) (*accounts.ClearAvatarResult, error)
 	CreateAuthorizationCodeFunc func(ctx context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error)
 	GetAccountFunc              func(ctx context.Context, username string) (*storage.Account, error)
 	GetAccountPinsFunc          func(ctx context.Context, query *accounts.GetAccountPinsQuery) (*accounts.AccountPinsResult, error)
@@ -119,6 +120,7 @@ type AccountsServiceStub struct {
 	RemoveFollowerFunc          func(ctx context.Context, cmd *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error)
 	SaveMarkerFunc              func(ctx context.Context, cmd *accounts.SaveMarkerCommand) (*accounts.SaveMarkerResult, error)
 	SetAccountNoteFunc          func(ctx context.Context, cmd *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error)
+	SetAvatarFunc               func(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.AccountResult, error)
 	StoreOAuthStateFunc         func(ctx context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error)
 	UnpinAccountFunc            func(ctx context.Context, cmd *accounts.UnpinAccountCommand) (*accounts.RelationshipResult, error)
 	UpdatePreferencesFunc       func(ctx context.Context, cmd *accounts.UpdatePreferencesCommand) (*accounts.PreferencesResult, error)
@@ -126,6 +128,13 @@ type AccountsServiceStub struct {
 }
 
 var _ AccountsService = (*AccountsServiceStub)(nil)
+
+func (s *AccountsServiceStub) ClearAvatar(ctx context.Context, cmd *accounts.ClearAvatarCommand) (*accounts.ClearAvatarResult, error) {
+	if s != nil && s.ClearAvatarFunc != nil {
+		return s.ClearAvatarFunc(ctx, cmd)
+	}
+	return nil, missingStub("AccountsService.ClearAvatar")
+}
 
 func (s *AccountsServiceStub) CreateAuthorizationCode(ctx context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error) {
 	if s != nil && s.CreateAuthorizationCodeFunc != nil {
@@ -237,6 +246,13 @@ func (s *AccountsServiceStub) SetAccountNote(ctx context.Context, cmd *accounts.
 		return s.SetAccountNoteFunc(ctx, cmd)
 	}
 	return nil, missingStub("AccountsService.SetAccountNote")
+}
+
+func (s *AccountsServiceStub) SetAvatar(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.AccountResult, error) {
+	if s != nil && s.SetAvatarFunc != nil {
+		return s.SetAvatarFunc(ctx, cmd)
+	}
+	return nil, missingStub("AccountsService.SetAvatar")
 }
 
 func (s *AccountsServiceStub) StoreOAuthState(ctx context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error) {
@@ -464,18 +480,42 @@ func (s *ListsServiceStub) UpdateList(ctx context.Context, cmd *lists.UpdateList
 }
 
 type MediaServiceStub struct {
-	GetMediaFunc    func(ctx context.Context, query *media.GetMediaQuery) (*storagemodels.Media, error)
-	UpdateMediaFunc func(ctx context.Context, cmd *media.UpdateMediaCommand) (*media.UpdateResult, error)
-	UploadMediaFunc func(ctx context.Context, cmd *media.UploadMediaCommand) (*media.Result, error)
+	DeleteAvatarFunc func(ctx context.Context, id string) error
+	GetAvatarFunc    func(ctx context.Context, id string) ([]byte, string, error)
+	GetMediaFunc     func(ctx context.Context, query *media.GetMediaQuery) (*storagemodels.Media, error)
+	StoreAvatarFunc  func(ctx context.Context, cmd *media.StoreAvatarCommand) (*media.StoredAvatar, error)
+	UpdateMediaFunc  func(ctx context.Context, cmd *media.UpdateMediaCommand) (*media.UpdateResult, error)
+	UploadMediaFunc  func(ctx context.Context, cmd *media.UploadMediaCommand) (*media.Result, error)
 }
 
 var _ MediaService = (*MediaServiceStub)(nil)
+
+func (s *MediaServiceStub) DeleteAvatar(ctx context.Context, id string) error {
+	if s != nil && s.DeleteAvatarFunc != nil {
+		return s.DeleteAvatarFunc(ctx, id)
+	}
+	return missingStub("MediaService.DeleteAvatar")
+}
+
+func (s *MediaServiceStub) GetAvatar(ctx context.Context, id string) ([]byte, string, error) {
+	if s != nil && s.GetAvatarFunc != nil {
+		return s.GetAvatarFunc(ctx, id)
+	}
+	return nil, "", missingStub("MediaService.GetAvatar")
+}
 
 func (s *MediaServiceStub) GetMedia(ctx context.Context, query *media.GetMediaQuery) (*storagemodels.Media, error) {
 	if s != nil && s.GetMediaFunc != nil {
 		return s.GetMediaFunc(ctx, query)
 	}
 	return nil, missingStub("MediaService.GetMedia")
+}
+
+func (s *MediaServiceStub) StoreAvatar(ctx context.Context, cmd *media.StoreAvatarCommand) (*media.StoredAvatar, error) {
+	if s != nil && s.StoreAvatarFunc != nil {
+		return s.StoreAvatarFunc(ctx, cmd)
+	}
+	return nil, missingStub("MediaService.StoreAvatar")
 }
 
 func (s *MediaServiceStub) UpdateMedia(ctx context.Context, cmd *media.UpdateMediaCommand) (*media.UpdateResult, error) {
