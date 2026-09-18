@@ -54,6 +54,51 @@ func TestRound12MutationResolvers_UpdateProfileRejectsAvatarURL(t *testing.T) {
 	require.ErrorContains(t, err, "cannot be set by URL")
 }
 
+// TestRound12MutationResolvers_UpdateProfileOmittingAvatarKeepsExistingAvatar
+// guards a blocker: the resolver coalesced the account's stored avatar into the
+// service command for every request, and the accounts-service gate rejects any
+// non-empty avatar. Because the command carries no avatar when the input omits
+// it, an account that already has an avatar can update its profile, and the
+// stored avatar is left exactly as it was.
+func TestRound12MutationResolvers_UpdateProfileOmittingAvatarKeepsExistingAvatar(t *testing.T) {
+	resolver, graphStorage, _, _, _ := newRound12GraphResolverWithMocks(t)
+
+	avatarURL := "https://localhost/api/v1/avatars/6f6b0d1e-2a91-4c34-9d2f-8a1b7c5e0d43"
+	graphStorage.SeedAccountUser(&storage.User{
+		Username: "alice",
+		Role:     adminRoleUser,
+		Approved: true,
+		Version:  1,
+		Avatar:   avatarURL,
+	})
+
+	mutations := &mutationResolver{resolver}
+	ctx := round12AuthContext("alice")
+
+	displayName := "Alice Example"
+	actor, err := mutations.UpdateProfile(ctx, model.UpdateProfileInput{DisplayName: &displayName})
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.NotNil(t, actor.Icon)
+	require.Equal(t, avatarURL, actor.Icon.URL)
+
+	stored, err := resolver.Registry.Accounts().GetAccount(ctx, "alice")
+	require.NoError(t, err)
+	require.Equal(t, displayName, stored.User.DisplayName)
+	require.Equal(t, avatarURL, stored.User.Avatar)
+
+	// The gate is unchanged for callers that do supply an avatar: the value is
+	// still rejected, and the stored avatar survives the rejected request.
+	rejected := "https://cdn.local/avatar.png"
+	_, err = mutations.UpdateProfile(ctx, model.UpdateProfileInput{Avatar: &rejected})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot be set by URL")
+
+	stored, err = resolver.Registry.Accounts().GetAccount(ctx, "alice")
+	require.NoError(t, err)
+	require.Equal(t, avatarURL, stored.User.Avatar)
+}
+
 func TestRound12ProfileHelpers(t *testing.T) {
 	t.Parallel()
 
@@ -75,12 +120,10 @@ func TestRound12ProfileHelpers(t *testing.T) {
 			BaseObject: activitypub.BaseObject{
 				Type: string(activitypub.ServiceType),
 			},
-			Icon:  &activitypub.Image{URL: "https://cdn.local/actor_icon.png"},
 			Image: &activitypub.Image{URL: "https://cdn.local/actor_header.png"},
 		},
 	}
 
-	require.Equal(t, "https://cdn.local/actor_icon.png", currentAvatar(acc))
 	require.Equal(t, "https://cdn.local/actor_header.png", currentHeader(acc))
 	require.True(t, isAccountBot(acc))
 	require.True(t, isAccountNoIndex(acc))
