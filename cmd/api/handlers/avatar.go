@@ -65,6 +65,11 @@ func (h *Handler) HandleUploadAvatarLift(ctx *apptheory.Context) (*apptheory.Res
 		return common.RespondFailedToUpdate(ctx, "profile")
 	}
 
+	// Best-effort cleanup of the object this account previously recorded. The id
+	// comes from the authenticated principal's own row, so a re-upload can only
+	// ever delete the caller's own previous object.
+	h.deleteOrphanedAvatar(ctx, result.PreviousAvatarID)
+
 	mastodonAccount, err := h.mastodonAccountFromStorageAccountWithStatusCount(ctx.Context(), result.Account)
 	if err != nil {
 		h.logger.Error("failed to transform avatar response", zap.Error(err))
@@ -92,12 +97,11 @@ func (h *Handler) HandleClearAvatarLift(ctx *apptheory.Context) (*apptheory.Resp
 		return common.RespondFailedToDelete(ctx, "avatar")
 	}
 
-	// Best-effort cleanup of the now-orphaned stored object. The id is derived
-	// only from a URL whose path is this instance's avatar serve path, so an
-	// unrelated profile avatar URL can never trigger a delete.
-	if id, ok := media.AvatarIDFromURL(result.PreviousAvatarURL); ok {
-		h.deleteOrphanedAvatar(ctx, id)
-	}
+	// Best-effort cleanup of the now-orphaned stored object. The id is the one the
+	// authenticated principal's own row recorded when the avatar was set, so a
+	// clear can never address an object belonging to another account. Rows with
+	// no recorded id delete nothing.
+	h.deleteOrphanedAvatar(ctx, result.PreviousAvatarID)
 
 	mastodonAccount, err := h.mastodonAccountFromStorageAccountWithStatusCount(ctx.Context(), result.Account)
 	if err != nil {
@@ -116,7 +120,13 @@ func (h *Handler) HandleGetAvatarLift(ctx *apptheory.Context) (*apptheory.Respon
 	data, contentType, err := h.registry.Media().GetAvatar(ctx.Context(), id)
 	if err != nil {
 		switch {
-		case errors.Is(err, media.ErrAvatarInvalidID), errors.Is(err, media.ErrAvatarNotFound):
+		// A stored object that is missing, or whose stored state is not a
+		// servable avatar (drifted content type), is reported as absent. Serving
+		// it is impossible, so the response is the same 404 body as a missing id
+		// rather than a 500.
+		case errors.Is(err, media.ErrAvatarInvalidID),
+			errors.Is(err, media.ErrAvatarNotFound),
+			errors.Is(err, media.ErrAvatarContentTypeNotAllowed):
 			return common.RespondNotFound(ctx, "avatar")
 		case errors.Is(err, media.ErrAvatarStoreUnavailable):
 			h.logger.Error("avatar store unavailable", zap.Error(err))

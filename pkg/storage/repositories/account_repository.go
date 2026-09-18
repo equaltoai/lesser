@@ -68,6 +68,7 @@ type userCoreProjection struct {
 	DisplayName        string               `theorydb:"attr:displayName"`
 	Note               string               `theorydb:"attr:note"`
 	Avatar             string               `theorydb:"attr:avatar"`
+	AvatarID           string               `theorydb:"attr:avatarId"`
 	Header             string               `theorydb:"attr:header"`
 	URL                string               `theorydb:"attr:url"`
 	Locked             bool                 `theorydb:"attr:locked"`
@@ -1169,6 +1170,7 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 		DisplayName:        model.DisplayName,
 		Note:               model.Note,
 		Avatar:             model.Avatar,
+		AvatarID:           model.AvatarID,
 		Header:             model.Header,
 		URL:                model.URL,
 		Locked:             model.Locked,
@@ -1215,6 +1217,7 @@ func (r *AccountRepository) userCoreProjectionToStorageUser(projection *userCore
 		DisplayName:        projection.DisplayName,
 		Note:               projection.Note,
 		Avatar:             projection.Avatar,
+		AvatarID:           projection.AvatarID,
 		Header:             projection.Header,
 		URL:                projection.URL,
 		Locked:             projection.Locked,
@@ -1932,6 +1935,7 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 	userModel.DisplayName = account.User.DisplayName
 	userModel.Note = account.User.Note
 	userModel.Avatar = account.User.Avatar
+	userModel.AvatarID = account.User.AvatarID
 	userModel.Header = account.User.Header
 	userModel.URL = strings.TrimSpace(account.User.URL)
 	userModel.Locked = account.User.Locked
@@ -1982,6 +1986,7 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 	updateBuilder.Set("DisplayName", userModel.DisplayName)
 	updateBuilder.Set("Note", userModel.Note)
 	updateBuilder.Set("Avatar", userModel.Avatar)
+	updateBuilder.Set("AvatarID", userModel.AvatarID)
 	updateBuilder.Set("Header", userModel.Header)
 	updateBuilder.Set("URL", userModel.URL)
 	updateBuilder.Set("Locked", userModel.Locked)
@@ -2096,6 +2101,7 @@ func (r *AccountRepository) ClearAccountAvatar(ctx context.Context, username str
 
 	resolvedUsername := strings.TrimSpace(account.User.Username)
 	account.User.Avatar = ""
+	account.User.AvatarID = ""
 	account.Actor = nil
 	if err := r.UpdateAccount(ctx, account); err != nil {
 		return err

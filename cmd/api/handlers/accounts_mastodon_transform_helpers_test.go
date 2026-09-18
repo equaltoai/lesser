@@ -5,6 +5,7 @@ import (
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
@@ -60,7 +61,7 @@ func TestAccounts_MastodonTransformHelpers(t *testing.T) {
 		require.Len(t, out.Fields, 2)
 	})
 
-	t.Run("applyMastodonProfile fills defaults and sets bot for agents", func(t *testing.T) {
+	t.Run("applyMastodonProfile reports absent values as absent and sets bot for agents", func(t *testing.T) {
 		out := apimodels.Account{}
 		user := &storage.User{
 			Username:     "bob",
@@ -74,19 +75,21 @@ func TestAccounts_MastodonTransformHelpers(t *testing.T) {
 			IsAgent:      true,
 		}
 
-		applyMastodonProfile(nil, nil, "https://example.com", "bob")
+		applyMastodonProfile(nil, nil, nil, "https://example.com", "bob")
 
-		applyMastodonProfile(&out, user, "https://example.com", "bob")
+		applyMastodonProfile(&out, user, nil, "https://example.com", "bob")
 		require.Equal(t, "bob", out.DisplayName)
 		require.Equal(t, true, out.Locked)
 		require.Equal(t, true, out.Discoverable)
 		require.Equal(t, true, out.Bot)
-		require.NotEmpty(t, out.CreatedAt)
+		// The read path must not invent values the stored record does not carry:
+		// no creation timestamp, no placeholder avatar or header image.
+		require.Empty(t, out.CreatedAt)
 		require.Equal(t, "https://example.com/@bob", out.URL)
-		require.Equal(t, "https://example.com/avatars/original/missing.png", out.Avatar)
-		require.Equal(t, out.Avatar, out.AvatarStatic)
-		require.Equal(t, "https://example.com/headers/original/missing.png", out.Header)
-		require.Equal(t, out.Header, out.HeaderStatic)
+		require.Empty(t, out.Avatar)
+		require.Empty(t, out.AvatarStatic)
+		require.Empty(t, out.Header)
+		require.Empty(t, out.HeaderStatic)
 	})
 
 	t.Run("applyMastodonProfile preserves explicit user fields", func(t *testing.T) {
@@ -105,7 +108,7 @@ func TestAccounts_MastodonTransformHelpers(t *testing.T) {
 			IsAgent:      false,
 		}
 
-		applyMastodonProfile(&out, user, "https://example.com", "bob")
+		applyMastodonProfile(&out, user, nil, "https://example.com", "bob")
 		require.Equal(t, "Bobby", out.DisplayName)
 		require.Equal(t, "hello", out.Note)
 		require.Equal(t, createdAt.UTC().Format(time.RFC3339), out.CreatedAt)
@@ -115,5 +118,31 @@ func TestAccounts_MastodonTransformHelpers(t *testing.T) {
 		require.Equal(t, "https://cdn.example/header.png", out.Header)
 		require.Equal(t, out.Header, out.HeaderStatic)
 		require.False(t, out.Bot)
+	})
+
+	t.Run("applyMastodonProfile falls back to the actor icon, never a placeholder", func(t *testing.T) {
+		// The record carries no avatar, so the actor icon is the last honest
+		// source. A profile with neither reports an empty avatar rather than the
+		// placeholder URL the actor projection synthesizes.
+		out := apimodels.Account{}
+		user := &storage.User{Username: "bob"}
+
+		applyMastodonProfile(&out, user, &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/users/bob"},
+			Icon:       &activitypub.Image{URL: "https://cdn.example/actor-icon.png"},
+		}, "https://example.com", "bob")
+		require.Equal(t, "https://cdn.example/actor-icon.png", out.Avatar)
+		require.Equal(t, out.Avatar, out.AvatarStatic)
+		require.Empty(t, out.Header)
+		require.Empty(t, out.HeaderStatic)
+
+		bare := apimodels.Account{}
+		applyMastodonProfile(&bare, user, &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/users/bob"},
+		}, "https://example.com", "bob")
+		require.Empty(t, bare.Avatar)
+		require.Empty(t, bare.AvatarStatic)
+		require.Empty(t, bare.Header)
+		require.Empty(t, bare.HeaderStatic)
 	})
 }

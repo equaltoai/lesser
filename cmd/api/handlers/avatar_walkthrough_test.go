@@ -87,17 +87,20 @@ func avatarTestPNGBytes() []byte {
 	return append([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}, []byte("avatar-walkthrough-payload")...)
 }
 
-// avatarAccountsStore mirrors the account-side dual-write contract of
-// accounts.Service: SetAvatar writes user.Avatar and Actor.Icon together from
-// the served /api/v1/avatars/<id> URL, and ClearAvatar empties both. The
-// handler test harness's in-memory DynamoDB fake does not apply UpdateBuilder
-// writes, so a real accounts.Service cannot observe its own writes there; the
-// real service dual-write is proven by pkg/services/accounts/avatar_test.go.
+// avatarAccountsStore mirrors the account-side ownership contract of
+// accounts.Service: SetAvatar records the minted avatar id on the account's own
+// row alongside user.Avatar and Actor.Icon, and ClearAvatar reports only that
+// recorded id, so a clear can address only the object the caller's own row
+// records. The handler test harness's in-memory DynamoDB fake does not apply
+// UpdateBuilder writes, so a real accounts.Service cannot observe its own writes
+// there; the real service dual-write is proven by
+// pkg/services/accounts/avatar_test.go.
 type avatarAccountsStore struct {
 	*AccountsServiceStub
-	domain string
-	user   *storage.User
-	actor  *activitypub.Actor
+	domain            string
+	user              *storage.User
+	actor             *activitypub.Actor
+	updateProfileHits int
 }
 
 func newAvatarAccountsStore(t *testing.T, state *round10QueryState, domain string) *avatarAccountsStore {
@@ -124,6 +127,11 @@ func newAvatarAccountsStore(t *testing.T, state *round10QueryState, domain strin
 		},
 		SetAvatarFunc:   store.setAvatar,
 		ClearAvatarFunc: store.clearAvatar,
+		UpdateProfileFunc: func(_ context.Context, cmd *accounts.UpdateProfileCommand) (*accounts.AccountResult, error) {
+			store.updateProfileHits++
+			store.user.DisplayName = cmd.DisplayName
+			return &accounts.AccountResult{Account: store.account()}, nil
+		},
 	}
 	return store
 }
@@ -136,30 +144,37 @@ func (s *avatarAccountsStore) servedURL(avatarID string) string {
 	return "https://" + s.domain + "/api/v1/avatars/" + avatarID
 }
 
-func (s *avatarAccountsStore) setAvatar(_ context.Context, cmd *accounts.SetAvatarCommand) (*accounts.AccountResult, error) {
+func (s *avatarAccountsStore) setAvatar(_ context.Context, cmd *accounts.SetAvatarCommand) (*accounts.SetAvatarResult, error) {
 	if !media.IsValidAvatarID(cmd.AvatarID) {
 		return nil, accounts.ErrInvalidAvatarID
 	}
 
+	previous := ""
+	if s.user != nil && s.user.AvatarID != cmd.AvatarID && media.IsValidAvatarID(s.user.AvatarID) {
+		previous = s.user.AvatarID
+	}
+
 	served := s.servedURL(cmd.AvatarID)
 	s.user.Avatar = served
+	s.user.AvatarID = cmd.AvatarID
 	if s.actor != nil {
 		s.actor.Icon = &activitypub.Image{URL: served, MediaType: strings.TrimSpace(cmd.ContentType)}
 	}
-	return &accounts.AccountResult{Account: s.account()}, nil
+	return &accounts.SetAvatarResult{Account: s.account(), PreviousAvatarID: previous}, nil
 }
 
 func (s *avatarAccountsStore) clearAvatar(_ context.Context, _ *accounts.ClearAvatarCommand) (*accounts.ClearAvatarResult, error) {
 	previous := ""
-	if s.user != nil {
-		previous = strings.TrimSpace(s.user.Avatar)
+	if s.user != nil && media.IsValidAvatarID(s.user.AvatarID) {
+		previous = s.user.AvatarID
 	}
 
 	s.user.Avatar = ""
+	s.user.AvatarID = ""
 	if s.actor != nil {
 		s.actor.Icon = nil
 	}
-	return &accounts.ClearAvatarResult{Account: s.account(), PreviousAvatarURL: previous}, nil
+	return &accounts.ClearAvatarResult{Account: s.account(), PreviousAvatarID: previous}, nil
 }
 
 func newAvatarWalkthroughHandler(t *testing.T) (*Handler, *avatarTestS3Store, *avatarAccountsStore) {
@@ -252,12 +267,19 @@ func avatarUploadHeaders(token string) map[string]string {
 func requireAccountAvatar(t *testing.T, resp *apptheory.Response) string {
 	t.Helper()
 
+	avatar := accountAvatarFrom(t, resp)
+	require.NotEmpty(t, avatar)
+	return avatar
+}
+
+func accountAvatarFrom(t *testing.T, resp *apptheory.Response) string {
+	t.Helper()
+
 	var body struct {
 		Avatar       string `json:"avatar"`
 		AvatarStatic string `json:"avatar_static"`
 	}
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
-	require.NotEmpty(t, body.Avatar)
 	assert.Equal(t, body.Avatar, body.AvatarStatic)
 	return body.Avatar
 }
@@ -280,8 +302,8 @@ func TestAvatarWalkthrough(t *testing.T) {
 
 	servedURL := requireAccountAvatar(t, uploadResp)
 
-	avatarID, ok := media.AvatarIDFromURL(servedURL)
-	require.True(t, ok, servedURL)
+	avatarID := accountsStore.user.AvatarID
+	require.True(t, media.IsValidAvatarID(avatarID), avatarID)
 	require.Equal(t, "https://example.com/api/v1/avatars/"+avatarID, servedURL)
 	require.True(t, store.has(media.AvatarObjectKey(avatarID)))
 
@@ -309,8 +331,8 @@ func TestAvatarWalkthrough(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, clearResp.Status)
 
-	clearedURL := requireAccountAvatar(t, clearResp)
-	assert.Equal(t, "https://example.com/avatars/original/missing.png", clearedURL)
+	clearedURL := accountAvatarFrom(t, clearResp)
+	assert.Empty(t, clearedURL, "a cleared avatar is reported as absent, not as a placeholder image URL")
 	assert.Empty(t, accountsStore.user.Avatar)
 	assert.Nil(t, accountsStore.actor.Icon, "clear must empty Actor.Icon with user.Avatar")
 	assert.False(t, store.has(media.AvatarObjectKey(avatarID)), "orphaned avatar object must be deleted")
@@ -318,6 +340,41 @@ func TestAvatarWalkthrough(t *testing.T) {
 	missingResp, err := handler.HandleGetAvatarLift(serveCtx)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, missingResp.Status)
+}
+
+// TestUpdateCredentialsRejectsAnAvatarURL is the HTTP half of the ruling that
+// update_credentials never accepts an avatar URL: the parameter is rejected with
+// a 4xx that points at the upload route, and nothing reaches the profile service.
+func TestUpdateCredentialsRejectsAnAvatarURL(t *testing.T) {
+	handler, _, accountsStore := newAvatarWalkthroughHandler(t)
+	cfg := round11TestConfig()
+	token := round10SignAccessToken(t, cfg.JWTSecret, "alice")
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	rejected := round10NewLiftContextWithBodyBytes(
+		http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil,
+		[]byte(`{"avatar":"https://example.com/api/v1/avatars/11111111-2222-4333-8444-555555555555"}`),
+	)
+	rejectedResp, err := handler.HandleUpdateCredentialsLift(rejected)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, rejectedResp.Status)
+	assert.Contains(t, string(rejectedResp.Body), "POST /api/v1/accounts/avatar")
+	assert.Equal(t, 0, accountsStore.updateProfileHits, "a rejected avatar parameter must not reach the profile service")
+	assert.Empty(t, accountsStore.user.Avatar, "the profile URL must never take a caller-chosen value")
+
+	// The same request without the avatar parameter is still accepted.
+	accepted := round10NewLiftContextWithBodyBytes(
+		http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil,
+		[]byte(`{"display_name":"Alice"}`),
+	)
+	acceptedResp, err := handler.HandleUpdateCredentialsLift(accepted)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, acceptedResp.Status)
+	assert.Equal(t, 1, accountsStore.updateProfileHits)
 }
 
 func TestUploadAvatarRejectsOversizeBody(t *testing.T) {
@@ -412,7 +469,7 @@ func TestUploadAvatarRequiresWriteScope(t *testing.T) {
 }
 
 func TestGetAvatarHidesMalformedAndMissingIDs(t *testing.T) {
-	handler, _, _ := newAvatarWalkthroughHandler(t)
+	handler, store, _ := newAvatarWalkthroughHandler(t)
 
 	malformed := round10NewLiftContextWithBodyBytes(http.MethodGet, "/api/v1/avatars/not-a-uuid", nil, nil, nil)
 	malformed.Params["id"] = "../../etc/passwd"
@@ -428,6 +485,52 @@ func TestGetAvatarHidesMalformedAndMissingIDs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, missingResp.Status)
 	require.Equal(t, malformedResp.Body, missingResp.Body)
+
+	// An object whose stored content type has drifted out of the allowlist is
+	// not servable at all, so it is reported exactly like a missing avatar rather
+	// than surfacing a 500.
+	driftedID := "11111111-2222-4333-8444-555555555555"
+	_, err = store.UploadFile(
+		context.Background(), avatarTestBucket, media.AvatarObjectKey(driftedID), avatarTestPNGBytes(), imageSVGContentType,
+	)
+	require.NoError(t, err)
+
+	drifted := round10NewLiftContextWithBodyBytes(http.MethodGet, "/api/v1/avatars/"+driftedID, nil, nil, nil)
+	drifted.Params["id"] = driftedID
+	driftedResp, err := handler.HandleGetAvatarLift(drifted)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, driftedResp.Status)
+	require.Equal(t, missingResp.Body, driftedResp.Body,
+		"a drifted stored content type must be byte-identical to a missing avatar")
+}
+
+// TestClearAvatarNeverDeletesAnotherAccountsObject is the cross-user deletion
+// regression. A row that predates the recorded avatar id can hold another
+// account's served avatar URL verbatim, and a clear of that row must still delete
+// nothing: the handler acts only on the id the authenticated principal's own row
+// recorded, never on what a stored URL happens to contain.
+func TestClearAvatarNeverDeletesAnotherAccountsObject(t *testing.T) {
+	handler, store, accountsStore := newAvatarWalkthroughHandler(t)
+	cfg := round11TestConfig()
+	token := round10SignAccessToken(t, cfg.JWTSecret, "alice")
+
+	victimID := "550e8400-e29b-41d4-a716-446655440000"
+	_, err := store.UploadFile(
+		context.Background(), avatarTestBucket, media.AvatarObjectKey(victimID), avatarTestPNGBytes(), imagePNGContentType,
+	)
+	require.NoError(t, err)
+
+	// The victim's own served URL, well-formed and pointing at this instance —
+	// exactly the shape the removed URL-parsing cleanup would have deleted.
+	accountsStore.user.Avatar = accountsStore.servedURL(victimID)
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodDelete, "/api/v1/accounts/avatar", avatarUploadHeaders(token), nil, nil)
+	resp, err := handler.HandleClearAvatarLift(ctx)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status)
+	assert.True(t, store.has(media.AvatarObjectKey(victimID)),
+		"a served-avatar-shaped stored URL must never authorize deleting another account's object")
+	assert.Empty(t, accountsStore.user.Avatar)
 }
 
 func TestClearAvatarSkipsNonAvatarURLs(t *testing.T) {
@@ -450,26 +553,65 @@ func TestClearAvatarSkipsNonAvatarURLs(t *testing.T) {
 	assert.True(t, store.has(media.AvatarObjectKey(unrelatedID)), "a non-avatar URL must never trigger a delete")
 }
 
-func TestAvatarIDFromURL(t *testing.T) {
-	id := "550e8400-e29b-41d4-a716-446655440000"
+// TestClearAvatarDeletesOnlyTheOwnRecordedID covers the positive half: when the
+// account's own row records an id, the clear deletes exactly that object and
+// nothing else.
+func TestClearAvatarDeletesOnlyTheOwnRecordedID(t *testing.T) {
+	handler, store, accountsStore := newAvatarWalkthroughHandler(t)
+	cfg := round11TestConfig()
+	token := round10SignAccessToken(t, cfg.JWTSecret, "alice")
 
-	cases := map[string]bool{
-		"https://example.com/api/v1/avatars/" + id:                  true,
-		"http://localhost:4000/api/v1/avatars/" + id:                true,
-		"/api/v1/avatars/" + id:                                     true,
-		"https://example.com/api/v1/avatars/" + id + "?v=1":         true,
-		"https://example.com/api/v1/avatars/" + strings.ToUpper(id): false,
-		"https://example.com/api/v1/avatars/" + id + "/extra":       false,
-		"https://example.com/avatars/original/missing.png":          false,
-		"https://example.com/api/v1/avatars/not-a-uuid":             false,
-		"": false,
+	ownID := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	otherID := "11111111-2222-4333-8444-555555555555"
+	for _, id := range []string{ownID, otherID} {
+		_, err := store.UploadFile(
+			context.Background(), avatarTestBucket, media.AvatarObjectKey(id), avatarTestPNGBytes(), imagePNGContentType,
+		)
+		require.NoError(t, err)
 	}
 
-	for rawURL, expected := range cases {
-		got, ok := media.AvatarIDFromURL(rawURL)
-		assert.Equal(t, expected, ok, rawURL)
-		if expected {
-			assert.Equal(t, id, got, rawURL)
-		}
+	accountsStore.user.Avatar = accountsStore.servedURL(ownID)
+	accountsStore.user.AvatarID = ownID
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodDelete, "/api/v1/accounts/avatar", avatarUploadHeaders(token), nil, nil)
+	resp, err := handler.HandleClearAvatarLift(ctx)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status)
+	assert.False(t, store.has(media.AvatarObjectKey(ownID)), "the account's own recorded object must be deleted")
+	assert.True(t, store.has(media.AvatarObjectKey(otherID)), "no other object may be touched")
+}
+
+// TestUploadAvatarDeletesOnlyTheOwnPreviousObject covers the re-upload cleanup:
+// the handler best-effort deletes the id the caller's own row recorded before,
+// and never an object belonging to anyone else.
+func TestUploadAvatarDeletesOnlyTheOwnPreviousObject(t *testing.T) {
+	handler, store, accountsStore := newAvatarWalkthroughHandler(t)
+	cfg := round11TestConfig()
+	token := round10SignAccessToken(t, cfg.JWTSecret, "alice")
+
+	previousID := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	otherID := "11111111-2222-4333-8444-555555555555"
+	for _, id := range []string{previousID, otherID} {
+		_, err := store.UploadFile(
+			context.Background(), avatarTestBucket, media.AvatarObjectKey(id), avatarTestPNGBytes(), imagePNGContentType,
+		)
+		require.NoError(t, err)
 	}
+
+	accountsStore.user.Avatar = accountsStore.servedURL(previousID)
+	accountsStore.user.AvatarID = previousID
+
+	ctx := round10NewLiftContextWithBodyBytes(
+		http.MethodPost, "/api/v1/accounts/avatar", avatarUploadHeaders(token), nil, avatarUploadBody(t, "next.png"),
+	)
+	resp, err := handler.HandleUploadAvatarLift(ctx)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status)
+
+	newID := accountsStore.user.AvatarID
+	require.True(t, media.IsValidAvatarID(newID))
+	require.NotEqual(t, previousID, newID)
+	assert.True(t, store.has(media.AvatarObjectKey(newID)), "the newly stored object must survive")
+	assert.False(t, store.has(media.AvatarObjectKey(previousID)), "the caller's own previous object must be cleaned up")
+	assert.True(t, store.has(media.AvatarObjectKey(otherID)), "no other object may be touched")
 }

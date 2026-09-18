@@ -69,7 +69,7 @@ type AccountsService interface {
 	RemoveFollower(ctx context.Context, cmd *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error)
 	SaveMarker(ctx context.Context, cmd *accounts.SaveMarkerCommand) (*accounts.SaveMarkerResult, error)
 	SetAccountNote(ctx context.Context, cmd *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error)
-	SetAvatar(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.AccountResult, error)
+	SetAvatar(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.SetAvatarResult, error)
 	StoreOAuthState(ctx context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error)
 	UnpinAccount(ctx context.Context, cmd *accounts.UnpinAccountCommand) (*accounts.RelationshipResult, error)
 	UpdatePreferences(ctx context.Context, cmd *accounts.UpdatePreferencesCommand) (*accounts.PreferencesResult, error)

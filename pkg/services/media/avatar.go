@@ -5,7 +5,6 @@ import (
 	"errors"
 	"mime"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 
@@ -18,9 +17,6 @@ const (
 	// AvatarS3Prefix namespaces every avatar object so the serve route can never
 	// address media outside this prefix.
 	AvatarS3Prefix = "avatars/"
-
-	// avatarServePathPrefix is the public serve path every stored avatar URL uses.
-	avatarServePathPrefix = "/api/v1/avatars/"
 
 	// AvatarMaxUploadBytes caps avatar uploads at 512 KiB. The platform request
 	// cap is 512 KiB (apptheory Limits.MaxRequestBytes in cmd/api/main.go), which
@@ -79,32 +75,6 @@ func IsValidAvatarID(id string) bool {
 // AvatarObjectKey returns the S3 key for an avatar id.
 func AvatarObjectKey(id string) string {
 	return AvatarS3Prefix + id
-}
-
-// AvatarIDFromURL extracts the avatar id embedded in a served avatar URL. It
-// returns true only when the URL path is exactly /api/v1/avatars/<valid avatar
-// id>, so callers such as the clear-avatar cleanup never act on a URL that is
-// not one of this instance's avatar objects (a missing.png fallback, a media
-// CDN URL, an arbitrary external profile image).
-func AvatarIDFromURL(rawURL string) (string, bool) {
-	trimmed := strings.TrimSpace(rawURL)
-	if trimmed == "" {
-		return "", false
-	}
-
-	parsed, err := url.Parse(trimmed)
-	if err != nil {
-		return "", false
-	}
-	if !strings.HasPrefix(parsed.Path, avatarServePathPrefix) {
-		return "", false
-	}
-
-	id := strings.TrimPrefix(parsed.Path, avatarServePathPrefix)
-	if !IsValidAvatarID(id) {
-		return "", false
-	}
-	return id, true
 }
 
 // StoreAvatar validates and stores avatar bytes under a freshly minted id.

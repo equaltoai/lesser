@@ -120,7 +120,7 @@ type AccountsServiceStub struct {
 	RemoveFollowerFunc          func(ctx context.Context, cmd *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error)
 	SaveMarkerFunc              func(ctx context.Context, cmd *accounts.SaveMarkerCommand) (*accounts.SaveMarkerResult, error)
 	SetAccountNoteFunc          func(ctx context.Context, cmd *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error)
-	SetAvatarFunc               func(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.AccountResult, error)
+	SetAvatarFunc               func(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.SetAvatarResult, error)
 	StoreOAuthStateFunc         func(ctx context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error)
 	UnpinAccountFunc            func(ctx context.Context, cmd *accounts.UnpinAccountCommand) (*accounts.RelationshipResult, error)
 	UpdatePreferencesFunc       func(ctx context.Context, cmd *accounts.UpdatePreferencesCommand) (*accounts.PreferencesResult, error)
@@ -248,7 +248,7 @@ func (s *AccountsServiceStub) SetAccountNote(ctx context.Context, cmd *accounts.
 	return nil, missingStub("AccountsService.SetAccountNote")
 }
 
-func (s *AccountsServiceStub) SetAvatar(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.AccountResult, error) {
+func (s *AccountsServiceStub) SetAvatar(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.SetAvatarResult, error) {
 	if s != nil && s.SetAvatarFunc != nil {
 		return s.SetAvatarFunc(ctx, cmd)
 	}

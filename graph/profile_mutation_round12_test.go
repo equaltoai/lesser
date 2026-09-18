@@ -18,12 +18,10 @@ func TestRound12MutationResolvers_UpdateProfile(t *testing.T) {
 	now := model.Time(time.Now())
 	displayName := "Alice Example"
 	bio := "Hello world"
-	avatar := "https://cdn.local/avatar.png"
 
 	actor, err := mutations.UpdateProfile(round12AuthContext("alice"), model.UpdateProfileInput{
 		DisplayName: &displayName,
 		Bio:         &bio,
-		Avatar:      &avatar,
 		Locked:      ptrBool(true),
 		Fields: []*model.ProfileFieldInput{
 			{
@@ -35,6 +33,25 @@ func TestRound12MutationResolvers_UpdateProfile(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, actor)
+}
+
+// TestRound12MutationResolvers_UpdateProfileRejectsAvatarURL documents that the
+// profile avatar is written only by the REST avatar upload route. The ownership
+// gate lives in the accounts service, so it also covers this GraphQL mutation:
+// an avatar URL supplied here is rejected instead of being stored.
+func TestRound12MutationResolvers_UpdateProfileRejectsAvatarURL(t *testing.T) {
+	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
+	mutations := &mutationResolver{resolver}
+
+	displayName := "Alice Example"
+	avatar := "https://cdn.local/avatar.png"
+
+	_, err := mutations.UpdateProfile(round12AuthContext("alice"), model.UpdateProfileInput{
+		DisplayName: &displayName,
+		Avatar:      &avatar,
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot be set by URL")
 }
 
 func TestRound12ProfileHelpers(t *testing.T) {

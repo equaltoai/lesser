@@ -969,7 +969,6 @@ func TestService_Round13_MainlineCoverage(t *testing.T) {
 			UpdaterID:   "alice",
 			DisplayName: "Alice",
 			Bio:         "bio",
-			Avatar:      "https://cdn.example.com/a.png",
 			Header:      "https://cdn.example.com/h.png",
 			Locked:      true,
 			Bot:         false,

@@ -312,7 +312,7 @@ func avatarTestLocalActor(username, domain, iconURL string) *activitypub.Actor {
 	return actor
 }
 
-func newAvatarAccountsService(t *testing.T, avatarURL string) (*Service, *avatarTestDB) {
+func newAvatarAccountsService(t *testing.T, avatarURL, avatarID string) (*Service, *avatarTestDB) {
 	t.Helper()
 
 	logger := zap.NewNop()
@@ -322,6 +322,7 @@ func newAvatarAccountsService(t *testing.T, avatarURL string) (*Service, *avatar
 		Role:     "user",
 		Version:  1,
 		Avatar:   avatarURL,
+		AvatarID: avatarID,
 	}
 	require.NoError(t, user.UpdateKeys())
 
@@ -350,7 +351,7 @@ func newAvatarAccountsService(t *testing.T, avatarURL string) (*Service, *avatar
 }
 
 func TestSetAvatar_WritesUserAndActorIcon(t *testing.T) {
-	svc, _ := newAvatarAccountsService(t, "")
+	svc, _ := newAvatarAccountsService(t, "", "")
 	ctx := context.Background()
 	avatarID := "550e8400-e29b-41d4-a716-446655440000"
 	expectedURL := fmt.Sprintf("https://%s/api/v1/avatars/%s", avatarTestDomain, avatarID)
@@ -366,6 +367,7 @@ func TestSetAvatar_WritesUserAndActorIcon(t *testing.T) {
 	require.NotNil(t, result.Account.Actor)
 
 	assert.Equal(t, expectedURL, result.Account.User.Avatar)
+	assert.Equal(t, avatarID, result.Account.User.AvatarID)
 	require.NotNil(t, result.Account.Actor.Icon)
 	assert.Equal(t, expectedURL, result.Account.Actor.Icon.URL)
 	assert.Equal(t, "image/png", result.Account.Actor.Icon.MediaType)
@@ -373,13 +375,14 @@ func TestSetAvatar_WritesUserAndActorIcon(t *testing.T) {
 	persisted, err := svc.GetAccount(ctx, "alice")
 	require.NoError(t, err)
 	assert.Equal(t, expectedURL, persisted.User.Avatar)
+	assert.Equal(t, avatarID, persisted.User.AvatarID, "the minted avatar id must be recorded on the account's own row")
 	require.NotNil(t, persisted.Actor.Icon)
 	assert.Equal(t, expectedURL, persisted.Actor.Icon.URL)
 	assert.Equal(t, "image/png", persisted.Actor.Icon.MediaType)
 }
 
 func TestSetAvatar_RejectsInvalidAvatarID(t *testing.T) {
-	svc, _ := newAvatarAccountsService(t, "")
+	svc, _ := newAvatarAccountsService(t, "", "")
 
 	_, err := svc.SetAvatar(context.Background(), &SetAvatarCommand{
 		Username:    "alice",
@@ -389,15 +392,37 @@ func TestSetAvatar_RejectsInvalidAvatarID(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidAvatarID)
 }
 
+func TestSetAvatar_ReportsThePreviousRecordedIDOnReupload(t *testing.T) {
+	previousID := "550e8400-e29b-41d4-a716-446655440000"
+	previousURL := fmt.Sprintf("https://%s/api/v1/avatars/%s", avatarTestDomain, previousID)
+	svc, _ := newAvatarAccountsService(t, previousURL, previousID)
+	ctx := context.Background()
+	nextID := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+	result, err := svc.SetAvatar(ctx, &SetAvatarCommand{
+		Username:    "alice",
+		AvatarID:    nextID,
+		ContentType: "image/png",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, previousID, result.PreviousAvatarID, "a re-upload must hand back the id this account previously recorded")
+	assert.Equal(t, nextID, result.Account.User.AvatarID)
+
+	persisted, err := svc.GetAccount(ctx, "alice")
+	require.NoError(t, err)
+	assert.Equal(t, nextID, persisted.User.AvatarID)
+}
+
 func TestClearAvatar_ClearsUserAndActorIcon(t *testing.T) {
 	oldID := "550e8400-e29b-41d4-a716-446655440000"
 	oldURL := fmt.Sprintf("https://%s/api/v1/avatars/%s", avatarTestDomain, oldID)
-	svc, _ := newAvatarAccountsService(t, oldURL)
+	svc, _ := newAvatarAccountsService(t, oldURL, oldID)
 	ctx := context.Background()
 
 	before, err := svc.GetAccount(ctx, "alice")
 	require.NoError(t, err)
 	require.Equal(t, oldURL, before.User.Avatar)
+	require.Equal(t, oldID, before.User.AvatarID)
 	require.NotNil(t, before.Actor)
 	require.NotNil(t, before.Actor.Icon)
 	require.Equal(t, oldURL, before.Actor.Icon.URL)
@@ -405,13 +430,73 @@ func TestClearAvatar_ClearsUserAndActorIcon(t *testing.T) {
 	result, err := svc.ClearAvatar(ctx, &ClearAvatarCommand{Username: "alice"})
 	require.NoError(t, err)
 	require.NotNil(t, result.Account)
-	assert.Equal(t, oldURL, result.PreviousAvatarURL)
+	assert.Equal(t, oldID, result.PreviousAvatarID)
 	assert.Empty(t, result.Account.User.Avatar)
+	assert.Empty(t, result.Account.User.AvatarID)
 	assert.Nil(t, result.Account.Actor.Icon)
 
 	persisted, err := svc.GetAccount(ctx, "alice")
 	require.NoError(t, err)
 	assert.Empty(t, persisted.User.Avatar)
+	assert.Empty(t, persisted.User.AvatarID)
 	require.NotNil(t, persisted.Actor)
 	assert.Nil(t, persisted.Actor.Icon)
+}
+
+// TestClearAvatar_WithoutARecordedIDAuthorizesNoDeletion is the cross-user
+// deletion regression: a row that predates the recorded avatar id can hold
+// another account's served avatar URL in user.Avatar, and clearing it must still
+// yield no id for the handler to delete. Deletion is authorized only by the id
+// recorded on the account's own row, never by parsing a stored URL.
+func TestClearAvatar_WithoutARecordedIDAuthorizesNoDeletion(t *testing.T) {
+	victimID := "11111111-2222-4333-8444-555555555555"
+	victimURL := fmt.Sprintf("https://%s/api/v1/avatars/%s", avatarTestDomain, victimID)
+
+	svc, _ := newAvatarAccountsService(t, victimURL, "")
+	ctx := context.Background()
+
+	result, err := svc.ClearAvatar(ctx, &ClearAvatarCommand{Username: "alice"})
+	require.NoError(t, err)
+	assert.Empty(t, result.PreviousAvatarID,
+		"a row with no recorded avatar id must authorize no deletion, even when its stored URL is avatar-serve shaped")
+	assert.Empty(t, result.Account.User.Avatar)
+
+	persisted, err := svc.GetAccount(ctx, "alice")
+	require.NoError(t, err)
+	assert.Empty(t, persisted.User.Avatar)
+	assert.Empty(t, persisted.User.AvatarID)
+}
+
+// TestClearAvatar_IgnoresAMalformedRecordedID keeps the recorded id honest: a
+// value that is not a lowercase avatar id authorizes nothing.
+func TestClearAvatar_IgnoresAMalformedRecordedID(t *testing.T) {
+	victimID := "11111111-2222-4333-8444-555555555555"
+	victimURL := fmt.Sprintf("https://%s/api/v1/avatars/%s", avatarTestDomain, victimID)
+
+	svc, _ := newAvatarAccountsService(t, victimURL, "../../"+victimID)
+	ctx := context.Background()
+
+	result, err := svc.ClearAvatar(ctx, &ClearAvatarCommand{Username: "alice"})
+	require.NoError(t, err)
+	assert.Empty(t, result.PreviousAvatarID)
+}
+
+// TestUpdateProfile_RejectsAnAvatarURL is the service-level half of the ruling
+// that a credentials/profile update never carries an avatar URL. Every caller
+// shares this gate, including the streaming update_profile command.
+func TestUpdateProfile_RejectsAnAvatarURL(t *testing.T) {
+	svc, _ := newAvatarAccountsService(t, "", "")
+	ctx := context.Background()
+
+	_, err := svc.UpdateProfile(ctx, &UpdateProfileCommand{
+		Username:  "alice",
+		UpdaterID: "alice",
+		Avatar:    "https://example.com/api/v1/avatars/11111111-2222-4333-8444-555555555555",
+	})
+	require.ErrorIs(t, err, ErrAvatarURLNotAccepted)
+
+	persisted, err := svc.GetAccount(ctx, "alice")
+	require.NoError(t, err)
+	assert.Empty(t, persisted.User.Avatar)
+	assert.Empty(t, persisted.User.AvatarID)
 }

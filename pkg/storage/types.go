@@ -41,12 +41,13 @@ type User struct {
 	Email              string                 `json:"email,omitempty"`
 	PasswordHash       string                 `json:"password_hash,omitempty"`
 	DisplayName        string                 `json:"display_name,omitempty"`
-	Note               string                 `json:"note,omitempty"`   // Bio/description
-	Avatar             string                 `json:"avatar,omitempty"` // Avatar image URL
-	Header             string                 `json:"header,omitempty"` // Header image URL
-	URL                string                 `json:"url,omitempty"`    // Profile URL
-	Locked             bool                   `json:"locked"`           // Requires approval for follows
-	Discoverable       bool                   `json:"discoverable"`     // Appears in directory
+	Note               string                 `json:"note,omitempty"`      // Bio/description
+	Avatar             string                 `json:"avatar,omitempty"`    // Avatar image URL
+	AvatarID           string                 `json:"avatar_id,omitempty"` // Server-minted id of the stored avatar object this account owns
+	Header             string                 `json:"header,omitempty"`    // Header image URL
+	URL                string                 `json:"url,omitempty"`       // Profile URL
+	Locked             bool                   `json:"locked"`              // Requires approval for follows
+	Discoverable       bool                   `json:"discoverable"`        // Appears in directory
 	AllowNSFW          bool                   `json:"allow_nsfw"`
 	RequireNSFWWarning bool                   `json:"require_nsfw_warning"`
 	Fields             []map[string]string    `json:"fields,omitempty"` // Profile metadata fields

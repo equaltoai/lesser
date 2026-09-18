@@ -8139,6 +8139,8 @@ components:
                     type: boolean
                 avatar:
                     type: string
+                avatar_id:
+                    type: string
                 created_at:
                     $ref: '#/components/schemas/RFC3339DateTime'
                 discoverable:
@@ -8551,8 +8553,6 @@ components:
         UpdateCredentialsRequest:
             additionalProperties: false
             properties:
-                avatar:
-                    type: string
                 bot:
                     type: boolean
                 discoverable:
