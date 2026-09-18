@@ -2087,9 +2087,11 @@ func (r *AccountRepository) updateAccountActorProfile(ctx context.Context, usern
 	return nil
 }
 
-// ClearAccountAvatar empties the User avatar through the versioned profile
-// update path and, separately, sets the Actor icon to nil. The explicit actor
-// write is required because the profile merge only overwrites a non-empty icon.
+// ClearAccountAvatar empties the User avatar and its recorded avatar id through
+// the versioned profile update path and, separately, sets the Actor icon to nil.
+// Emptying the recorded id on the same write is what keeps a cleared account from
+// authorizing a later delete; the explicit actor write is required because the
+// profile merge only overwrites a non-empty icon.
 func (r *AccountRepository) ClearAccountAvatar(ctx context.Context, username string) error {
 	account, err := r.GetAccount(ctx, username)
 	if err != nil {
