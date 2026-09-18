@@ -70,7 +70,11 @@ Clears `user.Avatar` and `Actor.Icon` together, then best-effort deletes the orp
   nothing.
 - A cleanup failure is logged and never fails the clear.
 - Success: `200` with the updated Mastodon `Account` projection. An account with no avatar reports `avatar` and
-  `avatar_static` as empty strings — the read path never substitutes a placeholder image URL.
+  `avatar_static` as empty strings. On the storage-account REST projection path this contract covers, the read path never
+  substitutes a placeholder image URL: an absent avatar is reported as absent, never as a synthesized value.
+  Actor-transform paths outside this contract still substitute a `missing.png` placeholder when an actor carries no image
+  (`pkg/transformations/converters.go`, `pkg/mastodon/transformers/transformers_mastodon.go`), reachable for remote or
+  otherwise unresolved actors; that pre-existing sweep is owned by the fabrication-audit milestone, not by this contract.
 
 ### `GET /api/v1/avatars/{id}`
 
@@ -90,11 +94,16 @@ Public, unauthenticated, `GET`/`HEAD`. Reachable through the deployed public-sur
 
 An avatar URL is served by reading the stored object on demand, so every `avatars/` object must stay in a storage class
 S3 serves directly. The media bucket's lifecycle rules therefore never transition bucket content to `GLACIER` or
-`DEEP_ARCHIVE`; the bucket-wide rule stops at `GLACIER_IR`. This is bucket-wide rather than `avatars/`-scoped because
-CloudFormation's `AWS::S3::Bucket` `Rule` has no `Filter` property, so a prefix-scoped rule cannot exempt a prefix from a
-bucket-wide transition — S3 applies every matching rule. The same reasoning covers the bucket's other read-back prefixes
-(`media/`, `published/`, `imports/`, `exports/`). See `infra/cdk/constructs/s3_lifecycle.go` and
+`DEEP_ARCHIVE`; the bucket-wide rule stops at `GLACIER_IR`. It is bucket-wide rather than `avatars/`-scoped because a
+lifecycle rule's filter takes prefix, tag, and object-size predicates and has no negation: no single rule can cover the
+bucket while exempting `avatars/`, and a prefix-scoped rule cannot exempt a prefix from a bucket-wide rule because S3
+applies every matching rule. The same reasoning covers the bucket's other read-back prefixes (`media/`, `published/`,
+`imports/`, `exports/`). See `infra/cdk/constructs/s3_lifecycle.go` and
 `infra/cdk/constructs/s3_lifecycle_test.go`.
 
 `infra/cdk` is a shared stack (`LesserSharedStack`); the lifecycle change is code-only and takes effect on the operator's
-next deploy.
+next deploy. Removing a transition does not move objects that already transitioned: where a deployed media bucket has
+carried the removed 180-day `GLACIER` rule, objects older than 180 days under `media/`, `published/`, `imports/`, or
+`exports/` are already archived and stay unreadable until they are restored and re-copied. The operator should check the
+deployed bucket's object storage classes and run that one-time restore/re-copy as part of this deploy. `avatars/` is
+unaffected: the prefix is new, so no object under it predates the fix.

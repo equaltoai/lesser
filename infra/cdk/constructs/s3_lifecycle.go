@@ -52,12 +52,16 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 	// GetObject fail with InvalidObjectState until the object is restored, which
 	// turned every avatar older than 180 days into a 500 on the serve route.
 	//
-	// CloudFormation cannot express "this prefix, except that one": the
-	// AWS::S3::Bucket Rule property has no Filter, so a prefix rule cannot
-	// suppress a bucket-wide transition — S3 applies every matching rule. The
-	// exemption is therefore made by keeping the bucket-wide rule inside the
-	// instant-retrieval classes; a future write-only prefix that is never read
-	// back can carry its own GLACIER transition in a rule scoped to that prefix.
+	// CloudFormation cannot express "this prefix, except that one": a lifecycle
+	// rule's filter takes prefix, tag, and object-size predicates and has no
+	// negation, so no single rule can cover the bucket while exempting avatars/.
+	// A prefix-scoped rule cannot exempt a prefix from a bucket-wide rule
+	// either, because S3 applies every matching rule. The exemption is therefore
+	// made by keeping the bucket-wide rule inside the instant-retrieval classes,
+	// which is the correct shape rather than a workaround: every prefix this
+	// bucket carries is read back. A future write-only prefix that is never read
+	// back can carry its own GLACIER transition in a rule whose filter is scoped
+	// to that prefix.
 	// See docs/contracts/account-avatar.md for the serving-path coordination note.
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
 		Id:      jsii.String("optimize-storage-class"),
