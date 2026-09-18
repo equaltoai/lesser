@@ -557,10 +557,14 @@ type AffectedRelationshipEdge struct {
 }
 
 type Agent struct {
-	ID                string                         `json:"id"`
-	Username          string                         `json:"username"`
-	DisplayName       string                         `json:"displayName"`
-	Bio               *string                        `json:"bio,omitempty"`
+	ID          string  `json:"id"`
+	Username    string  `json:"username"`
+	DisplayName string  `json:"displayName"`
+	Bio         *string `json:"bio,omitempty"`
+	// Avatar image URL from the agent's account record. Null when the agent has no avatar set.
+	Avatar *string `json:"avatar,omitempty"`
+	// Static avatar image URL. Lesser stores a single avatar URL, so this mirrors `avatar`.
+	AvatarStatic      *string                        `json:"avatarStatic,omitempty"`
 	IdentitySemantics *AgentIdentitySemantics        `json:"identitySemantics"`
 	Workflow          *AgentWorkflowSurface          `json:"workflow,omitempty"`
 	AgentType         AgentType                      `json:"agentType"`
