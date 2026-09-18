@@ -2082,6 +2082,47 @@ func (r *AccountRepository) updateAccountActorProfile(ctx context.Context, usern
 	return nil
 }
 
+// ClearAccountAvatar empties the User avatar through the versioned profile
+// update path and, separately, sets the Actor icon to nil. The explicit actor
+// write is required because the profile merge only overwrites a non-empty icon.
+func (r *AccountRepository) ClearAccountAvatar(ctx context.Context, username string) error {
+	account, err := r.GetAccount(ctx, username)
+	if err != nil {
+		return err
+	}
+	if account == nil || account.User == nil {
+		return ErrorHandler.HandleUpdateError(storage.ErrNotFound, EntityUser, username)
+	}
+
+	resolvedUsername := strings.TrimSpace(account.User.Username)
+	account.User.Avatar = ""
+	account.Actor = nil
+	if err := r.UpdateAccount(ctx, account); err != nil {
+		return err
+	}
+
+	if r.actorRepo == nil {
+		return nil
+	}
+	actor, err := r.actorRepo.GetActor(ctx, resolvedUsername)
+	if err != nil {
+		if isAccountNotFound(err) {
+			return nil
+		}
+		return ErrorHandler.HandleUpdateError(err, EntityActor, resolvedUsername)
+	}
+	if actor == nil || actor.Icon == nil {
+		return nil
+	}
+
+	actor.Icon = nil
+	if err := r.actorRepo.UpdateActor(ctx, actor); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityActor, resolvedUsername)
+	}
+
+	return nil
+}
+
 func (r *AccountRepository) createRecoveredActorProfile(ctx context.Context, username string, actor *activitypub.Actor) error {
 	if actor == nil || r.actorRepo == nil {
 		return nil
