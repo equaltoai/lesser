@@ -67,4 +67,23 @@ var (
 
 	// ErrMediaInUse prevents deletion while a status, draft, or other object still references the media.
 	ErrMediaInUse = errors.NewAppError(errors.CodeConflict, errors.CategoryMedia, "media is still referenced")
+
+	// ErrAvatarTooLarge is returned when avatar bytes exceed AvatarMaxUploadBytes.
+	ErrAvatarTooLarge = errors.FileSizeExceedsLimit(AvatarMaxUploadBytes, AvatarMaxUploadBytes)
+
+	// ErrAvatarContentTypeNotAllowed is returned when an avatar is not one of the
+	// allowlisted raster image types.
+	ErrAvatarContentTypeNotAllowed = errors.ContentTypeNotAllowed("avatar")
+
+	// ErrAvatarInvalidID is returned when an avatar id is not a lowercase UUID.
+	ErrAvatarInvalidID = errors.NewValidationError("avatar_id", "invalid")
+
+	// ErrAvatarRequired is returned when an avatar store request carries no bytes.
+	ErrAvatarRequired = errors.NewValidationError("avatar", "required")
+
+	// ErrAvatarNotFound is returned when no avatar object exists for the given id.
+	ErrAvatarNotFound = errors.NewAppError(errors.CodeNotFound, errors.CategoryMedia, "avatar not found")
+
+	// ErrAvatarStoreUnavailable is returned when the avatar object store is not wired.
+	ErrAvatarStoreUnavailable = errors.RepositoryNotAvailable("avatar object store")
 )
