@@ -541,6 +541,8 @@ type ComplexityRoot struct {
 		AgentOwner                func(childComplexity int) int
 		AgentType                 func(childComplexity int) int
 		AgentVersion              func(childComplexity int) int
+		Avatar                    func(childComplexity int) int
+		AvatarStatic              func(childComplexity int) int
 		Bio                       func(childComplexity int) int
 		Capabilities              func(childComplexity int) int
 		CreatedAt                 func(childComplexity int) int
@@ -6395,6 +6397,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Agent.AgentVersion(childComplexity), true
+
+	case "Agent.avatar":
+		if e.complexity.Agent.Avatar == nil {
+			break
+		}
+
+		return e.complexity.Agent.Avatar(childComplexity), true
+
+	case "Agent.avatarStatic":
+		if e.complexity.Agent.AvatarStatic == nil {
+			break
+		}
+
+		return e.complexity.Agent.AvatarStatic(childComplexity), true
 
 	case "Agent.bio":
 		if e.complexity.Agent.Bio == nil {
@@ -33493,6 +33509,10 @@ func (ec *executionContext) fieldContext_Actor_agentInfo(_ context.Context, fiel
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -43940,6 +43960,88 @@ func (ec *executionContext) fieldContext_Agent_bio(_ context.Context, field grap
 	return fc, nil
 }
 
+func (ec *executionContext) _Agent_avatar(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_avatar(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Avatar, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_avatar(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_avatarStatic(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_avatarStatic(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AvatarStatic, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_avatarStatic(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Agent_identitySemantics(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Agent_identitySemantics(ctx, field)
 	if err != nil {
@@ -48298,6 +48400,10 @@ func (ec *executionContext) fieldContext_AgentEdge_node(_ context.Context, field
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -63753,6 +63859,10 @@ func (ec *executionContext) fieldContext_DelegationPayload_agent(_ context.Conte
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -69261,6 +69371,10 @@ func (ec *executionContext) fieldContext_DroneWorkflowMutationPayload_agent(_ co
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -108038,6 +108152,10 @@ func (ec *executionContext) fieldContext_Mutation_updateAgent(ctx context.Contex
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -108153,6 +108271,10 @@ func (ec *executionContext) fieldContext_Mutation_deleteAgent(ctx context.Contex
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -109312,6 +109434,10 @@ func (ec *executionContext) fieldContext_Mutation_adminVerifyAgent(ctx context.C
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -109427,6 +109553,10 @@ func (ec *executionContext) fieldContext_Mutation_adminUnverifyAgent(ctx context
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -109542,6 +109672,10 @@ func (ec *executionContext) fieldContext_Mutation_adminSuspendAgent(ctx context.
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -132920,6 +133054,10 @@ func (ec *executionContext) fieldContext_Query_agent(ctx context.Context, field 
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -133098,6 +133236,10 @@ func (ec *executionContext) fieldContext_Query_myAgents(_ context.Context, field
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -136183,6 +136325,10 @@ func (ec *executionContext) fieldContext_RegisterAgentPayload_agent(_ context.Co
 				return ec.fieldContext_Agent_displayName(ctx, field)
 			case "bio":
 				return ec.fieldContext_Agent_bio(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Agent_avatar(ctx, field)
+			case "avatarStatic":
+				return ec.fieldContext_Agent_avatarStatic(ctx, field)
 			case "identitySemantics":
 				return ec.fieldContext_Agent_identitySemantics(ctx, field)
 			case "workflow":
@@ -176141,6 +176287,10 @@ func (ec *executionContext) _Agent(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "bio":
 			out.Values[i] = ec._Agent_bio(ctx, field, obj)
+		case "avatar":
+			out.Values[i] = ec._Agent_avatar(ctx, field, obj)
+		case "avatarStatic":
+			out.Values[i] = ec._Agent_avatarStatic(ctx, field, obj)
 		case "identitySemantics":
 			field := field
 

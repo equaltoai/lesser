@@ -34,6 +34,10 @@ type Agent {
   username: String!
   displayName: String!
   bio: String
+  """Avatar image URL from the agent's account record. Null when the agent has no avatar set."""
+  avatar: String
+  """Static avatar image URL. Lesser stores a single avatar URL, so this mirrors `avatar`."""
+  avatarStatic: String
   identitySemantics: AgentIdentitySemantics!
   workflow: AgentWorkflowSurface
 
