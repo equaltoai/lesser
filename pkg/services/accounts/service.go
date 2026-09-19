@@ -425,7 +425,7 @@ type UpdateProfileCommand struct {
 	Username     string         `json:"username" validate:"required"`
 	DisplayName  string         `json:"display_name" validate:"max=100"`
 	Bio          string         `json:"bio" validate:"max=5000"`
-	Avatar       string         `json:"avatar"`                         // URL to avatar image
+	Avatar       string         `json:"avatar"`                         // Rejected: avatars are set only by SetAvatar from an upload
 	Header       string         `json:"header"`                         // URL to header image
 	Locked       bool           `json:"locked"`                         // Account locked (requires approval for follows)
 	Bot          bool           `json:"bot"`                            // Bot account flag
@@ -637,6 +637,12 @@ func (s *Service) UpdateProfile(ctx context.Context, cmd *UpdateProfileCommand) 
 
 	// Validate the command
 	if err := s.validateUpdateProfileCommand(ctx, cmd); err != nil {
+		// The avatar-URL rejection carries the remedy the caller needs, so it is
+		// returned as itself; every other validation failure keeps the
+		// ErrValidationFailed contract callers already depend on.
+		if errors.Is(err, ErrAvatarURLNotAccepted) {
+			return nil, err
+		}
 		return nil, ErrValidationFailed
 	}
 
@@ -854,6 +860,14 @@ func (s *Service) validateUpdateProfileCommand(_ context.Context, cmd *UpdatePro
 		return err
 	}
 
+	// Avatars are only ever written by SetAvatar from an uploaded object, so a
+	// profile update that carries an avatar URL is rejected rather than silently
+	// ignored. This is the service-level gate every caller shares, including the
+	// streaming update_profile command.
+	if strings.TrimSpace(cmd.Avatar) != "" {
+		return ErrAvatarURLNotAccepted
+	}
+
 	// Use business logic pattern for field validation
 	if err := common.ValidateSliceLength("fields", cmd.Fields, 4); err != nil {
 		return err
@@ -956,9 +970,6 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 	if cmd.Bio != "" {
 		account.User.Note = sanitizedBio
 	}
-	if cmd.Avatar != "" {
-		account.User.Avatar = cmd.Avatar
-	}
 	if cmd.Header != "" {
 		account.User.Header = cmd.Header
 	}
@@ -1006,14 +1017,8 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 		account.Actor.Summary = sanitizedBio
 	}
 
-	// Update profile image URLs
-	if cmd.Avatar != "" {
-		if account.Actor.Icon == nil {
-			account.Actor.Icon = &activitypub.Image{}
-		}
-		account.Actor.Icon.URL = cmd.Avatar
-	}
-
+	// Update profile image URLs. The avatar is deliberately absent: it is written
+	// only by SetAvatar from a stored upload, so nothing here may repoint it.
 	if cmd.Header != "" {
 		if account.Actor.Image == nil {
 			account.Actor.Image = &activitypub.Image{}

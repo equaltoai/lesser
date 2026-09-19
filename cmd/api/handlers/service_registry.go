@@ -52,6 +52,7 @@ type AgentShareService interface {
 
 // AccountsService defines the subset of account-related operations used by the Lift API
 type AccountsService interface {
+	ClearAvatar(ctx context.Context, cmd *accounts.ClearAvatarCommand) (*accounts.ClearAvatarResult, error)
 	CreateAuthorizationCode(ctx context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error)
 	GetAccount(ctx context.Context, username string) (*storage.Account, error)
 	GetAccountPins(ctx context.Context, query *accounts.GetAccountPinsQuery) (*accounts.AccountPinsResult, error)
@@ -68,6 +69,7 @@ type AccountsService interface {
 	RemoveFollower(ctx context.Context, cmd *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error)
 	SaveMarker(ctx context.Context, cmd *accounts.SaveMarkerCommand) (*accounts.SaveMarkerResult, error)
 	SetAccountNote(ctx context.Context, cmd *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error)
+	SetAvatar(ctx context.Context, cmd *accounts.SetAvatarCommand) (*accounts.SetAvatarResult, error)
 	StoreOAuthState(ctx context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error)
 	UnpinAccount(ctx context.Context, cmd *accounts.UnpinAccountCommand) (*accounts.RelationshipResult, error)
 	UpdatePreferences(ctx context.Context, cmd *accounts.UpdatePreferencesCommand) (*accounts.PreferencesResult, error)
@@ -114,7 +116,10 @@ type ListsService interface {
 
 // MediaService defines the subset of media-related operations used by the Lift API
 type MediaService interface {
+	DeleteAvatar(ctx context.Context, id string) error
+	GetAvatar(ctx context.Context, id string) ([]byte, string, error)
 	GetMedia(ctx context.Context, query *media.GetMediaQuery) (*storagemodels.Media, error)
+	StoreAvatar(ctx context.Context, cmd *media.StoreAvatarCommand) (*media.StoredAvatar, error)
 	UpdateMedia(ctx context.Context, cmd *media.UpdateMediaCommand) (*media.UpdateResult, error)
 	UploadMedia(ctx context.Context, cmd *media.UploadMediaCommand) (*media.Result, error)
 }

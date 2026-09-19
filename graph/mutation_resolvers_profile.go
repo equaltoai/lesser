@@ -35,12 +35,17 @@ func (r *mutationResolver) UpdateProfile(ctx context.Context, input model.Update
 
 	state := r.loadPreferenceState(ctx, username)
 
+	// Unlike the other profile fields, the avatar is not coalesced from the
+	// stored account: the accounts service rejects any non-empty avatar on this
+	// command, so feeding it the stored URL would fail every update for an
+	// account that has an avatar. A supplied avatar reaches the service as-is
+	// and is rejected there.
 	cmd := &accounts.UpdateProfileCommand{
 		Username:     username,
 		UpdaterID:    username,
 		DisplayName:  coalesceStringPtr(input.DisplayName, account.User.DisplayName),
 		Bio:          coalesceStringPtr(input.Bio, account.User.Note),
-		Avatar:       coalesceStringPtr(input.Avatar, currentAvatar(account)),
+		Avatar:       derefString(input.Avatar),
 		Header:       coalesceStringPtr(input.Header, currentHeader(account)),
 		Locked:       coalesceBoolPtr(input.Locked, account.User.Locked),
 		Bot:          coalesceBoolPtr(input.Bot, isAccountBot(account)),
@@ -100,16 +105,6 @@ func convertStoredFields(account *storage.Account) []accounts.ProfileField {
 		})
 	}
 	return fields
-}
-
-func currentAvatar(account *storage.Account) string {
-	if account != nil && account.Actor != nil && account.Actor.Icon != nil {
-		return account.Actor.Icon.URL
-	}
-	if account != nil && account.User != nil {
-		return account.User.Avatar
-	}
-	return ""
 }
 
 func currentHeader(account *storage.Account) string {

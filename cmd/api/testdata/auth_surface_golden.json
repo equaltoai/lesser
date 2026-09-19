@@ -70,6 +70,20 @@
     "verdict": "agree"
   },
   {
+    "method": "DELETE",
+    "path": "/api/v1/accounts/avatar",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/accounts/avatar",
+    "runtimePosture": "auth-required",
+    "openapiSecurity": "required",
+    "verdict": "agree"
+  },
+  {
     "method": "GET",
     "path": "/api/v1/accounts/lookup",
     "runtimePosture": "anonymous",
@@ -947,6 +961,13 @@
   {
     "method": "POST",
     "path": "/api/v1/auth/webauthn/signup/finish",
+    "runtimePosture": "anonymous",
+    "openapiSecurity": "public",
+    "verdict": "agree"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/avatars/{id}",
     "runtimePosture": "anonymous",
     "openapiSecurity": "public",
     "verdict": "agree"

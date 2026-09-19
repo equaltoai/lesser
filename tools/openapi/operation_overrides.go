@@ -13,6 +13,7 @@ func applyOperationOverrides(op *operation, route routeDef) {
 	applyOAuthOverrides(op, route)
 	applySetupOverrides(op, route)
 	applyAppRegistrationOverrides(op, route)
+	applyAvatarOverrides(op, route)
 	applyMediaOverrides(op, route)
 	applySoulOverrides(op, route)
 	applySkillOverrides(op, route)
@@ -660,6 +661,95 @@ func applyMediaOverrides(op *operation, route routeDef) {
 	case route.Method == methodPUT && route.Path == "/api/v1/media/{id}":
 		ensureJSONResponseSchema(op, "200", "MediaAttachment")
 	}
+}
+
+// avatarServeMediaTypes are the content types the stored-avatar serve route can
+// return. Uploads are validated against the same allowlist, so the stored object
+// type is always one of these.
+var avatarServeMediaTypes = []string{"image/gif", "image/jpeg", "image/png", "image/webp"}
+
+func applyAvatarOverrides(op *operation, route routeDef) {
+	if op == nil {
+		return
+	}
+
+	switch {
+	case route.Method == methodPOST && route.Path == "/api/v1/accounts/avatar":
+		applyAvatarUploadOverride(op)
+	case route.Method == methodGET && route.Path == "/api/v1/avatars/{id}":
+		applyAvatarServeOverride(op)
+	}
+}
+
+func applyAvatarUploadOverride(op *operation) {
+	op.RequestBody = &requestBody{
+		Required: true,
+		Content: map[string]mediaType{
+			"multipart/form-data": {
+				Schema: schemaRef{
+					Type: "object",
+					Properties: map[string]schemaRef{
+						"file": {
+							Type:   "string",
+							Format: "binary",
+						},
+						"avatar": {
+							Type:   "string",
+							Format: "binary",
+						},
+					},
+					Required:             []string{"file"},
+					AdditionalProperties: false,
+				},
+			},
+		},
+	}
+
+	ensureJSONResponseSchema(op, "200", "Account")
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+	if _, ok := op.Responses["413"]; !ok {
+		op.Responses["413"] = response{
+			Description: "Avatar upload exceeds the 512 KiB avatar size cap",
+			Content: map[string]mediaType{
+				"application/json": {Schema: schemaRef{Ref: "#/components/schemas/Error"}},
+			},
+		}
+	}
+	ensureResponseRef(op.Responses, "422", "UnprocessableEntity")
+}
+
+func applyAvatarServeOverride(op *operation) {
+	if op.Responses == nil {
+		op.Responses = map[string]response{}
+	}
+
+	content := make(map[string]mediaType, len(avatarServeMediaTypes))
+	for _, contentType := range avatarServeMediaTypes {
+		content[contentType] = mediaType{Schema: schemaRef{Type: "string", Format: "binary"}}
+	}
+	op.Responses["200"] = response{
+		Description: "Stored avatar bytes",
+		Content:     content,
+		Headers: map[string]responseHeader{
+			"Cache-Control": {
+				Description: "Immutable-cache directive; the object key embeds a fresh id per upload.",
+				Schema:      schemaRef{Type: "string"},
+			},
+			"Content-Length": {
+				Description: "Stored object size in bytes.",
+				Schema:      schemaRef{Type: "integer", Format: "int64"},
+			},
+			"X-Content-Type-Options": {
+				Description: "Always nosniff; the response never redirects or proxies a caller-supplied URL.",
+				Schema:      schemaRef{Type: "string"},
+			},
+		},
+	}
+
+	ensureResponseRef(op.Responses, "404", "NotFound")
+	ensureResponseRef(op.Responses, "503", "ServiceUnavailable")
 }
 
 func applySSEOverrides(op *operation, route routeDef) {
