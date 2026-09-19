@@ -1,3 +1,4 @@
+DELETE /api/v1/accounts/avatar
 DELETE /api/v1/admin/custom_emojis/{shortcode}
 DELETE /api/v1/admin/domain_allows/{id}
 DELETE /api/v1/admin/domain_blocks/{id}
@@ -72,6 +73,7 @@ GET /api/v1/agents/{username}/runtime-sessions
 GET /api/v1/agents/{username}/share
 GET /api/v1/announcements
 GET /api/v1/auth/webauthn/credentials
+GET /api/v1/avatars/{id}
 GET /api/v1/blocks
 GET /api/v1/bookmarks
 GET /api/v1/conversations
@@ -180,6 +182,7 @@ PATCH /api/v1/accounts/update_credentials
 PATCH /api/v1/agents/{username}
 PATCH /api/v1/preferences
 POST /api/v1/accounts
+POST /api/v1/accounts/avatar
 POST /api/v1/accounts/{id}/block
 POST /api/v1/accounts/{id}/follow
 POST /api/v1/accounts/{id}/mute

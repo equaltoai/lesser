@@ -40,7 +40,29 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 		Enabled:                             jsii.Bool(true),
 	})
 
-	// Move infrequently accessed media to cheaper storage classes
+	// Move infrequently accessed media to cheaper storage classes.
+	//
+	// This rule is intentionally bucket-wide and stops at Glacier Instant
+	// Retrieval: every prefix this bucket carries is read back, so no object may
+	// leave an instantly-retrievable storage class. avatars/ is served on the
+	// public read route (cmd/api/handlers/avatar.go), published/ is served through
+	// the media CDN, imports/ is read by the import processor, exports/ is
+	// downloaded through presigned URLs, and media/ is read by the media and
+	// export pipelines. A lifecycle transition to GLACIER (Flexible) makes
+	// GetObject fail with InvalidObjectState until the object is restored, which
+	// turned every avatar older than 180 days into a 500 on the serve route.
+	//
+	// CloudFormation cannot express "this prefix, except that one": a lifecycle
+	// rule's filter takes prefix, tag, and object-size predicates and has no
+	// negation, so no single rule can cover the bucket while exempting avatars/.
+	// A prefix-scoped rule cannot exempt a prefix from a bucket-wide rule
+	// either, because S3 applies every matching rule. The exemption is therefore
+	// made by keeping the bucket-wide rule inside the instant-retrieval classes,
+	// which is the correct shape rather than a workaround: every prefix this
+	// bucket carries is read back. A future write-only prefix that is never read
+	// back can carry its own GLACIER transition in a rule whose filter is scoped
+	// to that prefix.
+	// See docs/contracts/account-avatar.md for the serving-path coordination note.
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
 		Id:      jsii.String("optimize-storage-class"),
 		Enabled: jsii.Bool(true),
@@ -51,14 +73,10 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(30)),
 			},
 			{
-				// Move to Glacier Instant Retrieval after 90 days
+				// Move to Glacier Instant Retrieval after 90 days. Deliberately
+				// not Glacier Flexible Retrieval: GetObject must keep working.
 				StorageClass:    awss3.StorageClass_GLACIER_INSTANT_RETRIEVAL(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(90)),
-			},
-			{
-				// Move to Glacier Flexible Retrieval after 180 days
-				StorageClass:    awss3.StorageClass_GLACIER(),
-				TransitionAfter: awscdk.Duration_Days(jsii.Number(180)),
 			},
 		},
 	})
@@ -114,7 +132,10 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 		Expiration: awscdk.Duration_Days(jsii.Number(90)),
 	})
 
-	// Optimize avatar storage (avatars are accessed frequently initially, then rarely)
+	// Optimize avatar storage (avatars are accessed frequently initially, then rarely).
+	// This prefix is what the bucket-wide rule above is kept inside the
+	// instantly-retrievable classes for; avatars are never archived to a class
+	// that needs a restore, because the public serve route reads them on demand.
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
 		Id:      jsii.String("optimize-avatar-storage"),
 		Enabled: jsii.Bool(true),

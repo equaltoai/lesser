@@ -99,6 +99,12 @@ exemptions:
       match:
         exact:
             - /api/v1/admin/agents/{username}/unlock
+    - id: account_avatar
+      reason: Avatar bytes are written only by the multipart REST upload route and cleared only by the REST clear route, and the shared profile-update boundary rejects any supplied avatar URL, so no GraphQL write operation exists; the public serve route returns raw stored avatar bytes. GraphQL avatar read fields are owned by the parallel read-side milestone, and this milestone excludes GraphQL schema changes.
+      match:
+        exact:
+            - /api/v1/accounts/avatar
+            - /api/v1/avatars/{id}
 routes:
     - method: GET
       path: /
@@ -132,6 +138,14 @@ routes:
       path: /api/v1/accounts
       policy: rest_only
       exemptedBy: auth_setup
+    - method: DELETE
+      path: /api/v1/accounts/avatar
+      policy: rest_only
+      exemptedBy: account_avatar
+    - method: POST
+      path: /api/v1/accounts/avatar
+      policy: rest_only
+      exemptedBy: account_avatar
     - method: GET
       path: /api/v1/accounts/lookup
       policy: graphql_required
@@ -820,6 +834,10 @@ routes:
       path: /api/v1/auth/webauthn/signup/finish
       policy: rest_only
       exemptedBy: auth_setup
+    - method: GET
+      path: /api/v1/avatars/{id}
+      policy: rest_only
+      exemptedBy: account_avatar
     - method: GET
       path: /api/v1/blocks
       policy: graphql_required

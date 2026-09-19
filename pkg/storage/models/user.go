@@ -47,6 +47,7 @@ type User struct {
 	DisplayName  string              `theorydb:"attr:displayName" json:"display_name,omitempty"`   // Display name for the user
 	Note         string              `theorydb:"attr:note" json:"note,omitempty"`                  // Profile bio / summary
 	Avatar       string              `theorydb:"attr:avatar" json:"avatar,omitempty"`              // Avatar image URL
+	AvatarID     string              `theorydb:"attr:avatarId" json:"avatar_id,omitempty"`         // Server-minted id of the stored avatar object this account owns
 	Header       string              `theorydb:"attr:header" json:"header,omitempty"`              // Header image URL
 	URL          string              `theorydb:"attr:url" json:"url,omitempty"`                    // Profile URL
 	Locked       bool                `theorydb:"attr:locked" json:"locked"`

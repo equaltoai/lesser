@@ -113,6 +113,7 @@ The `tools/authsurface_doc` Go test asserts that the committed section matches t
 | GET/HEAD | skills_catalog | `/api/v1/skills` | public skills catalog; exact resolver remains private; excludes exact `/api/v1/skills/resolve` |
 | GET/HEAD | prefix | `/api/v1/search/statuses` | public status-search read path; route-level guard may still require OAuth |
 | GET/HEAD | prefix | `/api/v1/notes/` | public community-note reads |
+| GET/HEAD | single_segment | `/api/v1/avatars/` | stored avatar object bytes; handler serves only lesser-stored avatar objects keyed by validated opaque id |
 | POST | exact | `/register` | AppTheory-conventional dynamic OAuth client registration |
 | POST | exact | `/token` | AppTheory-conventional OAuth token endpoint |
 | POST | exact | `/api/v1/apps` | OAuth app registration |

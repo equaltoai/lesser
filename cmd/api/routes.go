@@ -162,6 +162,15 @@ func configureRoutes(app *apptheory.SecureApp) {
 		apiHandler.HandleRegistrationLift,
 		10, time.Hour, logger), apptheory.Public())
 
+	// Account avatar endpoints
+	// upload IS rate limited (storage abuse prevention); clear is not
+	app.Post("/api/v1/accounts/avatar", ratelimit.ApplyRateLimit(
+		apiHandler.HandleUploadAvatarLift,
+		10, time.Hour, logger), apptheory.Authenticated(auth.ScopeWrite))
+	app.Delete("/api/v1/accounts/avatar", apiHandler.HandleClearAvatarLift, apptheory.Authenticated(auth.ScopeWrite))
+	// Stored avatar bytes are served publicly by validated opaque id.
+	app.Get("/api/v1/avatars/{id}", apiHandler.HandleGetAvatarLift, apptheory.Public())
+
 	// Agent endpoints (LLM agent support)
 	app.Get("/api/v1/agents", apiHandler.HandleListAgentsLift, apptheory.Public())
 	app.Post("/api/v1/agents/delegate", requireAnySecureScope(apiHandler.HandleDelegateAgentLift, "write:accounts", auth.ScopeWrite), apptheory.Authenticated())

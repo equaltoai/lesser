@@ -155,7 +155,6 @@ func TestService_updateAccountProfile_InitializesActorAndSetsFields(t *testing.T
 		UpdaterID:   "alice",
 		DisplayName: "Alice",
 		Bio:         "bio",
-		Avatar:      "https://cdn.example.com/a.png",
 		Header:      "https://cdn.example.com/h.png",
 		Locked:      true,
 		Bot:         true,
@@ -169,7 +168,6 @@ func TestService_updateAccountProfile_InitializesActorAndSetsFields(t *testing.T
 	assert.NoError(t, err)
 	assert.Equal(t, "Alice", account.User.DisplayName)
 	assert.Equal(t, "bio", account.User.Note)
-	assert.Equal(t, "https://cdn.example.com/a.png", account.User.Avatar)
 	assert.Equal(t, "https://cdn.example.com/h.png", account.User.Header)
 	assert.True(t, account.User.Locked)
 	assert.True(t, account.User.Discoverable)
@@ -180,9 +178,6 @@ func TestService_updateAccountProfile_InitializesActorAndSetsFields(t *testing.T
 		assert.Equal(t, "bio", account.Actor.Summary)
 		assert.True(t, account.Actor.ManuallyApprovesFollowers)
 		assert.True(t, account.Actor.Discoverable)
-		if assert.NotNil(t, account.Actor.Icon) {
-			assert.Equal(t, "https://cdn.example.com/a.png", account.Actor.Icon.URL)
-		}
 		if assert.NotNil(t, account.Actor.Image) {
 			assert.Equal(t, "https://cdn.example.com/h.png", account.Actor.Image.URL)
 		}

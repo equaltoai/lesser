@@ -230,11 +230,12 @@ type Context struct {
 	Descendants []Status `json:"descendants"`
 }
 
-// UpdateCredentialsRequest represents a request to update user credentials
+// UpdateCredentialsRequest represents a request to update user credentials.
+// There is deliberately no avatar field: avatars are uploaded to
+// POST /api/v1/accounts/avatar and never accepted as a URL.
 type UpdateCredentialsRequest struct {
 	DisplayName  string `json:"display_name,omitempty"`
 	Note         string `json:"note,omitempty"`
-	Avatar       string `json:"avatar,omitempty"`
 	Header       string `json:"header,omitempty"`
 	Locked       bool   `json:"locked,omitempty"`
 	Discoverable bool   `json:"discoverable,omitempty"`

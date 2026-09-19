@@ -26,21 +26,27 @@ const (
 	boolTrue = "true"
 )
 
+// updateCredentialsPatchRequest mirrors the PATCH /api/v1/accounts/update_credentials
+// body. Avatar is presence-detectable only so the handler can reject it with a
+// pointer to the upload endpoint: credentials updates never accept an avatar URL.
 type updateCredentialsPatchRequest struct {
-	DisplayName  string `json:"display_name"`
-	Note         string `json:"note"`
-	Avatar       string `json:"avatar"`
-	Header       string `json:"header"`
-	Locked       *bool  `json:"locked"`
-	Discoverable *bool  `json:"discoverable"`
-	Bot          *bool  `json:"bot"`
+	DisplayName  string  `json:"display_name"`
+	Note         string  `json:"note"`
+	Avatar       *string `json:"avatar"`
+	Header       string  `json:"header"`
+	Locked       *bool   `json:"locked"`
+	Discoverable *bool   `json:"discoverable"`
+	Bot          *bool   `json:"bot"`
 }
+
+// errAvatarURLNotAccepted is the rejection message for an avatar URL supplied to
+// the credentials endpoint.
+const errAvatarURLNotAccepted = "avatar cannot be set by URL; upload it with POST /api/v1/accounts/avatar"
 
 func (req updateCredentialsPatchRequest) accountParams() map[string]interface{} {
 	params := map[string]interface{}{
 		"display_name": req.DisplayName,
 		"note":         req.Note,
-		"avatar":       req.Avatar,
 		"header":       req.Header,
 	}
 	if req.Locked != nil {
@@ -330,7 +336,7 @@ func (h *Handler) mastodonAccountFromStorageAccount(account *storage.Account) (m
 	}
 	out := mastodonAccountFromActor(account.Actor, baseURL)
 	applyMastodonIdentity(&out, account.User, username)
-	applyMastodonProfile(&out, account.User, baseURL, username)
+	applyMastodonProfile(&out, account.User, account.Actor, baseURL, username)
 	ensureMastodonAccountCollections(&out)
 	applyMastodonProfileFields(&out, account.User.Fields)
 
@@ -806,7 +812,13 @@ func applyMastodonIdentity(out *models.Account, user *storage.User, username str
 	}
 }
 
-func applyMastodonProfile(out *models.Account, user *storage.User, baseURL, username string) {
+// applyMastodonProfile fills the profile fields of a Mastodon account projection
+// from the stored user record. The record is authoritative for avatar and header,
+// so a field the account does not carry is reported as empty. The actor is passed
+// only as the last honest fallback for an image URL: the actor projection that ran
+// earlier synthesizes a placeholder image for a missing icon, and a placeholder is
+// not something the stored record says.
+func applyMastodonProfile(out *models.Account, user *storage.User, actor *activitypub.Actor, baseURL, username string) {
 	if out == nil || user == nil {
 		return
 	}
@@ -827,10 +839,10 @@ func applyMastodonProfile(out *models.Account, user *storage.User, baseURL, user
 		out.Bot = true
 	}
 
+	// An unknown creation time is reported as absent, never as "now": the read
+	// path must not fabricate a value the stored record does not carry.
 	if !user.CreatedAt.IsZero() {
 		out.CreatedAt = user.CreatedAt.UTC().Format(time.RFC3339)
-	} else if out.CreatedAt == "" {
-		out.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
 	if profileURL := strings.TrimSpace(user.URL); profileURL != "" {
@@ -840,27 +852,33 @@ func applyMastodonProfile(out *models.Account, user *storage.User, baseURL, user
 		out.URL = fmt.Sprintf("%s/@%s", baseURL, username)
 	}
 
-	if avatar := strings.TrimSpace(user.Avatar); avatar != "" {
-		out.Avatar = avatar
-		out.AvatarStatic = avatar
-	}
-	if header := strings.TrimSpace(user.Header); header != "" {
-		out.Header = header
-		out.HeaderStatic = header
-	}
+	out.Avatar = profileImageURL(user.Avatar, actorIconURL(actor))
+	out.AvatarStatic = out.Avatar
+	out.Header = profileImageURL(user.Header, actorImageURL(actor))
+	out.HeaderStatic = out.Header
+}
 
-	if out.Avatar == "" && baseURL != "" {
-		out.Avatar = baseURL + "/avatars/original/missing.png"
+// profileImageURL prefers the URL the account's own record carries and falls back
+// to the actor's, returning "" when neither has one. It never invents a value.
+func profileImageURL(stored, fromActor string) string {
+	if trimmed := strings.TrimSpace(stored); trimmed != "" {
+		return trimmed
 	}
-	if out.AvatarStatic == "" {
-		out.AvatarStatic = out.Avatar
+	return strings.TrimSpace(fromActor)
+}
+
+func actorIconURL(actor *activitypub.Actor) string {
+	if actor == nil || actor.Icon == nil {
+		return ""
 	}
-	if out.Header == "" && baseURL != "" {
-		out.Header = baseURL + "/headers/original/missing.png"
+	return actor.Icon.URL
+}
+
+func actorImageURL(actor *activitypub.Actor) string {
+	if actor == nil || actor.Image == nil {
+		return ""
 	}
-	if out.HeaderStatic == "" {
-		out.HeaderStatic = out.Header
-	}
+	return actor.Image.URL
 }
 
 func ensureMastodonAccountCollections(out *models.Account) {
@@ -910,7 +928,6 @@ func (h *Handler) buildUpdateCredentialsCommand(ctx context.Context, username st
 		Username:     username,
 		DisplayName:  req.DisplayName,
 		Bio:          req.Note,
-		Avatar:       req.Avatar,
 		Header:       req.Header,
 		Locked:       optionalBool(req.Locked, existingAccountLocked(account)),
 		Bot:          optionalBool(req.Bot, existingAccountBot(account)),
@@ -962,6 +979,13 @@ func (h *Handler) HandleUpdateCredentialsLift(ctx *apptheory.Context) (*apptheor
 	var req updateCredentialsPatchRequest
 	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		return common.RespondInvalidRequest(ctx)
+	}
+
+	// Avatars are stored from an upload, never accepted as a URL. Rejecting the
+	// parameter (rather than ignoring it) keeps the profile URL from ever holding
+	// a caller-chosen value.
+	if req.Avatar != nil {
+		return common.RespondBadRequest(ctx, errAvatarURLNotAccepted)
 	}
 
 	// Validate account parameters using comprehensive validation

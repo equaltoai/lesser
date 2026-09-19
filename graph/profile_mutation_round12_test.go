@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -11,6 +12,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRound12MutationResolvers_UpdateProfileRequiresAuthentication pins the first
+// gate of the mutation: a request with no authenticated principal is refused
+// before any account is loaded.
+func TestRound12MutationResolvers_UpdateProfileRequiresAuthentication(t *testing.T) {
+	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
+	mutations := &mutationResolver{resolver}
+
+	displayName := "Alice Example"
+	actor, err := mutations.UpdateProfile(context.Background(), model.UpdateProfileInput{DisplayName: &displayName})
+	require.Error(t, err)
+	require.Nil(t, actor)
+}
+
 func TestRound12MutationResolvers_UpdateProfile(t *testing.T) {
 	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
 	mutations := &mutationResolver{resolver}
@@ -18,12 +32,10 @@ func TestRound12MutationResolvers_UpdateProfile(t *testing.T) {
 	now := model.Time(time.Now())
 	displayName := "Alice Example"
 	bio := "Hello world"
-	avatar := "https://cdn.local/avatar.png"
 
 	actor, err := mutations.UpdateProfile(round12AuthContext("alice"), model.UpdateProfileInput{
 		DisplayName: &displayName,
 		Bio:         &bio,
-		Avatar:      &avatar,
 		Locked:      ptrBool(true),
 		Fields: []*model.ProfileFieldInput{
 			{
@@ -35,6 +47,70 @@ func TestRound12MutationResolvers_UpdateProfile(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, actor)
+}
+
+// TestRound12MutationResolvers_UpdateProfileRejectsAvatarURL documents that the
+// profile avatar is written only by the REST avatar upload route. The ownership
+// gate lives in the accounts service, so it also covers this GraphQL mutation:
+// an avatar URL supplied here is rejected instead of being stored.
+func TestRound12MutationResolvers_UpdateProfileRejectsAvatarURL(t *testing.T) {
+	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
+	mutations := &mutationResolver{resolver}
+
+	displayName := "Alice Example"
+	avatar := "https://cdn.local/avatar.png"
+
+	_, err := mutations.UpdateProfile(round12AuthContext("alice"), model.UpdateProfileInput{
+		DisplayName: &displayName,
+		Avatar:      &avatar,
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot be set by URL")
+}
+
+// TestRound12MutationResolvers_UpdateProfileOmittingAvatarKeepsExistingAvatar
+// guards a blocker: the resolver coalesced the account's stored avatar into the
+// service command for every request, and the accounts-service gate rejects any
+// non-empty avatar. Because the command carries no avatar when the input omits
+// it, an account that already has an avatar can update its profile, and the
+// stored avatar is left exactly as it was.
+func TestRound12MutationResolvers_UpdateProfileOmittingAvatarKeepsExistingAvatar(t *testing.T) {
+	resolver, graphStorage, _, _, _ := newRound12GraphResolverWithMocks(t)
+
+	avatarURL := "https://localhost/api/v1/avatars/6f6b0d1e-2a91-4c34-9d2f-8a1b7c5e0d43"
+	graphStorage.SeedAccountUser(&storage.User{
+		Username: "alice",
+		Role:     adminRoleUser,
+		Approved: true,
+		Version:  1,
+		Avatar:   avatarURL,
+	})
+
+	mutations := &mutationResolver{resolver}
+	ctx := round12AuthContext("alice")
+
+	displayName := "Alice Example"
+	actor, err := mutations.UpdateProfile(ctx, model.UpdateProfileInput{DisplayName: &displayName})
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.NotNil(t, actor.Icon)
+	require.Equal(t, avatarURL, actor.Icon.URL)
+
+	stored, err := resolver.Registry.Accounts().GetAccount(ctx, "alice")
+	require.NoError(t, err)
+	require.Equal(t, displayName, stored.User.DisplayName)
+	require.Equal(t, avatarURL, stored.User.Avatar)
+
+	// The gate is unchanged for callers that do supply an avatar: the value is
+	// still rejected, and the stored avatar survives the rejected request.
+	rejected := "https://cdn.local/avatar.png"
+	_, err = mutations.UpdateProfile(ctx, model.UpdateProfileInput{Avatar: &rejected})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot be set by URL")
+
+	stored, err = resolver.Registry.Accounts().GetAccount(ctx, "alice")
+	require.NoError(t, err)
+	require.Equal(t, avatarURL, stored.User.Avatar)
 }
 
 func TestRound12ProfileHelpers(t *testing.T) {
@@ -58,15 +134,26 @@ func TestRound12ProfileHelpers(t *testing.T) {
 			BaseObject: activitypub.BaseObject{
 				Type: string(activitypub.ServiceType),
 			},
-			Icon:  &activitypub.Image{URL: "https://cdn.local/actor_icon.png"},
 			Image: &activitypub.Image{URL: "https://cdn.local/actor_header.png"},
 		},
 	}
 
-	require.Equal(t, "https://cdn.local/actor_icon.png", currentAvatar(acc))
 	require.Equal(t, "https://cdn.local/actor_header.png", currentHeader(acc))
 	require.True(t, isAccountBot(acc))
 	require.True(t, isAccountNoIndex(acc))
+
+	// An account that carries none of the values must be reported as none of
+	// them, so a missing header never becomes another account's header image.
+	require.Empty(t, currentHeader(nil))
+	require.Empty(t, currentHeader(&storage.Account{}))
+	require.Empty(t, currentHeader(&storage.Account{User: &storage.User{}}))
+	require.False(t, isAccountBot(nil))
+	require.False(t, isAccountBot(&storage.Account{}))
+	require.False(t, isAccountNoIndex(nil))
+	require.False(t, isAccountNoIndex(&storage.Account{}))
+	require.False(t, isAccountNoIndex(&storage.Account{User: &storage.User{Metadata: map[string]any{}}}))
+	require.False(t, isAccountNoIndex(&storage.Account{User: &storage.User{Metadata: map[string]any{"no_index": "yes"}}}),
+		"a non-boolean no_index is not an opt-out")
 
 	fields := convertStoredFields(acc)
 	require.NotEmpty(t, fields)

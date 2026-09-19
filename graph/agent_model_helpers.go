@@ -40,6 +40,13 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 		bio = &v
 	}
 
+	// Mirrors the Mastodon account projection: the static variant is the stored
+	// avatar. Both come from the already-loaded record, so no post-history scan.
+	var avatar *string
+	if v := strings.TrimSpace(user.Avatar); v != "" {
+		avatar = &v
+	}
+
 	agentType := normalizeAgentType(user.AgentType)
 	agentVersion := strings.TrimSpace(user.AgentVersion)
 	if agentVersion == "" {
@@ -72,6 +79,8 @@ func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *sto
 		Username:                  username,
 		DisplayName:               displayName,
 		Bio:                       bio,
+		Avatar:                    avatar,
+		AvatarStatic:              avatar,
 		AgentType:                 agentType,
 		AgentVersion:              agentVersion,
 		AgentCapabilities:         capabilities,

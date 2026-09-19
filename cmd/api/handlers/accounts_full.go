@@ -70,6 +70,13 @@ func (h *Handler) HandleUpdateCredentialsFull(ctx *apptheory.Context) (*apptheor
 		return common.RespondBadRequest(ctx, "invalid request format")
 	}
 
+	// Avatars are stored from an upload, never accepted as a URL. This mirrors
+	// HandleUpdateCredentialsLift so both update_credentials implementations
+	// reject the parameter identically.
+	if req.Avatar != nil {
+		return common.RespondBadRequest(ctx, errAvatarURLNotAccepted)
+	}
+
 	if err := common.ValidateAccountParams(req.accountParams()); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
 	}
