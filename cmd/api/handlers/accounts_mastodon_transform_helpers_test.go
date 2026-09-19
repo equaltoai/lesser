@@ -145,4 +145,20 @@ func TestAccounts_MastodonTransformHelpers(t *testing.T) {
 		require.Empty(t, bare.Header)
 		require.Empty(t, bare.HeaderStatic)
 	})
+
+	t.Run("applyMastodonProfile falls back to the actor image for the header", func(t *testing.T) {
+		// The header follows the same rule as the avatar: the record wins, the
+		// actor image is the last honest fallback, and neither means empty.
+		out := apimodels.Account{}
+		user := &storage.User{Username: "bob"}
+
+		applyMastodonProfile(&out, user, &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{ID: "https://example.com/users/bob"},
+			Image:      &activitypub.Image{URL: "https://cdn.example/actor-header.png"},
+		}, "https://example.com", "bob")
+		require.Equal(t, "https://cdn.example/actor-header.png", out.Header)
+		require.Equal(t, out.Header, out.HeaderStatic)
+		require.Empty(t, out.Avatar)
+		require.Empty(t, out.AvatarStatic)
+	})
 }

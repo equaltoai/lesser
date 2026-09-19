@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/aws/smithy-go"
@@ -252,4 +253,93 @@ func TestAvatarObjectKeyIsAlwaysNamespaced(t *testing.T) {
 		assert.True(t, len(key) > len(AvatarS3Prefix))
 		assert.Equal(t, AvatarS3Prefix, key[:len(AvatarS3Prefix)])
 	}
+}
+
+// TestService_StoreAvatarReportsAStorageFailure keeps the storage error
+// distinguishable from a rejected upload: a store that refuses the write is a
+// media-storage failure, and the underlying cause is retained for the log line.
+func TestService_StoreAvatarReportsAStorageFailure(t *testing.T) {
+	service, store := newAvatarTestService(t)
+	store.uploadErr = errors.New("PutObject denied by bucket policy")
+
+	_, err := service.StoreAvatar(context.Background(), &StoreAvatarCommand{
+		UserID:      "alice",
+		ContentType: "image/png",
+		FileData:    pngAvatarBytes(),
+	})
+	assert.ErrorIs(t, err, ErrMediaStorageFailed)
+	assert.ErrorContains(t, err, "PutObject denied by bucket policy")
+}
+
+// TestService_GetAvatarReportsAReadFailure separates a store that cannot serve
+// the object from one that does not hold it: only the latter is an absence.
+func TestService_GetAvatarReportsAReadFailure(t *testing.T) {
+	service, store := newAvatarTestService(t)
+	id := "550e8400-e29b-41d4-a716-446655440000"
+	store.downloadErr = errors.New("GetObject throttled")
+
+	_, _, err := service.GetAvatar(context.Background(), id)
+	assert.ErrorIs(t, err, ErrMediaRetrievalFailed)
+	assert.NotErrorIs(t, err, ErrAvatarNotFound)
+	assert.ErrorContains(t, err, "throttled")
+}
+
+// TestService_GetAvatarTreatsAWrappedNotFoundAsAbsent accepts a not-found that
+// arrives wrapped, so an object store that decorates its errors still produces an
+// absence rather than a server error.
+func TestService_GetAvatarTreatsAWrappedNotFoundAsAbsent(t *testing.T) {
+	service, store := newAvatarTestService(t)
+	id := "550e8400-e29b-41d4-a716-446655440000"
+	store.downloadErr = fmt.Errorf("fetch object: %w", ErrAvatarNotFound)
+
+	_, _, err := service.GetAvatar(context.Background(), id)
+	assert.ErrorIs(t, err, ErrAvatarNotFound)
+}
+
+// TestService_DeleteAvatarHandlesAbsenceAndFailure pins both halves of the delete
+// contract: removing an object that is already gone is success (the desired
+// state), while a store that refuses the delete is a failure.
+func TestService_DeleteAvatarHandlesAbsenceAndFailure(t *testing.T) {
+	service, store := newAvatarTestService(t)
+	id := "550e8400-e29b-41d4-a716-446655440000"
+
+	store.deleteErr = &smithy.GenericAPIError{Code: "NoSuchKey", Message: "missing"}
+	assert.NoError(t, service.DeleteAvatar(context.Background(), id),
+		"deleting an avatar that is already gone is the desired state")
+
+	store.deleteErr = &smithy.GenericAPIError{Code: "NotFound", Message: "missing"}
+	assert.NoError(t, service.DeleteAvatar(context.Background(), id))
+
+	store.deleteErr = errors.New("DeleteObject denied by bucket policy")
+	err := service.DeleteAvatar(context.Background(), id)
+	assert.ErrorIs(t, err, ErrMediaDeleteFailed)
+	assert.ErrorContains(t, err, "denied by bucket policy")
+}
+
+// TestNormalizeAvatarContentTypeRejectsUnusableDeclarations pins the allowlist
+// boundary directly: an empty or unparsable declaration is not a type, SVG is
+// refused even though Go's sniffer recognises it, and a type outside the image
+// allowlist never becomes an avatar content type.
+func TestNormalizeAvatarContentTypeRejectsUnusableDeclarations(t *testing.T) {
+	for _, declared := range []string{"", "   ", "not a media type;;", "image/svg+xml", "TEXT/HTML", "application/pdf"} {
+		normalized, ok := normalizeAvatarContentType(declared)
+		assert.False(t, ok, "declared type %q must be rejected", declared)
+		assert.Empty(t, normalized)
+	}
+
+	normalized, ok := normalizeAvatarContentType("IMAGE/PNG; charset=binary")
+	require.True(t, ok)
+	assert.Equal(t, "image/png", normalized, "the declared type is normalized to its lower-case media type")
+}
+
+// TestIsAvatarObjectNotFoundOnlyMatchesAbsence pins the predicate that decides
+// whether a store error means "not there": only a not-found is an absence, and a
+// nil error is certainly not one.
+func TestIsAvatarObjectNotFoundOnlyMatchesAbsence(t *testing.T) {
+	assert.False(t, isAvatarObjectNotFound(nil), "a nil error is not an absence")
+	assert.True(t, isAvatarObjectNotFound(fmt.Errorf("fetch object: %w", ErrAvatarNotFound)))
+	assert.True(t, isAvatarObjectNotFound(&smithy.GenericAPIError{Code: "NoSuchKey"}))
+	assert.True(t, isAvatarObjectNotFound(&smithy.GenericAPIError{Code: "NotFound"}))
+	assert.False(t, isAvatarObjectNotFound(errors.New("dial tcp: connection refused")))
+	assert.False(t, isAvatarObjectNotFound(&smithy.GenericAPIError{Code: "AccessDenied"}))
 }

@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -10,6 +11,19 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
 )
+
+// TestRound12MutationResolvers_UpdateProfileRequiresAuthentication pins the first
+// gate of the mutation: a request with no authenticated principal is refused
+// before any account is loaded.
+func TestRound12MutationResolvers_UpdateProfileRequiresAuthentication(t *testing.T) {
+	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
+	mutations := &mutationResolver{resolver}
+
+	displayName := "Alice Example"
+	actor, err := mutations.UpdateProfile(context.Background(), model.UpdateProfileInput{DisplayName: &displayName})
+	require.Error(t, err)
+	require.Nil(t, actor)
+}
 
 func TestRound12MutationResolvers_UpdateProfile(t *testing.T) {
 	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
@@ -127,6 +141,19 @@ func TestRound12ProfileHelpers(t *testing.T) {
 	require.Equal(t, "https://cdn.local/actor_header.png", currentHeader(acc))
 	require.True(t, isAccountBot(acc))
 	require.True(t, isAccountNoIndex(acc))
+
+	// An account that carries none of the values must be reported as none of
+	// them, so a missing header never becomes another account's header image.
+	require.Empty(t, currentHeader(nil))
+	require.Empty(t, currentHeader(&storage.Account{}))
+	require.Empty(t, currentHeader(&storage.Account{User: &storage.User{}}))
+	require.False(t, isAccountBot(nil))
+	require.False(t, isAccountBot(&storage.Account{}))
+	require.False(t, isAccountNoIndex(nil))
+	require.False(t, isAccountNoIndex(&storage.Account{}))
+	require.False(t, isAccountNoIndex(&storage.Account{User: &storage.User{Metadata: map[string]any{}}}))
+	require.False(t, isAccountNoIndex(&storage.Account{User: &storage.User{Metadata: map[string]any{"no_index": "yes"}}}),
+		"a non-boolean no_index is not an opt-out")
 
 	fields := convertStoredFields(acc)
 	require.NotEmpty(t, fields)

@@ -27,6 +27,10 @@ type avatarTestState struct {
 	mu    sync.Mutex
 	user  *models.User
 	actor *models.Actor
+
+	// writeErr makes every write fail, standing in for a repository that rejects
+	// the conditional update.
+	writeErr error
 }
 
 type avatarTestDB struct{ state *avatarTestState }
@@ -44,6 +48,21 @@ func (db *avatarTestDB) AutoMigrate(...any) error { return nil }
 func (db *avatarTestDB) Close() error             { return nil }
 func (db *avatarTestDB) WithContext(context.Context) dynamormcore.DB {
 	return db
+}
+
+// failWrites makes every subsequent write fail with err.
+func (db *avatarTestDB) failWrites(err error) {
+	db.state.mu.Lock()
+	defer db.state.mu.Unlock()
+	db.state.writeErr = err
+}
+
+// forgetRows drops the stored rows so every read reports a missing account.
+func (db *avatarTestDB) forgetRows() {
+	db.state.mu.Lock()
+	defer db.state.mu.Unlock()
+	db.state.user = nil
+	db.state.actor = nil
 }
 
 type avatarTestQuery struct {
@@ -189,6 +208,10 @@ func (b *avatarTestUpdateBuilder) ExecuteWithResult(any) error                  
 func (b *avatarTestUpdateBuilder) Execute() error {
 	b.state.mu.Lock()
 	defer b.state.mu.Unlock()
+
+	if b.state.writeErr != nil {
+		return b.state.writeErr
+	}
 
 	switch reflect.TypeOf(b.model).String() {
 	case "*models.User":
