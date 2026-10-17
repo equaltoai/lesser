@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamock "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	dynamock "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"

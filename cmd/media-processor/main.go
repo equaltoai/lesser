@@ -18,8 +18,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dhowden/tag"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"

@@ -10,8 +10,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dmerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dmerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -52,7 +52,7 @@ func TestInstanceHealthRepository_GetLatestAndHistory(t *testing.T) {
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dst := args.Get(0)
 		v := reflect.ValueOf(dst)
-		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
+		if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Slice {
 			return
 		}
 		s := reflect.MakeSlice(v.Elem().Type(), 0, 1)
@@ -74,7 +74,7 @@ func TestInstanceHealthRepository_GetLatestAndHistory(t *testing.T) {
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dst := args.Get(0)
 		v := reflect.ValueOf(dst)
-		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
+		if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Slice {
 			return
 		}
 		now := time.Now().UTC()
@@ -102,7 +102,7 @@ func TestInstanceHealthRepository_DomainsSummaryAndUnhealthy(t *testing.T) {
 	mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 		dst := args.Get(0)
 		v := reflect.ValueOf(dst)
-		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
+		if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Slice {
 			return
 		}
 		s := reflect.MakeSlice(v.Elem().Type(), 0, 3)
@@ -162,7 +162,7 @@ func TestInstanceHealthRepository_SaveAndGetSummaryAndCalculate(t *testing.T) {
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dst := args.Get(0)
 		v := reflect.ValueOf(dst)
-		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
+		if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Slice {
 			return
 		}
 		now := time.Now().UTC()

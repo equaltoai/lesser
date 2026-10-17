@@ -9,8 +9,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/agentshare"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	tabletheoryerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	tabletheoryerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 )
 
 // HandleGrantAgentShareLift handles PUT /api/v1/agents/{username}/share/{grantee}.

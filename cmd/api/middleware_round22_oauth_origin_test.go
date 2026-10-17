@@ -8,7 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
 )
 
 func TestOAuthOriginHelpers_Round22(t *testing.T) {

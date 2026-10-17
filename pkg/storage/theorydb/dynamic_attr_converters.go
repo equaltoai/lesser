@@ -238,7 +238,7 @@ func toAttributeValueDynamic(value any) (types.AttributeValue, error) {
 
 func isNilReflectValue(rv reflect.Value) bool {
 	switch rv.Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Interface:
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Interface:
 		return rv.IsNil()
 	default:
 		return false

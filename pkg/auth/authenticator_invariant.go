@@ -7,7 +7,7 @@ import (
 
 	lessererrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 )
 
 type authenticatorInventoryRepository interface {

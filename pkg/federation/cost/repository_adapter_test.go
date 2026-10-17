@@ -9,8 +9,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -83,7 +83,7 @@ func (q *adapterFakeQuery) First(dest any) error {
 	}
 
 	rv := reflect.ValueOf(dest)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return nil
 	}
 
@@ -101,7 +101,7 @@ func (q *adapterFakeQuery) All(dest any) error {
 	}
 
 	rv := reflect.ValueOf(dest)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return nil
 	}
 

@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 

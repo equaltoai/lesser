@@ -11,8 +11,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"

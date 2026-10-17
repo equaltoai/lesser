@@ -145,13 +145,13 @@ func buildFrontendStaticCSP(domainName *string) string {
 func authUIInlineScriptHashes() []string {
 	return []string{
 		// Astro/Svelte island runtime snippets generated into auth-ui/dist/*.html.
-		// Refreshed 2026-07-30 after the Astro 7 auth UI dependency remediation;
-		// hashes verified unchanged against a fresh auth-ui production build.
+		// Refreshed 2026-10-17 after the Astro 7.4 / AppTheory v6 dependency
+		// remediation; hashes verified against a fresh auth-ui production build.
 		// CI builds auth-ui from its pinned lockfile and verifies these exact hashes:
 		//   bash scripts/verify_auth_ui_csp.sh
-		"'sha256-QzWFZi+FLIx23tnm9SBU4aEgx4x8DsuASP07mfqol/c='",
-		"'sha256-Ya0pUYrC7nM5Cn/056TyVuEiz6dFGrzmkWzgON0pF0U='",
-		"'sha256-eIXWvAmxkr251LJZkjniEK5LcPF3NkapbJepohwYRIc='",
+		"'sha256-1BvDVWLr3QCC20uHhUDi27eDFVJpk1uMQJGIWKUks2I='",
+		"'sha256-UIrFqcaitjA3OKa9mHKajg3N+0Y7tW9+y0o3QmMFeZQ='",
+		"'sha256-Y8t0ntteBwH+PqGKUyjWW3CAk+BNJKSoQc0xZ68FjhM='",
 		"'sha256-akD8rFdL+EsozO0lnT/LRcV7tR1XHwagTjg9VZqsgJU='",
 	}
 }

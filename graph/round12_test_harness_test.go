@@ -25,9 +25,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -902,12 +902,12 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 	default:
 		// Best-effort generic population for pointer-to-struct destinations.
 		rv := reflect.ValueOf(dest)
-		if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		if rv.Kind() != reflect.Pointer || rv.IsNil() {
 			return
 		}
 		// Support ORM-style pointer-to-pointer destinations (e.g. **T), allocating the inner value
 		// so downstream code doesn't panic when a mock "First" returns nil error.
-		if rv.Elem().Kind() == reflect.Ptr {
+		if rv.Elem().Kind() == reflect.Pointer {
 			if rv.Elem().IsNil() && rv.Elem().Type().Elem().Kind() == reflect.Struct {
 				rv.Elem().Set(reflect.New(rv.Elem().Type().Elem()))
 			}
@@ -1478,7 +1478,7 @@ func round12SetField(target reflect.Value, name string, value any) {
 
 func round12PopulateSlice(dest any, state *round12PermissiveQueryState) {
 	rv := reflect.ValueOf(dest)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return
 	}
 	slice := rv.Elem()
@@ -1498,7 +1498,7 @@ func round12PopulateSlice(dest any, state *round12PermissiveQueryState) {
 	for i := 0; i < count; i++ {
 		elemType := slice.Type().Elem()
 		switch elemType.Kind() {
-		case reflect.Ptr:
+		case reflect.Pointer:
 			state.autoPopulateIndex = i
 			elem := reflect.New(elemType.Elem())
 			round12PopulateStruct(elem.Interface(), state)

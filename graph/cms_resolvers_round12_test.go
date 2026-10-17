@@ -16,10 +16,10 @@ import (
 	storagemocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
-	dynamormquery "github.com/theory-cloud/tabletheory/v3/pkg/query"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
+	dynamormquery "github.com/theory-cloud/tabletheory/v6/pkg/query"
 	"go.uber.org/zap"
 )
 

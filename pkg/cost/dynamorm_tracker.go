@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -761,7 +761,7 @@ func countResultItems(dest any) int {
 
 	// Get the value and handle pointers
 	value := reflect.ValueOf(dest)
-	if value.Kind() == reflect.Ptr {
+	if value.Kind() == reflect.Pointer {
 		if value.IsNil() {
 			return 0
 		}
@@ -888,7 +888,7 @@ func countBatchItems(items any) int {
 	value := reflect.ValueOf(items)
 
 	// Handle pointers
-	if value.Kind() == reflect.Ptr {
+	if value.Kind() == reflect.Pointer {
 		if value.IsNil() {
 			return 0
 		}
@@ -923,13 +923,13 @@ func extractTableName(model any) string {
 
 	// Get the type, handling pointers
 	modelType := reflect.TypeOf(model)
-	if modelType.Kind() == reflect.Ptr {
+	if modelType.Kind() == reflect.Pointer {
 		modelType = modelType.Elem()
 	}
 
 	// Try to call TableName() method if it exists
 	modelValue := reflect.ValueOf(model)
-	if modelValue.Kind() == reflect.Ptr && !modelValue.IsNil() {
+	if modelValue.Kind() == reflect.Pointer && !modelValue.IsNil() {
 		modelValue = modelValue.Elem()
 	}
 
@@ -952,7 +952,7 @@ func extractTableName(model any) string {
 	// If slice or array, try to get element type
 	if modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array {
 		elemType := modelType.Elem()
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			elemType = elemType.Elem()
 		}
 		if elemType.Kind() == reflect.Struct {

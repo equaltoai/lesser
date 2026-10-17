@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 )
 
 // BaseModel provides common fields for all DynamORM models

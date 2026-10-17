@@ -88,7 +88,7 @@ func (v *Validator) Validate(model any) error {
 	}
 
 	modelValue := reflect.ValueOf(model)
-	if modelValue.Kind() == reflect.Ptr {
+	if modelValue.Kind() == reflect.Pointer {
 		modelValue = modelValue.Elem()
 	}
 
@@ -135,7 +135,7 @@ func ValidateWithTags(model any) error {
 	}
 
 	modelValue := reflect.ValueOf(model)
-	if modelValue.Kind() == reflect.Ptr {
+	if modelValue.Kind() == reflect.Pointer {
 		modelValue = modelValue.Elem()
 	}
 
@@ -704,7 +704,7 @@ func isZero(value any) bool {
 		return !v.Bool()
 	case reflect.Slice, reflect.Map, reflect.Array:
 		return v.Len() == 0
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		return v.IsNil()
 	case reflect.Struct:
 		// For time.Time, check if it's the zero time

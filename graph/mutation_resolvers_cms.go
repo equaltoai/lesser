@@ -12,7 +12,7 @@ import (
 	mediasvc "github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 

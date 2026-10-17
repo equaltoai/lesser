@@ -12,9 +12,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -122,7 +122,7 @@ func TestRound08_AuthRepository_ChallengeAndWalletOps(t *testing.T) {
 			// First AllPaginated() call returns an index record with a username.
 			mockQuery.On("AllPaginated", mock.Anything).Run(func(args mock.Arguments) {
 				value := reflect.ValueOf(args.Get(0))
-				require.True(t, value.Kind() == reflect.Ptr && value.Elem().Kind() == reflect.Slice)
+				require.True(t, value.Kind() == reflect.Pointer && value.Elem().Kind() == reflect.Slice)
 				elemType := value.Elem().Type().Elem()
 				elem := reflect.New(elemType).Elem()
 				usernameField := elem.FieldByName("Username")

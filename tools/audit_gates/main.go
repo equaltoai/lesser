@@ -315,6 +315,9 @@ func readGoModVersion(path string) (string, error) {
 }
 
 type golangciConfig struct {
+	Run struct {
+		Go string `yaml:"go"`
+	} `yaml:"run"`
 	LintersSettings struct {
 		Staticcheck struct {
 			Go string `yaml:"go"`
@@ -333,9 +336,12 @@ func readGolangciStaticcheckGoVersion(path string) (string, error) {
 		return "", fmt.Errorf("failed to parse %q: %w", path, err)
 	}
 
-	version := strings.TrimSpace(cfg.LintersSettings.Staticcheck.Go)
+	version := strings.TrimSpace(cfg.Run.Go)
 	if version == "" {
-		return "", fmt.Errorf("missing linters-settings.staticcheck.go in %q", path)
+		version = strings.TrimSpace(cfg.LintersSettings.Staticcheck.Go)
+	}
+	if version == "" {
+		return "", fmt.Errorf("missing run.go (or legacy linters-settings.staticcheck.go) in %q", path)
 	}
 
 	return version, nil

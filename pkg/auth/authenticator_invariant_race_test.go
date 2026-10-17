@@ -13,8 +13,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -383,7 +383,7 @@ func (q *authenticatorInvariantQuery) All(dest any) error {
 	defer q.state.mu.Unlock()
 
 	slicePtr := reflect.ValueOf(dest)
-	if slicePtr.Kind() != reflect.Ptr || slicePtr.IsNil() {
+	if slicePtr.Kind() != reflect.Pointer || slicePtr.IsNil() {
 		return fmt.Errorf("destination must be a non-nil pointer")
 	}
 	sliceValue := slicePtr.Elem()

@@ -24,8 +24,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	appTheory "github.com/theory-cloud/apptheory/v4/runtime"
-	tablemocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	appTheory "github.com/theory-cloud/apptheory/v6/runtime"
+	tablemocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )

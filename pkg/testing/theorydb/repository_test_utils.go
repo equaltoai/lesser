@@ -14,8 +14,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 )
 
 // RepositoryTestCase defines a test case for repository testing
@@ -449,7 +449,7 @@ func copyStruct(src, dest interface{}) {
 	destVal := reflect.ValueOf(dest)
 
 	// Ensure we have pointers
-	if srcVal.Kind() != reflect.Ptr || destVal.Kind() != reflect.Ptr {
+	if srcVal.Kind() != reflect.Pointer || destVal.Kind() != reflect.Pointer {
 		return
 	}
 

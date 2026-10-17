@@ -6,7 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 )
 
 // listTrustRelationshipsByCategory walks the small, fixed trust-category set in

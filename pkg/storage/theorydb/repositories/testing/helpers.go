@@ -13,8 +13,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	theoryMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	theoryMocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -395,7 +395,7 @@ func (m *MockRepository) copyItem(src, dest any) {
 	srcValue := reflect.ValueOf(src)
 	destValue := reflect.ValueOf(dest)
 
-	if destValue.Kind() == reflect.Ptr && srcValue.Type() == destValue.Elem().Type() {
+	if destValue.Kind() == reflect.Pointer && srcValue.Type() == destValue.Elem().Type() {
 		destValue.Elem().Set(srcValue)
 	}
 }

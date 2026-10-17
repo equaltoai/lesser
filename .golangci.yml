@@ -5,23 +5,26 @@ version: "2"
 run:
   # Timeout for analysis
   timeout: 10m
-  
+
+  # Targeted Go version must track go.mod (enforced by lesser verify audit).
+  go: "1.27"
+
   # Exclude test files from analysis
   tests: false
-  
+
   # Build tags to apply
   build-tags:
     - integration
 
 output:
-  # Format: colored-line-number, line-number, json, checkstyle, code-climate
-  format: colored-line-number
-  
-  # Print lines of code with issue
-  print-issued-lines: true
-  
-  # Print linter name in the end
-  print-linter-name: true
+  formats:
+    text:
+      path: stdout
+      # Print lines of code with issue
+      print-issued-lines: true
+      # Print linter name in the end
+      print-linter-name: true
+      colors: true
 
 linters:
   enable:
@@ -31,21 +34,21 @@ linters:
     - errcheck      # Unchecked errors
     - bodyclose     # HTTP response body closure
     - gosec         # Security problems
-    
+
     # Code correctness
     - ineffassign   # Unused assignments
     - unused        # Unused code
-    
+
     # Style and maintainability
     - goconst       # Repeated strings
     - misspell      # Spelling
     - revive        # Style and convention enforcement
-    
+
     # Complexity
     - gocyclo       # Cyclomatic complexity
     - gocognit      # Cognitive complexity
     - dupl          # Code duplication
-    
+
   disable:
     # Too strict or noisy
     - godox         # TODO/FIXME comments are OK
@@ -56,7 +59,7 @@ linters:
     - varnamelen    # Variable name length
     - funlen        # Function length
     - lll           # Line length
-    
+
     # Documentation linters - enable later
     - godot         # Comment periods
 
@@ -82,8 +85,6 @@ linters:
           - errcheck
           - gosec
           - goconst
-          - gofmt
-          - goimports
 
       # Lambda main files - often have initialization complexity
       - path: "cmd/.*/main\\.go"
@@ -119,106 +120,78 @@ linters:
         linters:
           - revive
 
-linters-settings:
-  errcheck:
-    # Check type assertions
-    check-type-assertions: true
-    # Check for blank assignments
-    check-blank: false
-    
-  goconst:
-    # Minimum length of string constant
-    min-len: 3
-    # Minimum occurrences
-    min-occurrences: 3
-    
-  gocyclo:
-    # Minimal complexity to report
-    min-complexity: 15
-    
-  gocognit:
-    # Minimal cognitive complexity to report
-    min-complexity: 20
-    
-  gosec:
-    # Exclude specific rules
-    excludes:
-      - G104  # Unhandled errors (use errcheck instead)
-      - G101  # Hardcoded credentials (too many false positives)
-    
-  govet:
-    # Enable shadow checking
-    enable:
-      - shadow
-    settings:
-      shadow:
-        strict: false
-        
-  misspell:
-    # Locale to use
-    locale: US
-    
-  unused:
-    # Check exported fields
-    check-exported: true
-    
-  staticcheck:
-    # Go version
-    go: "1.26"
-    # Checks to run
-    checks: ["all"]
-  
-  revive:
-    # Disable some overly strict rules
-    rules:
-      - name: exported
-        severity: warning
-        disabled: false
-        arguments:
-          - "disableStutteringCheck"
-      - name: var-naming
-        severity: warning
-        disabled: false
-      - name: package-comments
-        severity: warning
-        disabled: true  # Too many false positives for Lambda handlers
-      - name: comment-spacings
-        severity: warning
-        disabled: true
-      - name: line-length-limit
-        severity: warning
-        disabled: true
-      - name: function-result-limit
-        severity: warning
-        disabled: true
-      - name: max-public-structs
-        severity: warning
-        disabled: true
-      - name: cognitive-complexity
-        severity: warning
-        disabled: true  # We're using gocognit for this
-      - name: cyclomatic
-        severity: warning
-        disabled: true  # We're using gocyclo for this
-      - name: confusing-naming
-        severity: warning
-        disabled: true
-      - name: add-constant
-        severity: warning
-        disabled: true  # We're using goconst for this
+  settings:
+    goconst:
+      # Minimum length of string constant
+      min-len: 3
+      # Minimum occurrences
+      min-occurrences: 3
+      # Struct/map literal field values are protocol shapes, not repeated
+      # constants (goconst v1.11 widened composite-literal detection).
+      exclude-types:
+        - Call
+        - CompositeLit
+      # Map keys are structural protocol/model names, not repeated constants.
+      # goconst v1.11 began counting them by default; keep the prior baseline.
+      ignore-map-keys: true
 
-  dupl:
-    # Token threshold to report duplication
-    threshold: 150
+    gosec:
+      # Exclude specific rules
+      excludes:
+        - G104  # Unhandled errors (use errcheck instead)
+        - G101  # Hardcoded credentials (too many false positives)
+
+    revive:
+      # Disable some overly strict rules
+      rules:
+        - name: exported
+          severity: warning
+          disabled: false
+          arguments:
+            - "disableStutteringCheck"
+        - name: var-naming
+          severity: warning
+          disabled: false
+        - name: package-comments
+          severity: warning
+          disabled: true  # Too many false positives for Lambda handlers
+        - name: comment-spacings
+          severity: warning
+          disabled: true
+        - name: line-length-limit
+          severity: warning
+          disabled: true
+        - name: function-result-limit
+          severity: warning
+          disabled: true
+        - name: max-public-structs
+          severity: warning
+          disabled: true
+        - name: cognitive-complexity
+          severity: warning
+          disabled: true  # We're using gocognit for this
+        - name: cyclomatic
+          severity: warning
+          disabled: true  # We're using gocyclo for this
+        - name: confusing-naming
+          severity: warning
+          disabled: true
+        - name: add-constant
+          severity: warning
+          disabled: true  # We're using goconst for this
+
+    dupl:
+      # Token threshold to report duplication
+      threshold: 150
 
 issues:
   # Maximum issues to report
   max-issues-per-linter: 0
   max-same-issues: 0
-  
+
   # Show only new issues
   new: false
-    
+
 severity:
   # Default severity for all linters
-  default-severity: warning
+  default: warning

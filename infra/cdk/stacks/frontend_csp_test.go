@@ -15,9 +15,9 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 		t.Fatalf("CSP must not include unsafe directives: %s", csp)
 	}
 	requireContainsAll(t, csp, []string{
-		"'sha256-QzWFZi+FLIx23tnm9SBU4aEgx4x8DsuASP07mfqol/c='",
-		"'sha256-Ya0pUYrC7nM5Cn/056TyVuEiz6dFGrzmkWzgON0pF0U='",
-		"'sha256-eIXWvAmxkr251LJZkjniEK5LcPF3NkapbJepohwYRIc='",
+		"'sha256-1BvDVWLr3QCC20uHhUDi27eDFVJpk1uMQJGIWKUks2I='",
+		"'sha256-UIrFqcaitjA3OKa9mHKajg3N+0Y7tW9+y0o3QmMFeZQ='",
+		"'sha256-Y8t0ntteBwH+PqGKUyjWW3CAk+BNJKSoQc0xZ68FjhM='",
 		"'sha256-akD8rFdL+EsozO0lnT/LRcV7tR1XHwagTjg9VZqsgJU='",
 		"'sha256-vv9IoKo7BSLbWcUHr3tNmfNVmm5L/9Cfn2H6LMk7/ow='",
 	})

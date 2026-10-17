@@ -7,8 +7,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	"github.com/theory-cloud/tabletheory/v6"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
 )
 
 func TestFederationModels_UpdateKeys(t *testing.T) {

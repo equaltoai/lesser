@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 )
 
 // GenericRepository provides a generic repository implementation
@@ -153,12 +153,12 @@ func (r *GenericRepository) Delete(_ context.Context, id string, entityPtr any) 
 func (r *GenericRepository) List(_ context.Context, filter map[string]any, entities any) error {
 	// Start building the query
 	entitiesType := reflect.TypeOf(entities)
-	if entitiesType == nil || entitiesType.Kind() != reflect.Ptr || entitiesType.Elem().Kind() != reflect.Slice {
+	if entitiesType == nil || entitiesType.Kind() != reflect.Pointer || entitiesType.Elem().Kind() != reflect.Slice {
 		return fmt.Errorf("entities must be a pointer to slice, got %T", entities)
 	}
 
 	modelType := entitiesType.Elem().Elem()
-	for modelType.Kind() == reflect.Ptr {
+	for modelType.Kind() == reflect.Pointer {
 		modelType = modelType.Elem()
 	}
 	if modelType.Kind() != reflect.Struct {
@@ -235,7 +235,7 @@ type KeySetter interface {
 func getEntityID(entity any) string {
 	// Try to get ID field
 	val := reflect.ValueOf(entity)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		val = val.Elem()
 	}
 

@@ -10,7 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
 )
 
 // HandleAdminGetAgentPolicyLift handles GET /api/v1/admin/agents/policy.

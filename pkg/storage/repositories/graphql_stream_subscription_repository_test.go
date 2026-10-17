@@ -11,10 +11,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
-	dynamormtesting "github.com/theory-cloud/tabletheory/v3/pkg/testing"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
+	dynamormtesting "github.com/theory-cloud/tabletheory/v6/pkg/testing"
 	"go.uber.org/zap"
 )
 

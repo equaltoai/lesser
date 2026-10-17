@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 )
 
 type transactionTestDB struct {
@@ -129,7 +129,7 @@ func TestExampleTransferBalance_SucceedsAndFailsForInsufficientFunds_Round23(t *
 		firstCalls++
 		dest := args.Get(0)
 		destValue := reflect.ValueOf(dest)
-		require.Equal(t, reflect.Ptr, destValue.Kind())
+		require.Equal(t, reflect.Pointer, destValue.Kind())
 		balance := 0.0
 		if firstCalls == 1 {
 			balance = 100.0

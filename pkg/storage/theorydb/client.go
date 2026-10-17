@@ -11,10 +11,10 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/theory-cloud/tabletheory/v3"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
-	tabletypes "github.com/theory-cloud/tabletheory/v3/pkg/types"
+	"github.com/theory-cloud/tabletheory/v6"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
+	tabletypes "github.com/theory-cloud/tabletheory/v6/pkg/types"
 	"go.uber.org/zap"
 )
 

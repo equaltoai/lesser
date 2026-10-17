@@ -9,8 +9,8 @@ import (
 	"time"
 
 	appconfig "github.com/equaltoai/lesser/pkg/config"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	theorydbErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	theorydbErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 

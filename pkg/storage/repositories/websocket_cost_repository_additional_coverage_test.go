@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -42,14 +42,14 @@ func setupWebSocketCostRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuer
 
 func populateWebSocketSliceForCoverage(target any, baseTime time.Time) {
 	v := reflect.ValueOf(target)
-	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
+	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Slice {
 		return
 	}
 
 	slice := v.Elem()
 	elemType := slice.Type().Elem()
 	baseElemType := elemType
-	if baseElemType.Kind() == reflect.Ptr {
+	if baseElemType.Kind() == reflect.Pointer {
 		baseElemType = baseElemType.Elem()
 	}
 
@@ -141,7 +141,7 @@ func populateWebSocketSliceForCoverage(target any, baseTime time.Time) {
 		now := baseTime.Add(time.Duration(i) * time.Minute)
 
 		var element reflect.Value
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			element = reflect.New(baseElemType)
 			populateWebSocketStructForCoverage(element.Interface(), now)
 		} else {

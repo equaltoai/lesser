@@ -134,7 +134,7 @@ func (hr *HookRegistry) Execute(ctx context.Context, model any, hookType HookTyp
 	modelType := reflect.TypeOf(model)
 
 	// Remove pointer if present
-	if modelType.Kind() == reflect.Ptr {
+	if modelType.Kind() == reflect.Pointer {
 		modelType = modelType.Elem()
 	}
 
@@ -399,7 +399,7 @@ func TimestampHook(_ context.Context, model any) error {
 	modelValue := reflect.ValueOf(model)
 
 	// Handle pointer
-	if modelValue.Kind() == reflect.Ptr {
+	if modelValue.Kind() == reflect.Pointer {
 		modelValue = modelValue.Elem()
 	}
 

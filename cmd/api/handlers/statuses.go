@@ -21,7 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageMods "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
 	"go.uber.org/zap"
 )
 
@@ -710,7 +710,7 @@ func (h *Handler) convertMapToNote(ctx *apptheory.Context, obj map[string]any) (
 func (h *Handler) convertUnknownObjectToNote(ctx *apptheory.Context, object any, actorID string) (*activitypub.Note, *apptheory.Response, error) {
 	// Try to handle any object with AttributedTo field using reflection
 	v := reflect.ValueOf(object)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -1138,7 +1138,7 @@ func (h *Handler) extractInReplyTo(obj interface{}) string {
 //nolint:unused // Used by tests and retained for future thread/context refactors.
 func (h *Handler) extractInReplyToViaReflection(obj interface{}) string {
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -1152,7 +1152,7 @@ func (h *Handler) extractInReplyToViaReflection(obj interface{}) string {
 	}
 
 	// Handle pointer to string
-	if replyField.Kind() == reflect.Ptr && !replyField.IsNil() {
+	if replyField.Kind() == reflect.Pointer && !replyField.IsNil() {
 		if replyField.Elem().Kind() == reflect.String {
 			return replyField.Elem().String()
 		}

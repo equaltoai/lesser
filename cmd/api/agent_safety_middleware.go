@@ -16,9 +16,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 

@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash"
-	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -33,10 +32,10 @@ import (
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
 	"go.uber.org/zap"
 
-	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v6/pkg/core"
 )
 
 // Push notification delivery status constants
@@ -584,16 +583,11 @@ func (pdp *PushDeliveryProcessor) createVAPIDJWT(endpoint, subject, privateKeyBa
 		return "", ErrDecodePrivateKey(err)
 	}
 
-	// Create ECDSA private key
-	privateKey := &ecdsa.PrivateKey{
-		PublicKey: ecdsa.PublicKey{
-			Curve: elliptic.P256(),
-		},
-		D: new(big.Int).SetBytes(privateKeyBytes),
+	// Parse and validate the raw P-256 private scalar.
+	privateKey, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), privateKeyBytes)
+	if err != nil {
+		return "", ErrDecodePrivateKey(err)
 	}
-
-	// Calculate the public key
-	privateKey.X, privateKey.Y = privateKey.ScalarBaseMult(privateKeyBytes)
 
 	// Sign the message
 	hash := sha256.Sum256([]byte(message))

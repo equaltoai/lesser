@@ -2,7 +2,7 @@ package repositories
 
 import (
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 )
 
 // permitInstanceCountMaintenance registers permissive mock expectations for

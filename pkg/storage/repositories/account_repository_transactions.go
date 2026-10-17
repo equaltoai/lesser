@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 )
 
 type accountRepositoryTransactionalDB interface {

@@ -18,11 +18,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3"
-	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
-	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
+	"github.com/theory-cloud/tabletheory/v6"
+	dynamormCore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
+	"github.com/theory-cloud/tabletheory/v6/pkg/testing/fakedb"
 	"go.uber.org/zap"
 )
 

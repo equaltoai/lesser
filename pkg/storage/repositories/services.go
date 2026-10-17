@@ -50,7 +50,7 @@ func (v *DefaultValidationService) ValidateModel(_ context.Context, model BaseMo
 func (v *DefaultValidationService) ValidateBusinessRules(ctx context.Context, model BaseModel, action string) error {
 	// Get the underlying value and type
 	val := reflect.ValueOf(model)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		if val.IsNil() {
 			return errors.ValidationFailed("model_pointer", "model pointer is nil")
 		}
@@ -76,7 +76,7 @@ func (v *DefaultValidationService) ValidateBusinessRules(ctx context.Context, mo
 func (v *DefaultValidationService) ValidateRequiredFields(_ context.Context, model BaseModel) error {
 	// Get the underlying value
 	val := reflect.ValueOf(model)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		if val.IsNil() {
 			return errors.ValidationFailed("model_pointer", "model pointer is nil")
 		}
@@ -173,7 +173,7 @@ func (v *DefaultValidationService) isFieldEmpty(field reflect.Value) bool {
 		return field.String() == ""
 	case reflect.Slice, reflect.Map, reflect.Array:
 		return field.Len() == 0
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		return field.IsNil()
 	case reflect.Struct:
 		if field.Type() == reflect.TypeOf(time.Time{}) {
@@ -332,7 +332,7 @@ func (p *DefaultPermissionService) checkGenericPermission(ctx context.Context, a
 // getResourceType extracts the resource type from a model
 func (p *DefaultPermissionService) getResourceType(resource BaseModel) string {
 	typ := reflect.TypeOf(resource)
-	if typ.Kind() == reflect.Ptr {
+	if typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
 
@@ -384,7 +384,7 @@ func (c *InMemoryCachingService) Get(_ context.Context, key string, dest interfa
 	// Copy the value to destination
 	// This is a simplified implementation
 	destVal := reflect.ValueOf(dest)
-	if destVal.Kind() != reflect.Ptr {
+	if destVal.Kind() != reflect.Pointer {
 		return errors.ValidationFailed("destination", "destination must be a pointer")
 	}
 

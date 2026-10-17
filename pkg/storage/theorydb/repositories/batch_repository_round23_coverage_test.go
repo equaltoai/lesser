@@ -489,7 +489,7 @@ func TestAdvancedBatchOperations_processBatchWithConflictResolution_RetryWithRes
 			sk := fmt.Sprintf("%v", keyMap["SK"])
 
 			destValue := reflect.ValueOf(dest)
-			require.Equal(t, reflect.Ptr, destValue.Kind())
+			require.Equal(t, reflect.Pointer, destValue.Kind())
 			require.Equal(t, reflect.Slice, destValue.Elem().Kind())
 
 			existing := map[string]any{"PK": pk, "SK": sk, "Value": "existing"}

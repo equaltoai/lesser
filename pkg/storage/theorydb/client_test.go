@@ -13,10 +13,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
-	pkgtypes "github.com/theory-cloud/tabletheory/v3/pkg/types"
+	"github.com/theory-cloud/tabletheory/v6"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
+	pkgtypes "github.com/theory-cloud/tabletheory/v6/pkg/types"
 )
 
 func resetClientState() {
@@ -233,7 +233,7 @@ func tableTheoryDBField(t *testing.T, db core.DB, name string) reflect.Value {
 	t.Helper()
 
 	value := reflect.ValueOf(db)
-	require.Equal(t, reflect.Ptr, value.Kind())
+	require.Equal(t, reflect.Pointer, value.Kind())
 
 	elem := value.Elem()
 	field := elem.FieldByName(name)
@@ -243,7 +243,7 @@ func tableTheoryDBField(t *testing.T, db core.DB, name string) reflect.Value {
 
 	inner := elem.FieldByName("db")
 	require.True(t, inner.IsValid(), "expected returned Lambda client to expose %s", name)
-	require.Equal(t, reflect.Ptr, inner.Kind())
+	require.Equal(t, reflect.Pointer, inner.Kind())
 	require.False(t, inner.IsNil())
 
 	innerValue := reflect.NewAt(inner.Type(), unsafe.Pointer(inner.UnsafeAddr())).Elem()
@@ -290,7 +290,7 @@ func queryExecutorDBField(t *testing.T, query core.Query, name string) reflect.V
 	t.Helper()
 
 	value := reflect.ValueOf(query)
-	require.Equal(t, reflect.Ptr, value.Kind())
+	require.Equal(t, reflect.Pointer, value.Kind())
 	elem := value.Elem()
 
 	executorField := elem.FieldByName("executor")
@@ -300,12 +300,12 @@ func queryExecutorDBField(t *testing.T, query core.Query, name string) reflect.V
 	require.False(t, executorValue.IsNil(), "expected TableTheory query executor")
 
 	executor := reflect.ValueOf(executorValue.Interface())
-	require.Equal(t, reflect.Ptr, executor.Kind())
+	require.Equal(t, reflect.Pointer, executor.Kind())
 	executorElem := executor.Elem()
 
 	dbField := executorElem.FieldByName("db")
 	require.True(t, dbField.IsValid(), "expected TableTheory query executor DB")
-	require.Equal(t, reflect.Ptr, dbField.Kind())
+	require.Equal(t, reflect.Pointer, dbField.Kind())
 	require.False(t, dbField.IsNil())
 
 	dbValue := reflect.NewAt(dbField.Type(), unsafe.Pointer(dbField.UnsafeAddr())).Elem()

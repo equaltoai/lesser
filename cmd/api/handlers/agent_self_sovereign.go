@@ -17,8 +17,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 )
 
 const (

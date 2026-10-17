@@ -12,9 +12,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
-	theorydb "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	theorydb "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
 )
 
 type stubAccountHydrationVerifier struct {

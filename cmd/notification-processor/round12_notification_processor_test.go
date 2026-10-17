@@ -18,9 +18,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/apptheory/v4/pkg/streamer"
-	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/apptheory/v6/pkg/streamer"
+	dynamormCore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 

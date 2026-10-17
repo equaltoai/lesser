@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/agentshare"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	tabletheoryerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	tabletheoryerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 )
 
 type agentShareServiceStub struct {

@@ -10,7 +10,7 @@ import (
 	repoerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap/zaptest"
 )
 

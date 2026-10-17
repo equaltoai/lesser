@@ -80,7 +80,7 @@ func (q *round20CacheQuery) First(dest any) error {
 	}
 
 	rv := reflect.ValueOf(dest)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return fmt.Errorf("dest must be non-nil pointer")
 	}
 	elem := rv.Elem()
@@ -105,7 +105,7 @@ func (q *round20CacheQuery) Create() error {
 		return q.store.createErr
 	}
 	rv := reflect.ValueOf(q.model)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return fmt.Errorf("model must be non-nil pointer")
 	}
 	elem := rv.Elem()

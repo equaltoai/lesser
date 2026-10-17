@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -108,7 +108,7 @@ func setupPermissiveSearchRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQ
 
 func populateSearchRepositorySliceForCoverage(target any, baseTime time.Time) {
 	value := reflect.ValueOf(target)
-	if value.Kind() != reflect.Ptr || value.Elem().Kind() != reflect.Slice {
+	if value.Kind() != reflect.Pointer || value.Elem().Kind() != reflect.Slice {
 		return
 	}
 
@@ -120,14 +120,14 @@ func populateSearchRepositorySliceForCoverage(target any, baseTime time.Time) {
 	}
 
 	baseElemType := elemType
-	if baseElemType.Kind() == reflect.Ptr {
+	if baseElemType.Kind() == reflect.Pointer {
 		baseElemType = baseElemType.Elem()
 	}
 
 	count := 2
 	for i := range count {
 		var element reflect.Value
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			element = reflect.New(baseElemType)
 			populateSearchRepositoryStructForCoverage(element.Interface(), i, baseTime)
 		} else {

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -109,7 +109,7 @@ func (q *fakeQuery) All(dest any) error {
 	}
 
 	rv := reflect.ValueOf(dest)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return nil
 	}
 	ev := rv.Elem()

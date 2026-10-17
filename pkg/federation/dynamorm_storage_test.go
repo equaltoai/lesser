@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
-	dynamormtesting "github.com/theory-cloud/tabletheory/v3/pkg/testing"
-	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
+	"github.com/theory-cloud/tabletheory/v6"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
+	dynamormtesting "github.com/theory-cloud/tabletheory/v6/pkg/testing"
+	"github.com/theory-cloud/tabletheory/v6/pkg/testing/fakedb"
 	"go.uber.org/zap/zaptest"
 )
 

@@ -112,7 +112,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -313,7 +313,7 @@ func isNilInterface(value any) bool {
 	}
 	rv := reflect.ValueOf(value)
 	switch rv.Kind() {
-	case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
+	case reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
 		return rv.IsNil()
 	default:
 		return false
@@ -1682,6 +1682,7 @@ func (s *mediaS3ObjectStore) PresignPutObject(ctx context.Context, bucket, key, 
 		ChecksumSHA256: aws.String(checksum),
 	}, func(options *s3.PresignOptions) {
 		options.Expires = expiry
+		withPresignedChecksumHoisting(options)
 	})
 	if err != nil {
 		return "", err

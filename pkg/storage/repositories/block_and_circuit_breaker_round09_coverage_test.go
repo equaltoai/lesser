@@ -11,9 +11,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dmerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dmerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -96,7 +96,7 @@ func TestBlockRepository_PaginationAndCounts(t *testing.T) {
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dst := args.Get(0)
 		v := reflect.ValueOf(dst)
-		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
+		if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Slice {
 			return
 		}
 		slice := reflect.MakeSlice(v.Elem().Type(), 0, 2)

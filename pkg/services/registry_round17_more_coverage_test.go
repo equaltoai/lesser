@@ -26,8 +26,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -1161,7 +1161,7 @@ func newPermissiveDynamormDB(t *testing.T) dynamormcore.DB {
 
 func fillSlicePointer(dest any) {
 	ptr := reflect.ValueOf(dest)
-	if ptr.Kind() != reflect.Ptr || ptr.IsNil() {
+	if ptr.Kind() != reflect.Pointer || ptr.IsNil() {
 		return
 	}
 	elem := ptr.Elem()

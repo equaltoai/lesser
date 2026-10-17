@@ -15,8 +15,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 

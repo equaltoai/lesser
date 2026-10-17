@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	tablemodel "github.com/theory-cloud/tabletheory/v3/pkg/model"
+	tablemodel "github.com/theory-cloud/tabletheory/v6/pkg/model"
 )
 
 func TestArticleRegistersWithSingleCreatedAtMapping(t *testing.T) {

@@ -31,7 +31,7 @@ func (agentCapabilitiesConverter) ToAttributeValue(value any) (types.AttributeVa
 		caps = *v
 	default:
 		rv := reflect.ValueOf(value)
-		if rv.IsValid() && rv.Kind() == reflect.Ptr && rv.IsNil() {
+		if rv.IsValid() && rv.Kind() == reflect.Pointer && rv.IsNil() {
 			return &types.AttributeValueMemberNULL{Value: true}, nil
 		}
 		return nil, fmt.Errorf("agentCapabilitiesConverter: expected agents.Capabilities, got %T", value)

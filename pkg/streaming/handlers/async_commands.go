@@ -79,7 +79,7 @@ func NewAsyncCommandHandler(
 ) *AsyncCommandHandler {
 	if relationshipsService != nil {
 		relValue := reflect.ValueOf(relationshipsService)
-		if relValue.Kind() == reflect.Ptr && relValue.IsNil() {
+		if relValue.Kind() == reflect.Pointer && relValue.IsNil() {
 			relationshipsService = nil
 		}
 	}

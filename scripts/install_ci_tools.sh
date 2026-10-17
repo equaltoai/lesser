@@ -20,6 +20,6 @@ if [[ -z "${gosec_version}" ]]; then
 	echo "error: could not read pinnedGosecVersion from cmd/lesser/security_cmd.go" >&2
 	exit 1
 fi
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 go install github.com/securego/gosec/v2/cmd/gosec@"${gosec_version}"
-go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
