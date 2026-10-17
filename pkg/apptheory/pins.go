@@ -1,8 +1,8 @@
 package apptheory
 
 import (
-	apptheoryRuntime "github.com/theory-cloud/apptheory/v4/runtime"
-	"github.com/theory-cloud/tabletheory/v3"
+	apptheoryRuntime "github.com/theory-cloud/apptheory/v6/runtime"
+	"github.com/theory-cloud/tabletheory/v6"
 )
 
 var (

@@ -35,8 +35,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	ttquery "github.com/theory-cloud/tabletheory/v3/pkg/query"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	ttquery "github.com/theory-cloud/tabletheory/v6/pkg/query"
 )
 
 // compileRow is a shared dummy model whose key fields cover every schema used

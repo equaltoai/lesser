@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/errors"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
 )
 
 func errorCodeForHTTPStatus(status int) string {

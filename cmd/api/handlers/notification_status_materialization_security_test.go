@@ -14,7 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
 )
 
 func TestNotificationStatusMaterialization_DeletedSnapshotOmitted_M3(t *testing.T) {

@@ -424,7 +424,7 @@ func (sp *Processor) applyBackoff(attempt int) {
 // unmarshalWithDynamORMCompat provides DynamORM-compatible unmarshaling with enhanced error handling
 func unmarshalWithDynamORMCompat(item map[string]any, out any) error {
 	outVal := reflect.ValueOf(out)
-	if outVal.Kind() != reflect.Ptr || outVal.Elem().Kind() != reflect.Struct {
+	if outVal.Kind() != reflect.Pointer || outVal.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("out must be a pointer to struct")
 	}
 
@@ -543,7 +543,7 @@ func setFieldValueEnhanced(field reflect.Value, value any, structField reflect.S
 		return setMapFieldEnhanced(field, value)
 	case reflect.Struct:
 		return setStructFieldEnhanced(field, value, structField)
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return setPtrFieldEnhanced(field, value, structField)
 	default:
 		return fmt.Errorf("unsupported field type: %v", field.Type())

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	apptheoryLimited "github.com/theory-cloud/apptheory/v4/pkg/limited"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	tablecore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	apptheoryLimited "github.com/theory-cloud/apptheory/v6/pkg/limited"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	tablecore "github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 )
 

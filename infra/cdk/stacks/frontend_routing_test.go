@@ -101,20 +101,32 @@ func TestClientSSRFunctionURLOriginPermissions(t *testing.T) {
 		"ClientFrontendDistribution015B354C",
 	})
 
-	invokePermission := findLambdaPermissionByAction(t, resources, "lambda:InvokeFunction")
-	invokeProps := extractLambdaPermissionProperties(t, invokePermission)
-	if got, _ := invokeProps["Principal"].(string); got != "cloudfront.amazonaws.com" {
-		t.Fatalf("InvokeFunction permission principal = %q, want cloudfront.amazonaws.com", got)
+	invokePermissions := findLambdaPermissionsByAction(t, resources, "lambda:InvokeFunction")
+	if len(invokePermissions) == 0 {
+		t.Fatalf("expected at least one Lambda permission for %q", "lambda:InvokeFunction")
 	}
-	invokedViaURL, ok := invokeProps["InvokedViaFunctionUrl"].(bool)
-	if !ok || !invokedViaURL {
-		t.Fatalf("InvokeFunction permission must set InvokedViaFunctionUrl=true")
+	distributionScoped := 0
+	for _, invokePermission := range invokePermissions {
+		invokeProps := extractLambdaPermissionProperties(t, invokePermission)
+		if got, _ := invokeProps["Principal"].(string); got != "cloudfront.amazonaws.com" {
+			t.Fatalf("InvokeFunction permission principal = %q, want cloudfront.amazonaws.com", got)
+		}
+		invokedViaURL, ok := invokeProps["InvokedViaFunctionUrl"].(bool)
+		if !ok || !invokedViaURL {
+			t.Fatalf("InvokeFunction permission must set InvokedViaFunctionUrl=true")
+		}
+		sourceARN := mustJSON(t, invokeProps["SourceArn"])
+		requireContainsAll(t, sourceARN, []string{
+			"cloudfront",
+			"distribution",
+		})
+		if strings.Contains(sourceARN, "ClientFrontendDistribution015B354C") {
+			distributionScoped++
+		}
 	}
-	requireContainsAll(t, mustJSON(t, invokeProps["SourceArn"]), []string{
-		"cloudfront",
-		"distribution",
-		"ClientFrontendDistribution015B354C",
-	})
+	if distributionScoped == 0 {
+		t.Fatalf("expected a distribution-scoped lambda:InvokeFunction permission")
+	}
 }
 
 func synthClientFrontendResources(t *testing.T) map[string]any {
@@ -291,6 +303,22 @@ func findLambdaPermissionByAction(t *testing.T, resources map[string]any, action
 		t.Fatalf("expected Lambda permission for %q", action)
 	}
 	return permission
+}
+
+func findLambdaPermissionsByAction(t *testing.T, resources map[string]any, action string) []map[string]any {
+	t.Helper()
+	var permissions []map[string]any
+	for _, raw := range resources {
+		typed, ok := raw.(map[string]any)
+		if !ok || typed["Type"] != "AWS::Lambda::Permission" {
+			continue
+		}
+		props := extractLambdaPermissionProperties(t, typed)
+		if got, _ := props["Action"].(string); got == action {
+			permissions = append(permissions, typed)
+		}
+	}
+	return permissions
 }
 
 func extractLambdaPermissionProperties(t *testing.T, permission map[string]any) map[string]any {

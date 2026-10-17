@@ -11,9 +11,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormSchema "github.com/theory-cloud/tabletheory/v3/pkg/schema"
-	pkgtypes "github.com/theory-cloud/tabletheory/v3/pkg/types"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormSchema "github.com/theory-cloud/tabletheory/v6/pkg/schema"
+	pkgtypes "github.com/theory-cloud/tabletheory/v6/pkg/types"
 )
 
 func TestAgentCapabilitiesConverter_FromAttributeValue_SnakeCase(t *testing.T) {

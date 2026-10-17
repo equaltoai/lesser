@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -503,7 +503,7 @@ func (br *BatchReader) ReadItems(ctx context.Context, keys []any, dest any) (*Ba
 
 	// Ensure dest is a pointer to a slice
 	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Slice {
+	if destValue.Kind() != reflect.Pointer || destValue.Elem().Kind() != reflect.Slice {
 		return nil, fmt.Errorf("dest must be a pointer to a slice")
 	}
 

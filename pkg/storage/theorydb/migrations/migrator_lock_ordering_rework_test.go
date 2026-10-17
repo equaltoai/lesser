@@ -10,9 +10,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/require"
-	tabletheory "github.com/theory-cloud/tabletheory/v3"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
-	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
+	tabletheory "github.com/theory-cloud/tabletheory/v6"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
+	"github.com/theory-cloud/tabletheory/v6/pkg/testing/fakedb"
 	"go.uber.org/zap"
 )
 

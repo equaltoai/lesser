@@ -16,8 +16,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -74,7 +74,7 @@ func setupPermissiveFederationRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.M
 
 func populateFederationSliceForCoverage(target any, baseTime time.Time) {
 	value := reflect.ValueOf(target)
-	if value.Kind() != reflect.Ptr || value.Elem().Kind() != reflect.Slice {
+	if value.Kind() != reflect.Pointer || value.Elem().Kind() != reflect.Slice {
 		return
 	}
 
@@ -87,7 +87,7 @@ func populateFederationSliceForCoverage(target any, baseTime time.Time) {
 	}
 
 	baseType := elemType
-	if baseType.Kind() == reflect.Ptr {
+	if baseType.Kind() == reflect.Pointer {
 		baseType = baseType.Elem()
 	}
 
@@ -109,7 +109,7 @@ func populateFederationSliceForCoverage(target any, baseTime time.Time) {
 
 	for i := range count {
 		var element reflect.Value
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			element = reflect.New(baseType)
 			populateFederationStructForCoverage(element.Interface(), i, baseTime)
 		} else {
@@ -288,7 +288,7 @@ func populateFederationStructForCoverage(target any, idx int, baseTime time.Time
 }
 
 func fillStructDefaults(value reflect.Value, now time.Time, idx int) {
-	if value.Kind() != reflect.Ptr || value.IsNil() {
+	if value.Kind() != reflect.Pointer || value.IsNil() {
 		return
 	}
 	value = value.Elem()

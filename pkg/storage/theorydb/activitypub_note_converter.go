@@ -76,7 +76,7 @@ func noteValueFromAny(value any) (*activitypub.Note, error) {
 		return typed, nil
 	default:
 		rv := reflect.ValueOf(value)
-		if rv.IsValid() && rv.Kind() == reflect.Ptr && rv.IsNil() {
+		if rv.IsValid() && rv.Kind() == reflect.Pointer && rv.IsNil() {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("activityPubNoteConverter: expected activitypub.Note, got %T", value)

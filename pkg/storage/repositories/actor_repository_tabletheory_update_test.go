@@ -13,8 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	"github.com/theory-cloud/tabletheory/v6"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
 	"go.uber.org/zap/zaptest"
 )
 

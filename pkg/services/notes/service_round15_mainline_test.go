@@ -22,9 +22,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -139,14 +139,14 @@ func setupPermissiveDynamormMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQue
 
 func populateSlice(target any, state *permissiveQueryState) {
 	v := reflect.ValueOf(target)
-	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
+	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Slice {
 		return
 	}
 
 	sliceValue := v.Elem()
 	elemType := sliceValue.Type().Elem()
 	baseElemType := elemType
-	if baseElemType.Kind() == reflect.Ptr {
+	if baseElemType.Kind() == reflect.Pointer {
 		baseElemType = baseElemType.Elem()
 	}
 	if baseElemType.Kind() == reflect.Interface {
@@ -157,7 +157,7 @@ func populateSlice(target any, state *permissiveQueryState) {
 		at := time.Date(2025, 1, i+1, 0, 0, 0, 0, time.UTC)
 
 		var element reflect.Value
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			element = reflect.New(baseElemType)
 			populateStructWithTime(element.Interface(), state, at)
 		} else {

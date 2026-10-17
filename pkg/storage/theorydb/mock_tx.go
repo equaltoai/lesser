@@ -3,7 +3,7 @@ package theorydb
 import (
 	"fmt"
 
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 )
 
 // MockTx adapts Lesser's transaction helper surface to the TableTheory v3

@@ -13,7 +13,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/stretchr/testify/require"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 )
 
 type inMemoryWebAuthnRepo struct {

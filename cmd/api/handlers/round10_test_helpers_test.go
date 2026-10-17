@@ -20,10 +20,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -2755,7 +2755,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		default:
 			// Handle unexported projections (e.g. repositories.userVersionProjection) via reflection when needed.
 			rv := reflect.ValueOf(dest)
-			if rv.Kind() == reflect.Ptr && rv.Elem().IsValid() {
+			if rv.Kind() == reflect.Pointer && rv.Elem().IsValid() {
 				if field := rv.Elem().FieldByName("Value"); field.IsValid() && field.CanSet() && field.Kind() == reflect.Int {
 					field.SetInt(1)
 				}
@@ -3616,7 +3616,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			*d = state.trendingLinks
 		default:
 			rv := reflect.ValueOf(dest)
-			if rv.Kind() == reflect.Ptr && rv.Elem().Kind() == reflect.Slice {
+			if rv.Kind() == reflect.Pointer && rv.Elem().Kind() == reflect.Slice {
 				rv.Elem().Set(reflect.MakeSlice(rv.Elem().Type(), 0, 0))
 			}
 		}
@@ -3707,7 +3707,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			*d = relationships
 		default:
 			rv := reflect.ValueOf(dest)
-			if rv.Kind() == reflect.Ptr && rv.Elem().Kind() == reflect.Slice {
+			if rv.Kind() == reflect.Pointer && rv.Elem().Kind() == reflect.Slice {
 				rv.Elem().Set(reflect.MakeSlice(rv.Elem().Type(), 0, 0))
 			}
 		}

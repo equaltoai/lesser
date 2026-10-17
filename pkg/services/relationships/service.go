@@ -3247,7 +3247,7 @@ func isNilFederationService(f FederationService) bool {
 
 	value := reflect.ValueOf(f)
 	switch value.Kind() {
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		return value.IsNil()
 	default:
 		return false

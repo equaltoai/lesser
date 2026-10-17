@@ -14,7 +14,7 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
 )
 
 func agentAccessSignToken(t *testing.T, secret, username, delegatedBy string, isAgent bool) string {

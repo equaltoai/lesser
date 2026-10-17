@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 

@@ -161,7 +161,7 @@ func reputationForcesCanonicalActorKey(reputation interface{}) bool {
 		return false
 	}
 	value := reflect.ValueOf(reputation)
-	for value.Kind() == reflect.Ptr {
+	for value.Kind() == reflect.Pointer {
 		if value.IsNil() {
 			return false
 		}

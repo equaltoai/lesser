@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -172,14 +172,14 @@ func setupPermissiveStatusRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQ
 
 func populateStatusRepositorySliceForCoverage(target any) {
 	value := reflect.ValueOf(target)
-	if value.Kind() != reflect.Ptr || value.Elem().Kind() != reflect.Slice {
+	if value.Kind() != reflect.Pointer || value.Elem().Kind() != reflect.Slice {
 		return
 	}
 
 	sliceValue := value.Elem()
 	elemType := sliceValue.Type().Elem()
 	baseElemType := elemType
-	if baseElemType.Kind() == reflect.Ptr {
+	if baseElemType.Kind() == reflect.Pointer {
 		baseElemType = baseElemType.Elem()
 	}
 
@@ -193,7 +193,7 @@ func populateStatusRepositorySliceForCoverage(target any) {
 		now := time.Date(2025, 1, i+1, 0, 0, 0, 0, time.UTC)
 
 		var element reflect.Value
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			element = reflect.New(baseElemType)
 			populateStatusRepositoryStructForCoverageWithTime(element.Interface(), now)
 		} else {

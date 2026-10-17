@@ -16,8 +16,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormerrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -246,7 +246,7 @@ func avatarSetActor(value any) *activitypub.Actor {
 
 func applyAvatarSets(target any, sets map[string]any) {
 	value := reflect.ValueOf(target)
-	if value.Kind() != reflect.Ptr || value.IsNil() {
+	if value.Kind() != reflect.Pointer || value.IsNil() {
 		return
 	}
 	elem := value.Elem()
@@ -265,8 +265,8 @@ func applyAvatarSets(target any, sets map[string]any) {
 func copyAvatarFields(dst, src any) error {
 	dstValue := reflect.ValueOf(dst)
 	srcValue := reflect.ValueOf(src)
-	if dstValue.Kind() != reflect.Ptr || dstValue.IsNil() ||
-		srcValue.Kind() != reflect.Ptr || srcValue.IsNil() {
+	if dstValue.Kind() != reflect.Pointer || dstValue.IsNil() ||
+		srcValue.Kind() != reflect.Pointer || srcValue.IsNil() {
 		return errors.New("copyAvatarFields requires pointers")
 	}
 	dstElem := dstValue.Elem()

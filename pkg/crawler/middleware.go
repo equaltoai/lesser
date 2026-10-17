@@ -14,11 +14,11 @@ import (
 	cloudwatchTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/equaltoai/lesser/pkg/logging"
 	"github.com/equaltoai/lesser/pkg/observability"
-	apptheoryLimited "github.com/theory-cloud/apptheory/v4/pkg/limited"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	"github.com/theory-cloud/tabletheory/v3"
-	tablecore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	apptheoryLimited "github.com/theory-cloud/apptheory/v6/pkg/limited"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	"github.com/theory-cloud/tabletheory/v6"
+	tablecore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
 	"go.uber.org/zap"
 )
 

@@ -14,9 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	theorydb "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	theorymocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	theorydb "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	theorymocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
 )
 
 func TestRunInitAdmin_InvalidAppErrors(t *testing.T) {

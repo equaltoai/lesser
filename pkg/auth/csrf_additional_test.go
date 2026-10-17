@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3"
+	"github.com/theory-cloud/tabletheory/v6"
 	"go.uber.org/zap"
 )
 

@@ -25,7 +25,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -2564,7 +2564,7 @@ func (s *StorageAdapter) GetCache(ctx context.Context, key string, value interfa
 			return err
 		}
 		// Copy result to value if possible
-		if reflect.TypeOf(value).Kind() == reflect.Ptr {
+		if reflect.TypeOf(value).Kind() == reflect.Pointer {
 			reflect.ValueOf(value).Elem().Set(reflect.ValueOf(result))
 		}
 		return nil

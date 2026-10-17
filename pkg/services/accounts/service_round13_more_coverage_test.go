@@ -23,9 +23,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	dynamormcore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormErrors "github.com/theory-cloud/tabletheory/v3/pkg/errors"
-	dynamormMocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	dynamormcore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/v6/pkg/errors"
+	dynamormMocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -791,7 +791,7 @@ func fillSlicePointer(t *testing.T, dest any, getWhere func(string) (any, bool),
 	t.Helper()
 
 	ptr := reflect.ValueOf(dest)
-	if ptr.Kind() != reflect.Ptr || ptr.IsNil() {
+	if ptr.Kind() != reflect.Pointer || ptr.IsNil() {
 		return
 	}
 	elem := ptr.Elem()

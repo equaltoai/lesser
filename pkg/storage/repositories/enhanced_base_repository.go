@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -231,7 +231,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndDelete(ctx context.Context, pk, s
 		tType := reflect.TypeOf(zeroValue)
 
 		// Create a pointer instance
-		if tType.Kind() == reflect.Ptr {
+		if tType.Kind() == reflect.Pointer {
 			// T is already a pointer type (e.g., *models.User)
 			// Create a new instance of the element type
 			elemType := tType.Elem()

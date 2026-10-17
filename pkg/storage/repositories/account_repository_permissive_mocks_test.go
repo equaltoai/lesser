@@ -8,7 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 )
 
 func setupPermissiveAccountRepositoryMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery, mockUpdateBuilder *mocks.MockUpdateBuilder, baseTime time.Time) {
@@ -76,7 +76,7 @@ func setupPermissiveAccountRepositoryMocks(mockDB *mocks.MockDB, mockQuery *mock
 
 func populateAccountRepositorySliceForCoverage(target any, baseTime time.Time) {
 	value := reflect.ValueOf(target)
-	if value.Kind() != reflect.Ptr || value.Elem().Kind() != reflect.Slice {
+	if value.Kind() != reflect.Pointer || value.Elem().Kind() != reflect.Slice {
 		return
 	}
 
@@ -89,14 +89,14 @@ func populateAccountRepositorySliceForCoverage(target any, baseTime time.Time) {
 	}
 
 	baseElemType := elemType
-	if baseElemType.Kind() == reflect.Ptr {
+	if baseElemType.Kind() == reflect.Pointer {
 		baseElemType = baseElemType.Elem()
 	}
 
 	count := 2
 	for i := range count {
 		var element reflect.Value
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			element = reflect.New(baseElemType)
 			populateAccountRepositoryStructForCoverage(element.Interface(), i, baseTime)
 		} else {

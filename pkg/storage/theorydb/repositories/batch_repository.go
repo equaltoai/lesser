@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/batch"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -619,7 +619,7 @@ func extractKeysFromStruct(item any) (pk, sk string) {
 	}
 
 	val := reflect.ValueOf(item)
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		val = val.Elem()
 	}
 
@@ -661,7 +661,7 @@ func createSameTypeInstance(item any) any {
 	typ := reflect.TypeOf(item)
 
 	// Handle pointer types
-	if typ.Kind() == reflect.Ptr {
+	if typ.Kind() == reflect.Pointer {
 		// Create new instance of the element type, then get its address
 		elemType := typ.Elem()
 		newElem := reflect.New(elemType)

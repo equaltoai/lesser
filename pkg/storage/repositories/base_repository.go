@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	"github.com/theory-cloud/tabletheory/v3/pkg/errors"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -57,7 +57,7 @@ type BaseRepository[T BaseModel] struct {
 // modelPrototypeOf returns a pointer to the underlying struct type for a generic parameter.
 func modelPrototypeOf[T BaseModel]() interface{} {
 	modelType := reflect.TypeOf((*T)(nil)).Elem()
-	if modelType.Kind() == reflect.Ptr {
+	if modelType.Kind() == reflect.Pointer {
 		modelType = modelType.Elem()
 	}
 	return reflect.New(modelType).Interface()
@@ -584,7 +584,7 @@ func (r *BaseRepository[T]) Delete(ctx context.Context, pk, sk string) error {
 
 	var model T
 	// If T is a pointer type, create a new instance
-	if tType.Kind() == reflect.Ptr {
+	if tType.Kind() == reflect.Pointer {
 		elemType := tType.Elem()
 		ptrValue := reflect.New(elemType)
 		model = ptrValue.Interface().(T)
@@ -881,7 +881,7 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 
 	modelPrototype := modelPrototypeOf[T]()
 	modelType := reflect.TypeOf(modelPrototype)
-	if modelType.Kind() != reflect.Ptr {
+	if modelType.Kind() != reflect.Pointer {
 		return nil, fmt.Errorf("model prototype must be a pointer type")
 	}
 	elemType := modelType.Elem()
@@ -1904,7 +1904,7 @@ func (r *BaseRepository[T]) QueryBetweenPaginated(ctx context.Context, pk, start
 
 // setStringField assigns a string value to a named field using reflection.
 func setStringField(val reflect.Value, fieldName, fieldValue string) bool {
-	if val.Kind() != reflect.Ptr {
+	if val.Kind() != reflect.Pointer {
 		return false
 	}
 
@@ -1925,7 +1925,7 @@ func setStringField(val reflect.Value, fieldName, fieldValue string) bool {
 // extractStringField retrieves a string field by name from the provided model.
 func extractStringField(model any, fieldName string) (string, bool) {
 	value := reflect.ValueOf(model)
-	if value.Kind() == reflect.Ptr {
+	if value.Kind() == reflect.Pointer {
 		value = value.Elem()
 	}
 

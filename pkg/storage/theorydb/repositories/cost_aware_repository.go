@@ -10,7 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -325,7 +325,7 @@ func (cq *CostAwareQuery) First(dest any) error {
 func (cq *CostAwareQuery) All(dest any) error {
 	// Estimate result count for better operation naming
 	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() == reflect.Ptr && destValue.Elem().Kind() == reflect.Slice {
+	if destValue.Kind() == reflect.Pointer && destValue.Elem().Kind() == reflect.Slice {
 		// This is a slice pointer, we can estimate based on limit
 		operationName := "query_all"
 		return cq.repository.trackOperation(cq.ctx, operationName, func() error {

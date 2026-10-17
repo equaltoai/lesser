@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -79,7 +79,7 @@ func TestRound08_AuthRepository_MoreCoverage(t *testing.T) {
 		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 			// Append an index record with empty Username so we hit the validation branch.
 			value := reflect.ValueOf(args.Get(0))
-			require.True(t, value.Kind() == reflect.Ptr && value.Elem().Kind() == reflect.Slice)
+			require.True(t, value.Kind() == reflect.Pointer && value.Elem().Kind() == reflect.Slice)
 			elemType := value.Elem().Type().Elem()
 			elem := reflect.New(elemType).Elem()
 			value.Elem().Set(reflect.Append(value.Elem(), elem))

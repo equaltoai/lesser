@@ -13,9 +13,9 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
-	"github.com/theory-cloud/tabletheory/v3/pkg/model"
-	"github.com/theory-cloud/tabletheory/v3/pkg/schema"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
+	"github.com/theory-cloud/tabletheory/v6/pkg/model"
+	"github.com/theory-cloud/tabletheory/v6/pkg/schema"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
 	"go.uber.org/zap"
 )
 

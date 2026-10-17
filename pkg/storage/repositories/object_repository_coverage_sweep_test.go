@@ -11,8 +11,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/theory-cloud/tabletheory/v3/pkg/core"
-	"github.com/theory-cloud/tabletheory/v3/pkg/mocks"
+	"github.com/theory-cloud/tabletheory/v6/pkg/core"
+	"github.com/theory-cloud/tabletheory/v6/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -55,7 +55,7 @@ func setupPermissiveObjectRepoMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQ
 
 func populateObjectRepositorySliceForCoverage(target any, baseTime time.Time) {
 	value := reflect.ValueOf(target)
-	if value.Kind() != reflect.Ptr || value.Elem().Kind() != reflect.Slice {
+	if value.Kind() != reflect.Pointer || value.Elem().Kind() != reflect.Slice {
 		return
 	}
 
@@ -68,7 +68,7 @@ func populateObjectRepositorySliceForCoverage(target any, baseTime time.Time) {
 	}
 
 	baseElemType := elemType
-	if baseElemType.Kind() == reflect.Ptr {
+	if baseElemType.Kind() == reflect.Pointer {
 		baseElemType = baseElemType.Elem()
 	}
 
@@ -76,7 +76,7 @@ func populateObjectRepositorySliceForCoverage(target any, baseTime time.Time) {
 
 	for i := range count {
 		var element reflect.Value
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			element = reflect.New(baseElemType)
 			populateObjectRepositoryStructForCoverage(element.Interface(), i, baseTime)
 		} else {

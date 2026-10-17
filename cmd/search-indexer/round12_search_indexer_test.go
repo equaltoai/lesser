@@ -15,13 +15,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	apptheory "github.com/theory-cloud/apptheory/v4/runtime"
-	"github.com/theory-cloud/tabletheory/v3"
-	dynamormCore "github.com/theory-cloud/tabletheory/v3/pkg/core"
-	dynamormmocks "github.com/theory-cloud/tabletheory/v3/pkg/mocks"
-	ttmodel "github.com/theory-cloud/tabletheory/v3/pkg/model"
-	"github.com/theory-cloud/tabletheory/v3/pkg/session"
-	"github.com/theory-cloud/tabletheory/v3/pkg/testing/fakedb"
+	apptheory "github.com/theory-cloud/apptheory/v6/runtime"
+	"github.com/theory-cloud/tabletheory/v6"
+	dynamormCore "github.com/theory-cloud/tabletheory/v6/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/v6/pkg/mocks"
+	ttmodel "github.com/theory-cloud/tabletheory/v6/pkg/model"
+	"github.com/theory-cloud/tabletheory/v6/pkg/session"
+	"github.com/theory-cloud/tabletheory/v6/pkg/testing/fakedb"
 	"go.uber.org/zap"
 )
 
@@ -47,7 +47,7 @@ func (f *fakeUnifiedTracker) TrackDynamoWrite(context.Context, string, int64) er
 
 func setField(out any, name string, value any) {
 	v := reflect.ValueOf(out)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
+	if v.Kind() != reflect.Pointer || v.IsNil() {
 		return
 	}
 	elem := v.Elem()
